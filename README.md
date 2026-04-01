@@ -19,7 +19,7 @@ This repository contains the implementation starter pack for the AI orchestrator
 - frontend shell that talks to the backend and supports:
   - project setup
   - optional repository validation commands during project setup
-  - draft-to-ready ticket flow
+  - draft-to-ready ticket flow, including apply-on-completion refinement with one-step revert for the latest successful refine
   - starting a ready ticket into a persisted execution session with a prepared git worktree
   - choosing between immediate execution and a planning-first start
   - real `codex exec` launches from the prepared worktree

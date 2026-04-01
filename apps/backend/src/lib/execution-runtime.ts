@@ -815,6 +815,7 @@ export class ExecutionRuntime {
 
       try {
         if (mode === "refine") {
+          const beforeDraft = this.#store.getDraft(draft.id);
           const result = parseCodexJsonResult(
             rawOutput,
             draftRefinementResultSchema,
@@ -840,6 +841,8 @@ export class ExecutionRuntime {
               repository_id: repository.id,
               repository_name: repository.name,
               summary: summarizeDraftRefinement(result),
+              before_draft: beforeDraft ?? null,
+              after_draft: updatedDraft,
               result,
             },
           );

@@ -166,7 +166,7 @@ type ActionItem = {
 };
 
 type DraftEventOperation = "refine" | "questions";
-type DraftEventStatus = "started" | "completed" | "failed";
+type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
 type DraftQuestionsResult = {
   verdict: string;
   summary: string;
@@ -483,6 +483,39 @@ function parseStringList(value: unknown): string[] {
     : [];
 }
 
+function parseDraftEventRunId(event: StructuredEvent): string | null {
+  return typeof event.payload.run_id === "string" ? event.payload.run_id : null;
+}
+
+function parseDraftEventRevertedRunId(event: StructuredEvent): string | null {
+  return typeof event.payload.reverted_run_id === "string"
+    ? event.payload.reverted_run_id
+    : null;
+}
+
+function findLatestRevertableRefineEvent(
+  events: StructuredEvent[],
+): StructuredEvent | null {
+  const latestCompletedRefine =
+    events.find((event) => event.event_type === "draft.refine.completed") ??
+    null;
+  if (!latestCompletedRefine) {
+    return null;
+  }
+
+  const runId = parseDraftEventRunId(latestCompletedRefine);
+  if (!runId || !isRecord(latestCompletedRefine.payload.before_draft)) {
+    return null;
+  }
+
+  const alreadyReverted = events.some(
+    (event) =>
+      event.event_type === "draft.refine.reverted" &&
+      parseDraftEventRevertedRunId(event) === runId,
+  );
+  return alreadyReverted ? null : latestCompletedRefine;
+}
+
 function parseDraftEventMeta(event: StructuredEvent): {
   operation: DraftEventOperation;
   status: DraftEventStatus;
@@ -494,7 +527,10 @@ function parseDraftEventMeta(event: StructuredEvent): {
   if (
     entity !== "draft" ||
     (operation !== "refine" && operation !== "questions") ||
-    (status !== "started" && status !== "completed" && status !== "failed")
+    (status !== "started" &&
+      status !== "completed" &&
+      status !== "failed" &&
+      status !== "reverted")
   ) {
     return null;
   }
@@ -510,7 +546,9 @@ function parseDraftEventMeta(event: StructuredEvent): {
           ? "Codex run started."
           : status === "failed"
             ? "Codex run failed."
-            : "Codex run completed.",
+            : status === "reverted"
+              ? "Codex run reverted."
+              : "Codex run completed.",
     error: typeof event.payload.error === "string" ? event.payload.error : null,
     result,
   };
@@ -688,6 +726,7 @@ export function App() {
     queryFn: () =>
       fetchJson<DraftsResponse>(`/projects/${selectedProjectId}/drafts`),
     enabled: selectedProjectId !== null,
+    refetchInterval: selectedProjectId === null ? false : 2_000,
   });
 
   const ticketsQuery = useQuery({
@@ -1173,9 +1212,29 @@ export function App() {
     mutationFn: (draftId: string) =>
       postJson<CommandAck>(`/drafts/${draftId}/refine`, {}),
     onSuccess: async (_, draftId) => {
-      await queryClient.invalidateQueries({
-        queryKey: ["drafts", draftId, "events"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["drafts", draftId, "events"],
+        }),
+      ]);
+    },
+  });
+
+  const revertDraftRefineMutation = useMutation({
+    mutationFn: (draftId: string) =>
+      postJson<CommandAck>(`/drafts/${draftId}/refine/revert`, {}),
+    onSuccess: async (_, draftId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["drafts", draftId, "events"],
+        }),
+      ]);
     },
   });
 
@@ -1529,6 +1588,8 @@ export function App() {
   const latestDraftEventMeta = latestDraftEvent
     ? parseDraftEventMeta(latestDraftEvent)
     : null;
+  const latestRevertableRefineEvent =
+    findLatestRevertableRefineEvent(draftEvents);
   const draftAnalysisActive = draftEventsQuery.data?.active_run ?? false;
   const latestQuestionsEvent = draftEvents.find(
     (event) => event.event_type === "draft.questions.completed",
@@ -2491,6 +2552,12 @@ export function App() {
                         {refineDraftMutation.error.message}
                       </Text>
                     ) : null}
+                    {revertDraftRefineMutation.isError &&
+                    revertDraftRefineMutation.variables === selectedDraft.id ? (
+                      <Text size="sm" c="red">
+                        {revertDraftRefineMutation.error.message}
+                      </Text>
+                    ) : null}
                     {questionDraftMutation.isError &&
                     questionDraftMutation.variables === selectedDraft.id ? (
                       <Text size="sm" c="red">
@@ -2563,6 +2630,24 @@ export function App() {
                           }
                         >
                           Refine
+                        </Button>
+                        <Button
+                          variant="light"
+                          disabled={
+                            draftFormDirty ||
+                            draftAnalysisActive ||
+                            !latestRevertableRefineEvent
+                          }
+                          loading={
+                            revertDraftRefineMutation.isPending &&
+                            revertDraftRefineMutation.variables ===
+                              selectedDraft.id
+                          }
+                          onClick={() =>
+                            revertDraftRefineMutation.mutate(selectedDraft.id)
+                          }
+                        >
+                          Revert Refine
                         </Button>
                         <Button
                           variant="light"

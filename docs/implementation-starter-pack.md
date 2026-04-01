@@ -47,6 +47,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - `POST /projects`
 - `POST /drafts`
 - `POST /drafts/:draftId/refine`
+- `POST /drafts/:draftId/refine/revert`
 - `POST /drafts/:draftId/confirm`
 - `POST /tickets/:ticketId/start`
 - `POST /tickets/:ticketId/stop`
@@ -80,6 +81,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - Project setup is real and persisted in SQLite.
 - Repository validation commands can be configured during project setup.
 - Draft creation, refinement, and promotion to `ready` tickets are real and persisted.
+- The latest successful draft refinement can be reverted back to its pre-refine snapshot.
 - Starting a `ready` ticket now creates:
   - a persisted execution session
   - a first execution attempt record

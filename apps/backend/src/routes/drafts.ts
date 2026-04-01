@@ -3,8 +3,13 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   confirmDraftInputSchema,
   createDraftInputSchema,
+  draftTicketStateSchema,
   refineDraftInputSchema,
   updateDraftInputSchema,
+} from "@orchestrator/contracts";
+import type {
+  DraftTicketState,
+  StructuredEvent,
 } from "@orchestrator/contracts";
 
 import { makeCommandAck } from "../lib/command-ack.js";
@@ -45,6 +50,47 @@ function resolveDraftContext(store: Store, draftId: string) {
     project,
     repository,
   };
+}
+
+function parseDraftSnapshot(value: unknown): DraftTicketState | null {
+  const parsed = draftTicketStateSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseEventRunId(event: StructuredEvent): string | null {
+  return typeof event.payload.run_id === "string" ? event.payload.run_id : null;
+}
+
+function parseRevertedRunId(event: StructuredEvent): string | null {
+  return typeof event.payload.reverted_run_id === "string"
+    ? event.payload.reverted_run_id
+    : null;
+}
+
+function findLatestRevertableRefineEvent(
+  events: StructuredEvent[],
+): StructuredEvent | null {
+  const latestCompletedRefine =
+    events.find((event) => event.event_type === "draft.refine.completed") ??
+    null;
+  if (!latestCompletedRefine) {
+    return null;
+  }
+
+  const runId = parseEventRunId(latestCompletedRefine);
+  const beforeDraft = parseDraftSnapshot(
+    latestCompletedRefine.payload.before_draft,
+  );
+  if (!runId || !beforeDraft) {
+    return null;
+  }
+
+  const alreadyReverted = events.some(
+    (event) =>
+      event.event_type === "draft.refine.reverted" &&
+      parseRevertedRunId(event) === runId,
+  );
+  return alreadyReverted ? null : latestCompletedRefine;
 }
 
 export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
@@ -203,6 +249,99 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
           error instanceof Error ? error.message : "Unable to refine draft";
         reply
           .code(message === "Draft analysis already running" ? 409 : 404)
+          .send({
+            error: message,
+          });
+      }
+    },
+  );
+
+  app.post<{ Params: { draftId: string } }>(
+    "/drafts/:draftId/refine/revert",
+    async (request, reply) => {
+      try {
+        const draft = store.getDraft(request.params.draftId);
+        if (!draft) {
+          throw new Error("Draft not found");
+        }
+
+        if (executionRuntime.hasActiveDraftRun(draft.id)) {
+          throw new Error("Draft analysis already running");
+        }
+
+        const refineEvent = findLatestRevertableRefineEvent(
+          store.getDraftEvents(draft.id),
+        );
+        const revertedRunId = refineEvent ? parseEventRunId(refineEvent) : null;
+        const beforeDraft = refineEvent
+          ? parseDraftSnapshot(refineEvent.payload.before_draft)
+          : null;
+        if (!refineEvent || !revertedRunId || !beforeDraft) {
+          throw new Error("No revertable draft refinement found");
+        }
+
+        const restoredDraft = store.updateDraft(draft.id, {
+          title_draft: beforeDraft.title_draft,
+          description_draft: beforeDraft.description_draft,
+          proposed_ticket_type: beforeDraft.proposed_ticket_type,
+          proposed_acceptance_criteria:
+            beforeDraft.proposed_acceptance_criteria,
+          split_proposal_summary: beforeDraft.split_proposal_summary,
+          wizard_status: beforeDraft.wizard_status,
+        });
+
+        const revertedEvent = store.recordDraftEvent(
+          draft.id,
+          "draft.refine.reverted",
+          {
+            operation: "refine",
+            status: "reverted",
+            reverted_run_id: revertedRunId,
+            reverted_event_id: refineEvent.id,
+            summary: "Restored the draft to its pre-refine snapshot.",
+            before_draft: draft,
+            after_draft: restoredDraft,
+            result: {
+              reverted_run_id: revertedRunId,
+              restored_draft: restoredDraft,
+            },
+          },
+        );
+
+        eventHub.publish(
+          makeProtocolEvent("draft.updated", "draft", restoredDraft.id, {
+            draft: restoredDraft,
+          }),
+        );
+        eventHub.publish(
+          makeProtocolEvent(
+            "structured_event.created",
+            revertedEvent.entity_type,
+            revertedEvent.entity_id,
+            {
+              structured_event: revertedEvent,
+            },
+          ),
+        );
+
+        reply.send(
+          makeCommandAck(true, "Draft refinement reverted", {
+            draft_id: restoredDraft.id,
+            project_id: restoredDraft.project_id,
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to revert draft refinement";
+        reply
+          .code(
+            message === "Draft analysis already running" ||
+              message === "No revertable draft refinement found"
+              ? 409
+              : 404,
+          )
           .send({
             error: message,
           });
