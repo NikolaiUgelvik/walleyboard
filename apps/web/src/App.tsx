@@ -2170,10 +2170,7 @@ export function App() {
       >
         <Box className="orchestrator-rail">
           <Stack gap="md">
-            <SectionCard
-              title="Projects"
-              description="Switch the current board context and keep the left rail focused on project-level setup."
-            >
+            <SectionCard title="Projects">
               {projectsQuery.isPending ? (
                 <Loader size="sm" />
               ) : projectsQuery.isError ? (
