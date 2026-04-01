@@ -48,6 +48,40 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
   });
 
   app.post<{ Params: { draftId: string } }>(
+    "/drafts/:draftId/delete",
+    async (request, reply) => {
+      try {
+        const draft = store.deleteDraft(request.params.draftId);
+
+        if (!draft) {
+          reply.code(404).send({
+            error: "Draft not found"
+          });
+          return;
+        }
+
+        eventHub.publish(
+          makeProtocolEvent("draft.deleted", "draft", draft.id, {
+            draft_id: draft.id,
+            project_id: draft.project_id
+          })
+        );
+
+        reply.send(
+          makeCommandAck(true, "Draft deleted", {
+            draft_id: draft.id,
+            project_id: draft.project_id
+          })
+        );
+      } catch (error) {
+        reply.code(404).send({
+          error: error instanceof Error ? error.message : "Unable to delete draft"
+        });
+      }
+    }
+  );
+
+  app.post<{ Params: { draftId: string } }>(
     "/drafts/:draftId/refine",
     async (request, reply) => {
       const input = parseBody(reply, refineDraftInputSchema, request.body);

@@ -21,15 +21,18 @@ This repository contains the implementation starter pack for the AI orchestrator
   - optional repository validation commands during project setup
   - draft-to-ready ticket flow
   - starting a ready ticket into a persisted execution session with a prepared git worktree
+  - choosing between immediate execution and a planning-first start
   - real `codex exec` launches from the prepared worktree
   - validation commands that run before review handoff
   - session log streaming and automatic transition into `review`
   - local review diff artifact generation
   - request-changes and resume flows that create new attempts on the same session/worktree
   - stopping an in-progress ticket while preserving the worktree and working branch for resume
+  - manual terminal takeover on the prepared worktree with a restore-agent handoff back to Codex
+  - live session input forwarding into an attached Codex or manual terminal PTY
   - deleting a ticket with cleanup of its session metadata and local orchestrator artifacts
   - visible in-app action cards for review-ready and waiting sessions
-  - an interpreted session activity feed instead of a raw Codex transcript view
+  - an interpreted session activity feed plus a separate raw project terminal transcript
   - conservative backend-startup recovery that marks active sessions interrupted
   - websocket-driven cache updates for session output, review packages, and board state
   - direct merge from `review` into the target branch with local worktree and branch cleanup
@@ -38,9 +41,8 @@ This repository contains the implementation starter pack for the AI orchestrator
 ## What It Does Not Do Yet
 
 - manage Bubblewrap sandboxes
-- provide a separate interactive project terminal for manual commands
 - restore live execution automatically after an application restart
-- support checkpoint or mid-run input handoff for running Codex exec sessions
+- create or reconcile GitHub pull requests from the review column
 
 Those remain the next implementation milestones.
 
@@ -53,6 +55,6 @@ Those remain the next implementation milestones.
 
 ## Next Steps
 
-- Add sandbox orchestration around the live Codex runtime.
-- Add a separate project terminal that is distinct from the interpreted Codex activity view.
+- Add Bubblewrap-backed sandbox orchestration around the live Codex runtime and validation commands.
+- Add GitHub pull request creation and reconciliation when direct merge is not the right review path.
 - Decide whether interrupted sessions should auto-resume or stay manual after restart.

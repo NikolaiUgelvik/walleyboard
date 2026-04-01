@@ -15,6 +15,11 @@ type SessionActivity = {
   detail: string;
 };
 
+type ParsedCodexEvent = {
+  eventType: string;
+  payload: Record<string, unknown>;
+};
+
 function createActivity(
   key: string,
   tone: ActivityTone,
@@ -37,7 +42,197 @@ function extractDetail(line: string, prefix: string): string | null {
   return line.slice(prefix.length).trim();
 }
 
+function truncate(value: string, maxLength = 240): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}...`;
+}
+
+function parseCodexEvent(line: string): ParsedCodexEvent | null {
+  const match = line.match(/^\[codex ([^\]]+)\] (.+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, eventType, rawPayload] = match;
+  if (!eventType || !rawPayload) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(rawPayload) as Record<string, unknown>;
+    return {
+      eventType,
+      payload
+    };
+  } catch {
+    return null;
+  }
+}
+
+function describeCommandExecution(command: string): {
+  label: string;
+  detail: string;
+} {
+  if (command.includes(".github/workflows")) {
+    return {
+      label: "Inspected CI workflow",
+      detail: "Codex reviewed the CI workflow configuration."
+    };
+  }
+
+  if (command.includes(".gitignore")) {
+    return {
+      label: "Checked ignore rules",
+      detail: "Codex inspected `.gitignore`."
+    };
+  }
+
+  if (command.includes("npm run typecheck") || command.includes("tsc -p")) {
+    return {
+      label: "Checked types",
+      detail: "Codex ran the project's type checks."
+    };
+  }
+
+  if (command.includes("npm run build") || command.includes("vite build")) {
+    return {
+      label: "Built project",
+      detail: "Codex ran the build to verify the current changes."
+    };
+  }
+
+  if (
+    command.includes("npm run test") ||
+    command.includes("npm test") ||
+    command.includes("pytest")
+  ) {
+    return {
+      label: "Ran tests",
+      detail: "Codex ran a test command for the current change."
+    };
+  }
+
+  if (command.includes("git status")) {
+    return {
+      label: "Checked git status",
+      detail: "Codex verified the repository status."
+    };
+  }
+
+  if (command.includes("git diff")) {
+    return {
+      label: "Reviewed changes",
+      detail: "Codex inspected the current diff."
+    };
+  }
+
+  if (
+    command.includes("rg ") ||
+    command.includes("grep ") ||
+    command.includes("sed -n") ||
+    command.includes("cat ") ||
+    command.includes("ls ") ||
+    command.includes("find ")
+  ) {
+    return {
+      label: "Inspected project files",
+      detail: "Codex looked through repository files to gather context."
+    };
+  }
+
+  return {
+    label: "Ran command",
+    detail: truncate(command, 160)
+  };
+}
+
+function interpretCodexEvent(line: string, index: number): SessionActivity | null {
+  const event = parseCodexEvent(line);
+  if (!event) {
+    return null;
+  }
+
+  const item = event.payload.item;
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const itemRecord = item as Record<string, unknown>;
+  const itemType =
+    typeof itemRecord.type === "string" ? itemRecord.type : null;
+
+  if (event.eventType === "item.started") {
+    return null;
+  }
+
+  if (itemType === "agent_message") {
+    const text =
+      typeof itemRecord.text === "string"
+        ? itemRecord.text
+        : typeof itemRecord.message === "string"
+          ? itemRecord.message
+          : null;
+
+    if (!text) {
+      return null;
+    }
+
+    return createActivity(
+      `codex-message-${index}`,
+      "blue",
+      "Codex update",
+      truncate(text)
+    );
+  }
+
+  if (itemType === "command_execution") {
+    const command =
+      typeof itemRecord.command === "string" ? itemRecord.command : null;
+    if (!command) {
+      return null;
+    }
+
+    const exitCode =
+      typeof itemRecord.exit_code === "number" ? itemRecord.exit_code : null;
+    const aggregatedOutput =
+      typeof itemRecord.aggregated_output === "string"
+        ? itemRecord.aggregated_output.trim()
+        : "";
+    const description = describeCommandExecution(command);
+
+    if (exitCode !== null && exitCode !== 0) {
+      const failureDetail =
+        aggregatedOutput.length > 0
+          ? truncate(aggregatedOutput.split("\n").find(Boolean) ?? aggregatedOutput)
+          : description.detail;
+      return createActivity(
+        `codex-command-failed-${index}`,
+        "red",
+        "Command failed",
+        failureDetail
+      );
+    }
+
+    return createActivity(
+      `codex-command-${index}`,
+      "gray",
+      description.label,
+      description.detail
+    );
+  }
+
+  return null;
+}
+
 function interpretSessionLog(line: string, index: number): SessionActivity | null {
+  const codexEvent = interpretCodexEvent(line, index);
+  if (codexEvent) {
+    return codexEvent;
+  }
+
   const created = extractDetail(line, "Session created for ticket ");
   if (created) {
     return createActivity(`created-${index}`, "blue", "Execution prepared", created);
@@ -78,8 +273,8 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
     return createActivity(`codex-raw-${index}`, "blue", "Codex update", codexRaw);
   }
 
-  if (line.startsWith("[codex ")) {
-    return createActivity(`codex-${index}`, "blue", "Codex update", line);
+  if (line.startsWith("[codex ") || line.startsWith("[validation ")) {
+    return null;
   }
 
   const validation = extractDetail(line, "Running validation: ");
@@ -150,6 +345,49 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
     return createActivity(`input-${index}`, "yellow", "Note recorded", inputRecorded);
   }
 
+  const terminalOpened = extractDetail(line, "Manual terminal opened in ");
+  if (terminalOpened) {
+    return createActivity(
+      `terminal-opened-${index}`,
+      "yellow",
+      "Manual terminal attached",
+      terminalOpened
+    );
+  }
+
+  if (line === "Manual terminal closed.") {
+    return createActivity(
+      `terminal-closed-${index}`,
+      "gray",
+      "Manual terminal closed",
+      "Agent control can now be restored on the existing worktree."
+    );
+  }
+
+  const terminalInput = extractDetail(line, "[terminal input] ");
+  if (terminalInput) {
+    return createActivity(
+      `terminal-input-${index}`,
+      "yellow",
+      "Manual command",
+      truncate(terminalInput, 160)
+    );
+  }
+
+  const agentInput = extractDetail(line, "[agent input] ");
+  if (agentInput) {
+    return createActivity(
+      `agent-input-${index}`,
+      "yellow",
+      "Live input sent",
+      truncate(agentInput, 160)
+    );
+  }
+
+  if (line.startsWith("[terminal] ")) {
+    return null;
+  }
+
   const stopped = extractDetail(line, "Execution stopped by user: ");
   if (stopped) {
     return createActivity(`stopped-${index}`, "orange", "Execution stopped", stopped);
@@ -210,7 +448,6 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
 
   if (
     line.startsWith("Command: codex ") ||
-    line.startsWith("[validation ") ||
     line.startsWith("Verified git repository: ") ||
     line.startsWith("Checked out target branch: ") ||
     line === "Codex launch has been handed off to the execution runtime."

@@ -1,18 +1,22 @@
 import {
-  Alert,
+  ActionIcon,
   Badge,
+  Box,
   Button,
   Code,
-  Container,
   Group,
   List,
   Loader,
+  Menu,
+  Modal,
+  SegmentedControl,
   SimpleGrid,
   Stack,
   Text,
   TextInput,
   Textarea,
-  Title
+  Title,
+  useMantineColorScheme
 } from "@mantine/core";
 import {
   type CommandAck,
@@ -32,8 +36,10 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import "./app-shell.css";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
+import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
 const websocketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
@@ -51,14 +57,36 @@ const stoppableSessionStatuses = [
   "paused_user_control",
   "awaiting_input"
 ] satisfies ExecutionSession["status"][];
-
-function isStoppableSessionStatus(
-  status: ExecutionSession["status"]
-): status is (typeof stoppableSessionStatuses)[number] {
-  return stoppableSessionStatuses.includes(
-    status as (typeof stoppableSessionStatuses)[number]
-  );
-}
+const boardColumnMeta: Record<
+  (typeof boardColumns)[number],
+  { label: string; accent: string; empty: string }
+> = {
+  draft: {
+    label: "Draft",
+    accent: "#6b7280",
+    empty: "No draft tickets yet. Capture the next task from the right panel."
+  },
+  ready: {
+    label: "Ready",
+    accent: "#2563eb",
+    empty: "No ready tickets waiting to start."
+  },
+  in_progress: {
+    label: "In progress",
+    accent: "#d97706",
+    empty: "No active Codex runs at the moment."
+  },
+  review: {
+    label: "In review",
+    accent: "#7c3aed",
+    empty: "Nothing is waiting for review right now."
+  },
+  done: {
+    label: "Done",
+    accent: "#16a34a",
+    empty: "Nothing has been merged yet."
+  }
+};
 
 type HealthResponse = {
   ok: true;
@@ -104,6 +132,14 @@ type ActionItem = {
   actionLabel: string;
 };
 
+function isStoppableSessionStatus(
+  status: ExecutionSession["status"]
+): status is (typeof stoppableSessionStatuses)[number] {
+  return stoppableSessionStatuses.includes(
+    status as (typeof stoppableSessionStatuses)[number]
+  );
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -115,6 +151,10 @@ function slugify(value: string): string {
 function deriveRepositoryName(path: string, fallback: string): string {
   const segments = path.split("/").filter(Boolean);
   return segments.at(-1) ?? (slugify(fallback) || "repo");
+}
+
+function deriveWorkingBranchPreview(ticket: TicketFrontmatter): string {
+  return `codex/ticket-${ticket.id}-${slugify(ticket.title).slice(0, 24)}`;
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -181,9 +221,112 @@ function upsertById<T extends { id: string | number }>(items: T[], nextItem: T):
   return items.map((item, index) => (index === existingIndex ? nextItem : item));
 }
 
+function ticketStatusColor(status: TicketFrontmatter["status"]): string {
+  switch (status) {
+    case "ready":
+      return "blue";
+    case "in_progress":
+      return "orange";
+    case "review":
+      return "violet";
+    case "done":
+      return "green";
+    default:
+      return "gray";
+  }
+}
+
+function sessionStatusColor(status: ExecutionSession["status"]): string {
+  switch (status) {
+    case "running":
+      return "orange";
+    case "completed":
+      return "green";
+    case "paused_user_control":
+    case "paused_checkpoint":
+    case "awaiting_input":
+      return "yellow";
+    case "failed":
+      return "red";
+    case "interrupted":
+      return "gray";
+    default:
+      return "blue";
+  }
+}
+
+function normalizeText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function draftMatchesSearch(draft: DraftTicketState, needle: string): boolean {
+  if (needle.length === 0) {
+    return true;
+  }
+
+  return [
+    draft.title_draft,
+    draft.description_draft,
+    draft.proposed_ticket_type ?? "",
+    ...draft.proposed_acceptance_criteria
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
+}
+
+function ticketMatchesSearch(ticket: TicketFrontmatter, needle: string): boolean {
+  if (needle.length === 0) {
+    return true;
+  }
+
+  return [
+    String(ticket.id),
+    ticket.title,
+    ticket.description,
+    ticket.ticket_type,
+    ticket.target_branch,
+    ticket.working_branch ?? "",
+    ...ticket.acceptance_criteria
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
+}
+
+function focusElementById(id: string): void {
+  const element = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+  if (!element) {
+    return;
+  }
+
+  element.scrollIntoView({ behavior: "smooth", block: "center" });
+  element.focus();
+}
+
+function ColorSchemeControl() {
+  const { colorScheme, setColorScheme } = useMantineColorScheme();
+
+  return (
+    <SegmentedControl
+      size="xs"
+      radius="xl"
+      value={colorScheme}
+      onChange={(value) => setColorScheme(value as "auto" | "light" | "dark")}
+      data={[
+        { label: "System", value: "auto" },
+        { label: "Light", value: "light" },
+        { label: "Dark", value: "dark" }
+      ]}
+    />
+  );
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
@@ -193,6 +336,8 @@ export function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
+  const [terminalCommand, setTerminalCommand] = useState("");
+  const [boardSearch, setBoardSearch] = useState("");
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -256,6 +401,10 @@ export function App() {
   }, [projectsQuery.data?.projects, selectedProjectId]);
 
   useEffect(() => {
+    if (selectedDraftId !== null) {
+      return;
+    }
+
     if (selectedSessionId === null) {
       setSelectedSessionId(inferredSessionId);
       return;
@@ -267,7 +416,19 @@ export function App() {
     if (!stillExists) {
       setSelectedSessionId(inferredSessionId);
     }
-  }, [inferredSessionId, selectedSessionId, ticketsQuery.data?.tickets]);
+  }, [inferredSessionId, selectedDraftId, selectedSessionId, ticketsQuery.data?.tickets]);
+
+  useEffect(() => {
+    if (selectedDraftId === null) {
+      return;
+    }
+
+    const stillExists =
+      draftsQuery.data?.drafts.some((draft) => draft.id === selectedDraftId) ?? false;
+    if (!stillExists) {
+      setSelectedDraftId(null);
+    }
+  }, [draftsQuery.data?.drafts, selectedDraftId]);
 
   useEffect(() => {
     const socket = new WebSocket(websocketUrl);
@@ -299,6 +460,26 @@ export function App() {
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "drafts"]
         });
+        return;
+      }
+
+      if (event.event_type === "draft.deleted") {
+        const draftId = event.payload.draft_id as string | undefined;
+        const projectId = event.payload.project_id as string | undefined;
+        if (!draftId || !projectId) {
+          return;
+        }
+
+        queryClient.setQueryData<DraftsResponse>(
+          ["projects", projectId, "drafts"],
+          (previous) => ({
+            drafts: (previous?.drafts ?? []).filter((draft) => draft.id !== draftId)
+          })
+        );
+
+        if (selectedDraftId === draftId) {
+          setSelectedDraftId(null);
+        }
         return;
       }
 
@@ -420,7 +601,7 @@ export function App() {
     return () => {
       socket.close();
     };
-  }, [queryClient, selectedProjectId]);
+  }, [queryClient, selectedDraftId, selectedProjectId, selectedSessionId]);
 
   const sessionQuery = useQuery({
     queryKey: ["sessions", selectedSessionId],
@@ -472,6 +653,7 @@ export function App() {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       const nextProjectId = ack.resource_refs.project_id ?? null;
       setSelectedProjectId(nextProjectId);
+      setProjectModalOpen(false);
       setProjectName("");
       setRepositoryPath("");
       setDefaultBranch("main");
@@ -533,6 +715,8 @@ export function App() {
         return;
       }
 
+      setSelectedDraftId(null);
+
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "drafts"]
@@ -544,10 +728,26 @@ export function App() {
     }
   });
 
+  const deleteDraftMutation = useMutation({
+    mutationFn: (draftId: string) =>
+      postJson<CommandAck>(`/drafts/${draftId}/delete`, {}),
+    onSuccess: async (_, draftId) => {
+      if (selectedDraftId === draftId) {
+        setSelectedDraftId(null);
+      }
+
+      if (selectedProjectId) {
+        await queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        });
+      }
+    }
+  });
+
   const startTicketMutation = useMutation({
-    mutationFn: (ticketId: number) =>
-      postJson<CommandAck>(`/tickets/${ticketId}/start`, {
-        planning_enabled: false
+    mutationFn: (input: { ticketId: number; planningEnabled: boolean }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/start`, {
+        planning_enabled: input.planningEnabled
       }),
     onSuccess: async (ack) => {
       if (!selectedProjectId) {
@@ -632,6 +832,61 @@ export function App() {
     }
   });
 
+  const terminalInputMutation = useMutation({
+    mutationFn: (input: { sessionId: string; body: string }) =>
+      postJson<CommandAck>(`/sessions/${input.sessionId}/input`, {
+        body: input.body
+      }),
+    onSuccess: async (_, variables) => {
+      setTerminalCommand("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", variables.sessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", variables.sessionId, "logs"]
+        })
+      ]);
+    }
+  });
+
+  const terminalTakeoverMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      postJson<CommandAck>(`/sessions/${sessionId}/terminal/takeover`, {}),
+    onSuccess: async (_, sessionId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", sessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", sessionId, "logs"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        })
+      ]);
+    }
+  });
+
+  const terminalRestoreMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      postJson<CommandAck>(`/sessions/${sessionId}/terminal/restore-agent`, {}),
+    onSuccess: async (_, sessionId) => {
+      setTerminalCommand("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", sessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", sessionId, "logs"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        })
+      ]);
+    }
+  });
+
   const mergeTicketMutation = useMutation({
     mutationFn: (ticketId: number) => postJson<CommandAck>(`/tickets/${ticketId}/merge`, {}),
     onSuccess: async (_, ticketId) => {
@@ -700,7 +955,15 @@ export function App() {
   const selectedProject =
     projectsQuery.data?.projects.find((project) => project.id === selectedProjectId) ?? null;
   const repositories = repositoriesQuery.data?.repositories ?? [];
+  const selectedRepository = repositories[0] ?? null;
   const drafts = draftsQuery.data?.drafts ?? [];
+  const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
+  const selectedDraftRepository =
+    selectedDraft === null
+      ? null
+      : repositories.find(
+          (item) => item.id === (selectedDraft.confirmed_repo_id ?? selectedDraft.proposed_repo_id)
+        ) ?? selectedRepository;
   const tickets = ticketsQuery.data?.tickets ?? [];
   const session = sessionQuery.data?.session ?? null;
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
@@ -714,6 +977,10 @@ export function App() {
       .map((item) => [item.id, item])
   );
 
+  const searchNeedle = normalizeText(boardSearch);
+  const visibleDrafts = drafts.filter((draft) => draftMatchesSearch(draft, searchNeedle));
+  const visibleTickets = tickets.filter((ticket) => ticketMatchesSearch(ticket, searchNeedle));
+
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
     ready: [] as TicketFrontmatter[],
@@ -722,7 +989,7 @@ export function App() {
     done: [] as TicketFrontmatter[]
   };
 
-  for (const ticket of tickets) {
+  for (const ticket of visibleTickets) {
     groupedTickets[ticket.status].push(ticket);
   }
 
@@ -734,7 +1001,7 @@ export function App() {
       return [
         {
           key: `review-${ticket.id}`,
-          color: "blue" as const,
+          color: "blue",
           title: `Review ready for ticket #${ticket.id}`,
           message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
           sessionId: ticket.session_id,
@@ -752,15 +1019,19 @@ export function App() {
       const label =
         sessionForTicket.status === "failed"
           ? `Execution failed for ticket #${ticket.id}`
-          : `Input needed for ticket #${ticket.id}`;
+          : sessionForTicket.status === "paused_user_control"
+            ? `Manual terminal active for ticket #${ticket.id}`
+            : `Input needed for ticket #${ticket.id}`;
       const message =
         sessionForTicket.last_summary ??
-        `${ticket.title} needs your attention before the next attempt can continue.`;
+        (sessionForTicket.status === "paused_user_control"
+          ? `${ticket.title} is in direct terminal mode on its worktree.`
+          : `${ticket.title} needs your attention before the next attempt can continue.`);
 
       return [
         {
           key: `session-${ticket.id}`,
-          color: "yellow" as const,
+          color: "yellow",
           title: label,
           message,
           sessionId: sessionForTicket.id,
@@ -777,254 +1048,493 @@ export function App() {
       ? sessionById.get(selectedSessionTicket.session_id) ?? session
       : session;
 
+  const boardLoading =
+    (selectedProjectId !== null && draftsQuery.isPending) ||
+    (selectedProjectId !== null && ticketsQuery.isPending);
+  const boardError = draftsQuery.isError
+    ? draftsQuery.error.message
+    : ticketsQuery.isError
+      ? ticketsQuery.error.message
+      : null;
+
+  const activeSessionCount = tickets.filter((ticket) => ticket.status === "in_progress").length;
+  const reviewCount = tickets.filter((ticket) => ticket.status === "review").length;
+
+  const deleteTicket = (ticket: TicketFrontmatter): void => {
+    const confirmed = window.confirm(
+      `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    deleteTicketMutation.mutate({
+      ticketId: ticket.id,
+      sessionId: ticket.session_id
+    });
+  };
+
+  const openTicketSession = (ticket: TicketFrontmatter): void => {
+    if (!ticket.session_id) {
+      return;
+    }
+
+    setSelectedDraftId(null);
+    setSelectedSessionId(ticket.session_id);
+  };
+
+  const openDraft = (draftId: string): void => {
+    setSelectedSessionId(null);
+    setSelectedDraftId(draftId);
+  };
+
+  const renderTicketMenu = (ticket: TicketFrontmatter) => (
+    <Menu withinPortal position="bottom-end">
+      <Menu.Target>
+        <ActionIcon
+          aria-label={`More actions for ticket ${ticket.id}`}
+          color="gray"
+          variant="subtle"
+          onClick={(event) => event.stopPropagation()}
+        >
+          ...
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown onClick={(event) => event.stopPropagation()}>
+        <Menu.Item
+          color="red"
+          onClick={(event) => {
+            event.stopPropagation();
+            deleteTicket(ticket);
+          }}
+        >
+          Delete
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+
   return (
-    <Container size="xl" py="xl">
-      <Stack gap="xl">
-        <Stack gap="xs">
-          <Group justify="space-between" align="center">
-            <Title order={1}>Orchestrator MVP Workbench</Title>
-            <Badge color={healthQuery.data?.ok ? "green" : "gray"} variant="light">
-              {healthQuery.data?.ok ? "Backend reachable" : "Backend pending"}
-            </Badge>
-          </Group>
-          <Text c="dimmed" maw={900}>
-            This build now covers the first usable local workflow: configure a project,
-            create a draft ticket, refine it into an execution-ready shape, and place
-            the resulting ticket on the board. Starting a ticket now launches a real
-            Codex exec run in its prepared worktree and moves successful runs into
-            local review. Review approval can now merge the branch back into the target
-            branch and clean up local artifacts. Review feedback and failed runs can now
-            relaunch the same logical session as a new attempt. In-progress tickets can now
-            be stopped without losing their branch or worktree, and tickets can be deleted
-            with cleanup of orchestrator-managed local artifacts. The session panel now
-            summarizes Codex activity instead of exposing the raw transcript, and backend
-            restarts now recover active sessions into an explicit interrupted state. A
-            separate project terminal remains a future milestone.
-          </Text>
-        </Stack>
-
-        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
-          <SectionCard
-            title="Backend Status"
-            description="The local backend is the authority for projects, drafts, tickets, and future session orchestration."
-          >
-            {healthQuery.isPending ? (
-              <Loader size="sm" />
-            ) : healthQuery.isError ? (
-              <Text c="red" size="sm">
-                {healthQuery.error.message}
-              </Text>
-            ) : (
-              <List spacing="xs" size="sm">
-                <List.Item>
-                  Service: <Code>{healthQuery.data.service}</Code>
-                </List.Item>
-                <List.Item>
-                  Timestamp: <Code>{healthQuery.data.timestamp}</Code>
-                </List.Item>
-                <List.Item>
-                  API base URL: <Code>{apiBaseUrl}</Code>
-                </List.Item>
-                <List.Item>Persistence: local SQLite-backed store</List.Item>
-              </List>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="Current Slice"
-            description="This is the thin vertical slice that is working now."
-          >
-              <List spacing="xs" size="sm">
-                <List.Item>Manual project setup with one repository and target branch</List.Item>
-                <List.Item>Persisted draft ticket creation</List.Item>
-                <List.Item>Refinement pass that generates acceptance criteria</List.Item>
-                <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
-                <List.Item>Prepared git worktrees per started ticket</List.Item>
-                <List.Item>Real Codex exec runs with streaming session logs</List.Item>
-                <List.Item>Configurable validation commands that gate review handoff</List.Item>
-                <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
-                <List.Item>Request changes and resume flows that reuse the same session</List.Item>
-                <List.Item>Stop action that preserves the current worktree and branch for resume</List.Item>
-                <List.Item>Delete action that removes ticket metadata and local orchestrator artifacts</List.Item>
-                <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
-                <List.Item>Interpreted session activity feed instead of raw Codex transcript output</List.Item>
-                <List.Item>Conservative restart recovery that preserves interrupted sessions</List.Item>
-                <List.Item>WebSocket-driven updates for the board, session, and review cache</List.Item>
-                <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
-              </List>
-          </SectionCard>
-        </SimpleGrid>
-
-        {actionItems.length > 0 ? (
-          <SectionCard
-            title="Action Required"
-            description="These tickets need a review decision or user input before the workflow can move forward."
-          >
-            <Stack gap="sm">
-              {actionItems.map((item) => (
-                <Alert key={item.key} color={item.color} title={item.title}>
-                  <Stack gap="xs">
-                    <Text size="sm">{item.message}</Text>
-                    <Group justify="flex-end">
-                      <Button variant="light" onClick={() => setSelectedSessionId(item.sessionId)}>
-                        {item.actionLabel}
-                      </Button>
-                    </Group>
-                  </Stack>
-                </Alert>
-              ))}
-            </Stack>
-          </SectionCard>
-        ) : null}
-
-        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
-          <SectionCard
-            title="Create Project"
-            description="Projects anchor repositories, drafts, and tickets. The MVP still assumes one repository per ticket."
-          >
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                createProjectMutation.mutate({
-                  name: projectName,
-                  repositoryPath,
-                  defaultTargetBranch: defaultBranch,
-                  validationCommands: validationCommandsText
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                });
-              }}
-            >
-              <Stack gap="sm">
-                <TextInput
-                  id="project-name"
-                  name="projectName"
-                  label="Project name"
-                  placeholder="receipt-designer"
-                  value={projectName}
-                  onChange={(event) => setProjectName(event.currentTarget.value)}
-                  required
-                />
-                <TextInput
-                  id="repository-path"
-                  name="repositoryPath"
-                  label="Repository path"
-                  placeholder="/home/nikolai/git/receipt-designer"
-                  value={repositoryPath}
-                  onChange={(event) => setRepositoryPath(event.currentTarget.value)}
-                  required
-                />
-                <TextInput
-                  id="default-target-branch"
-                  name="defaultTargetBranch"
-                  label="Default target branch"
-                  placeholder="main"
-                  value={defaultBranch}
-                  onChange={(event) => setDefaultBranch(event.currentTarget.value)}
-                  required
-                />
-                <Textarea
-                  id="validation-commands"
-                  name="validationCommands"
-                  label="Validation commands"
-                  placeholder={"npm run test\nnpm run lint"}
-                  description="Optional. One shell command per line. Required commands block review if they fail."
-                  value={validationCommandsText}
-                  onChange={(event) => setValidationCommandsText(event.currentTarget.value)}
-                  minRows={3}
-                />
-                {createProjectMutation.isError ? (
-                  <Text size="sm" c="red">
-                    {createProjectMutation.error.message}
-                  </Text>
-                ) : null}
-                <Group justify="space-between" align="center">
-                  <Text size="sm" c="dimmed">
-                    Slug preview: <Code>{slugify(projectName || "project-name")}</Code>
-                  </Text>
-                  <Button type="submit" loading={createProjectMutation.isPending}>
-                    Add Project
-                  </Button>
-                </Group>
-              </Stack>
-            </form>
-          </SectionCard>
-
-          <SectionCard
-            title="Projects"
-            description="Select a project to work on its drafts and tickets."
-          >
-            {projectsQuery.isPending ? (
-              <Loader size="sm" />
-            ) : projectsQuery.isError ? (
-              <Text c="red" size="sm">
-                {projectsQuery.error.message}
-              </Text>
-            ) : projectsQuery.data.projects.length === 0 ? (
-              <Text size="sm" c="dimmed">
-                No projects are configured yet.
-              </Text>
-            ) : (
-              <Stack gap="sm">
-                {projectsQuery.data.projects.map((project) => (
-                  <Button
-                    key={project.id}
-                    variant={selectedProjectId === project.id ? "filled" : "light"}
-                    justify="space-between"
-                    onClick={() => setSelectedProjectId(project.id)}
-                  >
-                    <span>{project.name}</span>
-                    <Code>{project.default_target_branch ?? "no branch"}</Code>
-                  </Button>
-                ))}
-              </Stack>
-            )}
-          </SectionCard>
-        </SimpleGrid>
-
-        {selectedProject ? (
-          <>
+    <Box className="orchestrator-shell">
+      <Box className="orchestrator-layout">
+        <Box className="orchestrator-rail">
+          <Stack gap="md">
             <SectionCard
-              title="Selected Project"
-              description="This is the current execution context for drafts and tickets."
+              title="Projects"
+              description="Switch the current board context and keep the left rail focused on project-level setup."
             >
-              <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
-                <Stack gap={4}>
-                  <Text fw={600}>Project</Text>
-                  <Text>{selectedProject.name}</Text>
-                  <Text c="dimmed" size="sm">
-                    <Code>{selectedProject.slug}</Code>
-                  </Text>
+              {projectsQuery.isPending ? (
+                <Loader size="sm" />
+              ) : projectsQuery.isError ? (
+                <Text c="red" size="sm">
+                  {projectsQuery.error.message}
+                </Text>
+              ) : projectsQuery.data.projects.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  No projects yet. Create the first one below.
+                </Text>
+              ) : (
+                <Stack gap="xs">
+                  {projectsQuery.data.projects.map((project) => (
+                    <Button
+                      key={project.id}
+                      className="project-nav-button"
+                      data-selected={selectedProjectId === project.id ? "true" : "false"}
+                      variant={selectedProjectId === project.id ? "filled" : "subtle"}
+                      justify="space-between"
+                      onClick={() => setSelectedProjectId(project.id)}
+                    >
+                      <span>{project.name}</span>
+                      <Code>{project.default_target_branch ?? "main"}</Code>
+                    </Button>
+                  ))}
+                  <Button variant="light" onClick={() => setProjectModalOpen(true)}>
+                    Create Project
+                  </Button>
                 </Stack>
-                <Stack gap={4}>
-                  <Text fw={600}>Repository</Text>
-                  <Text>{repositories[0]?.name ?? "Loading repository..."}</Text>
-                  <Text c="dimmed" size="sm">
-                    <Code>{repositories[0]?.path ?? "No repository configured"}</Code>
-                  </Text>
-                </Stack>
-                <Stack gap={4}>
-                  <Text fw={600}>Target branch</Text>
-                  <Text>{repositories[0]?.target_branch ?? selectedProject.default_target_branch}</Text>
-                  <Text c="dimmed" size="sm">
-                    One running session globally is still the intended MVP ceiling.
-                  </Text>
-                </Stack>
-                <Stack gap={4}>
-                  <Text fw={600}>Validation</Text>
-                  <Text>{repositories[0]?.validation_profile.length ?? 0} configured command(s)</Text>
-                  <Text c="dimmed" size="sm">
-                    Validation runs after Codex finishes and before review handoff.
-                  </Text>
-                </Stack>
-              </SimpleGrid>
+              )}
             </SectionCard>
 
-            <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+            {actionItems.length > 0 ? (
               <SectionCard
-                title="Create Draft Ticket"
-                description="Start with the title and user-facing intent, then refine before execution."
+                title="Inbox"
+                description="Sessions that need a decision or direct intervention stay visible here."
+              >
+                <Stack gap="xs">
+                  {actionItems.map((item) => (
+                    <Box key={item.key} className="inbox-item" data-tone={item.color}>
+                      <Stack gap={6}>
+                        <Text fw={700} size="sm">
+                          {item.title}
+                        </Text>
+                        <Text size="sm" c="dimmed">
+                          {item.message}
+                        </Text>
+                        <Group justify="flex-end">
+                          <Button
+                            variant="light"
+                            size="xs"
+                            onClick={() => {
+                              setSelectedDraftId(null);
+                              setSelectedSessionId(item.sessionId);
+                            }}
+                          >
+                            {item.actionLabel}
+                          </Button>
+                        </Group>
+                      </Stack>
+                    </Box>
+                  ))}
+                </Stack>
+              </SectionCard>
+            ) : null}
+
+          </Stack>
+        </Box>
+
+        <Box className="orchestrator-main">
+          <Stack gap="md">
+            <Box className="workbench-header">
+              <Group justify="space-between" align="flex-start">
+                <Stack gap={6}>
+                  <Text className="rail-kicker">Project board</Text>
+                  <Title order={1} style={{ letterSpacing: "-0.05em" }}>
+                    {selectedProject ? selectedProject.name : "Select a project"}
+                  </Title>
+                  <Text size="sm" c="dimmed" maw={820}>
+                    {selectedProject
+                      ? `${selectedRepository?.name ?? "Repository pending"} • ${selectedRepository?.target_branch ?? selectedProject.default_target_branch ?? "main"} • ${selectedRepository?.validation_profile.length ?? 0} validation command(s)`
+                      : "Choose a project from the left rail to bring its drafts, tickets, and sessions into the board."}
+                  </Text>
+                </Stack>
+                <Group gap="xs">
+                  <ColorSchemeControl />
+                  <Badge variant="light" color="green">
+                    {healthQuery.data?.service ?? "backend"}
+                  </Badge>
+                  <Badge variant="outline">{activeSessionCount} running</Badge>
+                  <Badge variant="outline">{reviewCount} in review</Badge>
+                </Group>
+              </Group>
+            </Box>
+
+            <Box className="workbench-toolbar">
+              <Box className="toolbar-group">
+                {boardColumns.map((column) => {
+                  const count = column === "draft" ? visibleDrafts.length : groupedTickets[column].length;
+                  const meta = boardColumnMeta[column];
+                  return (
+                    <Badge
+                      key={column}
+                      variant="light"
+                      size="lg"
+                      style={{
+                        background: `${meta.accent}14`,
+                        color: meta.accent,
+                        border: `1px solid ${meta.accent}22`
+                      }}
+                    >
+                      {meta.label} {count}
+                    </Badge>
+                  );
+                })}
+              </Box>
+              <Box className="toolbar-group">
+                <TextInput
+                  className="board-search"
+                  placeholder="Search tickets and drafts..."
+                  value={boardSearch}
+                  onChange={(event) => setBoardSearch(event.currentTarget.value)}
+                />
+                <Button disabled={!selectedProject} onClick={() => focusElementById("draft-title")}>
+                  New Draft
+                </Button>
+              </Box>
+            </Box>
+
+            {!selectedProject ? (
+              <SectionCard
+                title="Nothing selected"
+                description="The board shell is ready. Pick a project from the left rail or create a new one to start using it."
+              >
+                <Text size="sm" c="dimmed">
+                  Projects anchor repositories, drafts, tickets, and execution sessions. Once a
+                  project is selected, the middle canvas becomes the working board and the right
+                  panel becomes the live inspector.
+                </Text>
+              </SectionCard>
+            ) : boardLoading ? (
+              <SectionCard
+                title="Loading board"
+                description="Fetching drafts, tickets, and session summaries for the selected project."
+              >
+                <Loader size="sm" />
+              </SectionCard>
+            ) : boardError ? (
+              <SectionCard
+                title="Board unavailable"
+                description="The selected project could not be loaded into the board."
+              >
+                <Text c="red" size="sm">
+                  {boardError}
+                </Text>
+              </SectionCard>
+            ) : (
+              <Box className="board-scroller">
+                <Box className="board-grid">
+                  {boardColumns.map((column) => {
+                    const meta = boardColumnMeta[column];
+                    const columnCount =
+                      column === "draft" ? visibleDrafts.length : groupedTickets[column].length;
+
+                    return (
+                      <Box key={column} className="board-column">
+                        <Box className="board-column-header">
+                          <Box className="board-column-title">
+                            <Box
+                              className="board-column-dot"
+                              style={{ background: meta.accent }}
+                            />
+                            <Text fw={700}>{meta.label}</Text>
+                          </Box>
+                          <Group gap="xs">
+                            <Badge variant="outline">{columnCount}</Badge>
+                            {column === "draft" ? (
+                              <Button
+                                variant="subtle"
+                                size="xs"
+                                onClick={() => focusElementById("draft-title")}
+                              >
+                                New
+                              </Button>
+                            ) : null}
+                          </Group>
+                        </Box>
+
+                        <Box className="board-column-stack">
+                          {column === "draft" ? (
+                            visibleDrafts.length === 0 ? (
+                              <Box className="board-empty">{meta.empty}</Box>
+                            ) : (
+                              visibleDrafts.map((draft) => {
+                                const repository =
+                                  repositories.find(
+                                    (item) =>
+                                      item.id === (draft.confirmed_repo_id ?? draft.proposed_repo_id)
+                                  ) ?? selectedRepository;
+                                const isSelected = draft.id === selectedDraftId;
+
+                                return (
+                                  <Box
+                                    key={draft.id}
+                                    className={`board-card board-card-clickable${isSelected ? " board-card-selected" : ""}`}
+                                    onClick={() => openDraft(draft.id)}
+                                  >
+                                    <Stack gap="xs">
+                                      <Group justify="space-between" align="flex-start">
+                                        <Text fw={700} style={{ lineHeight: 1.35 }}>
+                                          {draft.title_draft}
+                                        </Text>
+                                        <Badge variant="light" color="gray">
+                                          {draft.wizard_status.replace(/_/g, " ")}
+                                        </Badge>
+                                      </Group>
+                                      <Text size="sm" c="dimmed">
+                                        {draft.description_draft}
+                                      </Text>
+                                      <Text className="board-card-meta">
+                                        Repository: {repository?.name ?? "unassigned"}
+                                      </Text>
+                                      <Text className="board-card-meta">
+                                        {draft.proposed_acceptance_criteria.length > 0
+                                          ? `${draft.proposed_acceptance_criteria.length} acceptance criteria ready`
+                                          : "Run refinement to generate acceptance criteria"}
+                                      </Text>
+                                    </Stack>
+                                  </Box>
+                                );
+                              })
+                            )
+                          ) : groupedTickets[column].length === 0 ? (
+                            <Box className="board-empty">{meta.empty}</Box>
+                          ) : (
+                            groupedTickets[column].map((ticket) => {
+                              const ticketSession =
+                                ticket.session_id !== null
+                                  ? sessionById.get(ticket.session_id) ?? null
+                                  : null;
+                              const canStop =
+                                ticket.status === "in_progress" &&
+                                ticketSession !== null &&
+                                isStoppableSessionStatus(ticketSession.status);
+                              const isSelected =
+                                ticket.session_id !== null && ticket.session_id === selectedSessionId;
+                              const showDeleteError =
+                                deleteTicketMutation.isError &&
+                                deleteTicketMutation.variables?.ticketId === ticket.id;
+                              const showStopError =
+                                stopTicketMutation.isError &&
+                                stopTicketMutation.variables?.ticketId === ticket.id;
+                              const showMergeError =
+                                mergeTicketMutation.isError &&
+                                mergeTicketMutation.variables === ticket.id;
+                              const showStartPlanError =
+                                startTicketMutation.isError &&
+                                startTicketMutation.variables?.ticketId === ticket.id &&
+                                startTicketMutation.variables.planningEnabled;
+                              const showStartNowError =
+                                startTicketMutation.isError &&
+                                startTicketMutation.variables?.ticketId === ticket.id &&
+                                !startTicketMutation.variables.planningEnabled;
+
+                                return (
+                                  <Box
+                                    key={ticket.id}
+                                    className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
+                                    onClick={() => openTicketSession(ticket)}
+                                  >
+                                    <Stack gap="xs">
+                                      <Group justify="space-between" align="flex-start">
+                                        <Stack gap={2}>
+                                          <Text fw={700} style={{ lineHeight: 1.35 }}>
+                                          #{ticket.id} {ticket.title}
+                                        </Text>
+                                        <Text className="board-card-meta">
+                                            {ticket.ticket_type} • {ticket.target_branch}
+                                          </Text>
+                                        </Stack>
+                                        <Group gap={6} align="center">
+                                          <Badge variant="light" color={ticketStatusColor(ticket.status)}>
+                                            {humanizeTicketStatus(ticket.status)}
+                                          </Badge>
+                                          {renderTicketMenu(ticket)}
+                                        </Group>
+                                      </Group>
+                                    <Text size="sm" c="dimmed">
+                                      {ticket.description}
+                                    </Text>
+
+                                    {showDeleteError ? (
+                                      <Text size="sm" c="red">
+                                        {deleteTicketMutation.error.message}
+                                      </Text>
+                                    ) : null}
+                                    {showStopError ? (
+                                      <Text size="sm" c="red">
+                                        {stopTicketMutation.error?.message}
+                                      </Text>
+                                    ) : null}
+                                    {showMergeError ? (
+                                      <Text size="sm" c="red">
+                                        {mergeTicketMutation.error.message}
+                                      </Text>
+                                    ) : null}
+                                    {showStartPlanError || showStartNowError ? (
+                                      <Text size="sm" c="red">
+                                        {startTicketMutation.error.message}
+                                      </Text>
+                                    ) : null}
+
+                                    {column === "ready" ? (
+                                      <Group justify="flex-end" align="flex-end" gap="xs">
+                                        <Group gap="xs">
+                                          <Button
+                                            variant="light"
+                                            size="xs"
+                                            loading={
+                                              startTicketMutation.isPending &&
+                                              startTicketMutation.variables?.ticketId === ticket.id &&
+                                              startTicketMutation.variables.planningEnabled
+                                            }
+                                            onClick={() =>
+                                              startTicketMutation.mutate({
+                                                ticketId: ticket.id,
+                                                planningEnabled: true
+                                              })
+                                            }
+                                          >
+                                            Start with Plan
+                                          </Button>
+                                          <Button
+                                            size="xs"
+                                            loading={
+                                              startTicketMutation.isPending &&
+                                              startTicketMutation.variables?.ticketId === ticket.id &&
+                                              !startTicketMutation.variables.planningEnabled
+                                            }
+                                            onClick={() =>
+                                              startTicketMutation.mutate({
+                                                ticketId: ticket.id,
+                                                planningEnabled: false
+                                              })
+                                            }
+                                          >
+                                            Start Now
+                                          </Button>
+                                        </Group>
+                                      </Group>
+                                    ) : column === "review" ? (
+                                      <Group justify="flex-end" gap="xs">
+                                        <Button
+                                          size="xs"
+                                          loading={
+                                            mergeTicketMutation.isPending &&
+                                            mergeTicketMutation.variables === ticket.id
+                                          }
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            mergeTicketMutation.mutate(ticket.id);
+                                          }}
+                                        >
+                                          Merge
+                                        </Button>
+                                      </Group>
+                                    ) : ticket.session_id ? (
+                                      <Group justify="flex-end" gap="xs">
+                                        {canStop ? (
+                                          <Button
+                                            color="orange"
+                                            variant="light"
+                                            size="xs"
+                                            loading={
+                                              stopTicketMutation.isPending &&
+                                              stopTicketMutation.variables?.ticketId === ticket.id
+                                            }
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              stopTicketMutation.mutate({
+                                                ticketId: ticket.id
+                                              });
+                                            }}
+                                          >
+                                            Stop
+                                          </Button>
+                                        ) : null}
+                                      </Group>
+                                    ) : (
+                                      <></>
+                                    )}
+                                  </Stack>
+                                </Box>
+                              );
+                            })
+                          )}
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
+            )}
+          </Stack>
+        </Box>
+
+        <Box className="orchestrator-detail">
+          <Stack gap="md">
+            {selectedProject ? (
+              <SectionCard
+                title="New draft"
+                description="Capture the next task quickly, then promote it straight from the draft column."
               >
                 <form
                   onSubmit={(event) => {
@@ -1061,7 +1571,10 @@ export function App() {
                         {createDraftMutation.error.message}
                       </Text>
                     ) : null}
-                    <Group justify="flex-end">
+                    <Group justify="space-between" align="center">
+                      <Text size="sm" c="dimmed">
+                        Drafts stay on the board until they are refined and confirmed.
+                      </Text>
                       <Button type="submit" loading={createDraftMutation.isPending}>
                         Save Draft
                       </Button>
@@ -1069,110 +1582,166 @@ export function App() {
                   </Stack>
                 </form>
               </SectionCard>
+            ) : null}
 
+            {selectedDraft ? (
               <SectionCard
-                title="Draft Refinement"
-                description="Refinement turns a raw draft into a ticket with clearer wording and acceptance criteria."
+                title="Draft inspector"
+                description="Refine, promote, or delete the selected draft from the right-hand panel instead of from the board card."
               >
-                {draftsQuery.isPending ? (
-                  <Loader size="sm" />
-                ) : draftsQuery.isError ? (
-                  <Text c="red" size="sm">
-                    {draftsQuery.error.message}
-                  </Text>
-                ) : drafts.length === 0 ? (
+                <Stack gap="md">
+                  <Group justify="space-between" align="flex-start">
+                    <Stack gap={4}>
+                      <Text className="rail-kicker">Draft</Text>
+                      <Text fw={700}>{selectedDraft.title_draft}</Text>
+                    </Stack>
+                    <Badge variant="light" color="gray">
+                      {selectedDraft.wizard_status.replace(/_/g, " ")}
+                    </Badge>
+                  </Group>
+
                   <Text size="sm" c="dimmed">
-                    No open drafts for this project yet.
+                    {selectedDraft.description_draft}
                   </Text>
-                ) : (
-                  <Stack gap="md">
-                    {drafts.map((draft) => {
-                      const repository =
-                        repositories.find(
-                          (item) =>
-                            item.id === (draft.confirmed_repo_id ?? draft.proposed_repo_id)
-                        ) ?? repositories[0];
 
-                      return (
-                        <Stack key={draft.id} gap="xs">
-                          <Group justify="space-between" align="center">
-                            <Text fw={600}>{draft.title_draft}</Text>
-                            <Badge variant="light">{draft.wizard_status}</Badge>
-                          </Group>
-                          <Text size="sm" c="dimmed">
-                            {draft.description_draft}
-                          </Text>
-                          <Text size="sm">
-                            Repository: <Code>{repository?.name ?? "unassigned"}</Code>
-                          </Text>
-                          {draft.proposed_acceptance_criteria.length > 0 ? (
-                            <List size="sm" spacing={4}>
-                              {draft.proposed_acceptance_criteria.map((criterion) => (
-                                <List.Item key={criterion}>{criterion}</List.Item>
-                              ))}
-                            </List>
-                          ) : (
-                            <Text size="sm" c="dimmed">
-                              Run refinement to generate acceptance criteria and readiness guidance.
-                            </Text>
-                          )}
-                          {refineDraftMutation.isError ? (
-                            <Text size="sm" c="red">
-                              {refineDraftMutation.error.message}
-                            </Text>
-                          ) : null}
-                          {confirmDraftMutation.isError ? (
-                            <Text size="sm" c="red">
-                              {confirmDraftMutation.error.message}
-                            </Text>
-                          ) : null}
-                          <Group justify="flex-end">
-                            <Button
-                              variant="light"
-                              loading={
-                                refineDraftMutation.isPending &&
-                                refineDraftMutation.variables === draft.id
-                              }
-                              onClick={() => refineDraftMutation.mutate(draft.id)}
-                            >
-                              {draft.proposed_acceptance_criteria.length > 0
-                                ? "Refine Again"
-                                : "Run Refinement"}
-                            </Button>
-                            <Button
-                              disabled={!repository}
-                              loading={
-                                confirmDraftMutation.isPending &&
-                                confirmDraftMutation.variables?.draft.id === draft.id
-                              }
-                              onClick={() =>
-                                repository &&
-                                confirmDraftMutation.mutate({
-                                  draft,
-                                  repository,
-                                  project: selectedProject
-                                })
-                              }
-                            >
-                              Create Ready Ticket
-                            </Button>
-                          </Group>
-                        </Stack>
-                      );
-                    })}
-                  </Stack>
-                )}
+                  <Box className="detail-meta-grid">
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Repository
+                      </Text>
+                      <Text fw={700}>{selectedDraftRepository?.name ?? "Unassigned"}</Text>
+                    </Box>
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Acceptance criteria
+                      </Text>
+                      <Text fw={700}>{selectedDraft.proposed_acceptance_criteria.length}</Text>
+                    </Box>
+                  </Box>
+
+                  {selectedDraft.proposed_acceptance_criteria.length > 0 ? (
+                    <List size="sm" spacing={4}>
+                      {selectedDraft.proposed_acceptance_criteria.map((criterion) => (
+                        <List.Item key={criterion}>{criterion}</List.Item>
+                      ))}
+                    </List>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Run refinement to generate acceptance criteria before promoting the draft.
+                    </Text>
+                  )}
+
+                  {refineDraftMutation.isError &&
+                  refineDraftMutation.variables === selectedDraft.id ? (
+                    <Text size="sm" c="red">
+                      {refineDraftMutation.error.message}
+                    </Text>
+                  ) : null}
+                  {confirmDraftMutation.isError &&
+                  confirmDraftMutation.variables?.draft.id === selectedDraft.id ? (
+                    <Text size="sm" c="red">
+                      {confirmDraftMutation.error.message}
+                    </Text>
+                  ) : null}
+                  {deleteDraftMutation.isError &&
+                  deleteDraftMutation.variables === selectedDraft.id ? (
+                    <Text size="sm" c="red">
+                      {deleteDraftMutation.error.message}
+                    </Text>
+                  ) : null}
+
+                  <Group justify="space-between">
+                    <Button
+                      color="red"
+                      variant="subtle"
+                      loading={
+                        deleteDraftMutation.isPending &&
+                        deleteDraftMutation.variables === selectedDraft.id
+                      }
+                      onClick={() => deleteDraftMutation.mutate(selectedDraft.id)}
+                    >
+                      Delete Draft
+                    </Button>
+                    <Group gap="xs">
+                      <Button
+                        variant="light"
+                        loading={
+                          refineDraftMutation.isPending &&
+                          refineDraftMutation.variables === selectedDraft.id
+                        }
+                        onClick={() => refineDraftMutation.mutate(selectedDraft.id)}
+                      >
+                        {selectedDraft.proposed_acceptance_criteria.length > 0
+                          ? "Refine Again"
+                          : "Run Refinement"}
+                      </Button>
+                      <Button
+                        disabled={!selectedDraftRepository}
+                        loading={
+                          confirmDraftMutation.isPending &&
+                          confirmDraftMutation.variables?.draft.id === selectedDraft.id
+                        }
+                        onClick={() =>
+                          selectedDraftRepository &&
+                          confirmDraftMutation.mutate({
+                            draft: selectedDraft,
+                            repository: selectedDraftRepository,
+                            project: selectedProject!
+                          })
+                        }
+                      >
+                        Create Ready
+                      </Button>
+                    </Group>
+                  </Group>
+                </Stack>
               </SectionCard>
-            </SimpleGrid>
-
-            <SectionCard
-              title="Execution Session"
-              description="Starting a ready ticket now prepares a git worktree, launches Codex exec, and turns backend session output into progress updates and required actions."
-            >
-              {selectedSessionId === null ? (
-                <Text size="sm" c="dimmed">
-                  Start a ready ticket to create the first execution session for this project.
-                </Text>
+            ) : (
+              <SectionCard
+                title={selectedSessionId ? "Session inspector" : "Focus panel"}
+                description={
+                  selectedSessionId
+                    ? "Execution detail, review actions, and manual terminal control all live here."
+                    : "Select a draft, running ticket, or review ticket from the board to inspect it here."
+                }
+              >
+                {selectedSessionId === null ? (
+                <Stack gap="md">
+                  <Box className="detail-placeholder">
+                    <Stack gap={6}>
+                      <Text fw={700}>Nothing selected</Text>
+                      <Text size="sm" c="dimmed">
+                        The board is now the primary surface. Select a draft to refine it, or open
+                        a running or review ticket to load its activity feed, review package, and
+                        raw terminal transcript here.
+                      </Text>
+                    </Stack>
+                  </Box>
+                  {selectedProject ? (
+                    <Box className="detail-meta-grid">
+                      <Box className="detail-meta-card">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Repository
+                        </Text>
+                        <Text fw={700}>{selectedRepository?.name ?? "Pending"}</Text>
+                        <Text size="sm" c="dimmed">
+                          {selectedRepository?.path ?? "No repository configured"}
+                        </Text>
+                      </Box>
+                      <Box className="detail-meta-card">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Target branch
+                        </Text>
+                        <Text fw={700}>
+                          {selectedRepository?.target_branch ?? selectedProject.default_target_branch ?? "main"}
+                        </Text>
+                        <Text size="sm" c="dimmed">
+                          {selectedRepository?.validation_profile.length ?? 0} validation command(s)
+                        </Text>
+                      </Box>
+                    </Box>
+                  ) : null}
+                </Stack>
               ) : sessionQuery.isPending || sessionLogsQuery.isPending ? (
                 <Loader size="sm" />
               ) : sessionQuery.isError ? (
@@ -1181,76 +1750,95 @@ export function App() {
                 </Text>
               ) : session ? (
                 <Stack gap="md">
-                  <SimpleGrid cols={{ base: 1, md: 4 }} spacing="md">
+                  <Group justify="space-between" align="flex-start">
                     <Stack gap={4}>
-                      <Text fw={600}>Session</Text>
-                      <Code>{session.id}</Code>
-                    </Stack>
-                    <Stack gap={4}>
-                      <Text fw={600}>Ticket</Text>
-                      <Text>
+                      <Text className="rail-kicker">Execution</Text>
+                      <Text fw={700}>
                         {selectedSessionTicket
                           ? `#${selectedSessionTicket.id} ${selectedSessionTicket.title}`
-                          : `#${session.ticket_id}`}
+                          : `Ticket #${session.ticket_id}`}
                       </Text>
                     </Stack>
-                    <Stack gap={4}>
-                      <Text fw={600}>Status</Text>
-                      <Badge variant="light">{session.status}</Badge>
-                    </Stack>
-                    <Stack gap={4}>
-                      <Text fw={600}>Working branch</Text>
-                      <Code>{selectedSessionTicket?.working_branch ?? "pending"}</Code>
-                    </Stack>
-                    <Stack gap={4}>
-                      <Text fw={600}>Worktree</Text>
-                      <Code>{session.worktree_path ?? "pending"}</Code>
-                    </Stack>
-                  </SimpleGrid>
+                    <Badge variant="light" color={sessionStatusColor(session.status)}>
+                      {session.status}
+                    </Badge>
+                  </Group>
+
+                  <Box className="detail-meta-grid">
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Session
+                      </Text>
+                      <Text fw={700}>{session.id}</Text>
+                    </Box>
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Planning
+                      </Text>
+                      <Text fw={700}>{session.planning_enabled ? "Enabled" : "Disabled"}</Text>
+                    </Box>
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Branch
+                      </Text>
+                      <Text fw={700}>{selectedSessionTicket?.working_branch ?? "Pending"}</Text>
+                    </Box>
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Worktree
+                      </Text>
+                      <Text className="inline-code">{session.worktree_path ?? "Pending"}</Text>
+                    </Box>
+                  </Box>
 
                   {selectedSessionTicket ? (
                     <Group justify="space-between">
-                      {selectedSessionTicket.status === "in_progress" &&
-                      selectedSessionTicketSession &&
-                      isStoppableSessionStatus(selectedSessionTicketSession.status) ? (
-                        <Button
-                          color="orange"
-                          variant="light"
-                          loading={
-                            stopTicketMutation.isPending &&
-                            stopTicketMutation.variables?.ticketId === selectedSessionTicket.id
-                          }
-                          onClick={() =>
-                            stopTicketMutation.mutate({
-                              ticketId: selectedSessionTicket.id
-                            })
-                          }
-                        >
-                          Stop Ticket
-                        </Button>
-                      ) : (
-                        <span />
-                      )}
+                      <Group gap="xs">
+                        {selectedSessionTicket.status === "in_progress" &&
+                        session.worktree_path &&
+                        session.status !== "paused_user_control" ? (
+                          <Button
+                            variant="light"
+                            size="xs"
+                            loading={
+                              terminalTakeoverMutation.isPending &&
+                              terminalTakeoverMutation.variables === session.id
+                            }
+                            onClick={() => terminalTakeoverMutation.mutate(session.id)}
+                          >
+                            Take Over Terminal
+                          </Button>
+                        ) : null}
+                        {selectedSessionTicket.status === "in_progress" &&
+                        selectedSessionTicketSession &&
+                        isStoppableSessionStatus(selectedSessionTicketSession.status) ? (
+                          <Button
+                            color="orange"
+                            variant="light"
+                            size="xs"
+                            loading={
+                              stopTicketMutation.isPending &&
+                              stopTicketMutation.variables?.ticketId === selectedSessionTicket.id
+                            }
+                            onClick={() =>
+                              stopTicketMutation.mutate({
+                                ticketId: selectedSessionTicket.id
+                              })
+                            }
+                          >
+                            Stop Ticket
+                          </Button>
+                        ) : null}
+                      </Group>
                       <Button
                         color="red"
-                        variant="light"
+                        variant="subtle"
+                        size="xs"
                         loading={
                           deleteTicketMutation.isPending &&
                           deleteTicketMutation.variables?.ticketId === selectedSessionTicket.id
                         }
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            `Delete ticket #${selectedSessionTicket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
-                          );
-                          if (!confirmed) {
-                            return;
-                          }
-
-                          deleteTicketMutation.mutate({
-                            ticketId: selectedSessionTicket.id,
-                            sessionId: selectedSessionTicket.session_id
-                          });
-                        }}
+                        onClick={() => deleteTicket(selectedSessionTicket)}
                       >
                         Delete Ticket
                       </Button>
@@ -1260,6 +1848,11 @@ export function App() {
                   {stopTicketMutation.isError ? (
                     <Text size="sm" c="red">
                       {stopTicketMutation.error.message}
+                    </Text>
+                  ) : null}
+                  {terminalTakeoverMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {terminalTakeoverMutation.error.message}
                     </Text>
                   ) : null}
                   {deleteTicketMutation.isError ? (
@@ -1272,8 +1865,8 @@ export function App() {
                     reviewPackageQuery.isPending ? (
                       <Loader size="sm" />
                     ) : reviewPackage ? (
-                      <Stack gap={4}>
-                        <Text fw={600}>Review Package</Text>
+                      <Stack gap="sm">
+                        <Text fw={700}>Review package</Text>
                         <Text size="sm" c="dimmed">
                           Diff artifact: <Code>{reviewPackage.diff_ref}</Code>
                         </Text>
@@ -1340,8 +1933,37 @@ export function App() {
 
                   <SessionActivityFeed logs={sessionLogs} session={session} />
 
+                  {session.worktree_path ? (
+                    <SessionTerminalPanel
+                      session={session}
+                      logs={sessionLogs}
+                      command={terminalCommand}
+                      onCommandChange={setTerminalCommand}
+                      onSendCommand={() => {
+                        if (!selectedSessionId) {
+                          return;
+                        }
+
+                        terminalInputMutation.mutate({
+                          sessionId: selectedSessionId,
+                          body: terminalCommand
+                        });
+                      }}
+                      onRestoreAgent={() => terminalRestoreMutation.mutate(session.id)}
+                      sendLoading={terminalInputMutation.isPending}
+                      restoreLoading={terminalRestoreMutation.isPending}
+                      error={
+                        terminalInputMutation.isError
+                          ? terminalInputMutation.error.message
+                          : terminalRestoreMutation.isError
+                            ? terminalRestoreMutation.error.message
+                            : null
+                      }
+                    />
+                  ) : null}
+
                   {selectedSessionTicket &&
-                  ["awaiting_input", "failed", "interrupted", "paused_checkpoint", "paused_user_control"].includes(
+                  ["awaiting_input", "failed", "interrupted", "paused_checkpoint"].includes(
                     session.status
                   ) ? (
                     <form
@@ -1386,10 +2008,7 @@ export function App() {
                           >
                             Record Note Only
                           </Button>
-                          <Button
-                            type="submit"
-                            loading={resumeTicketMutation.isPending}
-                          >
+                          <Button type="submit" loading={resumeTicketMutation.isPending}>
                             Resume Execution
                           </Button>
                         </Group>
@@ -1397,8 +2016,9 @@ export function App() {
                     </form>
                   ) : (
                     <Text size="sm" c="dimmed">
-                      Direct mid-run input is not wired yet for Codex exec sessions. The
-                      activity feed and summary above reflect the current run state.
+                      Use this panel when a session is waiting on you, or take over the project
+                      terminal above when direct control inside the worktree is faster than more
+                      prompting.
                     </Text>
                   )}
                 </Stack>
@@ -1407,300 +2027,89 @@ export function App() {
                   Session details are not available yet.
                 </Text>
               )}
-            </SectionCard>
+              </SectionCard>
+            )}
+          </Stack>
+        </Box>
+      </Box>
 
-            <SectionCard
-              title="Board"
-              description="Tickets persist, run inside isolated worktrees, and move across the board as session state changes."
-            >
-              {ticketsQuery.isPending ? (
-                <Loader size="sm" />
-              ) : ticketsQuery.isError ? (
-                <Text c="red" size="sm">
-                  {ticketsQuery.error.message}
-                </Text>
-              ) : (
-                <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">
-                  {boardColumns.map((column) => (
-                    <Stack key={column} gap="sm">
-                      <Group justify="space-between">
-                        <Text fw={600}>{humanizeTicketStatus(column)}</Text>
-                        <Badge variant="outline">
-                          {column === "draft" ? drafts.length : groupedTickets[column].length}
-                        </Badge>
-                      </Group>
-                      {column === "draft" ? (
-                        drafts.length === 0 ? (
-                          <Text size="sm" c="dimmed">
-                            No drafts here yet.
-                          </Text>
-                        ) : (
-                          drafts.map((draft) => (
-                            <SectionCard
-                              key={`draft-${draft.id}`}
-                              title={draft.title_draft}
-                              description={`Wizard status: ${draft.wizard_status}`}
-                            >
-                              <Text size="sm" c="dimmed">
-                                {draft.description_draft}
-                              </Text>
-                            </SectionCard>
-                          ))
-                        )
-                      ) : groupedTickets[column].length === 0 ? (
-                        <Text size="sm" c="dimmed">
-                          No tickets here yet.
-                        </Text>
-                      ) : (
-                        groupedTickets[column].map((ticket) => (
-                          <SectionCard
-                            key={`${column}-${ticket.id}`}
-                            title={`#${ticket.id} ${ticket.title}`}
-                            description={`Type: ${ticket.ticket_type} | Target branch: ${ticket.target_branch}`}
-                          >
-                            <Text size="sm" c="dimmed">
-                            {ticket.description}
-                          </Text>
-                          {(() => {
-                            const ticketSession =
-                              ticket.session_id !== null
-                                ? sessionById.get(ticket.session_id) ?? null
-                                : null;
-                            const canStop =
-                              ticket.status === "in_progress" &&
-                              ticketSession !== null &&
-                              isStoppableSessionStatus(ticketSession.status);
-
-                            return (
-                              <>
-                            <Group justify="space-between" align="center">
-                              <Badge variant="light">{ticket.status}</Badge>
-                              <Text size="sm" c="dimmed">
-                                Session: {ticket.session_id ?? "not started"}
-                              </Text>
-                            </Group>
-                            <Text size="sm" c="dimmed">
-                              Branch: {ticket.working_branch ?? "not created yet"}
-                            </Text>
-                            <Text size="sm" c="dimmed">
-                              Acceptance criteria: {ticket.acceptance_criteria.length}
-                            </Text>
-                            {column === "ready" ? (
-                              <>
-                                {startTicketMutation.isError ? (
-                                  <Text size="sm" c="red">
-                                    {startTicketMutation.error.message}
-                                  </Text>
-                                ) : null}
-                                {deleteTicketMutation.isError &&
-                                deleteTicketMutation.variables?.ticketId === ticket.id ? (
-                                  <Text size="sm" c="red">
-                                    {deleteTicketMutation.error.message}
-                                  </Text>
-                                ) : null}
-                                <Group justify="space-between">
-                                  <Button
-                                    color="red"
-                                    variant="subtle"
-                                    loading={
-                                      deleteTicketMutation.isPending &&
-                                      deleteTicketMutation.variables?.ticketId === ticket.id
-                                    }
-                                    onClick={() => {
-                                      const confirmed = window.confirm(
-                                        `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
-                                      );
-                                      if (!confirmed) {
-                                        return;
-                                      }
-
-                                      deleteTicketMutation.mutate({
-                                        ticketId: ticket.id,
-                                        sessionId: ticket.session_id
-                                      });
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                  <Button
-                                    loading={
-                                      startTicketMutation.isPending &&
-                                      startTicketMutation.variables === ticket.id
-                                    }
-                                    onClick={() => startTicketMutation.mutate(ticket.id)}
-                                  >
-                                    Start Ticket
-                                  </Button>
-                                </Group>
-                              </>
-                            ) : column === "review" ? (
-                              <>
-                                {mergeTicketMutation.isError ? (
-                                  <Text size="sm" c="red">
-                                    {mergeTicketMutation.error.message}
-                                  </Text>
-                                ) : null}
-                                {deleteTicketMutation.isError &&
-                                deleteTicketMutation.variables?.ticketId === ticket.id ? (
-                                  <Text size="sm" c="red">
-                                    {deleteTicketMutation.error.message}
-                                  </Text>
-                                ) : null}
-                                <Group justify="space-between">
-                                  <Button
-                                    variant="light"
-                                    onClick={() => ticket.session_id && setSelectedSessionId(ticket.session_id)}
-                                  >
-                                    View Review
-                                  </Button>
-                                  <Group gap="xs">
-                                    <Button
-                                      color="red"
-                                      variant="subtle"
-                                      loading={
-                                        deleteTicketMutation.isPending &&
-                                        deleteTicketMutation.variables?.ticketId === ticket.id
-                                      }
-                                      onClick={() => {
-                                        const confirmed = window.confirm(
-                                          `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
-                                        );
-                                        if (!confirmed) {
-                                          return;
-                                        }
-
-                                        deleteTicketMutation.mutate({
-                                          ticketId: ticket.id,
-                                          sessionId: ticket.session_id
-                                        });
-                                      }}
-                                    >
-                                      Delete
-                                    </Button>
-                                    <Button
-                                      loading={
-                                        mergeTicketMutation.isPending &&
-                                        mergeTicketMutation.variables === ticket.id
-                                      }
-                                      onClick={() => mergeTicketMutation.mutate(ticket.id)}
-                                    >
-                                      Merge
-                                    </Button>
-                                  </Group>
-                                </Group>
-                              </>
-                            ) : ticket.session_id ? (
-                              <>
-                                {(stopTicketMutation.isError &&
-                                  stopTicketMutation.variables?.ticketId === ticket.id) ||
-                                (deleteTicketMutation.isError &&
-                                  deleteTicketMutation.variables?.ticketId === ticket.id) ? (
-                                  <Text size="sm" c="red">
-                                    {stopTicketMutation.variables?.ticketId === ticket.id
-                                      ? stopTicketMutation.error?.message
-                                      : deleteTicketMutation.error?.message}
-                                  </Text>
-                                ) : null}
-                                <Group justify="space-between">
-                                  <Button
-                                    color="red"
-                                    variant="subtle"
-                                    loading={
-                                      deleteTicketMutation.isPending &&
-                                      deleteTicketMutation.variables?.ticketId === ticket.id
-                                    }
-                                    onClick={() => {
-                                      const confirmed = window.confirm(
-                                        `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
-                                      );
-                                      if (!confirmed) {
-                                        return;
-                                      }
-
-                                      deleteTicketMutation.mutate({
-                                        ticketId: ticket.id,
-                                        sessionId: ticket.session_id
-                                      });
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                  <Group gap="xs">
-                                    {canStop ? (
-                                      <Button
-                                        color="orange"
-                                        variant="light"
-                                        loading={
-                                          stopTicketMutation.isPending &&
-                                          stopTicketMutation.variables?.ticketId === ticket.id
-                                        }
-                                        onClick={() =>
-                                          stopTicketMutation.mutate({
-                                            ticketId: ticket.id
-                                          })
-                                        }
-                                      >
-                                        Stop
-                                      </Button>
-                                    ) : null}
-                                    <Button
-                                      variant="light"
-                                      onClick={() => setSelectedSessionId(ticket.session_id)}
-                                    >
-                                      View Session
-                                    </Button>
-                                  </Group>
-                                </Group>
-                              </>
-                            ) : (
-                              <>
-                                {deleteTicketMutation.isError &&
-                                deleteTicketMutation.variables?.ticketId === ticket.id ? (
-                                  <Text size="sm" c="red">
-                                    {deleteTicketMutation.error.message}
-                                  </Text>
-                                ) : null}
-                                <Group justify="flex-end">
-                                  <Button
-                                    color="red"
-                                    variant="subtle"
-                                    loading={
-                                      deleteTicketMutation.isPending &&
-                                      deleteTicketMutation.variables?.ticketId === ticket.id
-                                    }
-                                    onClick={() => {
-                                      const confirmed = window.confirm(
-                                        `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
-                                      );
-                                      if (!confirmed) {
-                                        return;
-                                      }
-
-                                      deleteTicketMutation.mutate({
-                                        ticketId: ticket.id,
-                                        sessionId: ticket.session_id
-                                      });
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </Group>
-                              </>
-                            )}
-                              </>
-                            );
-                          })()}
-                          </SectionCard>
-                        ))
-                      )}
-                    </Stack>
-                  ))}
-                </SimpleGrid>
-              )}
-            </SectionCard>
-          </>
-        ) : null}
-      </Stack>
-    </Container>
+      <Modal
+        opened={projectModalOpen}
+        onClose={() => setProjectModalOpen(false)}
+        title="Create project"
+        centered
+        size="lg"
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            createProjectMutation.mutate({
+              name: projectName,
+              repositoryPath,
+              defaultTargetBranch: defaultBranch,
+              validationCommands: validationCommandsText
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean)
+            });
+          }}
+        >
+          <Stack gap="sm">
+            <Text size="sm" c="dimmed">
+              One repository per project is still the intended MVP shape.
+            </Text>
+            <TextInput
+              id="project-name"
+              name="projectName"
+              label="Project name"
+              placeholder="receipt-designer"
+              value={projectName}
+              onChange={(event) => setProjectName(event.currentTarget.value)}
+              required
+            />
+            <TextInput
+              id="repository-path"
+              name="repositoryPath"
+              label="Repository path"
+              placeholder="/home/nikolai/git/receipt-designer"
+              value={repositoryPath}
+              onChange={(event) => setRepositoryPath(event.currentTarget.value)}
+              required
+            />
+            <TextInput
+              id="default-target-branch"
+              name="defaultTargetBranch"
+              label="Target branch"
+              placeholder="main"
+              value={defaultBranch}
+              onChange={(event) => setDefaultBranch(event.currentTarget.value)}
+              required
+            />
+            <Textarea
+              id="validation-commands"
+              name="validationCommands"
+              label="Validation commands"
+              placeholder={"npm run test\nnpm run lint"}
+              value={validationCommandsText}
+              onChange={(event) => setValidationCommandsText(event.currentTarget.value)}
+              minRows={3}
+            />
+            {createProjectMutation.isError ? (
+              <Text size="sm" c="red">
+                {createProjectMutation.error.message}
+              </Text>
+            ) : null}
+            <Group justify="space-between" align="center">
+              <Text size="sm" c="dimmed">
+                Slug: <Code>{slugify(projectName || "project-name")}</Code>
+              </Text>
+              <Button type="submit" loading={createProjectMutation.isPending}>
+                Add Project
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+    </Box>
   );
 }

@@ -45,7 +45,7 @@ export async function createApp() {
   await app.register(projectRoutes, { eventHub, store });
   await app.register(draftRoutes, { eventHub, store });
   await app.register(ticketRoutes, { eventHub, store, executionRuntime });
-  await app.register(sessionRoutes, { eventHub, store });
+  await app.register(sessionRoutes, { eventHub, store, executionRuntime });
   await app.register(websocketRoutes, { eventHub });
 
   return app;

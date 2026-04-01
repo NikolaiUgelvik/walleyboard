@@ -712,6 +712,16 @@ export class SqliteStore implements Store {
     return row ? mapDraft(row) : undefined;
   }
 
+  deleteDraft(draftId: string): DraftTicketState | undefined {
+    const draft = this.getDraft(draftId);
+    if (!draft) {
+      return undefined;
+    }
+
+    this.#db.prepare("DELETE FROM draft_ticket_states WHERE id = ?").run(draftId);
+    return draft;
+  }
+
   refineDraft(draftId: string, instruction?: string): DraftTicketState {
     const draft = this.getDraft(draftId);
     if (!draft) {
@@ -1230,7 +1240,7 @@ export class SqliteStore implements Store {
 
     const timestamp = nowIso();
     const summary =
-      "User input was recorded for the session. Live checkpoint handoff is not implemented yet, so the note is stored for a future attempt.";
+      "User input was recorded for the session. If no live process was attached, the note will be available for the next attempt.";
 
     this.#appendSessionLog(sessionId, `User input recorded: ${body.trim()}`);
 

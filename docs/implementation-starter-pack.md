@@ -25,11 +25,10 @@ This document turns the PRD into the first concrete module boundaries for the MV
 
 ## First Implementation Milestones
 
-1. Implement sandbox lifecycle services around the prepared Codex runtime.
-2. Add a separate project terminal for manual commands without exposing the raw Codex transcript as the primary session view.
+1. Add Bubblewrap-backed sandbox lifecycle services around the prepared Codex runtime.
+2. Add GitHub pull request creation and reconciliation when review should continue outside the local direct-merge path.
 3. Add richer validation configuration and override handling.
-4. Layer Bubblewrap policy onto the live runtime and validation commands.
-5. Decide whether interrupted sessions should stay manual or auto-resume after restart.
+4. Decide whether interrupted sessions should stay manual or auto-resume after restart.
 
 ## Starter Endpoints
 
@@ -85,6 +84,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - a persisted execution session
   - a first execution attempt record
   - a prepared git worktree and working branch
+  - a choice between immediate execution and a planning-first launch
   - a real `codex exec` run with persisted logs
   - an `in_progress` ticket transition on the board
 - Successful execution now creates:
@@ -104,6 +104,8 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - In-progress tickets now support:
   - an explicit stop action that interrupts the active attempt
   - preserving the same worktree and working branch for manual resume
+  - manual terminal takeover on the same worktree for direct commands
+  - restoring Codex agent control after terminal handoff by launching a new attempt
 - Ticket deletion now supports:
   - stopping active execution before cleanup when needed
   - removing the ticket from persisted board state
@@ -114,7 +116,8 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - sessions waiting for user input or approval
 - The execution session view now includes:
   - an interpreted activity feed for Codex and system updates
-  - PTY-backed Codex process execution behind the scenes instead of plain child-process pipes
+  - a separate raw project terminal transcript for manual takeover mode
+  - PTY-backed Codex and manual shell execution behind the scenes instead of plain child-process pipes
 - The frontend now uses websocket events to:
   - append live session output into the cached session activity source
   - refresh session and ticket state without waiting for the polling interval
@@ -123,6 +126,5 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - marking the session `interrupted`
   - marking the active attempt `interrupted`
   - preserving the existing worktree and working branch for manual resume
-- Session input is still only stored for future use:
-  - live checkpoint handoff is not implemented yet
-  - a separate manual project terminal is not implemented yet
+- Session input and checkpoint responses now forward to a live attached PTY when one exists.
+- GitHub PR creation and external reconciliation are still scaffolded but not implemented yet.

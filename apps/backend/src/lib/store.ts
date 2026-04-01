@@ -91,6 +91,7 @@ export interface Store {
   listProjectTickets(projectId: string): TicketFrontmatter[];
   createDraft(input: CreateDraftInput): DraftTicketState;
   getDraft(draftId: string): DraftTicketState | undefined;
+  deleteDraft(draftId: string): DraftTicketState | undefined;
   refineDraft(draftId: string, instruction?: string): DraftTicketState;
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
   getTicket(ticketId: number): TicketFrontmatter | undefined;

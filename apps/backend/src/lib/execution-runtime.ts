@@ -30,6 +30,14 @@ type StartExecutionInput = {
   additionalInstruction?: string;
 };
 
+type ManualTerminalStartInput = {
+  sessionId: string;
+  worktreePath: string;
+  attemptId: string | null;
+};
+
+type ForwardedInputTarget = "agent" | "terminal";
+
 function truncate(value: string, maxLength = 600): string {
   if (value.length <= maxLength) {
     return value;
@@ -90,6 +98,7 @@ function buildOutputSummaryPath(project: Project, ticketId: number, sessionId: s
 function buildCodexPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
+  planningEnabled: boolean,
   extraInstructions: string[]
 ): string {
   const acceptanceCriteria =
@@ -113,6 +122,15 @@ function buildCodexPrompt(
     "- Create a git commit before finishing if you made code changes.",
     "- End with a concise summary that includes changed files, validation run, and remaining risks."
   ];
+
+  if (planningEnabled) {
+    sections.push(
+      "",
+      "Planning mode:",
+      "- Start by outlining a concise implementation plan before you make code changes.",
+      "- After the plan is clear, carry it out in the same run and keep the final answer concise."
+    );
+  }
 
   if (extraInstructions.length > 0) {
     sections.push("", "Additional context:");
@@ -184,8 +202,17 @@ export class ExecutionRuntime {
   readonly #eventHub: EventHub;
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();
+  readonly #manualTerminals = new Map<
+    string,
+    {
+      pty: IPty;
+      attemptId: string | null;
+    }
+  >();
   readonly #stoppingSessions = new Map<string, string>();
+  readonly #stoppingManualTerminals = new Map<string, string>();
   readonly #exitWaiters = new Map<string, Set<(didExit: boolean) => void>>();
+  readonly #manualExitWaiters = new Map<string, Set<(didExit: boolean) => void>>();
 
   constructor({ eventHub, store }: ExecutionRuntimeOptions) {
     this.#eventHub = eventHub;
@@ -212,6 +239,124 @@ export class ExecutionRuntime {
 
     child.kill("SIGKILL");
     return this.#waitForSessionExit(sessionId, 1_000);
+  }
+
+  hasActiveExecution(sessionId: string): boolean {
+    return this.#activeSessions.has(sessionId);
+  }
+
+  hasManualTerminal(sessionId: string): boolean {
+    return this.#manualTerminals.has(sessionId);
+  }
+
+  startManualTerminal({
+    sessionId,
+    worktreePath,
+    attemptId
+  }: ManualTerminalStartInput): void {
+    if (this.#manualTerminals.has(sessionId)) {
+      return;
+    }
+
+    let child: IPty;
+
+    try {
+      child = spawnPty("bash", ["--noprofile", "--norc"], {
+        cwd: worktreePath,
+        env: {
+          ...buildProcessEnv(),
+          TERM: "dumb"
+        },
+        cols: 120,
+        rows: 32,
+        name: "xterm-256color"
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Manual terminal failed to start";
+      throw new Error(message);
+    }
+
+    const logAttemptId =
+      attemptId ?? this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
+    this.#manualTerminals.set(sessionId, {
+      pty: child,
+      attemptId
+    });
+    this.#log(sessionId, logAttemptId, `Manual terminal opened in ${worktreePath}`);
+
+    let pendingBuffer = "";
+
+    child.onData((chunk) => {
+      pendingBuffer += chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+      while (pendingBuffer.includes("\n")) {
+        const newlineIndex = pendingBuffer.indexOf("\n");
+        const line = pendingBuffer.slice(0, newlineIndex);
+        pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
+        if (line.length > 0) {
+          this.#log(sessionId, logAttemptId, `[terminal] ${line}`);
+        }
+      }
+    });
+
+    child.onExit(() => {
+      if (pendingBuffer.trim().length > 0) {
+        this.#log(sessionId, logAttemptId, `[terminal] ${pendingBuffer.trim()}`);
+        pendingBuffer = "";
+      }
+
+      this.#stoppingManualTerminals.delete(sessionId);
+      this.#manualTerminals.delete(sessionId);
+      this.#log(sessionId, logAttemptId, "Manual terminal closed.");
+      this.#resolveManualTerminalExitWaiters(sessionId, true);
+    });
+  }
+
+  async stopManualTerminal(sessionId: string, timeoutMs = 1_500): Promise<boolean> {
+    const terminal = this.#manualTerminals.get(sessionId);
+    if (!terminal) {
+      return false;
+    }
+
+    this.#stoppingManualTerminals.set(sessionId, "terminal_restore");
+    terminal.pty.kill("SIGTERM");
+
+    const exitedAfterTerm = await this.#waitForManualTerminalExit(sessionId, timeoutMs);
+    if (exitedAfterTerm) {
+      return true;
+    }
+
+    terminal.pty.kill("SIGKILL");
+    return this.#waitForManualTerminalExit(sessionId, 1_000);
+  }
+
+  forwardInput(sessionId: string, body: string): ForwardedInputTarget | null {
+    const normalizedBody = body.replace(/\s+$/, "");
+    if (normalizedBody.length === 0) {
+      return null;
+    }
+
+    const manualTerminal = this.#manualTerminals.get(sessionId);
+    if (manualTerminal) {
+      manualTerminal.pty.write(`${normalizedBody}\r`);
+      this.#log(
+        sessionId,
+        manualTerminal.attemptId ?? this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId,
+        `[terminal input] ${normalizedBody}`
+      );
+      return "terminal";
+    }
+
+    const agentSession = this.#activeSessions.get(sessionId);
+    if (!agentSession) {
+      return null;
+    }
+
+    const attemptId = this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
+    agentSession.write(`${normalizedBody}\r`);
+    this.#log(sessionId, attemptId, `[agent input] ${normalizedBody}`);
+    return "agent";
   }
 
   startExecution({
@@ -244,7 +389,12 @@ export class ExecutionRuntime {
       extraInstructions.push(`Resume guidance: ${additionalInstruction.trim()}`);
     }
 
-    const prompt = buildCodexPrompt(ticket, repository, extraInstructions);
+    const prompt = buildCodexPrompt(
+      ticket,
+      repository,
+      session.planning_enabled,
+      extraInstructions
+    );
     const outputSummaryPath = buildOutputSummaryPath(project, ticket.id, session.id);
     const args = [
       "exec",
@@ -290,6 +440,13 @@ export class ExecutionRuntime {
     this.#emitSessionUpdated(runningSession);
     this.#log(session.id, attemptId, `Launching Codex in ${session.worktree_path}`);
     this.#log(session.id, attemptId, `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`);
+    if (session.planning_enabled) {
+      this.#log(
+        session.id,
+        attemptId,
+        "Planning mode enabled: Codex will outline a plan before editing."
+      );
+    }
     if (requestedChangeNote) {
       this.#log(
         session.id,
@@ -398,6 +555,44 @@ export class ExecutionRuntime {
     }
 
     this.#exitWaiters.delete(sessionId);
+    waiters.forEach((resolve) => {
+      resolve(didExit);
+    });
+  }
+
+  #waitForManualTerminalExit(sessionId: string, timeoutMs: number): Promise<boolean> {
+    if (!this.#manualTerminals.has(sessionId)) {
+      return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+      const resolver = (didExit: boolean) => {
+        clearTimeout(timeoutId);
+        const waiters = this.#manualExitWaiters.get(sessionId);
+        waiters?.delete(resolver);
+        if (waiters && waiters.size === 0) {
+          this.#manualExitWaiters.delete(sessionId);
+        }
+        resolve(didExit);
+      };
+
+      const waiters = this.#manualExitWaiters.get(sessionId) ?? new Set();
+      waiters.add(resolver);
+      this.#manualExitWaiters.set(sessionId, waiters);
+
+      const timeoutId = setTimeout(() => {
+        resolver(false);
+      }, timeoutMs);
+    });
+  }
+
+  #resolveManualTerminalExitWaiters(sessionId: string, didExit: boolean): void {
+    const waiters = this.#manualExitWaiters.get(sessionId);
+    if (!waiters) {
+      return;
+    }
+
+    this.#manualExitWaiters.delete(sessionId);
     waiters.forEach((resolve) => {
       resolve(didExit);
     });

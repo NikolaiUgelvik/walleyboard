@@ -141,6 +141,7 @@ export const eventTypeSchema = z.enum([
   "ticket.updated",
   "ticket.deleted",
   "draft.updated",
+  "draft.deleted",
   "draft.ready",
   "session.updated",
   "session.output",
