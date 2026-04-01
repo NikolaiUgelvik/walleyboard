@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   checkpointResponseInputSchema,
   sessionInputSchema,
-} from "@orchestrator/contracts";
+} from "../../../../packages/contracts/src/index.js";
 
 import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
@@ -284,6 +284,134 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
       }
 
       try {
+        const activeSession = store.getSession(request.params.sessionId);
+        if (!activeSession) {
+          reply.code(404).send({ error: "Session not found" });
+          return;
+        }
+
+        if (activeSession.plan_status === "awaiting_feedback") {
+          const ticket = store.getTicket(activeSession.ticket_id);
+          if (!ticket) {
+            reply.code(404).send({ error: "Ticket not found" });
+            return;
+          }
+
+          const project = store.getProject(ticket.project);
+          if (!project) {
+            reply.code(404).send({ error: "Project not found" });
+            return;
+          }
+
+          const repository = store.getRepository(ticket.repo);
+          if (!repository) {
+            reply.code(404).send({ error: "Repository not found" });
+            return;
+          }
+
+          const approved = input.approved === true;
+          const feedback = input.body.trim();
+          const normalizedFeedback =
+            feedback.length > 0
+              ? feedback
+              : approved
+                ? "Plan approved. Continue with implementation."
+                : "Please revise the implementation plan.";
+
+          const updatedPlanSession = store.updateSessionPlan(activeSession.id, {
+            plan_status: approved ? "approved" : "drafting",
+            plan_summary: approved ? activeSession.plan_summary : null,
+            status: "awaiting_input",
+            last_summary: approved
+              ? "Plan approved. Starting implementation on the existing worktree."
+              : "Plan changes requested. Codex will revise the implementation plan.",
+          });
+
+          if (!updatedPlanSession) {
+            reply.code(404).send({ error: "Session not found" });
+            return;
+          }
+
+          const feedbackLogLine = approved
+            ? `Plan approved by user: ${normalizedFeedback}`
+            : `Plan changes requested: ${normalizedFeedback}`;
+          const sequence = store.appendSessionLog(
+            activeSession.id,
+            feedbackLogLine,
+          );
+          eventHub.publish(
+            makeProtocolEvent(
+              "session.output",
+              "session",
+              updatedPlanSession.id,
+              {
+                session_id: updatedPlanSession.id,
+                attempt_id:
+                  updatedPlanSession.current_attempt_id ??
+                  activeSession.current_attempt_id,
+                sequence,
+                chunk: feedbackLogLine,
+              },
+            ),
+          );
+
+          const resumeResult = store.resumeTicket(
+            ticket.id,
+            normalizedFeedback,
+          );
+
+          eventHub.publish(
+            makeProtocolEvent(
+              "session.updated",
+              "session",
+              resumeResult.session.id,
+              {
+                session: resumeResult.session,
+              },
+            ),
+          );
+          resumeResult.logs.forEach((logLine, index) => {
+            eventHub.publish(
+              makeProtocolEvent(
+                "session.output",
+                "session",
+                resumeResult.session.id,
+                {
+                  session_id: resumeResult.session.id,
+                  attempt_id: resumeResult.attempt.id,
+                  sequence:
+                    store.getSessionLogs(resumeResult.session.id).length -
+                    resumeResult.logs.length +
+                    index,
+                  chunk: logLine,
+                },
+              ),
+            );
+          });
+
+          executionRuntime.startExecution({
+            project,
+            repository,
+            ticket: resumeResult.ticket,
+            session: resumeResult.session,
+            additionalInstruction: normalizedFeedback,
+          });
+
+          reply.send(
+            makeCommandAck(
+              true,
+              approved
+                ? "Plan approved and implementation resumed"
+                : "Plan feedback recorded and planning resumed",
+              {
+                ticket_id: resumeResult.ticket.id,
+                session_id: resumeResult.session.id,
+              },
+            ),
+          );
+          return;
+        }
+
         const forwardedTo = executionRuntime.forwardInput(
           request.params.sessionId,
           input.approved === undefined

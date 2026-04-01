@@ -19,6 +19,13 @@ import {
   Title,
   useMantineColorScheme,
 } from "@mantine/core";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import type {
   CommandAck,
   DraftTicketState,
@@ -30,14 +37,7 @@ import type {
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
-} from "@orchestrator/contracts";
-import {
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+} from "../../../packages/contracts/src/index.js";
 
 import "./app-shell.css";
 import { SectionCard } from "./components/SectionCard.js";
@@ -413,6 +413,11 @@ function sessionStatusColor(status: ExecutionSession["status"]): string {
   }
 }
 
+function humanizePlanStatus(status: ExecutionSession["plan_status"]): string {
+  const normalized = status.replace(/_/g, " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function normalizeText(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -720,6 +725,7 @@ export function App() {
   const [pendingNewDraftAction, setPendingNewDraftAction] =
     useState<NewDraftAction | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
+  const [planFeedbackBody, setPlanFeedbackBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
   const [boardSearch, setBoardSearch] = useState("");
@@ -1547,6 +1553,32 @@ export function App() {
     },
   });
 
+  const planFeedbackMutation = useMutation({
+    mutationFn: (input: {
+      sessionId: string;
+      approved: boolean;
+      body: string;
+    }) =>
+      postJson<CommandAck>(`/sessions/${input.sessionId}/checkpoint-response`, {
+        approved: input.approved,
+        body: input.body,
+      }),
+    onSuccess: async () => {
+      setPlanFeedbackBody("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
+      ]);
+    },
+  });
+
   const resumeTicketMutation = useMutation({
     mutationFn: (input: { ticketId: number; reason?: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/resume`, {
@@ -1718,12 +1750,17 @@ export function App() {
       ].includes(sessionForTicket.status)
     ) {
       const label =
-        sessionForTicket.status === "failed"
-          ? `Execution failed for ticket #${ticket.id}`
-          : sessionForTicket.status === "paused_user_control"
-            ? `Manual terminal active for ticket #${ticket.id}`
-            : `Input needed for ticket #${ticket.id}`;
+        sessionForTicket.plan_status === "awaiting_feedback"
+          ? `Plan feedback needed for ticket #${ticket.id}`
+          : sessionForTicket.status === "failed"
+            ? `Execution failed for ticket #${ticket.id}`
+            : sessionForTicket.status === "paused_user_control"
+              ? `Manual terminal active for ticket #${ticket.id}`
+              : `Input needed for ticket #${ticket.id}`;
       const message =
+        (sessionForTicket.plan_status === "awaiting_feedback"
+          ? sessionForTicket.plan_summary
+          : null) ??
         sessionForTicket.last_summary ??
         (sessionForTicket.status === "paused_user_control"
           ? `${ticket.title} is in direct terminal mode on its worktree.`
@@ -3167,6 +3204,14 @@ export function App() {
                         </Box>
                         <Box className="detail-meta-card">
                           <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Plan stage
+                          </Text>
+                          <Text fw={700}>
+                            {humanizePlanStatus(session.plan_status)}
+                          </Text>
+                        </Box>
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                             Branch
                           </Text>
                           <Text fw={700}>
@@ -3258,6 +3303,28 @@ export function App() {
                         <Text size="sm" c="red">
                           {deleteTicketMutation.error.message}
                         </Text>
+                      ) : null}
+                      {planFeedbackMutation.isError ? (
+                        <Text size="sm" c="red">
+                          {planFeedbackMutation.error.message}
+                        </Text>
+                      ) : null}
+
+                      {session.plan_summary ? (
+                        <Stack gap={4}>
+                          <Text fw={700}>
+                            {session.plan_status === "awaiting_feedback"
+                              ? "Plan awaiting feedback"
+                              : "Latest plan"}
+                          </Text>
+                          <Text
+                            size="sm"
+                            c="dimmed"
+                            style={{ whiteSpace: "pre-wrap" }}
+                          >
+                            {session.plan_summary}
+                          </Text>
+                        </Stack>
                       ) : null}
 
                       {selectedSessionTicket?.status === "review" ? (
@@ -3382,12 +3449,80 @@ export function App() {
                       ) : null}
 
                       {selectedSessionTicket &&
-                      [
-                        "awaiting_input",
-                        "failed",
-                        "interrupted",
-                        "paused_checkpoint",
-                      ].includes(session.status) ? (
+                      session.plan_status === "awaiting_feedback" ? (
+                        <form
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            if (!selectedSessionId) {
+                              return;
+                            }
+
+                            planFeedbackMutation.mutate({
+                              sessionId: selectedSessionId,
+                              approved: true,
+                              body:
+                                planFeedbackBody.trim().length > 0
+                                  ? planFeedbackBody
+                                  : "Plan approved. Continue with implementation.",
+                            });
+                          }}
+                        >
+                          <Stack gap="sm">
+                            <Textarea
+                              id="plan-feedback"
+                              name="planFeedback"
+                              label="Plan feedback"
+                              placeholder="Add optional implementation guidance, or describe what should change in the plan."
+                              value={planFeedbackBody}
+                              onChange={(event) =>
+                                setPlanFeedbackBody(event.currentTarget.value)
+                              }
+                              minRows={3}
+                            />
+                            <Group justify="space-between">
+                              <Button
+                                variant="light"
+                                type="button"
+                                disabled={planFeedbackBody.trim().length === 0}
+                                loading={
+                                  planFeedbackMutation.isPending &&
+                                  planFeedbackMutation.variables?.approved ===
+                                    false
+                                }
+                                onClick={() => {
+                                  if (!selectedSessionId) {
+                                    return;
+                                  }
+
+                                  planFeedbackMutation.mutate({
+                                    sessionId: selectedSessionId,
+                                    approved: false,
+                                    body: planFeedbackBody,
+                                  });
+                                }}
+                              >
+                                Request Plan Changes
+                              </Button>
+                              <Button
+                                type="submit"
+                                loading={
+                                  planFeedbackMutation.isPending &&
+                                  planFeedbackMutation.variables?.approved ===
+                                    true
+                                }
+                              >
+                                Confirm Plan and Start
+                              </Button>
+                            </Group>
+                          </Stack>
+                        </form>
+                      ) : selectedSessionTicket &&
+                        [
+                          "awaiting_input",
+                          "failed",
+                          "interrupted",
+                          "paused_checkpoint",
+                        ].includes(session.status) ? (
                         <form
                           onSubmit={(event) => {
                             event.preventDefault();

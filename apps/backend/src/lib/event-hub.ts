@@ -1,9 +1,9 @@
+import { nanoid } from "nanoid";
 import type {
   EventEntityType,
   EventType,
   ProtocolEvent,
-} from "@orchestrator/contracts";
-import { nanoid } from "nanoid";
+} from "../../../../packages/contracts/src/index.js";
 
 import { nowIso } from "./time.js";
 

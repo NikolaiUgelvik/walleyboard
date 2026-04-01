@@ -5,7 +5,7 @@ import {
   resumeTicketInputSchema,
   startTicketInputSchema,
   stopTicketInputSchema,
-} from "@orchestrator/contracts";
+} from "../../../../packages/contracts/src/index.js";
 
 import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";

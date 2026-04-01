@@ -39,6 +39,13 @@ export const executionAttemptStatusSchema = z.enum([
   "completed",
 ]);
 
+export const executionPlanStatusSchema = z.enum([
+  "not_requested",
+  "drafting",
+  "awaiting_feedback",
+  "approved",
+]);
+
 export const hookFailurePolicySchema = z.enum(["block", "warn", "ignore"]);
 
 export const hookConfigSchema = z.object({
@@ -165,6 +172,8 @@ export const executionSessionSchema = z.object({
   worktree_path: absolutePathSchema.nullable(),
   status: executionSessionStatusSchema,
   planning_enabled: z.boolean(),
+  plan_status: executionPlanStatusSchema,
+  plan_summary: z.string().nullable(),
   current_attempt_id: opaqueIdSchema.nullable(),
   latest_requested_change_note_id: opaqueIdSchema.nullable(),
   latest_review_package_id: opaqueIdSchema.nullable(),
@@ -233,6 +242,7 @@ export type ReviewPackage = z.infer<typeof reviewPackageSchema>;
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketType = z.infer<typeof ticketTypeSchema>;
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+export type ExecutionPlanStatus = z.infer<typeof executionPlanStatusSchema>;
 export type ExecutionSessionStatus = z.infer<
   typeof executionSessionStatusSchema
 >;

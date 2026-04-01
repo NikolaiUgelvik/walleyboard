@@ -2,11 +2,13 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { nanoid } from "nanoid";
 import type {
   CreateDraftInput,
   CreateProjectInput,
   DraftTicketState,
   ExecutionAttempt,
+  ExecutionPlanStatus,
   ExecutionSession,
   ExecutionSessionStatus,
   Project,
@@ -17,8 +19,7 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
   UpdateProjectInput,
-} from "@orchestrator/contracts";
-import { nanoid } from "nanoid";
+} from "../../../../packages/contracts/src/index.js";
 
 import type {
   CompleteSessionInput,
@@ -31,6 +32,7 @@ import type {
   StopTicketResult,
   Store,
   UpdateDraftRecordInput,
+  UpdateSessionPlanInput,
 } from "./store.js";
 import { nowIso } from "./time.js";
 
@@ -286,6 +288,8 @@ function mapExecutionSession(row: Record<string, unknown>): ExecutionSession {
       row.worktree_path === null ? null : String(row.worktree_path),
     status: String(row.status) as ExecutionSession["status"],
     planning_enabled: Boolean(row.planning_enabled),
+    plan_status: String(row.plan_status) as ExecutionPlanStatus,
+    plan_summary: row.plan_summary === null ? null : String(row.plan_summary),
     current_attempt_id:
       row.current_attempt_id === null ? null : String(row.current_attempt_id),
     latest_requested_change_note_id:
@@ -435,6 +439,8 @@ export class SqliteStore implements Store {
         worktree_path TEXT,
         status TEXT NOT NULL,
         planning_enabled INTEGER NOT NULL,
+        plan_status TEXT NOT NULL DEFAULT 'not_requested',
+        plan_summary TEXT,
         current_attempt_id TEXT,
         latest_requested_change_note_id TEXT,
         latest_review_package_id TEXT,
@@ -501,6 +507,12 @@ export class SqliteStore implements Store {
     `);
 
     this.#ensureColumn("execution_sessions", "worktree_path", "TEXT");
+    this.#ensureColumn(
+      "execution_sessions",
+      "plan_status",
+      "TEXT NOT NULL DEFAULT 'not_requested'",
+    );
+    this.#ensureColumn("execution_sessions", "plan_summary", "TEXT");
     this.#ensureColumn("tickets", "description", "TEXT NOT NULL DEFAULT ''");
     this.#ensureColumn(
       "tickets",
@@ -1201,8 +1213,12 @@ export class SqliteStore implements Store {
     const sessionId = nanoid();
     const attemptId = nanoid();
     const timestamp = nowIso();
-    const summary =
-      "Execution session created, worktree prepared, and Codex launch requested.";
+    const planStatus: ExecutionPlanStatus = planningEnabled
+      ? "drafting"
+      : "not_requested";
+    const summary = planningEnabled
+      ? "Execution session created, worktree prepared, and plan requested from Codex."
+      : "Execution session created, worktree prepared, and Codex launch requested.";
 
     this.#db
       .prepare(
@@ -1224,10 +1240,10 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO execution_sessions (
-            id, ticket_id, project_id, repo_id, worktree_path, status, planning_enabled, current_attempt_id,
+            id, ticket_id, project_id, repo_id, worktree_path, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
             latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
             started_at, completed_at, last_heartbeat_at, last_summary
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -1238,6 +1254,8 @@ export class SqliteStore implements Store {
         runtime.worktreePath,
         "awaiting_input",
         planningEnabled ? 1 : 0,
+        planStatus,
+        null,
         attemptId,
         null,
         null,
@@ -1606,6 +1624,10 @@ export class SqliteStore implements Store {
     const timestamp = nowIso();
     const attemptNumber = this.#nextAttemptNumber(session.id);
     const normalizedReason = reason?.trim();
+    const nextPlanStatus: ExecutionPlanStatus =
+      session.planning_enabled && session.plan_status !== "approved"
+        ? "drafting"
+        : session.plan_status;
     const summary =
       normalizedReason && normalizedReason.length > 0
         ? `Execution resume requested: ${normalizedReason}`
@@ -1616,6 +1638,8 @@ export class SqliteStore implements Store {
         `
           UPDATE execution_sessions
           SET status = ?,
+              plan_status = ?,
+              plan_summary = ?,
               current_attempt_id = ?,
               completed_at = ?,
               last_heartbeat_at = ?,
@@ -1623,7 +1647,16 @@ export class SqliteStore implements Store {
           WHERE id = ?
         `,
       )
-      .run("awaiting_input", attemptId, null, timestamp, summary, session.id);
+      .run(
+        "awaiting_input",
+        nextPlanStatus,
+        nextPlanStatus === "drafting" ? null : session.plan_summary,
+        attemptId,
+        null,
+        timestamp,
+        summary,
+        session.id,
+      );
 
     this.#db
       .prepare(
@@ -1713,6 +1746,41 @@ export class SqliteStore implements Store {
       this.getSession(sessionId),
       "Session not found after input",
     );
+  }
+
+  updateSessionPlan(
+    sessionId: string,
+    input: UpdateSessionPlanInput,
+  ): ExecutionSession | undefined {
+    const existingSession = this.getSession(sessionId);
+    if (!existingSession) {
+      return undefined;
+    }
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?,
+              plan_status = ?,
+              plan_summary = ?,
+              last_heartbeat_at = ?,
+              last_summary = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        input.status ?? existingSession.status,
+        input.plan_status ?? existingSession.plan_status,
+        input.plan_summary !== undefined
+          ? input.plan_summary
+          : existingSession.plan_summary,
+        nowIso(),
+        input.last_summary ?? existingSession.last_summary,
+        sessionId,
+      );
+
+    return this.getSession(sessionId);
   }
 
   updateSessionStatus(

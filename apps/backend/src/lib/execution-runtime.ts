@@ -20,8 +20,8 @@ import type {
   TicketFrontmatter,
   ValidationCommand,
   ValidationResult,
-} from "@orchestrator/contracts";
-import { ticketTypeSchema } from "@orchestrator/contracts";
+} from "../../../../packages/contracts/src/index.js";
+import { ticketTypeSchema } from "../../../../packages/contracts/src/index.js";
 
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import type { Store } from "./store.js";
@@ -56,6 +56,7 @@ type ManualTerminalStartInput = {
 };
 
 type ForwardedInputTarget = "agent" | "terminal";
+type ExecutionMode = "plan" | "implementation";
 
 const draftRefinementResultSchema = z.object({
   title_draft: z.string().min(1),
@@ -206,11 +207,11 @@ function appendCodexModelArgs(
   }
 }
 
-function buildCodexPrompt(
+function buildCodexImplementationPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
-  planningEnabled: boolean,
   extraInstructions: string[],
+  approvedPlanSummary?: string | null,
 ): string {
   const acceptanceCriteria =
     ticket.acceptance_criteria.length > 0
@@ -236,14 +237,48 @@ function buildCodexPrompt(
     "- End with a concise summary that includes changed files, validation run, and remaining risks.",
   ];
 
-  if (planningEnabled) {
-    sections.push(
-      "",
-      "Planning mode:",
-      "- Start by outlining a concise implementation plan before you make code changes.",
-      "- After the plan is clear, carry it out in the same run and keep the final answer concise.",
-    );
+  if (approvedPlanSummary && approvedPlanSummary.trim().length > 0) {
+    sections.push("", "Approved plan:", approvedPlanSummary.trim());
   }
+
+  if (extraInstructions.length > 0) {
+    sections.push("", "Additional context:");
+    for (const instruction of extraInstructions) {
+      sections.push(`- ${instruction}`);
+    }
+  }
+
+  return sections.join("\n");
+}
+
+function buildCodexPlanPrompt(
+  ticket: TicketFrontmatter,
+  repository: RepositoryConfig,
+  extraInstructions: string[],
+): string {
+  const acceptanceCriteria =
+    ticket.acceptance_criteria.length > 0
+      ? ticket.acceptance_criteria
+          .map((criterion) => `- ${criterion}`)
+          .join("\n")
+      : "- Preserve the intended user workflow and keep the change small and focused.";
+
+  const sections = [
+    `Plan ticket #${ticket.id} in the repository ${repository.name}.`,
+    "",
+    `Title: ${ticket.title}`,
+    `Description: ${ticket.description}`,
+    "",
+    "Acceptance criteria:",
+    acceptanceCriteria,
+    "",
+    "Execution rules:",
+    "- Stay inside this repository worktree.",
+    "- Read files and inspect the repository as needed.",
+    "- Do not modify files, create commits, or run write operations.",
+    "- Return a concise implementation plan only.",
+    "- End with a short plan summary that the user can approve or revise.",
+  ];
 
   if (extraInstructions.length > 0) {
     sections.push("", "Additional context:");
@@ -917,24 +952,29 @@ export class ExecutionRuntime {
       );
     }
 
-    const prompt = buildCodexPrompt(
-      ticket,
-      repository,
-      session.planning_enabled,
-      extraInstructions,
-    );
+    const executionMode: ExecutionMode =
+      session.planning_enabled && session.plan_status !== "approved"
+        ? "plan"
+        : "implementation";
+    const prompt =
+      executionMode === "plan"
+        ? buildCodexPlanPrompt(ticket, repository, extraInstructions)
+        : buildCodexImplementationPrompt(
+            ticket,
+            repository,
+            extraInstructions,
+            session.plan_summary,
+          );
     const outputSummaryPath = buildOutputSummaryPath(
       project,
       ticket.id,
       session.id,
     );
-    const args = [
-      "exec",
-      "--json",
-      "--full-auto",
-      "--output-last-message",
-      outputSummaryPath,
-    ];
+    const args =
+      executionMode === "plan"
+        ? ["exec", "--json", "--full-auto", "--sandbox", "read-only"]
+        : ["exec", "--json", "--full-auto"];
+    args.push("--output-last-message", outputSummaryPath);
     const model = normalizeOptionalModel(project.ticket_work_model);
     const reasoningEffort = normalizeOptionalReasoningEffort(
       project.ticket_work_reasoning_effort,
@@ -1002,7 +1042,9 @@ export class ExecutionRuntime {
       this.#log(
         session.id,
         attemptId,
-        "Planning mode enabled: Codex will outline a plan before editing.",
+        executionMode === "plan"
+          ? "Planning mode enabled: Codex will outline a plan before editing."
+          : "Approved plan confirmed: Codex will now implement the ticket.",
       );
     }
     if (requestedChangeNote) {
@@ -1052,18 +1094,30 @@ export class ExecutionRuntime {
         : null;
 
       if (exitCode === 0) {
-        await this.#finishSuccess({
-          project,
-          repository,
-          ticketId: ticket.id,
-          sessionId: session.id,
-          attemptId,
-          targetBranch: ticket.target_branch,
-          summary:
-            finalSummary && finalSummary.length > 0
-              ? finalSummary
-              : "Codex finished successfully, but no final summary was captured.",
-        });
+        const summary =
+          finalSummary && finalSummary.length > 0
+            ? finalSummary
+            : executionMode === "plan"
+              ? "Codex finished planning, but no plan summary was captured."
+              : "Codex finished successfully, but no final summary was captured.";
+
+        if (executionMode === "plan") {
+          this.#finishPlanSuccess({
+            sessionId: session.id,
+            attemptId,
+            summary,
+          });
+        } else {
+          await this.#finishSuccess({
+            project,
+            repository,
+            ticketId: ticket.id,
+            sessionId: session.id,
+            attemptId,
+            targetBranch: ticket.target_branch,
+            summary,
+          });
+        }
         this.#resolveExitWaiters(session.id, true);
         return;
       }
@@ -1347,6 +1401,38 @@ export class ExecutionRuntime {
     );
     this.#emitTicketUpdated(ticket);
     this.#emitSessionUpdated(completedSession);
+  }
+
+  #finishPlanSuccess(input: {
+    sessionId: string;
+    attemptId: string;
+    summary: string;
+  }): void {
+    this.#activeSessions.delete(input.sessionId);
+    this.#store.updateExecutionAttempt(input.attemptId, {
+      status: "completed",
+      end_reason: "plan_completed",
+    });
+
+    const waitingSession = this.#store.updateSessionPlan(input.sessionId, {
+      status: "paused_checkpoint",
+      plan_status: "awaiting_feedback",
+      plan_summary: input.summary,
+      last_summary:
+        "Implementation plan ready. Confirm the plan to start execution or request changes to revise it.",
+    });
+
+    this.#log(
+      input.sessionId,
+      input.attemptId,
+      `Plan summary: ${truncate(input.summary)}`,
+    );
+    this.#log(
+      input.sessionId,
+      input.attemptId,
+      "Plan feedback requested: confirm the plan to continue or request changes to revise it.",
+    );
+    this.#emitSessionUpdated(waitingSession);
   }
 
   async #runValidationProfile(input: {

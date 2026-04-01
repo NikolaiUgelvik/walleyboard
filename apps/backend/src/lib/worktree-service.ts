@@ -6,7 +6,7 @@ import type {
   Project,
   RepositoryConfig,
   TicketFrontmatter,
-} from "@orchestrator/contracts";
+} from "../../../../packages/contracts/src/index.js";
 
 import type { PreparedExecutionRuntime } from "./store.js";
 

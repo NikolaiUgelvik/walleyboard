@@ -7,7 +7,7 @@ import {
   TextInput,
   Textarea,
 } from "@mantine/core";
-import type { ExecutionSession } from "@orchestrator/contracts";
+import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 
 type SessionTerminalPanelProps = {
   session: ExecutionSession;

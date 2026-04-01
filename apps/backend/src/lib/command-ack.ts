@@ -1,5 +1,5 @@
-import type { CommandAck } from "@orchestrator/contracts";
 import { nanoid } from "nanoid";
+import type { CommandAck } from "../../../../packages/contracts/src/index.js";
 
 import { nowIso } from "./time.js";
 

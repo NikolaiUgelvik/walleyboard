@@ -3,7 +3,7 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import {
   createProjectInputSchema,
   updateProjectInputSchema,
-} from "@orchestrator/contracts";
+} from "../../../../packages/contracts/src/index.js";
 
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";

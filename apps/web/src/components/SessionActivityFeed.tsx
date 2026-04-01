@@ -1,5 +1,5 @@
 import { Badge, Code, Group, List, Stack, Text } from "@mantine/core";
-import type { ExecutionSession } from "@orchestrator/contracts";
+import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 
 type SessionActivityFeedProps = {
   logs: string[];
@@ -364,6 +364,29 @@ function interpretSessionLog(
     );
   }
 
+  const planSummary = extractDetail(line, "Plan summary: ");
+  if (planSummary) {
+    return createActivity(
+      `plan-summary-${index}`,
+      "yellow",
+      "Plan ready",
+      planSummary,
+    );
+  }
+
+  const planFeedbackRequested = extractDetail(
+    line,
+    "Plan feedback requested: ",
+  );
+  if (planFeedbackRequested) {
+    return createActivity(
+      `plan-feedback-${index}`,
+      "yellow",
+      "Feedback requested",
+      planFeedbackRequested,
+    );
+  }
+
   if (line === "Codex finished successfully.") {
     return createActivity(
       `finished-${index}`,
@@ -390,6 +413,26 @@ function interpretSessionLog(
       "orange",
       "Changes requested",
       requestedChanges,
+    );
+  }
+
+  const approvedPlan = extractDetail(line, "Plan approved by user: ");
+  if (approvedPlan) {
+    return createActivity(
+      `plan-approved-${index}`,
+      "green",
+      "Plan approved",
+      approvedPlan,
+    );
+  }
+
+  const revisedPlan = extractDetail(line, "Plan changes requested: ");
+  if (revisedPlan) {
+    return createActivity(
+      `plan-revised-${index}`,
+      "orange",
+      "Plan revision requested",
+      revisedPlan,
     );
   }
 

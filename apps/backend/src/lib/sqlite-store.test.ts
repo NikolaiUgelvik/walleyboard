@@ -103,3 +103,54 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("planning sessions keep plan approval state across retries", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-planning-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Planning Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, true, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started planning session"],
+    });
+
+    assert.equal(started.session.plan_status, "drafting");
+    assert.equal(started.session.plan_summary, null);
+
+    const awaitingFeedback = store.updateSessionPlan(started.session.id, {
+      status: "paused_checkpoint",
+      plan_status: "awaiting_feedback",
+      plan_summary: "Inspect the session plumbing and wire plan approval.",
+    });
+    assert.equal(awaitingFeedback?.plan_status, "awaiting_feedback");
+    assert.equal(
+      awaitingFeedback?.plan_summary,
+      "Inspect the session plumbing and wire plan approval.",
+    );
+
+    const revisedPlanning = store.resumeTicket(ticket.id, "revise the plan");
+    assert.equal(revisedPlanning.session.plan_status, "drafting");
+    assert.equal(revisedPlanning.session.plan_summary, null);
+
+    store.updateSessionPlan(started.session.id, {
+      plan_status: "approved",
+      plan_summary: "Approved plan",
+    });
+
+    const implementationResume = store.resumeTicket(ticket.id, "approved plan");
+    assert.equal(implementationResume.session.plan_status, "approved");
+    assert.equal(implementationResume.session.plan_summary, "Approved plan");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

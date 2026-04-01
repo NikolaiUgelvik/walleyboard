@@ -3,6 +3,7 @@ import type {
   CreateProjectInput,
   DraftTicketState,
   ExecutionAttempt,
+  ExecutionPlanStatus,
   ExecutionSession,
   ExecutionSessionStatus,
   Project,
@@ -15,7 +16,7 @@ import type {
   UpdateDraftInput,
   UpdateProjectInput,
   ValidationResult,
-} from "@orchestrator/contracts";
+} from "../../../../packages/contracts/src/index.js";
 
 export type ConfirmDraftInput = {
   title: string;
@@ -75,6 +76,13 @@ export type UpdateExecutionAttemptInput = {
   end_reason?: string | null;
 };
 
+export type UpdateSessionPlanInput = {
+  plan_status?: ExecutionPlanStatus;
+  plan_summary?: string | null;
+  status?: ExecutionSessionStatus;
+  last_summary?: string | null;
+};
+
 export type CompleteSessionInput = {
   status: ExecutionSessionStatus;
   last_summary?: string | null;
@@ -121,6 +129,10 @@ export interface Store {
   requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
   resumeTicket(ticketId: number, reason?: string): RestartTicketResult;
   addSessionInput(sessionId: string, body: string): ExecutionSession;
+  updateSessionPlan(
+    sessionId: string,
+    input: UpdateSessionPlanInput,
+  ): ExecutionSession | undefined;
   updateSessionStatus(
     sessionId: string,
     status: ExecutionSessionStatus,
