@@ -25,8 +25,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import type { ClipboardEvent as ReactClipboardEvent } from "react";
+import { useEffect, useState } from "react";
 import type {
   CommandAck,
   DraftTicketState,
@@ -43,6 +42,7 @@ import type {
 
 import "./app-shell.css";
 import { MarkdownContent } from "./components/MarkdownContent.js";
+import { MonacoMarkdownEditor } from "./components/MonacoMarkdownEditor.js";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
@@ -347,7 +347,7 @@ function buildMarkdownImageInsertion(
   markdownImage: string,
   selectionStart: number,
   selectionEnd: number,
-): string {
+): { cursorOffset: number; value: string } {
   const prefix =
     selectionStart > 0 && !value.slice(0, selectionStart).endsWith("\n")
       ? "\n\n"
@@ -357,12 +357,17 @@ function buildMarkdownImageInsertion(
       ? "\n\n"
       : "";
 
-  return insertTextAtSelection(
-    value,
-    `${prefix}${markdownImage}${suffix}`,
-    selectionStart,
-    selectionEnd,
-  );
+  const insertion = `${prefix}${markdownImage}${suffix}`;
+
+  return {
+    cursorOffset: selectionStart + insertion.length,
+    value: insertTextAtSelection(
+      value,
+      insertion,
+      selectionStart,
+      selectionEnd,
+    ),
+  };
 }
 
 async function uploadDraftArtifactRequest(input: {
@@ -932,6 +937,9 @@ export function App() {
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [validationCommandsText, setValidationCommandsText] = useState("");
+  const [draftEditorProjectId, setDraftEditorProjectId] = useState<
+    string | null
+  >(null);
   const [draftEditorSourceId, setDraftEditorSourceId] = useState<string | null>(
     null,
   );
@@ -951,7 +959,6 @@ export function App() {
     useState<PendingDraftEditorSync | null>(null);
   const [pendingNewDraftAction, setPendingNewDraftAction] =
     useState<NewDraftAction | null>(null);
-  const draftDescriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [planFeedbackBody, setPlanFeedbackBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
@@ -982,6 +989,22 @@ export function App() {
         `/projects/${selectedProjectId}/repositories`,
       ),
     enabled: selectedProjectId !== null,
+  });
+
+  const draftEditorRepositoriesQuery = useQuery({
+    queryKey: [
+      "projects",
+      draftEditorProjectId,
+      "repositories",
+      "draft-editor",
+    ],
+    queryFn: () =>
+      fetchJson<RepositoriesResponse>(
+        `/projects/${draftEditorProjectId}/repositories`,
+      ),
+    enabled:
+      draftEditorProjectId !== null &&
+      draftEditorProjectId !== selectedProjectId,
   });
 
   const draftsQuery = useQuery({
@@ -1890,6 +1913,10 @@ export function App() {
     projectsQuery.data?.projects.find(
       (project) => project.id === selectedProjectId,
     ) ?? null;
+  const draftEditorProject =
+    projectsQuery.data?.projects.find(
+      (project) => project.id === draftEditorProjectId,
+    ) ?? null;
   const projectOptionsDraftModelValue = resolveProjectModelValue(
     projectOptionsDraftModelPreset,
     projectOptionsDraftModelCustom,
@@ -1925,6 +1952,11 @@ export function App() {
     projectDeleteConfirmText.trim() === projectOptionsProject.slug;
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const selectedRepository = repositories[0] ?? null;
+  const draftEditorRepositories =
+    draftEditorProjectId !== null && draftEditorProjectId === selectedProjectId
+      ? repositories
+      : (draftEditorRepositoriesQuery.data?.repositories ?? []);
+  const draftEditorRepository = draftEditorRepositories[0] ?? null;
   const drafts = draftsQuery.data?.drafts ?? [];
   const selectedDraft =
     drafts.find((draft) => draft.id === selectedDraftId) ?? null;
@@ -1939,8 +1971,6 @@ export function App() {
   const draftEditorAcceptanceCriteriaLines = draftEditorAcceptanceCriteria
     .split("\n")
     .filter((line) => line.trim().length > 0);
-  const draftEditorAcceptanceCriteriaPreview =
-    draftEditorAcceptanceCriteriaLines.map((line) => `- ${line}`).join("\n");
   const draftEditorCanPersist =
     draftEditorTitle.trim().length > 0 &&
     draftEditorDescription.trim().length > 0;
@@ -2093,7 +2123,8 @@ export function App() {
     acceptanceCriteria: draftEditorAcceptanceCriteria,
   });
 
-  const initializeNewDraftEditor = (): void => {
+  const initializeNewDraftEditor = (projectId: string | null): void => {
+    setDraftEditorProjectId(projectId);
     setDraftEditorSourceId(emptyDraftEditorFields.sourceId);
     setDraftEditorArtifactScopeId(null);
     setDraftEditorTitle(emptyDraftEditorFields.title);
@@ -2108,7 +2139,7 @@ export function App() {
   const persistNewDraftFromEditor = async (
     action: NewDraftAction,
   ): Promise<string | null> => {
-    if (!selectedProject) {
+    if (!draftEditorProjectId) {
       return null;
     }
 
@@ -2116,7 +2147,7 @@ export function App() {
 
     try {
       const ack = await createDraftMutation.mutateAsync({
-        projectId: selectedProject.id,
+        projectId: draftEditorProjectId,
         artifactScopeId: draftEditorArtifactScopeId,
         title: draftEditorTitle,
         description: draftEditorDescription,
@@ -2129,7 +2160,7 @@ export function App() {
         const createdDraft = queryClient
           .getQueryData<DraftsResponse>([
             "projects",
-            selectedProject.id,
+            draftEditorProjectId,
             "drafts",
           ])
           ?.drafts.find((draft) => draft.id === draftId);
@@ -2150,49 +2181,35 @@ export function App() {
   };
 
   const handleDraftDescriptionPaste = async (
-    event: ReactClipboardEvent<HTMLTextAreaElement>,
-  ): Promise<void> => {
-    const imageItem = Array.from(event.clipboardData.items).find((item) =>
-      item.type.startsWith("image/"),
-    );
-    if (!imageItem || !selectedProject) {
-      return;
+    file: File,
+    selection: { start: number; end: number },
+  ): Promise<{ cursorOffset: number; value: string } | null> => {
+    if (!draftEditorProjectId) {
+      return null;
     }
-
-    const file = imageItem.getAsFile();
-    if (!file) {
-      return;
-    }
-
-    event.preventDefault();
     setDraftEditorUploadError(null);
-
-    const selectionStart = event.currentTarget.selectionStart;
-    const selectionEnd = event.currentTarget.selectionEnd;
 
     try {
       const response = await uploadDraftArtifactMutation.mutateAsync({
-        projectId: selectedProject.id,
+        projectId: draftEditorProjectId,
         artifactScopeId: draftEditorArtifactScopeId,
         mimeType: file.type,
         dataBase64: await blobToBase64(file),
       });
-      const artifactUrl = new URL(response.artifact_url, apiBaseUrl).toString();
-      const markdownImage = `![Pasted screenshot](${artifactUrl})`;
+      const insertion = buildMarkdownImageInsertion(
+        draftEditorDescription,
+        response.markdown_image,
+        selection.start,
+        selection.end,
+      );
 
       setDraftEditorArtifactScopeId(response.artifact_scope_id);
-      setDraftEditorDescription((current) =>
-        buildMarkdownImageInsertion(
-          current,
-          markdownImage,
-          selectionStart,
-          selectionEnd,
-        ),
-      );
+      return insertion;
     } catch (error) {
       setDraftEditorUploadError(
         error instanceof Error ? error.message : "Unable to paste screenshot",
       );
+      return null;
     }
   };
 
@@ -2274,12 +2291,14 @@ export function App() {
 
     if (inspectorState.kind === "draft") {
       if (selectedDraft) {
+        setDraftEditorProjectId(selectedDraft.project_id);
         setDraftEditorArtifactScopeId(selectedDraft.artifact_scope_id);
         setDraftEditorUploadError(null);
       }
       return;
     }
 
+    setDraftEditorProjectId(null);
     setDraftEditorArtifactScopeId(null);
     setDraftEditorUploadError(null);
   }, [inspectorState.kind, selectedDraft]);
@@ -2383,7 +2402,7 @@ export function App() {
   };
 
   const openNewDraft = (): void => {
-    initializeNewDraftEditor();
+    initializeNewDraftEditor(selectedProjectId);
     setInspectorState({ kind: "new_draft" });
     window.requestAnimationFrame(() => focusElementById("draft-title"));
   };
@@ -2431,7 +2450,7 @@ export function App() {
   };
 
   const handleConfirmNewDraft = (): void => {
-    if (!selectedProject || !selectedRepository) {
+    if (!draftEditorProject || !draftEditorRepository) {
       return;
     }
 
@@ -2447,8 +2466,8 @@ export function App() {
         description: draftEditorDescription,
         ticketType: draftEditorTicketType,
         acceptanceCriteria: draftEditorAcceptanceCriteriaLines,
-        repository: selectedRepository,
-        project: selectedProject,
+        repository: draftEditorRepository,
+        project: draftEditorProject,
       });
     })();
   };
@@ -2500,37 +2519,17 @@ export function App() {
         onChange={(event) => setDraftEditorTitle(event.currentTarget.value)}
         required
       />
-      <Textarea
+      <MonacoMarkdownEditor
         id="draft-description"
-        name="draftDescription"
         label="Description"
         description="Markdown is stored literally. Paste a screenshot from the clipboard to insert a hosted image reference."
         placeholder="Users should be able to save and reuse receipt layout presets."
-        ref={draftDescriptionInputRef}
         value={draftEditorDescription}
-        onChange={(event) =>
-          setDraftEditorDescription(event.currentTarget.value)
-        }
-        onPaste={(event) => {
-          void handleDraftDescriptionPaste(event);
-        }}
-        rows={8}
+        onChange={setDraftEditorDescription}
+        onImagePaste={handleDraftDescriptionPaste}
+        minHeight={224}
         required
       />
-      <Stack gap="xs">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-          Description preview
-        </Text>
-        <Box className="detail-placeholder">
-          {draftEditorDescription.trim().length > 0 ? (
-            <MarkdownContent content={draftEditorDescription} />
-          ) : (
-            <Text size="sm" c="dimmed">
-              Markdown preview appears here.
-            </Text>
-          )}
-        </Box>
-      </Stack>
       {uploadDraftArtifactMutation.isPending ? (
         <Text size="sm" c="dimmed">
           Uploading pasted screenshot...
@@ -2563,29 +2562,14 @@ export function App() {
           }
         }}
       />
-      <Textarea
+      <MonacoMarkdownEditor
+        id="draft-acceptance-criteria"
         label="Acceptance criteria"
         description="One Markdown acceptance criterion per line."
-        rows={8}
         value={draftEditorAcceptanceCriteria}
-        onChange={(event) =>
-          setDraftEditorAcceptanceCriteria(event.currentTarget.value)
-        }
+        onChange={setDraftEditorAcceptanceCriteria}
+        minHeight={224}
       />
-      <Stack gap="xs">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-          Acceptance criteria preview
-        </Text>
-        <Box className="detail-placeholder">
-          {draftEditorAcceptanceCriteriaPreview.length > 0 ? (
-            <MarkdownContent content={draftEditorAcceptanceCriteriaPreview} />
-          ) : (
-            <Text size="sm" c="dimmed">
-              Markdown preview appears here.
-            </Text>
-          )}
-        </Box>
-      </Stack>
     </>
   );
 
@@ -3134,7 +3118,7 @@ export function App() {
         {inspectorVisible ? (
           <Box className="orchestrator-detail">
             <Stack gap="md">
-              {inspectorState.kind === "new_draft" && selectedProject ? (
+              {inspectorState.kind === "new_draft" && draftEditorProject ? (
                 <SectionCard
                   title="New draft"
                   description="Work in the composer first. Save the draft directly, or let Codex create it automatically when you refine, ask questions, or create a ready ticket."
@@ -3171,7 +3155,7 @@ export function App() {
                             Repository
                           </Text>
                           <Text fw={700}>
-                            {selectedRepository?.name ?? "Unassigned"}
+                            {draftEditorRepository?.name ?? "Unassigned"}
                           </Text>
                         </Box>
                         <Box className="detail-meta-card">
@@ -3227,7 +3211,7 @@ export function App() {
                             disabled={
                               !draftEditorCanPersist ||
                               createDraftMutation.isPending ||
-                              !selectedRepository
+                              !draftEditorRepository
                             }
                             loading={
                               createDraftMutation.isPending &&
@@ -3246,7 +3230,7 @@ export function App() {
                             disabled={
                               !draftEditorCanPersist ||
                               createDraftMutation.isPending ||
-                              !selectedRepository
+                              !draftEditorRepository
                             }
                             loading={
                               createDraftMutation.isPending &&
@@ -3260,8 +3244,8 @@ export function App() {
                             type="button"
                             disabled={
                               !draftEditorCanPersist ||
-                              !selectedProject ||
-                              !selectedRepository ||
+                              !draftEditorProject ||
+                              !draftEditorRepository ||
                               createDraftMutation.isPending
                             }
                             loading={
