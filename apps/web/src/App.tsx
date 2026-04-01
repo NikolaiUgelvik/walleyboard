@@ -2249,12 +2249,27 @@ export function App() {
             ? input.reason
             : undefined,
       }),
-    onSuccess: async () => {
+    onSuccess: async (_, variables) => {
+      const resumedSessionId =
+        ticketsQuery.data?.tickets.find(
+          (ticket) => ticket.id === variables.ticketId,
+        )?.session_id ?? null;
+
       setResumeReason("");
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "tickets"],
         }),
+        ...(resumedSessionId
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: ["sessions", resumedSessionId],
+              }),
+              queryClient.invalidateQueries({
+                queryKey: ["sessions", resumedSessionId, "logs"],
+              }),
+            ]
+          : []),
         queryClient.invalidateQueries({
           queryKey: ["sessions", selectedSessionId],
         }),
@@ -2922,41 +2937,64 @@ export function App() {
     })();
   };
 
-  const renderTicketMenu = (ticket: TicketFrontmatter) => (
-    <Menu withinPortal position="bottom-end">
-      <Menu.Target>
-        <ActionIcon
-          aria-label={`More actions for ticket ${ticket.id}`}
-          color="gray"
-          variant="subtle"
-          onClick={(event) => event.stopPropagation()}
-        >
-          ...
-        </ActionIcon>
-      </Menu.Target>
-      <Menu.Dropdown onClick={(event) => event.stopPropagation()}>
-        {ticket.status === "done" ? (
+  const renderTicketMenu = (
+    ticket: TicketFrontmatter,
+    ticketSession: ExecutionSession | null,
+  ) => {
+    const canResume = ticketSession?.status === "interrupted";
+    const isResuming =
+      resumeTicketMutation.isPending &&
+      resumeTicketMutation.variables?.ticketId === ticket.id;
+
+    return (
+      <Menu withinPortal position="bottom-end">
+        <Menu.Target>
+          <ActionIcon
+            aria-label={`More actions for ticket ${ticket.id}`}
+            color="gray"
+            variant="subtle"
+            onClick={(event) => event.stopPropagation()}
+          >
+            ...
+          </ActionIcon>
+        </Menu.Target>
+        <Menu.Dropdown onClick={(event) => event.stopPropagation()}>
+          {canResume ? (
+            <Menu.Item
+              disabled={isResuming}
+              onClick={(event) => {
+                event.stopPropagation();
+                resumeTicketMutation.mutate({
+                  ticketId: ticket.id,
+                });
+              }}
+            >
+              {isResuming ? "Resuming..." : "Resume"}
+            </Menu.Item>
+          ) : null}
+          {ticket.status === "done" ? (
+            <Menu.Item
+              onClick={(event) => {
+                event.stopPropagation();
+                archiveTicket(ticket);
+              }}
+            >
+              Archive
+            </Menu.Item>
+          ) : null}
           <Menu.Item
+            color="red"
             onClick={(event) => {
               event.stopPropagation();
-              archiveTicket(ticket);
+              deleteTicket(ticket);
             }}
           >
-            Archive
+            Delete
           </Menu.Item>
-        ) : null}
-        <Menu.Item
-          color="red"
-          onClick={(event) => {
-            event.stopPropagation();
-            deleteTicket(ticket);
-          }}
-        >
-          Delete
-        </Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
-  );
+        </Menu.Dropdown>
+      </Menu>
+    );
+  };
 
   const draftEditorFields = (
     <>
@@ -3413,6 +3451,10 @@ export function App() {
                                 archiveTicketMutation.isError &&
                                 archiveTicketMutation.variables?.ticketId ===
                                   ticket.id;
+                              const showResumeError =
+                                resumeTicketMutation.isError &&
+                                resumeTicketMutation.variables?.ticketId ===
+                                  ticket.id;
                               const showStopError =
                                 stopTicketMutation.isError &&
                                 stopTicketMutation.variables?.ticketId ===
@@ -3474,7 +3516,10 @@ export function App() {
                                         >
                                           {humanizeTicketStatus(ticket.status)}
                                         </Badge>
-                                        {renderTicketMenu(ticket)}
+                                        {renderTicketMenu(
+                                          ticket,
+                                          ticketSession,
+                                        )}
                                       </Group>
                                     </Group>
                                     <MarkdownContent
@@ -3511,6 +3556,11 @@ export function App() {
                                     {showArchiveError ? (
                                       <Text size="sm" c="red">
                                         {archiveTicketMutation.error.message}
+                                      </Text>
+                                    ) : null}
+                                    {showResumeError ? (
+                                      <Text size="sm" c="red">
+                                        {resumeTicketMutation.error.message}
                                       </Text>
                                     ) : null}
                                     {showStopError ? (
