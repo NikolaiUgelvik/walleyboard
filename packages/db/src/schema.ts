@@ -35,6 +35,7 @@ export const repositoriesTable = sqliteTable("repositories", {
 export const draftTicketStatesTable = sqliteTable("draft_ticket_states", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull(),
+  artifactScopeId: text("artifact_scope_id").notNull(),
   titleDraft: text("title_draft").notNull(),
   descriptionDraft: text("description_draft").notNull(),
   proposedRepoId: text("proposed_repo_id"),
@@ -53,6 +54,7 @@ export const ticketsTable = sqliteTable("tickets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   projectId: text("project_id").notNull(),
   repoId: text("repo_id").notNull(),
+  artifactScopeId: text("artifact_scope_id").notNull(),
   status: text("status").notNull(),
   title: text("title").notNull(),
   description: text("description").notNull(),

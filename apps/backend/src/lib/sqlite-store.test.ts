@@ -219,11 +219,13 @@ test("markdown content is preserved across draft, ticket, and session note flows
     ];
     const draft = store.createDraft({
       project_id: project.id,
+      artifact_scope_id: "artifact-scope-markdown",
       title: "**Markdown** draft",
       description: draftDescription,
       proposed_acceptance_criteria: draftCriteria,
     });
 
+    assert.equal(draft.artifact_scope_id, "artifact-scope-markdown");
     assert.equal(draft.title_draft, "**Markdown** draft");
     assert.equal(draft.description_draft, draftDescription);
     assert.deepEqual(draft.proposed_acceptance_criteria, draftCriteria);
@@ -238,6 +240,7 @@ test("markdown content is preserved across draft, ticket, and session note flows
     });
 
     assert.equal(ticket.title, "**Markdown** draft");
+    assert.equal(ticket.artifact_scope_id, "artifact-scope-markdown");
     assert.equal(ticket.description, draftDescription);
     assert.deepEqual(ticket.acceptance_criteria, draftCriteria);
 

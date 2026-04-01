@@ -32,7 +32,7 @@ type MarkdownBlock =
     };
 
 const inlineTokenPattern =
-  /(`([^`]+)`)|(\[([^\]]+)\]\(([^)\s]+)\))|((?<!\*)\*\*([\s\S]+?)\*\*(?!\*))|((?<![A-Za-z0-9_])__([\s\S]+?)__(?![A-Za-z0-9_]))|((?<!\*)\*([^*\n]+)\*(?!\*))|((?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_]))/g;
+  /!\[(?<imageText>[^\]]*)\]\((?<imageHref>[^)\s]+)\)|\[(?<linkText>[^\]]+)\]\((?<linkHref>[^)\s]+)\)|`(?<code>[^`]+)`|(?<!\*)\*\*(?<strongA>[\s\S]+?)\*\*(?!\*)|(?<![A-Za-z0-9_])__(?<strongB>[\s\S]+?)__(?![A-Za-z0-9_])|(?<!\*)\*(?<emA>[^*\n]+)\*(?!\*)|(?<![A-Za-z0-9_])_(?<emB>[^_\n]+)_(?![A-Za-z0-9_])/g;
 
 function isBlankLine(line: string): boolean {
   return line.trim().length === 0;
@@ -244,10 +244,24 @@ function renderInlineSegments(content: string, keyPrefix: string): ReactNode[] {
     }
 
     const key = `${keyPrefix}-${matchIndex}`;
-    if (match[1] && match[2]) {
-      nodes.push(<code key={key}>{match[2]}</code>);
-    } else if (match[3] && match[4] && match[5]) {
-      const safeHref = sanitizeHref(match[5]);
+    const groups = match.groups ?? {};
+
+    if (groups.imageHref !== undefined) {
+      const safeSrc = sanitizeHref(groups.imageHref);
+      if (!safeSrc) {
+        nodes.push(match[0]);
+      } else {
+        nodes.push(
+          <img
+            key={key}
+            alt={groups.imageText ?? ""}
+            loading="lazy"
+            src={safeSrc}
+          />,
+        );
+      }
+    } else if (groups.linkHref && groups.linkText) {
+      const safeHref = sanitizeHref(groups.linkHref);
       if (!safeHref) {
         nodes.push(match[0]);
       } else {
@@ -258,20 +272,25 @@ function renderInlineSegments(content: string, keyPrefix: string): ReactNode[] {
             rel={isExternalHref(safeHref) ? "noreferrer" : undefined}
             target={isExternalHref(safeHref) ? "_blank" : undefined}
           >
-            {renderInline(match[4], `${key}-link`)}
+            {renderInline(groups.linkText, `${key}-link`)}
           </a>,
         );
       }
-    } else if ((match[6] && match[7]) || (match[8] && match[9])) {
+    } else if (groups.code !== undefined) {
+      nodes.push(<code key={key}>{groups.code}</code>);
+    } else if (groups.strongA || groups.strongB) {
       nodes.push(
         <strong key={key}>
-          {renderInline(match[7] ?? match[9] ?? "", `${key}-strong`)}
+          {renderInline(
+            groups.strongA ?? groups.strongB ?? "",
+            `${key}-strong`,
+          )}
         </strong>,
       );
-    } else if ((match[10] && match[11]) || (match[12] && match[13])) {
+    } else if (groups.emA || groups.emB) {
       nodes.push(
         <em key={key}>
-          {renderInline(match[11] ?? match[13] ?? "", `${key}-em`)}
+          {renderInline(groups.emA ?? groups.emB ?? "", `${key}-em`)}
         </em>,
       );
     } else {

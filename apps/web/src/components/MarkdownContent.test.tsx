@@ -48,3 +48,20 @@ test("renders inline markdown without wrapping block elements", () => {
   assert.match(html, /<a href="#x">link<\/a>/);
   assert.doesNotMatch(html, /<p>/);
 });
+
+test("renders markdown images with safe src values", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownContent
+      content={[
+        "Pasted screenshot:",
+        "",
+        "![Clipboard image](/projects/project-1/draft-artifacts/scope-1/example.png)",
+      ].join("\n")}
+    />,
+  );
+
+  assert.match(
+    html,
+    /<img alt="Clipboard image" loading="lazy" src="\/projects\/project-1\/draft-artifacts\/scope-1\/example\.png"\/>/,
+  );
+});

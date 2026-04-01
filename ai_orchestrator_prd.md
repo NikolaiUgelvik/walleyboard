@@ -93,6 +93,9 @@ State transitions:
 - Tickets must be stored as Markdown files with YAML frontmatter.
 - The frontmatter stores machine-readable fields.
 - The Markdown body stores human-readable context and instructions.
+- Draft titles, descriptions, and acceptance criteria should preserve Markdown literally from the first draft through ready-ticket creation.
+- Drafts and ready tickets may reference orchestrator-managed local image artifacts using Markdown image syntax.
+- Each draft and ticket must carry a stable `artifact_scope_id` so pasted screenshot references stay valid across save, reload, refine, revert, and confirm actions.
 - Ticket IDs must be incremental per project.
 - Each ticket must map to exactly one repository.
 
@@ -101,6 +104,7 @@ Required frontmatter fields:
 - `title`
 - `project`
 - `repo`
+- `artifact_scope_id`
 - `status`
 - `ticket_type`
 - `working_branch`
@@ -190,6 +194,9 @@ The intended v1 happy path is:
 - The user starts by selecting a project and entering:
   - A title
   - A description
+- The title, description, and acceptance criteria editors must accept Markdown authoring and show a preview using the same Markdown rendering rules used elsewhere in the board.
+- Pasting an image from the clipboard into the draft description must store the image under an orchestrator-managed artifact path scoped to the draft/ticket and insert a Markdown image reference at the current cursor position.
+- Non-image clipboard contents must retain normal text paste behavior.
 - The drawer may spawn a temporary refinement session to help the user:
   - Refine grammar and clarity
   - Improve task wording
@@ -218,6 +225,7 @@ The intended v1 happy path is:
 - If the user closes the drawer or the app restarts, draft progress must be recoverable.
 - Wizard progress should persist:
   - The latest draft title and description
+  - The draft's stable `artifact_scope_id` and any pasted screenshot references stored under that scope
   - Proposed wording improvements
   - Missing-information prompts and answers
   - Repository suggestions and confirmations

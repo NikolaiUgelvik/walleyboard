@@ -1,5 +1,5 @@
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { basename, join } from "node:path";
 
 function removePathIfPresent(path: string): string | null {
   if (!existsSync(path)) {
@@ -10,10 +10,50 @@ function removePathIfPresent(path: string): string | null {
   return path;
 }
 
+function artifactRoot(projectSlug: string): string {
+  return join(process.cwd(), ".local", "ticket-artifacts", projectSlug);
+}
+
+export function ensureTicketArtifactScopeDir(
+  projectSlug: string,
+  artifactScopeId: string,
+): string {
+  const path = join(artifactRoot(projectSlug), artifactScopeId);
+  mkdirSync(path, { recursive: true });
+  return path;
+}
+
+export function buildTicketArtifactFilePath(
+  projectSlug: string,
+  artifactScopeId: string,
+  filename: string,
+): string {
+  return join(artifactRoot(projectSlug), artifactScopeId, filename);
+}
+
+export function isSafeArtifactFilename(filename: string): boolean {
+  return (
+    basename(filename) === filename &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(filename)
+  );
+}
+
+export function isSafeArtifactScopeId(artifactScopeId: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(artifactScopeId);
+}
+
+export function removeTicketArtifactScope(
+  projectSlug: string,
+  artifactScopeId: string,
+): string | null {
+  return removePathIfPresent(join(artifactRoot(projectSlug), artifactScopeId));
+}
+
 export function removeTicketArtifacts(
   projectSlug: string,
   ticketId: number,
   sessionId?: string | null,
+  artifactScopeId?: string | null,
 ): string[] {
   const removedPaths: string[] = [];
 
@@ -56,6 +96,16 @@ export function removeTicketArtifacts(
     }
   }
 
+  if (artifactScopeId) {
+    const maybeRemovedArtifactScope = removeTicketArtifactScope(
+      projectSlug,
+      artifactScopeId,
+    );
+    if (maybeRemovedArtifactScope) {
+      removedPaths.push(maybeRemovedArtifactScope);
+    }
+  }
+
   return removedPaths;
 }
 
@@ -73,6 +123,7 @@ export function removeProjectArtifacts(
     join(process.cwd(), ".local", "validation-logs", projectSlug),
     join(process.cwd(), ".local", "codex-summaries", projectSlug),
     join(process.cwd(), ".local", "draft-analyses", projectSlug),
+    artifactRoot(projectSlug),
   ];
 
   for (const path of paths) {

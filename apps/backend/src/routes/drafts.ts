@@ -1,4 +1,8 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { extname } from "node:path";
+
 import type { FastifyPluginAsync } from "fastify";
+import { nanoid } from "nanoid";
 
 import {
   confirmDraftInputSchema,
@@ -6,10 +10,12 @@ import {
   draftTicketStateSchema,
   refineDraftInputSchema,
   updateDraftInputSchema,
+  uploadDraftArtifactInputSchema,
 } from "../../../../packages/contracts/src/index.js";
 import type {
   DraftTicketState,
   StructuredEvent,
+  UploadDraftArtifactResponse,
 } from "../../../../packages/contracts/src/index.js";
 
 import { makeCommandAck } from "../lib/command-ack.js";
@@ -17,6 +23,13 @@ import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
+import {
+  buildTicketArtifactFilePath,
+  ensureTicketArtifactScopeDir,
+  isSafeArtifactFilename,
+  isSafeArtifactScopeId,
+  removeTicketArtifactScope,
+} from "../lib/ticket-artifacts.js";
 
 type DraftRouteOptions = {
   eventHub: EventHub;
@@ -93,6 +106,37 @@ function findLatestRevertableRefineEvent(
   return alreadyReverted ? null : latestCompletedRefine;
 }
 
+function resolveImageExtension(mimeType: string): string | null {
+  switch (mimeType.trim().toLowerCase()) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return null;
+  }
+}
+
+function resolveImageMimeType(filename: string): string {
+  switch (extname(filename).toLowerCase()) {
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    default:
+      return "application/octet-stream";
+  }
+}
+
 export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
   app,
   { eventHub, executionRuntime, store },
@@ -124,6 +168,117 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
       });
     }
   });
+
+  app.post<{ Params: { projectId: string } }>(
+    "/projects/:projectId/draft-artifacts",
+    async (request, reply) => {
+      const input = parseBody(
+        reply,
+        uploadDraftArtifactInputSchema,
+        request.body,
+      );
+      if (!input) {
+        return;
+      }
+
+      const project = store.getProject(request.params.projectId);
+      if (!project) {
+        reply.code(404).send({
+          error: "Project not found",
+        });
+        return;
+      }
+
+      const extension = resolveImageExtension(input.mime_type);
+      if (!extension) {
+        reply.code(400).send({
+          error: "Only PNG, JPEG, WEBP, and GIF images can be pasted.",
+        });
+        return;
+      }
+
+      try {
+        const artifactScopeId = input.artifact_scope_id ?? nanoid();
+        if (!isSafeArtifactScopeId(artifactScopeId)) {
+          reply.code(400).send({
+            error: "Invalid artifact scope id",
+          });
+          return;
+        }
+        const filename = `${Date.now()}-${nanoid()}.${extension}`;
+        ensureTicketArtifactScopeDir(project.slug, artifactScopeId);
+        const artifactPath = buildTicketArtifactFilePath(
+          project.slug,
+          artifactScopeId,
+          filename,
+        );
+        writeFileSync(artifactPath, Buffer.from(input.data_base64, "base64"));
+
+        const artifactUrl = `/projects/${project.id}/draft-artifacts/${artifactScopeId}/${filename}`;
+        const response: UploadDraftArtifactResponse = {
+          artifact_scope_id: artifactScopeId,
+          artifact_url: artifactUrl,
+          markdown_image: `![Pasted screenshot](${artifactUrl})`,
+        };
+
+        reply.code(201).send(response);
+      } catch (error) {
+        reply.code(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to persist pasted screenshot",
+        });
+      }
+    },
+  );
+
+  app.get<{
+    Params: {
+      projectId: string;
+      artifactScopeId: string;
+      filename: string;
+    };
+  }>(
+    "/projects/:projectId/draft-artifacts/:artifactScopeId/:filename",
+    async (request, reply) => {
+      const project = store.getProject(request.params.projectId);
+      if (!project) {
+        reply.code(404).send({
+          error: "Project not found",
+        });
+        return;
+      }
+
+      if (!isSafeArtifactFilename(request.params.filename)) {
+        reply.code(400).send({
+          error: "Invalid artifact filename",
+        });
+        return;
+      }
+      if (!isSafeArtifactScopeId(request.params.artifactScopeId)) {
+        reply.code(400).send({
+          error: "Invalid artifact scope id",
+        });
+        return;
+      }
+
+      const artifactPath = buildTicketArtifactFilePath(
+        project.slug,
+        request.params.artifactScopeId,
+        request.params.filename,
+      );
+      if (!existsSync(artifactPath)) {
+        reply.code(404).send({
+          error: "Artifact not found",
+        });
+        return;
+      }
+
+      reply.type(resolveImageMimeType(request.params.filename));
+      reply.send(readFileSync(artifactPath));
+    },
+  );
 
   app.get<{ Params: { draftId: string } }>(
     "/drafts/:draftId/events",
@@ -186,6 +341,11 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
             error: "Draft not found",
           });
           return;
+        }
+
+        const project = store.getProject(draft.project_id);
+        if (project) {
+          removeTicketArtifactScope(project.slug, draft.artifact_scope_id);
         }
 
         eventHub.publish(

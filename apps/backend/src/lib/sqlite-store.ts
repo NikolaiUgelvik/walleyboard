@@ -222,6 +222,7 @@ function mapDraft(row: Record<string, unknown>): DraftTicketState {
   return {
     id: String(row.id),
     project_id: String(row.project_id),
+    artifact_scope_id: String(row.artifact_scope_id),
     title_draft: String(row.title_draft),
     description_draft: String(row.description_draft),
     proposed_repo_id:
@@ -255,6 +256,7 @@ function mapTicket(row: Record<string, unknown>): TicketFrontmatter {
     id: Number(row.id),
     project: String(row.project_id),
     repo: String(row.repo_id),
+    artifact_scope_id: String(row.artifact_scope_id),
     status: String(row.status) as TicketFrontmatter["status"],
     title: String(row.title),
     description: String(row.description ?? ""),
@@ -402,6 +404,7 @@ export class SqliteStore implements Store {
       CREATE TABLE IF NOT EXISTS draft_ticket_states (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
+        artifact_scope_id TEXT NOT NULL,
         title_draft TEXT NOT NULL,
         description_draft TEXT NOT NULL,
         proposed_repo_id TEXT,
@@ -419,6 +422,7 @@ export class SqliteStore implements Store {
         id INTEGER PRIMARY KEY,
         project_id TEXT NOT NULL,
         repo_id TEXT NOT NULL,
+        artifact_scope_id TEXT NOT NULL,
         status TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
@@ -524,12 +528,15 @@ export class SqliteStore implements Store {
       "TEXT NOT NULL DEFAULT '[]'",
     );
     this.#ensureColumn("tickets", "archived_at", "TEXT");
+    this.#ensureColumn("draft_ticket_states", "artifact_scope_id", "TEXT");
+    this.#ensureColumn("tickets", "artifact_scope_id", "TEXT");
     this.#ensureColumn("projects", "draft_analysis_model", "TEXT");
     this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "ticket_work_model", "TEXT");
     this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
     this.#ensureColumn("projects", "post_worktree_command", "TEXT");
+    this.#backfillArtifactScopes();
     this.#backfillProjectConcurrencyDefaults();
     this.#backfillTicketContext();
   }
@@ -678,6 +685,52 @@ export class SqliteStore implements Store {
         `,
       )
       .run(defaultMaxConcurrentSessions);
+  }
+
+  #backfillArtifactScopes(): void {
+    const draftRows = this.#db
+      .prepare(
+        `
+          SELECT id
+          FROM draft_ticket_states
+          WHERE artifact_scope_id IS NULL OR artifact_scope_id = ''
+        `,
+      )
+      .all() as Array<{ id: string }>;
+
+    for (const row of draftRows) {
+      this.#db
+        .prepare(
+          `
+            UPDATE draft_ticket_states
+            SET artifact_scope_id = ?
+            WHERE id = ?
+          `,
+        )
+        .run(nanoid(), row.id);
+    }
+
+    const ticketRows = this.#db
+      .prepare(
+        `
+          SELECT id
+          FROM tickets
+          WHERE artifact_scope_id IS NULL OR artifact_scope_id = ''
+        `,
+      )
+      .all() as Array<{ id: number }>;
+
+    for (const row of ticketRows) {
+      this.#db
+        .prepare(
+          `
+            UPDATE tickets
+            SET artifact_scope_id = ?
+            WHERE id = ?
+          `,
+        )
+        .run(nanoid(), row.id);
+    }
   }
 
   #countActiveSessionsForProject(
@@ -969,20 +1022,22 @@ export class SqliteStore implements Store {
     ).filter((criterion) => hasMeaningfulContent(criterion));
     const timestamp = nowIso();
     const draftId = nanoid();
+    const artifactScopeId = input.artifact_scope_id ?? nanoid();
 
     this.#db
       .prepare(
         `
           INSERT INTO draft_ticket_states (
-            id, project_id, title_draft, description_draft, proposed_repo_id, confirmed_repo_id,
+            id, project_id, artifact_scope_id, title_draft, description_draft, proposed_repo_id, confirmed_repo_id,
             proposed_ticket_type, proposed_acceptance_criteria, wizard_status, split_proposal_summary,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
         draftId,
         input.project_id,
+        artifactScopeId,
         normalizeTitle(input.title),
         preserveMarkdown(input.description),
         firstRepository?.id ?? null,
@@ -1138,15 +1193,16 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO tickets (
-            project_id, repo_id, status, title, description, ticket_type,
+            project_id, repo_id, artifact_scope_id, status, title, description, ticket_type,
             acceptance_criteria, working_branch, target_branch, linked_pr,
             session_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
         draft.project_id,
         input.repo_id,
+        draft.artifact_scope_id,
         "ready",
         normalizeTitle(input.title),
         preserveMarkdown(input.description),

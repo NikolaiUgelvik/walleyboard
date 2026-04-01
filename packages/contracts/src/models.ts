@@ -2,7 +2,10 @@ import { z } from "zod";
 
 export const timestampSchema = z.string().min(1);
 export const absolutePathSchema = z.string().startsWith("/");
-export const opaqueIdSchema = z.string().min(1);
+export const opaqueIdSchema = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9_-]+$/);
 
 export const ticketStatusSchema = z.enum([
   "draft",
@@ -101,6 +104,7 @@ export const requestedChangeNoteSchema = z.object({
 export const draftTicketStateSchema = z.object({
   id: opaqueIdSchema,
   project_id: opaqueIdSchema,
+  artifact_scope_id: opaqueIdSchema,
   title_draft: z.string().min(1),
   description_draft: z.string().min(1),
   proposed_repo_id: opaqueIdSchema.nullable(),
@@ -151,6 +155,7 @@ export const ticketFrontmatterSchema = z.object({
   id: z.number().int().positive(),
   project: opaqueIdSchema,
   repo: opaqueIdSchema,
+  artifact_scope_id: opaqueIdSchema,
   status: ticketStatusSchema,
   title: z.string().min(1),
   description: z.string(),

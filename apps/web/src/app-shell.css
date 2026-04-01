@@ -308,6 +308,16 @@
   padding-left: 0.85rem;
 }
 
+.markdown-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0 0;
+  border: 1px solid var(--orchestrator-border);
+  border-radius: 12px;
+  background: var(--orchestrator-panel-soft);
+}
+
 .markdown-content--inline {
   display: inline;
 }

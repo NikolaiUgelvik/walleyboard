@@ -19,7 +19,7 @@ This repository contains the implementation starter pack for the AI orchestrator
 - frontend shell that talks to the backend and supports:
   - project setup
   - optional repository validation commands during project setup
-  - draft-to-ready ticket flow, including apply-on-completion refinement with one-step revert for the latest successful refine
+  - draft-to-ready ticket flow, including Markdown editing/preview, clipboard screenshot paste into artifact-backed Markdown image references, apply-on-completion refinement, and one-step revert for the latest successful refine
   - starting a ready ticket into a persisted execution session with a prepared git worktree
   - choosing between immediate execution and a planning-first start
   - real `codex exec` launches from the prepared worktree
@@ -52,6 +52,12 @@ Those remain the next implementation milestones.
 2. Start the backend with `npm run dev:backend`.
 3. Start the frontend with `npm run dev:web`.
 4. Generate database artifacts later with `npm run db:generate`.
+
+## Draft Markdown And Screenshots
+
+- Draft descriptions and acceptance criteria are authored and stored as Markdown, and the draft drawer previews that Markdown before refinement or promotion.
+- Pasting a screenshot into the draft description stores the image under the backend's orchestrator-managed artifact path and inserts a Markdown image reference into the draft.
+- The image reference stays attached to the same draft through save, reload, refine, revert, and promote-to-ready flows because drafts and ready tickets share a stable artifact scope identifier.
 
 ## Next Steps
 

@@ -15,6 +15,7 @@ function createDraft(
   return {
     id: "draft-1",
     project_id: "project-1",
+    artifact_scope_id: "artifact-scope-1",
     title_draft: "Initial title",
     description_draft: "Initial description",
     proposed_repo_id: "repo-1",

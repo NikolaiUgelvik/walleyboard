@@ -25,7 +25,8 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ClipboardEvent as ReactClipboardEvent } from "react";
 import type {
   CommandAck,
   DraftTicketState,
@@ -37,6 +38,7 @@ import type {
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
+  UploadDraftArtifactResponse,
 } from "../../../packages/contracts/src/index.js";
 
 import "./app-shell.css";
@@ -308,6 +310,75 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Unable to read pasted image"));
+        return;
+      }
+
+      const [, base64 = ""] = reader.result.split(",", 2);
+      resolve(base64);
+    };
+    reader.onerror = () => {
+      reject(new Error("Unable to read pasted image"));
+    };
+
+    reader.readAsDataURL(blob);
+  });
+}
+
+function insertTextAtSelection(
+  value: string,
+  insertion: string,
+  selectionStart: number,
+  selectionEnd: number,
+): string {
+  return value.slice(0, selectionStart) + insertion + value.slice(selectionEnd);
+}
+
+function buildMarkdownImageInsertion(
+  value: string,
+  markdownImage: string,
+  selectionStart: number,
+  selectionEnd: number,
+): string {
+  const prefix =
+    selectionStart > 0 && !value.slice(0, selectionStart).endsWith("\n")
+      ? "\n\n"
+      : "";
+  const suffix =
+    selectionEnd < value.length && !value.slice(selectionEnd).startsWith("\n")
+      ? "\n\n"
+      : "";
+
+  return insertTextAtSelection(
+    value,
+    `${prefix}${markdownImage}${suffix}`,
+    selectionStart,
+    selectionEnd,
+  );
+}
+
+async function uploadDraftArtifactRequest(input: {
+  projectId: string;
+  artifactScopeId: string | null;
+  mimeType: string;
+  dataBase64: string;
+}): Promise<UploadDraftArtifactResponse> {
+  return await postJson<UploadDraftArtifactResponse>(
+    `/projects/${input.projectId}/draft-artifacts`,
+    {
+      artifact_scope_id: input.artifactScopeId ?? undefined,
+      mime_type: input.mimeType,
+      data_base64: input.dataBase64,
+    },
+  );
 }
 
 function isRouteNotFoundError(error: unknown): boolean {
@@ -864,16 +935,23 @@ export function App() {
   const [draftEditorSourceId, setDraftEditorSourceId] = useState<string | null>(
     null,
   );
+  const [draftEditorArtifactScopeId, setDraftEditorArtifactScopeId] = useState<
+    string | null
+  >(null);
   const [draftEditorTitle, setDraftEditorTitle] = useState("");
   const [draftEditorDescription, setDraftEditorDescription] = useState("");
   const [draftEditorTicketType, setDraftEditorTicketType] =
     useState<DraftTicketState["proposed_ticket_type"]>(null);
   const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] =
     useState("");
+  const [draftEditorUploadError, setDraftEditorUploadError] = useState<
+    string | null
+  >(null);
   const [pendingDraftEditorSync, setPendingDraftEditorSync] =
     useState<PendingDraftEditorSync | null>(null);
   const [pendingNewDraftAction, setPendingNewDraftAction] =
     useState<NewDraftAction | null>(null);
+  const draftDescriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [planFeedbackBody, setPlanFeedbackBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
@@ -1373,6 +1451,7 @@ export function App() {
   const createDraftMutation = useMutation({
     mutationFn: (input: {
       projectId: string;
+      artifactScopeId: string | null;
       title: string;
       description: string;
       proposedTicketType: string | null;
@@ -1380,6 +1459,7 @@ export function App() {
     }) =>
       postJson<CommandAck>("/drafts", {
         project_id: input.projectId,
+        artifact_scope_id: input.artifactScopeId ?? undefined,
         title: input.title,
         description: input.description,
         proposed_ticket_type: input.proposedTicketType,
@@ -1395,6 +1475,10 @@ export function App() {
         setInspectorState({ kind: "draft", draftId });
       }
     },
+  });
+
+  const uploadDraftArtifactMutation = useMutation({
+    mutationFn: uploadDraftArtifactRequest,
   });
 
   const saveDraftMutation = useMutation({
@@ -1855,6 +1939,8 @@ export function App() {
   const draftEditorAcceptanceCriteriaLines = draftEditorAcceptanceCriteria
     .split("\n")
     .filter((line) => line.trim().length > 0);
+  const draftEditorAcceptanceCriteriaPreview =
+    draftEditorAcceptanceCriteriaLines.map((line) => `- ${line}`).join("\n");
   const draftEditorCanPersist =
     draftEditorTitle.trim().length > 0 &&
     draftEditorDescription.trim().length > 0;
@@ -2009,10 +2095,12 @@ export function App() {
 
   const initializeNewDraftEditor = (): void => {
     setDraftEditorSourceId(emptyDraftEditorFields.sourceId);
+    setDraftEditorArtifactScopeId(null);
     setDraftEditorTitle(emptyDraftEditorFields.title);
     setDraftEditorDescription(emptyDraftEditorFields.description);
     setDraftEditorTicketType(emptyDraftEditorFields.ticketType);
     setDraftEditorAcceptanceCriteria(emptyDraftEditorFields.acceptanceCriteria);
+    setDraftEditorUploadError(null);
     setPendingDraftEditorSync(null);
     setPendingNewDraftAction(null);
   };
@@ -2029,6 +2117,7 @@ export function App() {
     try {
       const ack = await createDraftMutation.mutateAsync({
         projectId: selectedProject.id,
+        artifactScopeId: draftEditorArtifactScopeId,
         title: draftEditorTitle,
         description: draftEditorDescription,
         proposedTicketType: draftEditorTicketType,
@@ -2057,6 +2146,53 @@ export function App() {
       return null;
     } finally {
       setPendingNewDraftAction(null);
+    }
+  };
+
+  const handleDraftDescriptionPaste = async (
+    event: ReactClipboardEvent<HTMLTextAreaElement>,
+  ): Promise<void> => {
+    const imageItem = Array.from(event.clipboardData.items).find((item) =>
+      item.type.startsWith("image/"),
+    );
+    if (!imageItem || !selectedProject) {
+      return;
+    }
+
+    const file = imageItem.getAsFile();
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    setDraftEditorUploadError(null);
+
+    const selectionStart = event.currentTarget.selectionStart;
+    const selectionEnd = event.currentTarget.selectionEnd;
+
+    try {
+      const response = await uploadDraftArtifactMutation.mutateAsync({
+        projectId: selectedProject.id,
+        artifactScopeId: draftEditorArtifactScopeId,
+        mimeType: file.type,
+        dataBase64: await blobToBase64(file),
+      });
+      const artifactUrl = new URL(response.artifact_url, apiBaseUrl).toString();
+      const markdownImage = `![Pasted screenshot](${artifactUrl})`;
+
+      setDraftEditorArtifactScopeId(response.artifact_scope_id);
+      setDraftEditorDescription((current) =>
+        buildMarkdownImageInsertion(
+          current,
+          markdownImage,
+          selectionStart,
+          selectionEnd,
+        ),
+      );
+    } catch (error) {
+      setDraftEditorUploadError(
+        error instanceof Error ? error.message : "Unable to paste screenshot",
+      );
     }
   };
 
@@ -2130,6 +2266,23 @@ export function App() {
     pendingDraftEditorSync,
     selectedDraft,
   ]);
+
+  useEffect(() => {
+    if (inspectorState.kind === "new_draft") {
+      return;
+    }
+
+    if (inspectorState.kind === "draft") {
+      if (selectedDraft) {
+        setDraftEditorArtifactScopeId(selectedDraft.artifact_scope_id);
+        setDraftEditorUploadError(null);
+      }
+      return;
+    }
+
+    setDraftEditorArtifactScopeId(null);
+    setDraftEditorUploadError(null);
+  }, [inspectorState.kind, selectedDraft]);
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);
@@ -2351,14 +2504,43 @@ export function App() {
         id="draft-description"
         name="draftDescription"
         label="Description"
+        description="Markdown is stored literally. Paste a screenshot from the clipboard to insert a hosted image reference."
         placeholder="Users should be able to save and reuse receipt layout presets."
+        ref={draftDescriptionInputRef}
         value={draftEditorDescription}
         onChange={(event) =>
           setDraftEditorDescription(event.currentTarget.value)
         }
+        onPaste={(event) => {
+          void handleDraftDescriptionPaste(event);
+        }}
         rows={8}
         required
       />
+      <Stack gap="xs">
+        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+          Description preview
+        </Text>
+        <Box className="detail-placeholder">
+          {draftEditorDescription.trim().length > 0 ? (
+            <MarkdownContent content={draftEditorDescription} />
+          ) : (
+            <Text size="sm" c="dimmed">
+              Markdown preview appears here.
+            </Text>
+          )}
+        </Box>
+      </Stack>
+      {uploadDraftArtifactMutation.isPending ? (
+        <Text size="sm" c="dimmed">
+          Uploading pasted screenshot...
+        </Text>
+      ) : null}
+      {draftEditorUploadError ? (
+        <Text size="sm" c="red">
+          {draftEditorUploadError}
+        </Text>
+      ) : null}
       <Select
         label="Ticket type"
         data={[
@@ -2383,13 +2565,27 @@ export function App() {
       />
       <Textarea
         label="Acceptance criteria"
-        description="One acceptance criterion per line."
+        description="One Markdown acceptance criterion per line."
         rows={8}
         value={draftEditorAcceptanceCriteria}
         onChange={(event) =>
           setDraftEditorAcceptanceCriteria(event.currentTarget.value)
         }
       />
+      <Stack gap="xs">
+        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+          Acceptance criteria preview
+        </Text>
+        <Box className="detail-placeholder">
+          {draftEditorAcceptanceCriteriaPreview.length > 0 ? (
+            <MarkdownContent content={draftEditorAcceptanceCriteriaPreview} />
+          ) : (
+            <Text size="sm" c="dimmed">
+              Markdown preview appears here.
+            </Text>
+          )}
+        </Box>
+      </Stack>
     </>
   );
 

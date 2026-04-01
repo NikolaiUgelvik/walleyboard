@@ -40,6 +40,7 @@ export const updateProjectInputSchema = z.object({
 
 export const createDraftInputSchema = z.object({
   project_id: opaqueIdSchema,
+  artifact_scope_id: opaqueIdSchema.optional(),
   title: z.string().min(1),
   description: z.string().min(1),
   proposed_ticket_type: ticketTypeSchema.nullable().optional(),
@@ -64,6 +65,18 @@ export const confirmDraftInputSchema = z.object({
   ticket_type: ticketTypeSchema,
   acceptance_criteria: z.array(z.string().min(1)).min(1),
   target_branch: z.string().min(1),
+});
+
+export const uploadDraftArtifactInputSchema = z.object({
+  artifact_scope_id: opaqueIdSchema.optional(),
+  mime_type: z.string().min(1),
+  data_base64: z.string().min(1),
+});
+
+export const uploadDraftArtifactResponseSchema = z.object({
+  artifact_scope_id: opaqueIdSchema,
+  artifact_url: z.string().min(1),
+  markdown_image: z.string().min(1),
 });
 
 export const startTicketInputSchema = z.object({
@@ -216,6 +229,12 @@ export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
 export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;
 export type RefineDraftInput = z.infer<typeof refineDraftInputSchema>;
 export type ConfirmDraftInput = z.infer<typeof confirmDraftInputSchema>;
+export type UploadDraftArtifactInput = z.infer<
+  typeof uploadDraftArtifactInputSchema
+>;
+export type UploadDraftArtifactResponse = z.infer<
+  typeof uploadDraftArtifactResponseSchema
+>;
 export type StartTicketInput = z.infer<typeof startTicketInputSchema>;
 export type StopTicketInput = z.infer<typeof stopTicketInputSchema>;
 export type ResumeTicketInput = z.infer<typeof resumeTicketInputSchema>;

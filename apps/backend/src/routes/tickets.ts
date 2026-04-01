@@ -472,6 +472,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
             project.slug,
             ticket.id,
             session?.id ?? ticket.session_id,
+            ticket.artifact_scope_id,
           );
         } catch (error) {
           cleanupWarnings.push(

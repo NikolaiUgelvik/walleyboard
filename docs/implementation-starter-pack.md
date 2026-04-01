@@ -38,6 +38,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - `GET /projects/:projectId/repositories`
 - `GET /projects/:projectId/tickets`
 - `GET /projects/:projectId/drafts`
+- `GET /projects/:projectId/draft-artifacts/:artifactScopeId/:filename`
 - `GET /tickets/:ticketId`
 - `GET /tickets/:ticketId/review-package`
 - `GET /tickets/:ticketId/events`
@@ -46,6 +47,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - `GET /sessions/:sessionId/logs`
 - `POST /projects`
 - `POST /drafts`
+- `POST /projects/:projectId/draft-artifacts`
 - `POST /drafts/:draftId/refine`
 - `POST /drafts/:draftId/refine/revert`
 - `POST /drafts/:draftId/confirm`
@@ -81,6 +83,8 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - Project setup is real and persisted in SQLite.
 - Repository validation commands can be configured during project setup.
 - Draft creation, refinement, and promotion to `ready` tickets are real and persisted.
+- Draft descriptions and acceptance criteria now stay as Markdown from editor input through draft persistence, refine/revert, and ready-ticket promotion.
+- The draft drawer now previews Markdown inline and supports clipboard screenshot paste into artifact-backed Markdown image references that survive reload and promotion.
 - The latest successful draft refinement can be reverted back to its pre-refine snapshot.
 - Starting a `ready` ticket now creates:
   - a persisted execution session
