@@ -1,4 +1,5 @@
 import {
+  Alert,
   Badge,
   Button,
   Code,
@@ -22,7 +23,12 @@ import {
   type ReviewPackage,
   type TicketFrontmatter
 } from "@orchestrator/contracts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient
+} from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { SectionCard } from "./components/SectionCard.js";
@@ -69,6 +75,15 @@ type SessionLogsResponse = {
 
 type ReviewPackageResponse = {
   review_package: ReviewPackage;
+};
+
+type ActionItem = {
+  key: string;
+  color: "blue" | "yellow";
+  title: string;
+  message: string;
+  sessionId: string;
+  actionLabel: string;
 };
 
 function slugify(value: string): string {
@@ -182,6 +197,17 @@ export function App() {
     queryFn: () => fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
     enabled: selectedProjectId !== null,
     refetchInterval: selectedProjectId === null ? false : 2_000
+  });
+
+  const sessionSummaries = useQueries({
+    queries: (ticketsQuery.data?.tickets ?? [])
+      .filter((ticket) => ticket.session_id !== null)
+      .map((ticket) => ({
+        queryKey: ["sessions", ticket.session_id],
+        queryFn: () => fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
+        enabled: ticket.session_id !== null,
+        refetchInterval: 2_000
+      }))
   });
 
   const inferredSessionId =
@@ -459,6 +485,12 @@ export function App() {
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
+  const sessionById = new Map(
+    sessionSummaries
+      .map((query) => query.data?.session)
+      .filter((value): value is ExecutionSession => value !== undefined)
+      .map((item) => [item.id, item])
+  );
 
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
@@ -471,6 +503,52 @@ export function App() {
   for (const ticket of tickets) {
     groupedTickets[ticket.status].push(ticket);
   }
+
+  const actionItems: ActionItem[] = tickets.flatMap((ticket): ActionItem[] => {
+    const sessionForTicket =
+      ticket.session_id !== null ? sessionById.get(ticket.session_id) ?? null : null;
+
+    if (ticket.status === "review" && ticket.session_id) {
+      return [
+        {
+          key: `review-${ticket.id}`,
+          color: "blue" as const,
+          title: `Review ready for ticket #${ticket.id}`,
+          message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
+          sessionId: ticket.session_id,
+          actionLabel: "Open Review"
+        }
+      ];
+    }
+
+    if (
+      sessionForTicket &&
+      ["awaiting_input", "failed", "interrupted", "paused_checkpoint", "paused_user_control"].includes(
+        sessionForTicket.status
+      )
+    ) {
+      const label =
+        sessionForTicket.status === "failed"
+          ? `Execution failed for ticket #${ticket.id}`
+          : `Input needed for ticket #${ticket.id}`;
+      const message =
+        sessionForTicket.last_summary ??
+        `${ticket.title} needs your attention before the next attempt can continue.`;
+
+      return [
+        {
+          key: `session-${ticket.id}`,
+          color: "yellow" as const,
+          title: label,
+          message,
+          sessionId: sessionForTicket.id,
+          actionLabel: "Open Session"
+        }
+      ];
+    }
+
+    return [];
+  });
 
   return (
     <Container size="xl" py="xl">
@@ -489,8 +567,8 @@ export function App() {
             Codex exec run in its prepared worktree and moves successful runs into
             local review. Review approval can now merge the branch back into the target
             branch and clean up local artifacts. Review feedback and failed runs can now
-            relaunch the same logical session as a new attempt. Terminal control and
-            in-app notifications are still the next milestones.
+            relaunch the same logical session as a new attempt. Terminal control is still
+            the next major milestone.
           </Text>
         </Stack>
 
@@ -535,10 +613,33 @@ export function App() {
                 <List.Item>Configurable validation commands that gate review handoff</List.Item>
                 <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
                 <List.Item>Request changes and resume flows that reuse the same session</List.Item>
+                <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
                 <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
               </List>
           </SectionCard>
         </SimpleGrid>
+
+        {actionItems.length > 0 ? (
+          <SectionCard
+            title="Action Required"
+            description="These tickets need a review decision or user input before the workflow can move forward."
+          >
+            <Stack gap="sm">
+              {actionItems.map((item) => (
+                <Alert key={item.key} color={item.color} title={item.title}>
+                  <Stack gap="xs">
+                    <Text size="sm">{item.message}</Text>
+                    <Group justify="flex-end">
+                      <Button variant="light" onClick={() => setSelectedSessionId(item.sessionId)}>
+                        {item.actionLabel}
+                      </Button>
+                    </Group>
+                  </Stack>
+                </Alert>
+              ))}
+            </Stack>
+          </SectionCard>
+        ) : null}
 
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
           <SectionCard

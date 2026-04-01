@@ -27,9 +27,9 @@ This document turns the PRD into the first concrete module boundaries for the MV
 
 1. Implement sandbox lifecycle services around the prepared Codex runtime.
 2. Replace the log-only execution view with a real PTY-backed terminal runtime.
-3. Add in-app notifications for sessions that need user input or approval.
-4. Add richer validation configuration and override handling.
-5. Restore interrupted sessions conservatively after backend restart.
+3. Add richer validation configuration and override handling.
+4. Restore interrupted sessions conservatively after backend restart.
+5. Layer Bubblewrap policy onto the live runtime and validation commands.
 
 ## Starter Endpoints
 
@@ -99,6 +99,10 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - attaching a requested-changes note to the same logical session
   - creating a new execution attempt on the same worktree and branch
   - relaunching Codex with persisted review feedback or resume guidance
+- The frontend now surfaces in-app action cards for:
+  - review-ready tickets
+  - failed sessions
+  - sessions waiting for user input or approval
 - Session input is still only stored for future use:
   - live checkpoint handoff is not implemented yet
   - no PTY-backed terminal stream is attached yet

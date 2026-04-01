@@ -26,6 +26,7 @@ This repository contains the implementation starter pack for the AI orchestrator
   - session log streaming and automatic transition into `review`
   - local review diff artifact generation
   - request-changes and resume flows that create new attempts on the same session/worktree
+  - visible in-app action cards for review-ready and waiting sessions
   - direct merge from `review` into the target branch with local worktree and branch cleanup
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
@@ -49,4 +50,4 @@ Those remain the next implementation milestones.
 
 - Add sandbox orchestration around the live Codex runtime.
 - Replace the log-only session view with PTY-backed terminal control.
-- Add in-app notifications for sessions that need user input or approval.
+- Restore interrupted sessions conservatively after backend restart.
