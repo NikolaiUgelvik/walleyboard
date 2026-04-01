@@ -1,0 +1,29 @@
+{
+  "name": "@orchestrator/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check src vite.config.ts",
+    "format": "biome format --write src vite.config.ts"
+  },
+  "dependencies": {
+    "@mantine/core": "^7.17.0",
+    "@mantine/hooks": "^7.17.0",
+    "@orchestrator/contracts": "0.0.0",
+    "@tanstack/react-query": "^5.66.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@orchestrator/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check src",
+    "format": "biome format --write src"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.8.2"
+  }
+}
