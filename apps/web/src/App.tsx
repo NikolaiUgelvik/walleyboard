@@ -174,6 +174,7 @@ type PendingDraftEditorSync = {
   acceptanceCriteria: string;
 };
 
+type NewDraftAction = "save" | "refine" | "questions" | "confirm";
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
 type DraftQuestionsResult = {
@@ -701,6 +702,8 @@ export function App() {
     useState("");
   const [pendingDraftEditorSync, setPendingDraftEditorSync] =
     useState<PendingDraftEditorSync | null>(null);
+  const [pendingNewDraftAction, setPendingNewDraftAction] =
+    useState<NewDraftAction | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
@@ -1595,6 +1598,9 @@ export function App() {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  const draftEditorCanPersist =
+    draftEditorTitle.trim().length > 0 &&
+    draftEditorDescription.trim().length > 0;
   const draftFormDirty =
     selectedDraft !== null &&
     (draftEditorTitle !== selectedDraft.title_draft ||
@@ -1638,6 +1644,10 @@ export function App() {
   const visibleTickets = tickets.filter((ticket) =>
     ticketMatchesSearch(ticket, searchNeedle),
   );
+  const visibleBoardColumns: (typeof boardColumns)[number][] =
+    drafts.length > 0
+      ? [...boardColumns]
+      : boardColumns.filter((column) => column !== "draft");
 
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
@@ -1745,6 +1755,33 @@ export function App() {
     setDraftEditorTicketType("feature");
     setDraftEditorAcceptanceCriteria("");
     setPendingDraftEditorSync(null);
+    setPendingNewDraftAction(null);
+  };
+
+  const persistNewDraftFromEditor = async (
+    action: NewDraftAction,
+  ): Promise<string | null> => {
+    if (!selectedProject) {
+      return null;
+    }
+
+    setPendingNewDraftAction(action);
+
+    try {
+      const ack = await createDraftMutation.mutateAsync({
+        projectId: selectedProject.id,
+        title: draftEditorTitle,
+        description: draftEditorDescription,
+        proposedTicketType: draftEditorTicketType,
+        proposedAcceptanceCriteria: draftEditorAcceptanceCriteriaLines,
+      });
+
+      return ack.resource_refs.draft_id ?? null;
+    } catch {
+      return null;
+    } finally {
+      setPendingNewDraftAction(null);
+    }
   };
 
   useEffect(() => {
@@ -1920,6 +1957,55 @@ export function App() {
 
   const openDraft = (draftId: string): void => {
     setInspectorState({ kind: "draft", draftId });
+  };
+
+  const handleSaveNewDraft = (): void => {
+    void persistNewDraftFromEditor("save");
+  };
+
+  const handleRefineNewDraft = (): void => {
+    void (async () => {
+      const draftId = await persistNewDraftFromEditor("refine");
+      if (!draftId) {
+        return;
+      }
+
+      refineDraftMutation.mutate(draftId);
+    })();
+  };
+
+  const handleQuestionNewDraft = (): void => {
+    void (async () => {
+      const draftId = await persistNewDraftFromEditor("questions");
+      if (!draftId) {
+        return;
+      }
+
+      questionDraftMutation.mutate(draftId);
+    })();
+  };
+
+  const handleConfirmNewDraft = (): void => {
+    if (!selectedProject || !selectedRepository) {
+      return;
+    }
+
+    void (async () => {
+      const draftId = await persistNewDraftFromEditor("confirm");
+      if (!draftId) {
+        return;
+      }
+
+      confirmDraftMutation.mutate({
+        draftId,
+        title: draftEditorTitle,
+        description: draftEditorDescription,
+        ticketType: draftEditorTicketType,
+        acceptanceCriteria: draftEditorAcceptanceCriteriaLines,
+        repository: selectedRepository,
+        project: selectedProject,
+      });
+    })();
   };
 
   const renderTicketMenu = (ticket: TicketFrontmatter) => (
@@ -2140,7 +2226,7 @@ export function App() {
 
             <Box className="workbench-toolbar">
               <Box className="toolbar-group">
-                {boardColumns.map((column) => {
+                {visibleBoardColumns.map((column) => {
                   const count =
                     column === "draft"
                       ? visibleDrafts.length
@@ -2214,7 +2300,7 @@ export function App() {
             ) : (
               <Box className="board-scroller">
                 <Box className="board-grid">
-                  {boardColumns.map((column) => {
+                  {visibleBoardColumns.map((column) => {
                     const meta = boardColumnMeta[column];
                     const columnCount =
                       column === "draft"
@@ -2523,40 +2609,145 @@ export function App() {
               {inspectorState.kind === "new_draft" && selectedProject ? (
                 <SectionCard
                   title="New draft"
-                  description="Capture the full draft up front, then keep refining once the draft record exists."
+                  description="Work in the composer first. Save the draft directly, or let Codex create it automatically when you refine, ask questions, or create a ready ticket."
                 >
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
-                      createDraftMutation.mutate({
-                        projectId: selectedProject.id,
-                        title: draftEditorTitle,
-                        description: draftEditorDescription,
-                        proposedTicketType: draftEditorTicketType,
-                        proposedAcceptanceCriteria:
-                          draftEditorAcceptanceCriteriaLines,
-                      });
+                      handleSaveNewDraft();
                     }}
                   >
-                    <Stack gap="sm">
+                    <Stack gap="md">
+                      <Group justify="space-between" align="flex-start">
+                        <Stack gap={4}>
+                          <Text className="rail-kicker">Draft</Text>
+                          <Text fw={700}>
+                            {draftEditorTitle.trim().length > 0
+                              ? draftEditorTitle
+                              : "Unsaved draft"}
+                          </Text>
+                        </Stack>
+                        <Badge variant="light" color="gray">
+                          unsaved
+                        </Badge>
+                      </Group>
+
+                      <Box className="detail-meta-grid">
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Repository
+                          </Text>
+                          <Text fw={700}>
+                            {selectedRepository?.name ?? "Unassigned"}
+                          </Text>
+                        </Box>
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Acceptance criteria
+                          </Text>
+                          <Text fw={700}>
+                            {draftEditorAcceptanceCriteriaLines.length}
+                          </Text>
+                        </Box>
+                      </Box>
+
                       {draftEditorFields}
+
+                      <Text size="sm" c="dimmed">
+                        Refine, Questions, and Create Ready will save the draft
+                        automatically before they continue.
+                      </Text>
+
                       {createDraftMutation.isError ? (
                         <Text size="sm" c="red">
                           {createDraftMutation.error.message}
                         </Text>
                       ) : null}
-                      <Group justify="space-between" align="center">
-                        <Text size="sm" c="dimmed">
-                          Drafts stay on the board until they are refined and
-                          confirmed.
-                        </Text>
+
+                      <Group justify="space-between" align="flex-start">
                         <Button
-                          type="submit"
-                          loading={createDraftMutation.isPending}
+                          type="button"
+                          color="red"
+                          variant="subtle"
+                          onClick={hideInspector}
                         >
-                          Create Draft
+                          Discard Draft
                         </Button>
+                        <Group gap="xs" justify="flex-end">
+                          <Button
+                            type="submit"
+                            variant="light"
+                            disabled={
+                              !draftEditorCanPersist ||
+                              createDraftMutation.isPending
+                            }
+                            loading={
+                              createDraftMutation.isPending &&
+                              pendingNewDraftAction === "save"
+                            }
+                          >
+                            Save Draft
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="light"
+                            disabled={
+                              !draftEditorCanPersist ||
+                              createDraftMutation.isPending ||
+                              !selectedRepository
+                            }
+                            loading={
+                              createDraftMutation.isPending &&
+                              pendingNewDraftAction === "refine"
+                            }
+                            onClick={handleRefineNewDraft}
+                          >
+                            Refine
+                          </Button>
+                          <Button type="button" variant="light" disabled>
+                            Revert Refine
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="light"
+                            disabled={
+                              !draftEditorCanPersist ||
+                              createDraftMutation.isPending ||
+                              !selectedRepository
+                            }
+                            loading={
+                              createDraftMutation.isPending &&
+                              pendingNewDraftAction === "questions"
+                            }
+                            onClick={handleQuestionNewDraft}
+                          >
+                            Questions?
+                          </Button>
+                          <Button
+                            type="button"
+                            disabled={
+                              !draftEditorCanPersist ||
+                              !selectedProject ||
+                              !selectedRepository ||
+                              createDraftMutation.isPending
+                            }
+                            loading={
+                              createDraftMutation.isPending &&
+                              pendingNewDraftAction === "confirm"
+                            }
+                            onClick={handleConfirmNewDraft}
+                          >
+                            Create Ready
+                          </Button>
+                        </Group>
                       </Group>
+
+                      <Stack gap="xs">
+                        <Text fw={700}>History</Text>
+                        <Text size="sm" c="dimmed">
+                          No refinement or feasibility runs yet.
+                        </Text>
+                      </Stack>
                     </Stack>
                   </form>
                 </SectionCard>
