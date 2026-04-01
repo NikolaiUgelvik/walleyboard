@@ -102,6 +102,7 @@ export type StartupRecoveryResult = {
 
 export type ListProjectTicketsOptions = {
   includeArchived?: boolean;
+  archivedOnly?: boolean;
 };
 
 export interface Store {
@@ -179,6 +180,7 @@ export interface Store {
     payload: Record<string, unknown>,
   ): StructuredEvent;
   archiveTicket(ticketId: number): TicketFrontmatter | undefined;
+  restoreTicket(ticketId: number): TicketFrontmatter | undefined;
   deleteTicket(ticketId: number): TicketFrontmatter | undefined;
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined;
 }

@@ -283,6 +283,10 @@ test("archived tickets stay in storage but leave active project lists", () => {
     assert.equal(archivedTicket?.id, ticket.id);
     assert.deepEqual(store.listProjectTickets(project.id), []);
     assert.equal(
+      store.listProjectTickets(project.id, { archivedOnly: true }).length,
+      1,
+    );
+    assert.equal(
       store.listProjectTickets(project.id, { includeArchived: true }).length,
       1,
     );
@@ -291,10 +295,55 @@ test("archived tickets stay in storage but leave active project lists", () => {
     assert.deepEqual(reopenedStore.listProjectTickets(project.id), []);
     assert.equal(reopenedStore.getTicket(ticket.id)?.id, ticket.id);
     assert.equal(
+      reopenedStore.listProjectTickets(project.id, { archivedOnly: true })
+        .length,
+      1,
+    );
+    assert.equal(
       reopenedStore.listProjectTickets(project.id, { includeArchived: true })
         .length,
       1,
     );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("restored tickets rejoin active project lists and persist after reload", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-restore-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Restore Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const completedTicket = store.updateTicketStatus(ticket.id, "done");
+    assert.equal(completedTicket?.status, "done");
+    store.archiveTicket(ticket.id);
+
+    const restoredTicket = store.restoreTicket(ticket.id);
+    assert.equal(restoredTicket?.id, ticket.id);
+    assert.equal(store.listProjectTickets(project.id).length, 1);
+    assert.equal(
+      store.listProjectTickets(project.id, { archivedOnly: true }).length,
+      0,
+    );
+
+    const reopenedStore = new SqliteStore(databasePath);
+    assert.equal(reopenedStore.listProjectTickets(project.id).length, 1);
+    assert.equal(
+      reopenedStore.listProjectTickets(project.id, { archivedOnly: true })
+        .length,
+      0,
+    );
+    assert.equal(reopenedStore.getTicket(ticket.id)?.id, ticket.id);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

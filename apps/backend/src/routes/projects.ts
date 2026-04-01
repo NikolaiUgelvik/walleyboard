@@ -84,6 +84,15 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   );
 
   app.get<{ Params: { projectId: string } }>(
+    "/projects/:projectId/archived-tickets",
+    async (request) => ({
+      tickets: store.listProjectTickets(request.params.projectId, {
+        archivedOnly: true,
+      }),
+    }),
+  );
+
+  app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/tickets",
     async (request) => ({
       tickets: store.listProjectTickets(request.params.projectId),

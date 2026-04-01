@@ -989,18 +989,36 @@ export class SqliteStore implements Store {
     projectId: string,
     options: ListProjectTicketsOptions = {},
   ): TicketFrontmatter[] {
-    const { includeArchived = false } = options;
-    const rows = this.#db
-      .prepare(
-        `
-          SELECT *
-          FROM tickets
-          WHERE project_id = ?
-            AND (? OR archived_at IS NULL)
-          ORDER BY updated_at DESC, id DESC
-        `,
-      )
-      .all(projectId, includeArchived ? 1 : 0) as Record<string, unknown>[];
+    const { archivedOnly = false, includeArchived = false } = options;
+    const statement = archivedOnly
+      ? this.#db.prepare(
+          `
+            SELECT *
+            FROM tickets
+            WHERE project_id = ?
+              AND archived_at IS NOT NULL
+            ORDER BY updated_at DESC, id DESC
+          `,
+        )
+      : includeArchived
+        ? this.#db.prepare(
+            `
+              SELECT *
+              FROM tickets
+              WHERE project_id = ?
+              ORDER BY updated_at DESC, id DESC
+            `,
+          )
+        : this.#db.prepare(
+            `
+              SELECT *
+              FROM tickets
+              WHERE project_id = ?
+                AND archived_at IS NULL
+              ORDER BY updated_at DESC, id DESC
+            `,
+          );
+    const rows = statement.all(projectId) as Record<string, unknown>[];
     return rows.map(mapTicket);
   }
 
@@ -2343,6 +2361,33 @@ export class SqliteStore implements Store {
         `,
       )
       .run(timestamp, timestamp, ticketId);
+
+    return this.getTicket(ticketId);
+  }
+
+  restoreTicket(ticketId: number): TicketFrontmatter | undefined {
+    const ticketRow = this.#db
+      .prepare("SELECT archived_at FROM tickets WHERE id = ?")
+      .get(ticketId) as { archived_at: string | null } | undefined;
+
+    if (!ticketRow) {
+      return undefined;
+    }
+
+    if (ticketRow.archived_at === null) {
+      throw new Error("Ticket is not archived");
+    }
+
+    const timestamp = nowIso();
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET archived_at = NULL, updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(timestamp, ticketId);
 
     return this.getTicket(ticketId);
   }

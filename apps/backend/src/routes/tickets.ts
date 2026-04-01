@@ -413,6 +413,48 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   );
 
   app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/restore",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      try {
+        const restoredTicket = store.restoreTicket(ticketId);
+        if (!restoredTicket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        store.recordTicketEvent(ticketId, "ticket.restored", {
+          ticket_id: restoredTicket.id,
+          project_id: restoredTicket.project,
+          session_id: restoredTicket.session_id,
+        });
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
+            ticket: restoredTicket,
+          }),
+        );
+
+        reply.send(
+          makeCommandAck(true, "Ticket restored", {
+            project_id: restoredTicket.project,
+            ticket_id: restoredTicket.id,
+            session_id: restoredTicket.session_id ?? undefined,
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to restore ticket";
+        reply.code(409).send({ error: message });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/delete",
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);

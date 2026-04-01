@@ -184,6 +184,10 @@ type DraftQuestionsResult = {
   risks: string[];
   suggested_draft_edits: string[];
 };
+type ArchiveActionFeedback = {
+  tone: "green" | "red";
+  message: string;
+};
 
 type InspectorState =
   | { kind: "hidden" }
@@ -915,6 +919,9 @@ export function App() {
   const [inspectorState, setInspectorState] = useState<InspectorState>({
     kind: "hidden",
   });
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [archiveActionFeedback, setArchiveActionFeedback] =
+    useState<ArchiveActionFeedback | null>(null);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
     string | null
@@ -983,6 +990,11 @@ export function App() {
   const selectedSessionId =
     inspectorState.kind === "session" ? inspectorState.sessionId : null;
   const inspectorVisible = inspectorState.kind !== "hidden";
+  const selectProject = (projectId: string | null): void => {
+    setSelectedProjectId(projectId);
+    setArchiveModalOpen(false);
+    setArchiveActionFeedback(null);
+  };
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -1037,6 +1049,17 @@ export function App() {
     refetchInterval: selectedProjectId === null ? false : 2_000,
   });
 
+  const archivedTicketsQuery = useQuery({
+    queryKey: ["projects", selectedProjectId, "tickets", "archived"],
+    queryFn: () =>
+      fetchJson<TicketsResponse>(
+        `/projects/${selectedProjectId}/archived-tickets`,
+      ),
+    enabled: selectedProjectId !== null && archiveModalOpen,
+    refetchInterval:
+      selectedProjectId === null || !archiveModalOpen ? false : 2_000,
+  });
+
   const draftEventsQuery = useQuery({
     queryKey: ["drafts", selectedDraftId, "events"],
     queryFn: () =>
@@ -1062,6 +1085,8 @@ export function App() {
     const firstProjectId = projectsQuery.data?.projects[0]?.id ?? null;
     if (selectedProjectId === null) {
       setSelectedProjectId(firstProjectId);
+      setArchiveModalOpen(false);
+      setArchiveActionFeedback(null);
       return;
     }
 
@@ -1070,6 +1095,8 @@ export function App() {
     );
     if (!stillExists) {
       setSelectedProjectId(firstProjectId);
+      setArchiveModalOpen(false);
+      setArchiveActionFeedback(null);
     }
   }, [projectsQuery.data?.projects, selectedProjectId]);
 
@@ -1189,6 +1216,14 @@ export function App() {
             tickets: upsertById(previous?.tickets ?? [], ticket),
           }),
         );
+        queryClient.setQueryData<TicketsResponse>(
+          ["projects", ticket.project, "tickets", "archived"],
+          (previous) => ({
+            tickets: (previous?.tickets ?? []).filter(
+              (archivedTicket) => archivedTicket.id !== ticket.id,
+            ),
+          }),
+        );
         if (ticket.session_id) {
           queryClient.invalidateQueries({
             queryKey: ["sessions", ticket.session_id],
@@ -1208,6 +1243,14 @@ export function App() {
 
         queryClient.setQueryData<TicketsResponse>(
           ["projects", projectId, "tickets"],
+          (previous) => ({
+            tickets: (previous?.tickets ?? []).filter(
+              (ticket) => ticket.id !== ticketId,
+            ),
+          }),
+        );
+        queryClient.setQueryData<TicketsResponse>(
+          ["projects", projectId, "tickets", "archived"],
           (previous) => ({
             tickets: (previous?.tickets ?? []).filter(
               (ticket) => ticket.id !== ticketId,
@@ -1248,6 +1291,9 @@ export function App() {
             ),
           }),
         );
+        queryClient.invalidateQueries({
+          queryKey: ["projects", projectId, "tickets", "archived"],
+        });
 
         if (archivedSessionId && selectedSessionId === archivedSessionId) {
           setInspectorState({ kind: "hidden" });
@@ -1417,7 +1463,7 @@ export function App() {
     onSuccess: async (ack) => {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       const nextProjectId = ack.resource_refs.project_id ?? null;
-      setSelectedProjectId(nextProjectId);
+      selectProject(nextProjectId);
       setProjectModalOpen(false);
       setProjectName("");
       setRepositoryPath("");
@@ -1477,7 +1523,7 @@ export function App() {
       setProjectDeleteConfirmText("");
 
       if (selectedProjectId === projectId) {
-        setSelectedProjectId(remainingProjects[0]?.id ?? null);
+        selectProject(remainingProjects[0]?.id ?? null);
         setInspectorState({ kind: "hidden" });
       }
 
@@ -1733,15 +1779,26 @@ export function App() {
   });
 
   const archiveTicketMutation = useMutation({
-    mutationFn: (input: { ticketId: number; sessionId?: string | null }) =>
-      postJson<CommandAck>(`/tickets/${input.ticketId}/archive`, {}),
-    onSuccess: async (_, variables) => {
+    mutationFn: (input: {
+      ticketId: number;
+      sessionId?: string | null;
+      projectId: string;
+    }) => postJson<CommandAck>(`/tickets/${input.ticketId}/archive`, {}),
+    onMutate: () => {
+      setArchiveActionFeedback(null);
+    },
+    onSuccess: async (ack, variables) => {
+      setArchiveActionFeedback({
+        tone: "green",
+        message: ack.message ?? `Ticket #${variables.ticketId} archived.`,
+      });
+
       if (variables.sessionId && selectedSessionId === variables.sessionId) {
         setInspectorState({ kind: "hidden" });
       }
 
       queryClient.setQueryData<TicketsResponse>(
-        ["projects", selectedProjectId, "tickets"],
+        ["projects", variables.projectId, "tickets"],
         (previous) => ({
           tickets: (previous?.tickets ?? []).filter(
             (ticket) => ticket.id !== variables.ticketId,
@@ -1749,8 +1806,57 @@ export function App() {
         }),
       );
 
-      await queryClient.invalidateQueries({
-        queryKey: ["projects", selectedProjectId, "tickets"],
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", variables.projectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", variables.projectId, "tickets", "archived"],
+        }),
+      ]);
+    },
+    onError: (error) => {
+      setArchiveActionFeedback({
+        tone: "red",
+        message: error.message,
+      });
+    },
+  });
+
+  const restoreTicketMutation = useMutation({
+    mutationFn: (input: { ticketId: number; projectId: string }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/restore`, {}),
+    onMutate: () => {
+      setArchiveActionFeedback(null);
+    },
+    onSuccess: async (ack, variables) => {
+      setArchiveActionFeedback({
+        tone: "green",
+        message: ack.message ?? `Ticket #${variables.ticketId} restored.`,
+      });
+
+      queryClient.setQueryData<TicketsResponse>(
+        ["projects", variables.projectId, "tickets", "archived"],
+        (previous) => ({
+          tickets: (previous?.tickets ?? []).filter(
+            (ticket) => ticket.id !== variables.ticketId,
+          ),
+        }),
+      );
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", variables.projectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", variables.projectId, "tickets", "archived"],
+        }),
+      ]);
+    },
+    onError: (error) => {
+      setArchiveActionFeedback({
+        tone: "red",
+        message: error.message,
       });
     },
   });
@@ -2449,8 +2555,20 @@ export function App() {
   const archiveTicket = (ticket: TicketFrontmatter): void => {
     archiveTicketMutation.mutate({
       ticketId: ticket.id,
+      projectId: ticket.project,
       sessionId: ticket.session_id,
     });
+  };
+
+  const openArchiveModal = (): void => {
+    setArchiveActionFeedback(null);
+    setArchiveModalOpen(true);
+  };
+
+  const closeArchiveModal = (): void => {
+    setArchiveModalOpen(false);
+    setArchiveActionFeedback(null);
+    restoreTicketMutation.reset();
   };
 
   const openNewDraft = (): void => {
@@ -2673,7 +2791,7 @@ export function App() {
                         }
                         justify="space-between"
                         style={{ flex: 1 }}
-                        onClick={() => setSelectedProjectId(project.id)}
+                        onClick={() => selectProject(project.id)}
                       >
                         <span>{project.name}</span>
                       </Button>
@@ -2804,6 +2922,14 @@ export function App() {
                 />
                 <Button
                   disabled={!selectedProject}
+                  variant={archiveModalOpen ? "filled" : "light"}
+                  radius="xl"
+                  onClick={openArchiveModal}
+                >
+                  Archive
+                </Button>
+                <Button
+                  disabled={!selectedProject}
                   variant={
                     inspectorState.kind === "new_draft" ? "filled" : "light"
                   }
@@ -2813,6 +2939,12 @@ export function App() {
                 </Button>
               </Box>
             </Box>
+
+            {archiveActionFeedback && !archiveModalOpen ? (
+              <Text size="sm" c={archiveActionFeedback.tone}>
+                {archiveActionFeedback.message}
+              </Text>
+            ) : null}
 
             {!selectedProject ? (
               <SectionCard
@@ -4147,6 +4279,73 @@ export function App() {
           </Box>
         ) : null}
       </Box>
+
+      <Modal
+        opened={archiveModalOpen}
+        onClose={closeArchiveModal}
+        title="Archived tickets"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Restore completed tickets back to the active board.
+          </Text>
+
+          {archiveActionFeedback ? (
+            <Text size="sm" c={archiveActionFeedback.tone}>
+              {archiveActionFeedback.message}
+            </Text>
+          ) : null}
+
+          {archivedTicketsQuery.isPending ? (
+            <Loader size="sm" />
+          ) : archivedTicketsQuery.isError ? (
+            <Text size="sm" c="red">
+              {archivedTicketsQuery.error.message}
+            </Text>
+          ) : (archivedTicketsQuery.data?.tickets.length ?? 0) === 0 ? (
+            <Text size="sm" c="dimmed">
+              No archived tickets for this project.
+            </Text>
+          ) : (
+            <Stack gap="sm">
+              {archivedTicketsQuery.data?.tickets.map((ticket) => (
+                <Box key={ticket.id} className="detail-meta-card">
+                  <Group
+                    justify="space-between"
+                    align="flex-start"
+                    wrap="nowrap"
+                  >
+                    <Box style={{ flex: 1, fontWeight: 700, lineHeight: 1.35 }}>
+                      <Text component="span" inherit>
+                        #{ticket.id}{" "}
+                      </Text>
+                      <MarkdownContent content={ticket.title} inline />
+                    </Box>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      loading={
+                        restoreTicketMutation.isPending &&
+                        restoreTicketMutation.variables?.ticketId === ticket.id
+                      }
+                      onClick={() =>
+                        restoreTicketMutation.mutate({
+                          ticketId: ticket.id,
+                          projectId: ticket.project,
+                        })
+                      }
+                    >
+                      Restore
+                    </Button>
+                  </Group>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Stack>
+      </Modal>
 
       <Modal
         opened={projectOptionsProject !== null}
