@@ -1907,9 +1907,7 @@ export function App() {
       );
       if (
         pendingDraftEditorSync !== null &&
-        (!pendingSyncTargetsSelectedDraft ||
-          draftEditorSourceId !== selectedDraft.id ||
-          shouldApplyPendingDraftSync)
+        (!pendingSyncTargetsSelectedDraft || shouldApplyPendingDraftSync)
       ) {
         setPendingDraftEditorSync(null);
       }
