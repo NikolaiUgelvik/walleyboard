@@ -64,7 +64,7 @@ const boardColumnMeta: Record<
   draft: {
     label: "Draft",
     accent: "#6b7280",
-    empty: "No draft tickets yet. Capture the next task from the right panel."
+    empty: "No draft tickets yet. Use New Draft to capture the next task."
   },
   ready: {
     label: "Ready",
@@ -131,6 +131,12 @@ type ActionItem = {
   sessionId: string;
   actionLabel: string;
 };
+
+type InspectorState =
+  | { kind: "hidden" }
+  | { kind: "new_draft" }
+  | { kind: "draft"; draftId: string }
+  | { kind: "session"; sessionId: string };
 
 function isStoppableSessionStatus(
   status: ExecutionSession["status"]
@@ -325,7 +331,7 @@ function ColorSchemeControl() {
 export function App() {
   const queryClient = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [inspectorState, setInspectorState] = useState<InspectorState>({ kind: "hidden" });
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
@@ -333,11 +339,14 @@ export function App() {
   const [validationCommandsText, setValidationCommandsText] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
   const [boardSearch, setBoardSearch] = useState("");
+  const selectedDraftId = inspectorState.kind === "draft" ? inspectorState.draftId : null;
+  const selectedSessionId =
+    inspectorState.kind === "session" ? inspectorState.sessionId : null;
+  const inspectorVisible = inspectorState.kind !== "hidden";
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -382,9 +391,6 @@ export function App() {
       }))
   });
 
-  const inferredSessionId =
-    ticketsQuery.data?.tickets.find((ticket) => ticket.session_id)?.session_id ?? null;
-
   useEffect(() => {
     const firstProjectId = projectsQuery.data?.projects[0]?.id ?? null;
     if (selectedProjectId === null) {
@@ -401,34 +407,30 @@ export function App() {
   }, [projectsQuery.data?.projects, selectedProjectId]);
 
   useEffect(() => {
-    if (selectedDraftId !== null) {
+    if (inspectorState.kind === "draft") {
+      const stillExists =
+        draftsQuery.data?.drafts.some((draft) => draft.id === inspectorState.draftId) ?? false;
+      if (!stillExists) {
+        setInspectorState({ kind: "hidden" });
+      }
       return;
     }
 
-    if (selectedSessionId === null) {
-      setSelectedSessionId(inferredSessionId);
+    if (inspectorState.kind === "session") {
+      const stillExists =
+        ticketsQuery.data?.tickets.some(
+          (ticket) => ticket.session_id === inspectorState.sessionId
+        ) ?? false;
+      if (!stillExists) {
+        setInspectorState({ kind: "hidden" });
+      }
       return;
     }
 
-    const stillExists =
-      ticketsQuery.data?.tickets.some((ticket) => ticket.session_id === selectedSessionId) ??
-      false;
-    if (!stillExists) {
-      setSelectedSessionId(inferredSessionId);
+    if (inspectorState.kind === "new_draft" && selectedProjectId === null) {
+      setInspectorState({ kind: "hidden" });
     }
-  }, [inferredSessionId, selectedDraftId, selectedSessionId, ticketsQuery.data?.tickets]);
-
-  useEffect(() => {
-    if (selectedDraftId === null) {
-      return;
-    }
-
-    const stillExists =
-      draftsQuery.data?.drafts.some((draft) => draft.id === selectedDraftId) ?? false;
-    if (!stillExists) {
-      setSelectedDraftId(null);
-    }
-  }, [draftsQuery.data?.drafts, selectedDraftId]);
+  }, [draftsQuery.data?.drafts, inspectorState, selectedProjectId, ticketsQuery.data?.tickets]);
 
   useEffect(() => {
     const socket = new WebSocket(websocketUrl);
@@ -478,7 +480,7 @@ export function App() {
         );
 
         if (selectedDraftId === draftId) {
-          setSelectedDraftId(null);
+          setInspectorState({ kind: "hidden" });
         }
         return;
       }
@@ -527,7 +529,7 @@ export function App() {
             queryKey: ["sessions", deletedSessionId, "logs"]
           });
           if (selectedSessionId === deletedSessionId) {
-            setSelectedSessionId(null);
+            setInspectorState({ kind: "hidden" });
           }
         }
         return;
@@ -715,7 +717,7 @@ export function App() {
         return;
       }
 
-      setSelectedDraftId(null);
+      setInspectorState({ kind: "hidden" });
 
       await Promise.all([
         queryClient.invalidateQueries({
@@ -733,7 +735,7 @@ export function App() {
       postJson<CommandAck>(`/drafts/${draftId}/delete`, {}),
     onSuccess: async (_, draftId) => {
       if (selectedDraftId === draftId) {
-        setSelectedDraftId(null);
+        setInspectorState({ kind: "hidden" });
       }
 
       if (selectedProjectId) {
@@ -754,7 +756,14 @@ export function App() {
         return;
       }
 
-      setSelectedSessionId(ack.resource_refs.session_id ?? null);
+      if (ack.resource_refs.session_id) {
+        setInspectorState({
+          kind: "session",
+          sessionId: ack.resource_refs.session_id
+        });
+      } else {
+        setInspectorState({ kind: "hidden" });
+      }
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "tickets"]
@@ -800,7 +809,7 @@ export function App() {
       postJson<CommandAck>(`/tickets/${input.ticketId}/delete`, {}),
     onSuccess: async (_, variables) => {
       if (variables.sessionId && selectedSessionId === variables.sessionId) {
-        setSelectedSessionId(null);
+        setInspectorState({ kind: "hidden" });
       }
 
       await Promise.all([
@@ -1074,18 +1083,25 @@ export function App() {
     });
   };
 
+  const openNewDraft = (): void => {
+    setInspectorState({ kind: "new_draft" });
+    window.requestAnimationFrame(() => focusElementById("draft-title"));
+  };
+
+  const hideInspector = (): void => {
+    setInspectorState({ kind: "hidden" });
+  };
+
   const openTicketSession = (ticket: TicketFrontmatter): void => {
     if (!ticket.session_id) {
       return;
     }
 
-    setSelectedDraftId(null);
-    setSelectedSessionId(ticket.session_id);
+    setInspectorState({ kind: "session", sessionId: ticket.session_id });
   };
 
   const openDraft = (draftId: string): void => {
-    setSelectedSessionId(null);
-    setSelectedDraftId(draftId);
+    setInspectorState({ kind: "draft", draftId });
   };
 
   const renderTicketMenu = (ticket: TicketFrontmatter) => (
@@ -1116,7 +1132,11 @@ export function App() {
 
   return (
     <Box className="orchestrator-shell">
-      <Box className="orchestrator-layout">
+      <Box
+        className={`orchestrator-layout${
+          inspectorVisible ? " orchestrator-layout--with-detail" : ""
+        }`}
+      >
         <Box className="orchestrator-rail">
           <Stack gap="md">
             <SectionCard
@@ -1175,8 +1195,10 @@ export function App() {
                             variant="light"
                             size="xs"
                             onClick={() => {
-                              setSelectedDraftId(null);
-                              setSelectedSessionId(item.sessionId);
+                              setInspectorState({
+                                kind: "session",
+                                sessionId: item.sessionId
+                              });
                             }}
                           >
                             {item.actionLabel}
@@ -1246,7 +1268,11 @@ export function App() {
                   value={boardSearch}
                   onChange={(event) => setBoardSearch(event.currentTarget.value)}
                 />
-                <Button disabled={!selectedProject} onClick={() => focusElementById("draft-title")}>
+                <Button
+                  disabled={!selectedProject}
+                  variant={inspectorState.kind === "new_draft" ? "filled" : "light"}
+                  onClick={openNewDraft}
+                >
                   New Draft
                 </Button>
               </Box>
@@ -1303,7 +1329,10 @@ export function App() {
                               <Button
                                 variant="subtle"
                                 size="xs"
-                                onClick={() => focusElementById("draft-title")}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openNewDraft();
+                                }}
                               >
                                 New
                               </Button>
@@ -1311,7 +1340,7 @@ export function App() {
                           </Group>
                         </Box>
 
-                        <Box className="board-column-stack">
+                        <Box className="board-column-stack" onClick={hideInspector}>
                           {column === "draft" ? (
                             visibleDrafts.length === 0 ? (
                               <Box className="board-empty">{meta.empty}</Box>
@@ -1328,7 +1357,10 @@ export function App() {
                                   <Box
                                     key={draft.id}
                                     className={`board-card board-card-clickable${isSelected ? " board-card-selected" : ""}`}
-                                    onClick={() => openDraft(draft.id)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openDraft(draft.id);
+                                    }}
                                   >
                                     <Stack gap="xs">
                                       <Group justify="space-between" align="flex-start">
@@ -1391,7 +1423,10 @@ export function App() {
                                   <Box
                                     key={ticket.id}
                                     className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
-                                    onClick={() => openTicketSession(ticket)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openTicketSession(ticket);
+                                    }}
                                   >
                                     <Stack gap="xs">
                                       <Group justify="space-between" align="flex-start">
@@ -1529,9 +1564,10 @@ export function App() {
           </Stack>
         </Box>
 
-        <Box className="orchestrator-detail">
-          <Stack gap="md">
-            {selectedProject ? (
+        {inspectorVisible ? (
+          <Box className="orchestrator-detail">
+            <Stack gap="md">
+              {inspectorState.kind === "new_draft" && selectedProject ? (
               <SectionCard
                 title="New draft"
                 description="Capture the next task quickly, then promote it straight from the draft column."
@@ -1582,9 +1618,9 @@ export function App() {
                   </Stack>
                 </form>
               </SectionCard>
-            ) : null}
+              ) : null}
 
-            {selectedDraft ? (
+              {inspectorState.kind === "draft" && selectedDraft ? (
               <SectionCard
                 title="Draft inspector"
                 description="Refine, promote, or delete the selected draft from the right-hand panel instead of from the board card."
@@ -1696,60 +1732,25 @@ export function App() {
                   </Group>
                 </Stack>
               </SectionCard>
-            ) : (
+              ) : null}
+
+              {inspectorState.kind === "session" ? (
               <SectionCard
-                title={selectedSessionId ? "Session inspector" : "Focus panel"}
-                description={
-                  selectedSessionId
-                    ? "Execution detail, review actions, and manual terminal control all live here."
-                    : "Select a draft, running ticket, or review ticket from the board to inspect it here."
-                }
+                title="Session inspector"
+                description="Execution detail, review actions, and manual terminal control all live here."
               >
                 {selectedSessionId === null ? (
-                <Stack gap="md">
-                  <Box className="detail-placeholder">
-                    <Stack gap={6}>
-                      <Text fw={700}>Nothing selected</Text>
-                      <Text size="sm" c="dimmed">
-                        The board is now the primary surface. Select a draft to refine it, or open
-                        a running or review ticket to load its activity feed, review package, and
-                        raw terminal transcript here.
-                      </Text>
-                    </Stack>
-                  </Box>
-                  {selectedProject ? (
-                    <Box className="detail-meta-grid">
-                      <Box className="detail-meta-card">
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                          Repository
-                        </Text>
-                        <Text fw={700}>{selectedRepository?.name ?? "Pending"}</Text>
-                        <Text size="sm" c="dimmed">
-                          {selectedRepository?.path ?? "No repository configured"}
-                        </Text>
-                      </Box>
-                      <Box className="detail-meta-card">
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                          Target branch
-                        </Text>
-                        <Text fw={700}>
-                          {selectedRepository?.target_branch ?? selectedProject.default_target_branch ?? "main"}
-                        </Text>
-                        <Text size="sm" c="dimmed">
-                          {selectedRepository?.validation_profile.length ?? 0} validation command(s)
-                        </Text>
-                      </Box>
-                    </Box>
-                  ) : null}
-                </Stack>
-              ) : sessionQuery.isPending || sessionLogsQuery.isPending ? (
-                <Loader size="sm" />
-              ) : sessionQuery.isError ? (
-                <Text size="sm" c="red">
-                  {sessionQuery.error.message}
-                </Text>
-              ) : session ? (
-                <Stack gap="md">
+                  <Text size="sm" c="dimmed">
+                    Session details are not available yet.
+                  </Text>
+                ) : sessionQuery.isPending || sessionLogsQuery.isPending ? (
+                  <Loader size="sm" />
+                ) : sessionQuery.isError ? (
+                  <Text size="sm" c="red">
+                    {sessionQuery.error.message}
+                  </Text>
+                ) : session ? (
+                  <Stack gap="md">
                   <Group justify="space-between" align="flex-start">
                     <Stack gap={4}>
                       <Text className="rail-kicker">Execution</Text>
@@ -2022,15 +2023,16 @@ export function App() {
                     </Text>
                   )}
                 </Stack>
-              ) : (
-                <Text size="sm" c="dimmed">
-                  Session details are not available yet.
-                </Text>
-              )}
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    Session details are not available yet.
+                  </Text>
+                )}
               </SectionCard>
-            )}
-          </Stack>
-        </Box>
+              ) : null}
+            </Stack>
+          </Box>
+        ) : null}
       </Box>
 
       <Modal

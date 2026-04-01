@@ -35,6 +35,10 @@
 .orchestrator-layout {
   min-height: 100vh;
   display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.orchestrator-layout--with-detail {
   grid-template-columns: 280px minmax(0, 1fr) 420px;
 }
 
@@ -174,6 +178,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .board-card {
@@ -256,6 +262,10 @@
 
 @media (max-width: 1400px) {
   .orchestrator-layout {
+    grid-template-columns: 264px minmax(0, 1fr);
+  }
+
+  .orchestrator-layout--with-detail {
     grid-template-columns: 264px minmax(0, 1fr) 380px;
   }
 }
@@ -266,6 +276,7 @@
   }
 
   .orchestrator-detail {
+    grid-column: 1 / -1;
     border-left: none;
     border-top: 1px solid var(--orchestrator-border);
   }
@@ -281,6 +292,10 @@
   .orchestrator-detail {
     border: none;
     border-bottom: 1px solid var(--orchestrator-border);
+  }
+
+  .orchestrator-detail {
+    grid-column: auto;
   }
 
   .workbench-toolbar {
