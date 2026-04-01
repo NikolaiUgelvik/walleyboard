@@ -1,16 +1,27 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { RepositoryConfig } from "../../../../packages/contracts/src/index.js";
+import type {
+  Project,
+  RepositoryConfig,
+  TicketFrontmatter,
+} from "../../../../packages/contracts/src/index.js";
 
 import {
   AutomaticMergeRecoveryError,
   fetchRepositoryBranches,
   mergeReviewedBranch,
+  prepareWorktree,
 } from "./worktree-service.js";
 
 function runGit(
@@ -33,17 +44,58 @@ function configureGitIdentity(repoPath: string): void {
   runGit(repoPath, ["config", "user.email", "test@example.com"]);
 }
 
-function createRepositoryConfig(path: string): RepositoryConfig {
+function createRepositoryConfig(
+  path: string,
+  targetBranch = "main",
+): RepositoryConfig {
   return {
     id: "repo-id",
     project_id: "project-id",
     name: "repo",
     path,
-    target_branch: "main",
+    target_branch: targetBranch,
     setup_hook: null,
     cleanup_hook: null,
     validation_profile: [],
     extra_env_allowlist: [],
+    created_at: "2026-04-01T00:00:00.000Z",
+    updated_at: "2026-04-01T00:00:00.000Z",
+  };
+}
+
+function createProject(slug: string): Project {
+  return {
+    id: "project-id",
+    slug,
+    name: "Project",
+    default_target_branch: "main",
+    pre_worktree_command: null,
+    post_worktree_command: null,
+    draft_analysis_model: null,
+    draft_analysis_reasoning_effort: null,
+    ticket_work_model: null,
+    ticket_work_reasoning_effort: null,
+    max_concurrent_sessions: 1,
+    created_at: "2026-04-01T00:00:00.000Z",
+    updated_at: "2026-04-01T00:00:00.000Z",
+  };
+}
+
+function createTicket(targetBranch: string): TicketFrontmatter {
+  return {
+    id: 38,
+    project: "project-id",
+    repo: "repo-id",
+    artifact_scope_id: "artifact-scope-id",
+    status: "ready",
+    title: "Handle remote target branches",
+    description: "Ticket description",
+    ticket_type: "feature",
+    acceptance_criteria: ["criterion"],
+    working_branch: null,
+    target_branch: targetBranch,
+    linked_pr: null,
+    session_id: null,
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
   };
@@ -93,6 +145,167 @@ test("fetchRepositoryBranches returns local and remote branch names", () => {
       ["feature/local", "main", "origin/main", "origin/release/1.0"],
     );
   } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("prepareWorktree resolves a remote target branch to a local branch and pulls before creation", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "orchestrator-prepare-remote-target-"),
+  );
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(tempDir);
+
+    const remotePath = join(tempDir, "remote.git");
+    const repoPath = join(tempDir, "repo");
+    const updaterPath = join(tempDir, "updater");
+
+    execFileSync("git", ["init", "--bare", remotePath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    execFileSync("git", ["clone", remotePath, repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+    runGit(repoPath, ["push", "-u", "origin", "main"]);
+    execFileSync(
+      "git",
+      ["--git-dir", remotePath, "symbolic-ref", "HEAD", "refs/heads/main"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    execFileSync("git", ["clone", remotePath, updaterPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(updaterPath);
+    writeFileSync(
+      join(updaterPath, "upstream.txt"),
+      "upstream change\n",
+      "utf8",
+    );
+    runGit(updaterPath, ["add", "upstream.txt"]);
+    runGit(updaterPath, ["commit", "-m", "upstream change"]);
+    runGit(updaterPath, ["push", "origin", "main"]);
+
+    const project = createProject("remote-target-project");
+    const runtime = prepareWorktree(
+      project,
+      createRepositoryConfig(repoPath, "origin/main"),
+      createTicket("origin/main"),
+    );
+
+    assert.ok(
+      runtime.logs.some((line) =>
+        line.includes(
+          "Configured target branch origin/main resolves to local branch main",
+        ),
+      ),
+    );
+    assert.ok(
+      runtime.logs.some((line) =>
+        line.includes("Pulled main from origin/main"),
+      ),
+    );
+    assert.equal(
+      runGit(runtime.worktreePath, ["rev-parse", "--abbrev-ref", "HEAD"]),
+      runtime.workingBranch,
+    );
+    assert.equal(
+      readFileSync(join(runtime.worktreePath, "upstream.txt"), "utf8"),
+      "upstream change\n",
+    );
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("prepareWorktree fails clearly and does not create a worktree when the target pull fails", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-prepare-fail-"));
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(tempDir);
+
+    const remotePath = join(tempDir, "remote.git");
+    const repoPath = join(tempDir, "repo");
+    const updaterPath = join(tempDir, "updater");
+
+    execFileSync("git", ["init", "--bare", remotePath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    execFileSync("git", ["clone", remotePath, repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+    runGit(repoPath, ["push", "-u", "origin", "main"]);
+    execFileSync(
+      "git",
+      ["--git-dir", remotePath, "symbolic-ref", "HEAD", "refs/heads/main"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    writeFileSync(join(repoPath, "local.txt"), "local change\n", "utf8");
+    runGit(repoPath, ["add", "local.txt"]);
+    runGit(repoPath, ["commit", "-m", "local change"]);
+
+    execFileSync("git", ["clone", remotePath, updaterPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(updaterPath);
+    writeFileSync(join(updaterPath, "remote.txt"), "remote change\n", "utf8");
+    runGit(updaterPath, ["add", "remote.txt"]);
+    runGit(updaterPath, ["commit", "-m", "remote change"]);
+    runGit(updaterPath, ["push", "origin", "main"]);
+
+    const project = createProject("remote-target-failure-project");
+    const expectedWorktreePath = join(
+      tempDir,
+      ".local",
+      "worktrees",
+      project.slug,
+      "ticket-38",
+    );
+
+    assert.throws(
+      () =>
+        prepareWorktree(
+          project,
+          createRepositoryConfig(repoPath, "origin/main"),
+          createTicket("origin/main"),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(
+          error.message,
+          /Unable to update target branch main from origin\/main/,
+        );
+        assert.match(
+          error.message,
+          /Resolve the repository state and try again/,
+        );
+        return true;
+      },
+    );
+    assert.equal(existsSync(expectedWorktreePath), false);
+  } finally {
+    process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -161,9 +374,10 @@ test("mergeReviewedBranch refreshes the target branch before rebasing and mergin
     );
 
     assert.ok(
-      result.logs.some((line) =>
-        line.includes("Refreshed main from origin/main"),
-      ),
+      result.logs.some((line) => line.includes("Pulled main from origin/main")),
+    );
+    assert.ok(
+      result.logs.some((line) => line.includes("Pushed main to origin/main")),
     );
     assert.equal(
       runGit(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]),
@@ -255,8 +469,16 @@ test("mergeReviewedBranch refreshes a remote target ref inside the ticket worktr
 
     assert.ok(
       result.logs.some((line) =>
-        line.includes("Refreshed origin/main from origin/main"),
+        line.includes(
+          "Configured target branch origin/main resolves to local branch main",
+        ),
       ),
+    );
+    assert.ok(
+      result.logs.some((line) => line.includes("Pulled main from origin/main")),
+    );
+    assert.ok(
+      result.logs.some((line) => line.includes("Pushed main to origin/main")),
     );
     assert.ok(
       result.logs.some((line) =>
@@ -278,6 +500,17 @@ test("mergeReviewedBranch refreshes a remote target ref inside the ticket worktr
     assert.equal(
       runGit(repoPath, ["log", "--format=%s", "-1"]),
       "ticket change",
+    );
+    assert.equal(
+      execFileSync(
+        "git",
+        ["--git-dir", remotePath, "show", "refs/heads/main:ticket.txt"],
+        {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      ),
+      "ticket work\n",
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

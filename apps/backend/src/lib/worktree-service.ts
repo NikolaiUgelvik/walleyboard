@@ -238,7 +238,11 @@ export function prepareWorktree(
 
   const targetBranch = repository.target_branch ?? ticket.target_branch;
   runGit(repository.path, ["rev-parse", "--is-inside-work-tree"]);
-  runGit(repository.path, ["rev-parse", "--verify", targetBranch]);
+  const refreshedTarget = refreshTargetBranch(
+    repository.path,
+    repository,
+    targetBranch,
+  );
 
   try {
     runGit(repository.path, [
@@ -247,7 +251,7 @@ export function prepareWorktree(
       "-b",
       workingBranch,
       worktreeRoot,
-      targetBranch,
+      refreshedTarget.syncRef,
     ]);
   } catch (error) {
     if (existsSync(worktreeRoot)) {
@@ -268,7 +272,8 @@ export function prepareWorktree(
 
   const logs = [
     `Verified git repository: ${repository.path}`,
-    `Checked out target branch: ${targetBranch}`,
+    ...refreshedTarget.logs,
+    `Checked out target branch: ${refreshedTarget.syncRef}`,
     `Created git worktree: ${worktreeRoot}`,
   ];
 
@@ -380,6 +385,12 @@ type RemoteTrackingRef = {
   branchName: string;
 };
 
+type NormalizedTargetBranch = {
+  configuredName: string;
+  localBranchName: string;
+  remoteTrackingRef: RemoteTrackingRef | null;
+};
+
 function resolveRemoteTrackingRef(
   repoPath: string,
   refName: string,
@@ -406,6 +417,44 @@ function localBranchExists(repoPath: string, branchName: string): boolean {
   return gitRefExists(repoPath, `refs/heads/${branchName}`);
 }
 
+function normalizeTargetBranch(
+  repoPath: string,
+  targetBranch: string,
+): NormalizedTargetBranch {
+  const configuredRemoteTrackingRef = resolveRemoteTrackingRef(
+    repoPath,
+    targetBranch,
+  );
+  if (configuredRemoteTrackingRef) {
+    if (!localBranchExists(repoPath, configuredRemoteTrackingRef.branchName)) {
+      throw new Error(
+        `Configured target branch ${targetBranch} resolves to local branch ${configuredRemoteTrackingRef.branchName}, but that local branch does not exist. Create or fetch it, then try again.`,
+      );
+    }
+
+    return {
+      configuredName: targetBranch,
+      localBranchName: configuredRemoteTrackingRef.branchName,
+      remoteTrackingRef: configuredRemoteTrackingRef,
+    };
+  }
+
+  if (!localBranchExists(repoPath, targetBranch)) {
+    throw new Error(
+      `Configured target branch ${targetBranch} is not available as a local branch. Create or fetch it, then try again.`,
+    );
+  }
+
+  const upstream = resolveBranchUpstream(repoPath, targetBranch);
+  return {
+    configuredName: targetBranch,
+    localBranchName: targetBranch,
+    remoteTrackingRef: upstream
+      ? resolveRemoteTrackingRef(repoPath, upstream)
+      : null,
+  };
+}
+
 function resolveBranchUpstream(
   repoPath: string,
   branchName: string,
@@ -422,107 +471,130 @@ function resolveBranchUpstream(
   }
 }
 
-function fetchRemoteTrackingRef(
-  repoPath: string,
-  remoteTrackingRef: RemoteTrackingRef,
-): void {
-  runGit(repoPath, [
-    "fetch",
-    "--quiet",
-    remoteTrackingRef.remoteName,
-    `refs/heads/${remoteTrackingRef.branchName}:refs/remotes/${remoteTrackingRef.refName}`,
-  ]);
-}
-
-function resolveMergeBackBranch(
-  repoPath: string,
-  targetBranch: string,
-): string {
-  if (localBranchExists(repoPath, targetBranch)) {
-    return targetBranch;
-  }
-
-  const remoteTrackingRef = resolveRemoteTrackingRef(repoPath, targetBranch);
-  if (
-    remoteTrackingRef &&
-    localBranchExists(repoPath, remoteTrackingRef.branchName)
-  ) {
-    return remoteTrackingRef.branchName;
-  }
-
-  throw new Error(
-    `Configured target branch ${targetBranch} cannot be merged back because no local branch is available for the final fast-forward merge.`,
-  );
-}
-
 type RefreshedTargetBranch = {
   logs: string[];
   syncRef: string;
   mergeBackBranch: string;
+  remoteTrackingRef: RemoteTrackingRef | null;
 };
 
 function refreshTargetBranch(
-  worktreePath: string,
+  repositoryPath: string,
   repository: RepositoryConfig,
   targetBranch: string,
 ): RefreshedTargetBranch {
-  const mergeBackBranch = resolveMergeBackBranch(repository.path, targetBranch);
-  const remoteTrackingTarget = resolveRemoteTrackingRef(
-    repository.path,
-    targetBranch,
-  );
-  if (remoteTrackingTarget) {
-    fetchRemoteTrackingRef(worktreePath, remoteTrackingTarget);
-    const refreshedHead = runGit(worktreePath, ["rev-parse", targetBranch]);
+  const normalizedTarget = normalizeTargetBranch(repository.path, targetBranch);
+  const logs: string[] = [];
+
+  if (normalizedTarget.configuredName !== normalizedTarget.localBranchName) {
+    logs.push(
+      `Configured target branch ${normalizedTarget.configuredName} resolves to local branch ${normalizedTarget.localBranchName} for local git operations`,
+    );
+  }
+
+  const repoStatus = gitStatusPorcelain(repositoryPath);
+  if (repoStatus.length > 0) {
+    throw new Error(
+      `Cannot update target branch ${normalizedTarget.localBranchName} before continuing because ${repositoryPath} has uncommitted changes. Resolve the repository state and try again.`,
+    );
+  }
+
+  const currentBranch = runGit(repositoryPath, [
+    "rev-parse",
+    "--abbrev-ref",
+    "HEAD",
+  ]);
+  if (currentBranch !== normalizedTarget.localBranchName) {
+    runGit(repositoryPath, ["checkout", normalizedTarget.localBranchName]);
+    logs.push(
+      `Checked out ${normalizedTarget.localBranchName} in ${repositoryPath}`,
+    );
+  }
+
+  if (!normalizedTarget.remoteTrackingRef) {
+    const refreshedHead = runGit(repositoryPath, [
+      "rev-parse",
+      normalizedTarget.localBranchName,
+    ]);
     return {
       logs: [
-        `Refreshed ${targetBranch} from ${targetBranch}`,
+        ...logs,
+        `No upstream is configured for ${normalizedTarget.localBranchName}; using the current local branch head.`,
         `Target branch sync ref after refresh: ${refreshedHead}`,
       ],
-      syncRef: targetBranch,
-      mergeBackBranch,
+      syncRef: normalizedTarget.localBranchName,
+      mergeBackBranch: normalizedTarget.localBranchName,
+      remoteTrackingRef: null,
     };
   }
 
-  const upstream = resolveBranchUpstream(worktreePath, targetBranch);
-  if (!upstream) {
-    const refreshedHead = runGit(worktreePath, ["rev-parse", targetBranch]);
-    return {
-      logs: [
-        `No upstream is configured for ${targetBranch}; using the current local branch head.`,
-        `Target branch sync ref after refresh: ${refreshedHead}`,
-      ],
-      syncRef: targetBranch,
-      mergeBackBranch,
-    };
+  try {
+    runGit(repositoryPath, [
+      "pull",
+      "--ff-only",
+      "--quiet",
+      normalizedTarget.remoteTrackingRef.remoteName,
+      normalizedTarget.remoteTrackingRef.branchName,
+    ]);
+  } catch (error) {
+    if (error instanceof GitCommandError) {
+      throw new Error(
+        `Unable to update target branch ${normalizedTarget.localBranchName} from ${normalizedTarget.remoteTrackingRef.refName}. Resolve the repository state and try again. ${error.message}`,
+      );
+    }
+
+    throw error;
   }
 
-  const upstreamRemoteTrackingRef = resolveRemoteTrackingRef(
-    repository.path,
-    upstream,
-  );
-  if (!upstreamRemoteTrackingRef) {
-    const refreshedHead = runGit(worktreePath, ["rev-parse", upstream]);
-    return {
-      logs: [
-        `Using upstream ${upstream} for ${targetBranch} without a remote refresh.`,
-        `Target branch sync ref after refresh: ${refreshedHead}`,
-      ],
-      syncRef: upstream,
-      mergeBackBranch,
-    };
-  }
-
-  fetchRemoteTrackingRef(worktreePath, upstreamRemoteTrackingRef);
-  const refreshedHead = runGit(worktreePath, ["rev-parse", upstream]);
+  const refreshedHead = runGit(repositoryPath, [
+    "rev-parse",
+    normalizedTarget.localBranchName,
+  ]);
   return {
     logs: [
-      `Refreshed ${targetBranch} from ${upstream}`,
+      ...logs,
+      `Pulled ${normalizedTarget.localBranchName} from ${normalizedTarget.remoteTrackingRef.refName}`,
       `Target branch sync ref after refresh: ${refreshedHead}`,
     ],
-    syncRef: upstream,
-    mergeBackBranch,
+    syncRef: normalizedTarget.localBranchName,
+    mergeBackBranch: normalizedTarget.localBranchName,
+    remoteTrackingRef: normalizedTarget.remoteTrackingRef,
   };
+}
+
+function pushTargetBranch(
+  repositoryPath: string,
+  localBranchName: string,
+  remoteTrackingRef: RemoteTrackingRef | null,
+  targetHead: string,
+): string[] {
+  if (!remoteTrackingRef) {
+    return [
+      `No push remote is configured for ${localBranchName}; leaving the merged target branch local only.`,
+    ];
+  }
+
+  try {
+    runGit(repositoryPath, [
+      "push",
+      "--quiet",
+      remoteTrackingRef.remoteName,
+      `${localBranchName}:refs/heads/${remoteTrackingRef.branchName}`,
+    ]);
+  } catch (error) {
+    if (error instanceof GitCommandError) {
+      throw new Error(
+        `Merged ${localBranchName} locally, but pushing to ${remoteTrackingRef.refName} failed. Resolve the repository state and push ${localBranchName} manually or retry the merge flow. ${error.message}`,
+      );
+    }
+
+    throw error;
+  }
+
+  return [
+    `Pushed ${localBranchName} to ${remoteTrackingRef.refName}`,
+    `Target branch head ${targetHead} is now on ${remoteTrackingRef.refName}`,
+  ];
 }
 
 function isFastForwardFailure(error: unknown): boolean {
@@ -687,7 +759,7 @@ export async function mergeReviewedBranch(
 
   for (let attempt = 1; attempt <= maxMergeAttempts; attempt += 1) {
     const refreshedTarget = refreshTargetBranch(
-      worktreePath,
+      repository.path,
       repository,
       targetBranch,
     );
@@ -743,6 +815,14 @@ export async function mergeReviewedBranch(
         `Fast-forward merged ${workingBranch} into ${refreshedTarget.mergeBackBranch}`,
       );
       logs.push(`Target branch head is now ${targetHead}`);
+      logs.push(
+        ...pushTargetBranch(
+          repository.path,
+          refreshedTarget.mergeBackBranch,
+          refreshedTarget.remoteTrackingRef,
+          targetHead,
+        ),
+      );
       return {
         logs,
         targetHead,
