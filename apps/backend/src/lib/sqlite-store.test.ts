@@ -412,3 +412,78 @@ test("markdown content is preserved across draft, ticket, and session note flows
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("recordMergeConflict moves the ticket back to in progress with a system note", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-note-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Merge Conflict Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Handle merge conflict fallback",
+      description:
+        "Preserve the ticket state when direct merge recovery fails.",
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Return the ticket to in_progress with a note."],
+      target_branch: "main",
+    });
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-merge",
+      worktreePath: join(tempDir, "worktrees", "ticket-merge"),
+      logs: ["Started merge ticket session"],
+    });
+
+    store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Summary",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.updateSessionStatus(
+      started.session.id,
+      "completed",
+      "Review package ready.",
+    );
+
+    const noteBody =
+      "Automatic merge recovery could not resolve conflicts in src/app.ts.";
+    const result = store.recordMergeConflict(ticket.id, noteBody);
+
+    assert.equal(result.ticket.status, "in_progress");
+    assert.equal(result.session.status, "failed");
+    assert.equal(result.requestedChangeNote.author_type, "system");
+    assert.equal(result.requestedChangeNote.body, noteBody);
+    assert.equal(
+      result.session.latest_requested_change_note_id,
+      result.requestedChangeNote.id,
+    );
+    assert.equal(
+      result.session.last_summary,
+      `Merge conflict detected:\n${noteBody}`,
+    );
+    assert.equal(
+      store.getSessionLogs(started.session.id).at(-4),
+      `Merge conflict note recorded:\n${noteBody}`,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

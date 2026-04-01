@@ -60,6 +60,13 @@ export type StopTicketResult = {
   logs: string[];
 };
 
+export type MergeConflictResult = {
+  ticket: TicketFrontmatter;
+  session: ExecutionSession;
+  requestedChangeNote: RequestedChangeNote;
+  logs: string[];
+};
+
 export type CreateReviewPackageInput = {
   ticket_id: number;
   session_id: string;
@@ -134,6 +141,7 @@ export interface Store {
   ): StartTicketResult;
   stopTicket(ticketId: number, reason?: string): StopTicketResult;
   requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
+  recordMergeConflict(ticketId: number, body: string): MergeConflictResult;
   resumeTicket(ticketId: number, reason?: string): RestartTicketResult;
   addSessionInput(sessionId: string, body: string): ExecutionSession;
   updateSessionPlan(

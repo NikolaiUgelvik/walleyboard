@@ -18,6 +18,7 @@ import {
 import type { Store } from "../lib/store.js";
 import { removeTicketArtifacts } from "../lib/ticket-artifacts.js";
 import {
+  AutomaticMergeRecoveryError,
   mergeReviewedBranch,
   prepareWorktree,
   removeLocalBranch,
@@ -35,6 +36,22 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   app,
   { eventHub, executionRuntime, store },
 ) => {
+  const appendSessionOutput = (
+    sessionId: string,
+    attemptId: string | null,
+    chunk: string,
+  ) => {
+    const sequence = store.appendSessionLog(sessionId, chunk);
+    eventHub.publish(
+      makeProtocolEvent("session.output", "session", sessionId, {
+        session_id: sessionId,
+        attempt_id: attemptId,
+        sequence,
+        chunk,
+      }),
+    );
+  };
+
   app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId",
     async (request, reply) => {
@@ -655,8 +672,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         reply.code(409).send({ error: "Ticket is missing merge metadata" });
         return;
       }
+      const sessionId = ticket.session_id;
 
-      const session = store.getSession(ticket.session_id);
+      const session = store.getSession(sessionId);
       if (!session) {
         reply.code(404).send({ error: "Session not found" });
         return;
@@ -686,11 +704,24 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       }
 
       try {
-        const mergeResult = mergeReviewedBranch(
+        const mergeResult = await mergeReviewedBranch(
           repository,
           session.worktree_path,
           ticket.working_branch,
           ticket.target_branch,
+          {
+            resolveConflicts: (input) =>
+              executionRuntime.resolveMergeConflicts({
+                project,
+                repository,
+                ticket,
+                session,
+                targetBranch: ticket.target_branch,
+                stage: input.stage,
+                conflictedFiles: input.conflictedFiles,
+                failureMessage: input.failureMessage,
+              }),
+          },
         );
 
         const logLines = [...mergeResult.logs];
@@ -745,7 +776,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
                 " | ",
               )}`;
         const mergedSession = store.updateSessionStatus(
-          ticket.session_id,
+          sessionId,
           "completed",
           summary,
         );
@@ -761,15 +792,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           ...logLines,
           ...cleanupWarnings.map((warning) => `Cleanup warning: ${warning}`),
         ]) {
-          const sequence = store.appendSessionLog(ticket.session_id, line);
-          eventHub.publish(
-            makeProtocolEvent("session.output", "session", ticket.session_id, {
-              session_id: ticket.session_id,
-              attempt_id: session.current_attempt_id,
-              sequence,
-              chunk: line,
-            }),
-          );
+          appendSessionOutput(sessionId, session.current_attempt_id, line);
         }
 
         eventHub.publish(
@@ -778,7 +801,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           }),
         );
         eventHub.publish(
-          makeProtocolEvent("session.updated", "session", ticket.session_id, {
+          makeProtocolEvent("session.updated", "session", sessionId, {
             session: mergedSession,
           }),
         );
@@ -786,23 +809,54 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         reply.send(
           makeCommandAck(true, "Ticket merged into the target branch", {
             ticket_id: ticketId,
-            session_id: ticket.session_id,
+            session_id: sessionId,
           }),
         );
       } catch (error) {
+        if (error instanceof AutomaticMergeRecoveryError) {
+          for (const line of error.logs) {
+            appendSessionOutput(sessionId, session.current_attempt_id, line);
+          }
+
+          const mergeConflict = store.recordMergeConflict(ticketId, error.note);
+          eventHub.publish(
+            makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
+              ticket: mergeConflict.ticket,
+            }),
+          );
+          eventHub.publish(
+            makeProtocolEvent("session.updated", "session", sessionId, {
+              session: mergeConflict.session,
+            }),
+          );
+          mergeConflict.logs.forEach((logLine, index) => {
+            eventHub.publish(
+              makeProtocolEvent("session.output", "session", sessionId, {
+                session_id: sessionId,
+                attempt_id: session.current_attempt_id,
+                sequence:
+                  store.getSessionLogs(sessionId).length -
+                  mergeConflict.logs.length +
+                  index,
+                chunk: logLine,
+              }),
+            );
+          });
+          appendSessionOutput(
+            sessionId,
+            session.current_attempt_id,
+            `[merge blocked] ${error.message}`,
+          );
+          reply.code(409).send({ error: error.message });
+          return;
+        }
+
         const message =
           error instanceof Error ? error.message : "Unable to merge ticket";
-        const sequence = store.appendSessionLog(
-          ticket.session_id,
+        appendSessionOutput(
+          sessionId,
+          session.current_attempt_id,
           `[merge blocked] ${message}`,
-        );
-        eventHub.publish(
-          makeProtocolEvent("session.output", "session", ticket.session_id, {
-            session_id: ticket.session_id,
-            attempt_id: session.current_attempt_id,
-            sequence,
-            chunk: `[merge blocked] ${message}`,
-          }),
         );
         reply.code(409).send({ error: message });
       }

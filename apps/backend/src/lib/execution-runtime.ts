@@ -247,6 +247,21 @@ function buildOutputSummaryPath(
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
 
+function buildMergeConflictSummaryPath(
+  project: Project,
+  ticketId: number,
+  sessionId: string,
+): string {
+  const summaryDir = join(
+    process.cwd(),
+    ".local",
+    "codex-summaries",
+    project.slug,
+  );
+  ensureDirectory(summaryDir);
+  return join(summaryDir, `ticket-${ticketId}-${sessionId}-merge-conflict.txt`);
+}
+
 function buildDraftAnalysisOutputPath(
   project: Project,
   draftId: string,
@@ -353,6 +368,58 @@ function buildCodexPlanPrompt(
     "- End with a short plan summary that the user can approve or revise.",
   );
   appendContextSections(sections, "Additional context", extraInstructions);
+
+  return sections.join("\n");
+}
+
+function buildMergeConflictResolutionPrompt(input: {
+  ticket: TicketFrontmatter;
+  repository: RepositoryConfig;
+  targetBranch: string;
+  stage: "rebase" | "merge";
+  conflictedFiles: string[];
+  failureMessage: string;
+}): string {
+  const sections = [
+    `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository ${input.repository.name}.`,
+    "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
+    "",
+  ];
+
+  appendMarkdownSection(sections, "Title", input.ticket.title);
+  sections.push("");
+  appendMarkdownSection(sections, "Description", input.ticket.description);
+  sections.push("");
+  appendCriteriaSections(
+    sections,
+    input.ticket.acceptance_criteria,
+    "Preserve the ticket intent while resolving the git conflicts.",
+  );
+  sections.push("");
+  appendMarkdownSection(sections, "Target branch", input.targetBranch);
+  sections.push("");
+  appendMarkdownSection(sections, "Conflict stage", input.stage);
+  sections.push("");
+  appendMarkdownSection(
+    sections,
+    "Conflicted files",
+    input.conflictedFiles.length > 0
+      ? input.conflictedFiles.join("\n")
+      : "Git did not report individual conflicted files.",
+  );
+  sections.push("");
+  appendMarkdownSection(sections, "Git failure", input.failureMessage);
+  sections.push(
+    "",
+    "Requirements:",
+    "- Stay inside this repository worktree.",
+    "- Make the smallest safe conflict resolution that keeps the ticket intent and the latest target-branch behavior.",
+    "- If a rebase is in progress, resolve conflicts, stage the files, and run `git rebase --continue` until the rebase finishes.",
+    "- If a merge is in progress, resolve conflicts, stage the files, and finish the merge.",
+    "- Do not abort the rebase or merge unless it is impossible to resolve safely.",
+    "- Do not open a PR or change ticket metadata.",
+    "- End with a concise summary stating whether the git operation finished cleanly.",
+  );
 
   return sections.join("\n");
 }
@@ -514,6 +581,20 @@ function summarizeDraftQuestions(result: DraftFeasibilityResult): string {
 }
 
 function formatDraftAnalysisExitReason(
+  exitCode: number | null,
+  signal: NodeJS.Signals | null,
+  rawOutput: string,
+): string {
+  const summary =
+    rawOutput.trim().length > 0
+      ? ` Final output: ${truncate(rawOutput.trim(), 240)}`
+      : "";
+  return `Codex exited with ${exitCode === null ? "unknown code" : `code ${exitCode}`}${
+    signal ? ` and signal ${signal}` : ""
+  }.${summary}`;
+}
+
+function formatCodexExitReason(
   exitCode: number | null,
   signal: NodeJS.Signals | null,
   rawOutput: string,
@@ -742,6 +823,157 @@ export class ExecutionRuntime {
       project,
       repository,
       instruction,
+    });
+  }
+
+  async resolveMergeConflicts(input: {
+    project: Project;
+    repository: RepositoryConfig;
+    ticket: TicketFrontmatter;
+    session: ExecutionSession;
+    targetBranch: string;
+    stage: "rebase" | "merge";
+    conflictedFiles: string[];
+    failureMessage: string;
+  }): Promise<{
+    resolved: boolean;
+    logs: string[];
+    note?: string;
+  }> {
+    const worktreePath = input.session.worktree_path;
+    if (!worktreePath) {
+      throw new Error("Execution session has no prepared worktree");
+    }
+
+    const outputSummaryPath = buildMergeConflictSummaryPath(
+      input.project,
+      input.ticket.id,
+      input.session.id,
+    );
+    const prompt = buildMergeConflictResolutionPrompt({
+      ticket: input.ticket,
+      repository: input.repository,
+      targetBranch: input.targetBranch,
+      stage: input.stage,
+      conflictedFiles: input.conflictedFiles,
+      failureMessage: input.failureMessage,
+    });
+    const args = [
+      "exec",
+      "--json",
+      "--full-auto",
+      "--output-last-message",
+      outputSummaryPath,
+    ];
+    const model = normalizeOptionalModel(input.project.ticket_work_model);
+    const reasoningEffort = normalizeOptionalReasoningEffort(
+      input.project.ticket_work_reasoning_effort,
+    );
+    appendCodexModelArgs(args, {
+      model,
+      reasoningEffort,
+    });
+    args.push(prompt);
+
+    const logs = [
+      `Launching Codex merge-conflict resolution in ${input.session.worktree_path}`,
+      `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
+    ];
+    if (model) {
+      logs.push(`Model override: ${model}`);
+    }
+    if (reasoningEffort) {
+      logs.push(`Reasoning effort override: ${reasoningEffort}`);
+    }
+
+    const ptyEnv = buildProcessEnv();
+    writeFileSync(outputSummaryPath, "", "utf8");
+
+    return await new Promise((resolve) => {
+      let settled = false;
+      let codexOutput = "";
+
+      const finish = (result: {
+        resolved: boolean;
+        logs: string[];
+        note?: string;
+      }) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve(result);
+      };
+
+      let child: ChildProcessWithoutNullStreams;
+      try {
+        child = spawn("codex", args, {
+          cwd: worktreePath,
+          env: ptyEnv,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Codex failed to start";
+        finish({
+          resolved: false,
+          logs,
+          note: `Codex could not start while resolving ${input.stage} conflicts: ${message}`,
+        });
+        return;
+      }
+
+      const captureCodexLine = (line: string) => {
+        if (logs.length < 16) {
+          logs.push(summarizeCodexJsonLine(line));
+        }
+        codexOutput += `${line}\n`;
+      };
+
+      streamLines(child.stdout, captureCodexLine);
+      streamLines(child.stderr, (line) => {
+        if (logs.length < 16) {
+          logs.push(`[codex stderr] ${truncate(line)}`);
+        }
+        codexOutput += `${line}\n`;
+      });
+
+      child.once("error", (error) => {
+        const message =
+          error instanceof Error ? error.message : "Codex execution failed";
+        finish({
+          resolved: false,
+          logs,
+          note: `Codex execution failed while resolving ${input.stage} conflicts: ${message}`,
+        });
+      });
+
+      child.once("close", (exitCode, signal) => {
+        const summary = existsSync(outputSummaryPath)
+          ? readFileSync(outputSummaryPath, "utf8").trim()
+          : "";
+        if (summary.length > 0) {
+          logs.push(`Merge-conflict resolution summary: ${truncate(summary)}`);
+        }
+
+        if (exitCode === 0) {
+          finish({
+            resolved: true,
+            logs,
+          });
+          return;
+        }
+
+        const reason = formatCodexExitReason(
+          exitCode,
+          signal,
+          summary || codexOutput,
+        );
+        finish({
+          resolved: false,
+          logs,
+          note: `Codex could not finish resolving the ${input.stage} conflicts. ${reason}`,
+        });
+      });
     });
   }
 

@@ -26,6 +26,7 @@ import type {
   ConfirmDraftInput,
   CreateReviewPackageInput,
   ListProjectTicketsOptions,
+  MergeConflictResult,
   PreparedExecutionRuntime,
   RestartTicketResult,
   StartTicketResult,
@@ -1627,6 +1628,116 @@ export class SqliteStore implements Store {
         this.getRequestedChangeNote(noteId),
         "Requested change note not found after creation",
       ),
+    };
+  }
+
+  recordMergeConflict(ticketId: number, body: string): MergeConflictResult {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+    if (ticket.status !== "review") {
+      throw new Error("Only review tickets can record merge conflicts");
+    }
+    if (!ticket.session_id) {
+      throw new Error("Ticket has no execution session");
+    }
+
+    const session = this.getSession(ticket.session_id);
+    if (!session) {
+      throw new Error("Execution session not found");
+    }
+    if (!session.worktree_path) {
+      throw new Error("Execution session has no prepared worktree");
+    }
+
+    const reviewPackage = this.getReviewPackage(ticketId);
+    const noteId = nanoid();
+    const timestamp = nowIso();
+    const summary = formatMarkdownLog("Merge conflict detected", body);
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO requested_change_notes (
+            id, ticket_id, review_package_id, author_type, body, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        noteId,
+        ticketId,
+        reviewPackage?.id ?? null,
+        "system",
+        body,
+        timestamp,
+      );
+
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET status = ?, updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run("in_progress", timestamp, ticketId);
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?,
+              latest_requested_change_note_id = ?,
+              completed_at = ?,
+              last_heartbeat_at = ?,
+              last_summary = ?
+          WHERE id = ?
+        `,
+      )
+      .run("failed", noteId, timestamp, timestamp, summary, session.id);
+
+    const logs = [
+      formatMarkdownLog("Merge conflict note recorded", body),
+      `Worktree preserved at: ${session.worktree_path}`,
+      `Working branch preserved: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
+      "Ticket returned to in-progress so the merge conflict can be resolved on the existing branch.",
+    ];
+
+    for (const line of logs) {
+      this.#appendSessionLog(session.id, line);
+    }
+
+    this.#recordStructuredEvent(
+      "ticket",
+      String(ticketId),
+      "ticket.merge_failed",
+      {
+        ticket_id: ticketId,
+        session_id: session.id,
+        requested_change_note_id: noteId,
+        review_package_id: reviewPackage?.id ?? null,
+      },
+    );
+    this.#recordStructuredEvent("session", session.id, "session.merge_failed", {
+      ticket_id: ticketId,
+      requested_change_note_id: noteId,
+    });
+
+    return {
+      ticket: requireValue(
+        this.getTicket(ticketId),
+        "Ticket not found after merge conflict handling",
+      ),
+      session: requireValue(
+        this.getSession(session.id),
+        "Session not found after merge conflict handling",
+      ),
+      requestedChangeNote: requireValue(
+        this.getRequestedChangeNote(noteId),
+        "Merge conflict note not found after creation",
+      ),
+      logs,
     };
   }
 
