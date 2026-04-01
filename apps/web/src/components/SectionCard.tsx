@@ -7,7 +7,11 @@ type SectionCardProps = {
   children: ReactNode;
 };
 
-export function SectionCard({ title, description, children }: SectionCardProps) {
+export function SectionCard({
+  title,
+  description,
+  children,
+}: SectionCardProps) {
   return (
     <Card
       withBorder
@@ -17,7 +21,7 @@ export function SectionCard({ title, description, children }: SectionCardProps) 
       style={{
         background: "var(--orchestrator-panel)",
         borderColor: "var(--orchestrator-border)",
-        boxShadow: "var(--orchestrator-shadow)"
+        boxShadow: "var(--orchestrator-shadow)",
       }}
     >
       <Stack gap="md">

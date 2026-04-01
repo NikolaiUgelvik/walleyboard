@@ -6,6 +6,6 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get("/health", async () => ({
     ok: true,
     service: "backend" as const,
-    timestamp: nowIso()
+    timestamp: nowIso(),
   }));
 };

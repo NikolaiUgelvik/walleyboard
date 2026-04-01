@@ -5,6 +5,7 @@ dist/
 .local/
 drizzle/
 coverage/
+.husky/_/
 *.log
 .env
 .env.*

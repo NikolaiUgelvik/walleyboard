@@ -9,14 +9,14 @@ export const ticketStatusSchema = z.enum([
   "ready",
   "in_progress",
   "review",
-  "done"
+  "done",
 ]);
 
 export const ticketTypeSchema = z.enum([
   "feature",
   "bugfix",
   "chore",
-  "research"
+  "research",
 ]);
 
 export const executionSessionStatusSchema = z.enum([
@@ -27,14 +27,14 @@ export const executionSessionStatusSchema = z.enum([
   "awaiting_input",
   "interrupted",
   "failed",
-  "completed"
+  "completed",
 ]);
 
 export const executionAttemptStatusSchema = z.enum([
   "running",
   "interrupted",
   "failed",
-  "completed"
+  "completed",
 ]);
 
 export const hookFailurePolicySchema = z.enum(["block", "warn", "ignore"]);
@@ -44,7 +44,7 @@ export const hookConfigSchema = z.object({
   working_directory: absolutePathSchema,
   timeout_ms: z.number().int().positive(),
   failure_policy: hookFailurePolicySchema,
-  shell: z.boolean()
+  shell: z.boolean(),
 });
 
 export const validationCommandSchema = z.object({
@@ -54,7 +54,7 @@ export const validationCommandSchema = z.object({
   working_directory: absolutePathSchema,
   timeout_ms: z.number().int().positive(),
   required_for_review: z.boolean(),
-  shell: z.boolean()
+  shell: z.boolean(),
 });
 
 export const validationResultSchema = z.object({
@@ -66,7 +66,7 @@ export const validationResultSchema = z.object({
   exit_code: z.number().int().nullable(),
   failure_overridden: z.boolean(),
   summary: z.string().nullable(),
-  log_ref: z.string().nullable()
+  log_ref: z.string().nullable(),
 });
 
 export const pullRequestRefSchema = z.object({
@@ -77,7 +77,7 @@ export const pullRequestRefSchema = z.object({
   url: z.string().url(),
   head_branch: z.string().min(1),
   base_branch: z.string().min(1),
-  state: z.enum(["open", "closed", "merged", "unknown"])
+  state: z.enum(["open", "closed", "merged", "unknown"]),
 });
 
 export const requestedChangeNoteSchema = z.object({
@@ -86,7 +86,7 @@ export const requestedChangeNoteSchema = z.object({
   review_package_id: opaqueIdSchema.nullable(),
   author_type: z.enum(["user", "system"]),
   body: z.string().min(1),
-  created_at: timestampSchema
+  created_at: timestampSchema,
 });
 
 export const draftTicketStateSchema = z.object({
@@ -98,10 +98,14 @@ export const draftTicketStateSchema = z.object({
   confirmed_repo_id: opaqueIdSchema.nullable(),
   proposed_ticket_type: ticketTypeSchema.nullable(),
   proposed_acceptance_criteria: z.array(z.string().min(1)),
-  wizard_status: z.enum(["editing", "awaiting_confirmation", "ready_to_create"]),
+  wizard_status: z.enum([
+    "editing",
+    "awaiting_confirmation",
+    "ready_to_create",
+  ]),
   split_proposal_summary: z.string().nullable(),
   created_at: timestampSchema,
-  updated_at: timestampSchema
+  updated_at: timestampSchema,
 });
 
 export const projectSchema = z.object({
@@ -111,7 +115,7 @@ export const projectSchema = z.object({
   default_target_branch: z.string().min(1).nullable(),
   max_concurrent_sessions: z.number().int().positive(),
   created_at: timestampSchema,
-  updated_at: timestampSchema
+  updated_at: timestampSchema,
 });
 
 export const repositoryConfigSchema = z.object({
@@ -125,7 +129,7 @@ export const repositoryConfigSchema = z.object({
   validation_profile: z.array(validationCommandSchema),
   extra_env_allowlist: z.array(z.string().min(1)),
   created_at: timestampSchema,
-  updated_at: timestampSchema
+  updated_at: timestampSchema,
 });
 
 export const ticketFrontmatterSchema = z.object({
@@ -142,7 +146,7 @@ export const ticketFrontmatterSchema = z.object({
   linked_pr: pullRequestRefSchema.nullable(),
   session_id: opaqueIdSchema.nullable(),
   created_at: timestampSchema,
-  updated_at: timestampSchema
+  updated_at: timestampSchema,
 });
 
 export const executionSessionSchema = z.object({
@@ -160,7 +164,7 @@ export const executionSessionSchema = z.object({
   started_at: timestampSchema.nullable(),
   completed_at: timestampSchema.nullable(),
   last_heartbeat_at: timestampSchema.nullable(),
-  last_summary: z.string().nullable()
+  last_summary: z.string().nullable(),
 });
 
 export const executionAttemptSchema = z.object({
@@ -171,7 +175,7 @@ export const executionAttemptSchema = z.object({
   pty_pid: z.number().int().nullable(),
   started_at: timestampSchema,
   ended_at: timestampSchema.nullable(),
-  end_reason: z.string().nullable()
+  end_reason: z.string().nullable(),
 });
 
 export const structuredEventSchema = z.object({
@@ -186,11 +190,11 @@ export const structuredEventSchema = z.object({
     "worktree",
     "git",
     "pull_request",
-    "system"
+    "system",
   ]),
   entity_id: opaqueIdSchema,
   event_type: z.string().min(1),
-  payload: z.record(z.string(), z.unknown())
+  payload: z.record(z.string(), z.unknown()),
 });
 
 export const reviewPackageSchema = z.object({
@@ -202,7 +206,7 @@ export const reviewPackageSchema = z.object({
   change_summary: z.string().min(1),
   validation_results: z.array(validationResultSchema),
   remaining_risks: z.array(z.string().min(1)),
-  created_at: timestampSchema
+  created_at: timestampSchema,
 });
 
 export type HookConfig = z.infer<typeof hookConfigSchema>;
@@ -220,4 +224,6 @@ export type StructuredEvent = z.infer<typeof structuredEventSchema>;
 export type ReviewPackage = z.infer<typeof reviewPackageSchema>;
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketType = z.infer<typeof ticketTypeSchema>;
-export type ExecutionSessionStatus = z.infer<typeof executionSessionStatusSchema>;
+export type ExecutionSessionStatus = z.infer<
+  typeof executionSessionStatusSchema
+>;

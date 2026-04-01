@@ -13,7 +13,7 @@ import { websocketRoutes } from "./routes/ws.js";
 
 export async function createApp() {
   const app = Fastify({
-    logger: true
+    logger: true,
   });
 
   const eventHub = new EventHub();
@@ -24,9 +24,9 @@ export async function createApp() {
   if (recovery.sessions.length > 0) {
     app.log.warn(
       {
-        sessionIds: recovery.sessions.map((session) => session.id)
+        sessionIds: recovery.sessions.map((session) => session.id),
       },
-      "Recovered active sessions as interrupted during backend startup"
+      "Recovered active sessions as interrupted during backend startup",
     );
   }
 

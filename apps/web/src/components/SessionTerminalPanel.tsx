@@ -1,4 +1,12 @@
-import { Button, Code, Group, Stack, Text, TextInput, Textarea } from "@mantine/core";
+import {
+  Button,
+  Code,
+  Group,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+} from "@mantine/core";
 import type { ExecutionSession } from "@orchestrator/contracts";
 
 type SessionTerminalPanelProps = {
@@ -47,7 +55,7 @@ export function SessionTerminalPanel({
   onRestoreAgent,
   sendLoading,
   restoreLoading,
-  error
+  error,
 }: SessionTerminalPanelProps) {
   const active = session.status === "paused_user_control";
   const transcript = extractTerminalTranscript(logs);
@@ -57,8 +65,8 @@ export function SessionTerminalPanel({
       <Stack gap={4}>
         <Text fw={600}>Project Terminal</Text>
         <Text size="sm" c="dimmed">
-          This is the raw terminal view for direct commands in the ticket worktree. It stays
-          separate from the interpreted Codex activity feed.
+          This is the raw terminal view for direct commands in the ticket
+          worktree. It stays separate from the interpreted Codex activity feed.
         </Text>
         <Text size="sm" c="dimmed">
           Worktree: <Code>{session.worktree_path ?? "pending"}</Code>
@@ -69,12 +77,14 @@ export function SessionTerminalPanel({
         label="Terminal transcript"
         readOnly
         rows={14}
-        value={transcript.length > 0 ? transcript : "No terminal transcript yet."}
+        value={
+          transcript.length > 0 ? transcript : "No terminal transcript yet."
+        }
         styles={{
           input: {
             fontFamily:
-              "Monaco, Menlo, Consolas, Liberation Mono, Courier New, monospace"
-          }
+              "Monaco, Menlo, Consolas, Liberation Mono, Courier New, monospace",
+          },
         }}
       />
 
@@ -105,18 +115,27 @@ export function SessionTerminalPanel({
               onChange={(event) => onCommandChange(event.currentTarget.value)}
               style={{ flex: 1 }}
             />
-            <Button type="submit" loading={sendLoading} disabled={command.trim().length === 0}>
+            <Button
+              type="submit"
+              loading={sendLoading}
+              disabled={command.trim().length === 0}
+            >
               Run Command
             </Button>
-            <Button variant="light" type="button" loading={restoreLoading} onClick={onRestoreAgent}>
+            <Button
+              variant="light"
+              type="button"
+              loading={restoreLoading}
+              onClick={onRestoreAgent}
+            >
               Restore Agent
             </Button>
           </Group>
         </form>
       ) : (
         <Text size="sm" c="dimmed">
-          Use `Take Over Terminal` from the session controls when you want to run direct commands in
-          this worktree.
+          Use `Take Over Terminal` from the session controls when you want to
+          run direct commands in this worktree.
         </Text>
       )}
     </Stack>

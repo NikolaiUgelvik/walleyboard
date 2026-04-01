@@ -6,7 +6,14 @@ type SessionActivityFeedProps = {
   session: ExecutionSession;
 };
 
-type ActivityTone = "gray" | "blue" | "teal" | "yellow" | "orange" | "red" | "green";
+type ActivityTone =
+  | "gray"
+  | "blue"
+  | "teal"
+  | "yellow"
+  | "orange"
+  | "red"
+  | "green";
 
 type SessionActivity = {
   key: string;
@@ -22,18 +29,14 @@ type ParsedCodexEvent = {
 
 type ParsedExecutionSummary = {
   overview: string;
-  commit:
-    | {
-        hash: string;
-        message: string | null;
-      }
-    | null;
-  validation:
-    | {
-        commands: string[];
-        note: string | null;
-      }
-    | null;
+  commit: {
+    hash: string;
+    message: string | null;
+  } | null;
+  validation: {
+    commands: string[];
+    note: string | null;
+  } | null;
   risks: string[];
 };
 
@@ -41,13 +44,13 @@ function createActivity(
   key: string,
   tone: ActivityTone,
   label: string,
-  detail: string
+  detail: string,
 ): SessionActivity {
   return {
     key,
     tone,
     label,
-    detail
+    detail,
   };
 }
 
@@ -82,7 +85,7 @@ function parseCodexEvent(line: string): ParsedCodexEvent | null {
     const payload = JSON.parse(rawPayload) as Record<string, unknown>;
     return {
       eventType,
-      payload
+      payload,
     };
   } catch {
     return null;
@@ -96,28 +99,28 @@ function describeCommandExecution(command: string): {
   if (command.includes(".github/workflows")) {
     return {
       label: "Inspected CI workflow",
-      detail: "Codex reviewed the CI workflow configuration."
+      detail: "Codex reviewed the CI workflow configuration.",
     };
   }
 
   if (command.includes(".gitignore")) {
     return {
       label: "Checked ignore rules",
-      detail: "Codex inspected `.gitignore`."
+      detail: "Codex inspected `.gitignore`.",
     };
   }
 
   if (command.includes("npm run typecheck") || command.includes("tsc -p")) {
     return {
       label: "Checked types",
-      detail: "Codex ran the project's type checks."
+      detail: "Codex ran the project's type checks.",
     };
   }
 
   if (command.includes("npm run build") || command.includes("vite build")) {
     return {
       label: "Built project",
-      detail: "Codex ran the build to verify the current changes."
+      detail: "Codex ran the build to verify the current changes.",
     };
   }
 
@@ -128,21 +131,21 @@ function describeCommandExecution(command: string): {
   ) {
     return {
       label: "Ran tests",
-      detail: "Codex ran a test command for the current change."
+      detail: "Codex ran a test command for the current change.",
     };
   }
 
   if (command.includes("git status")) {
     return {
       label: "Checked git status",
-      detail: "Codex verified the repository status."
+      detail: "Codex verified the repository status.",
     };
   }
 
   if (command.includes("git diff")) {
     return {
       label: "Reviewed changes",
-      detail: "Codex inspected the current diff."
+      detail: "Codex inspected the current diff.",
     };
   }
 
@@ -156,17 +159,20 @@ function describeCommandExecution(command: string): {
   ) {
     return {
       label: "Inspected project files",
-      detail: "Codex looked through repository files to gather context."
+      detail: "Codex looked through repository files to gather context.",
     };
   }
 
   return {
     label: "Ran command",
-    detail: truncate(command, 160)
+    detail: truncate(command, 160),
   };
 }
 
-function interpretCodexEvent(line: string, index: number): SessionActivity | null {
+function interpretCodexEvent(
+  line: string,
+  index: number,
+): SessionActivity | null {
   const event = parseCodexEvent(line);
   if (!event) {
     return null;
@@ -178,8 +184,7 @@ function interpretCodexEvent(line: string, index: number): SessionActivity | nul
   }
 
   const itemRecord = item as Record<string, unknown>;
-  const itemType =
-    typeof itemRecord.type === "string" ? itemRecord.type : null;
+  const itemType = typeof itemRecord.type === "string" ? itemRecord.type : null;
 
   if (event.eventType === "item.started") {
     return null;
@@ -201,7 +206,7 @@ function interpretCodexEvent(line: string, index: number): SessionActivity | nul
       `codex-message-${index}`,
       "blue",
       "Codex update",
-      truncate(text)
+      truncate(text),
     );
   }
 
@@ -223,13 +228,15 @@ function interpretCodexEvent(line: string, index: number): SessionActivity | nul
     if (exitCode !== null && exitCode !== 0) {
       const failureDetail =
         aggregatedOutput.length > 0
-          ? truncate(aggregatedOutput.split("\n").find(Boolean) ?? aggregatedOutput)
+          ? truncate(
+              aggregatedOutput.split("\n").find(Boolean) ?? aggregatedOutput,
+            )
           : description.detail;
       return createActivity(
         `codex-command-failed-${index}`,
         "red",
         "Command failed",
-        failureDetail
+        failureDetail,
       );
     }
 
@@ -237,14 +244,17 @@ function interpretCodexEvent(line: string, index: number): SessionActivity | nul
       `codex-command-${index}`,
       "gray",
       description.label,
-      description.detail
+      description.detail,
     );
   }
 
   return null;
 }
 
-function interpretSessionLog(line: string, index: number): SessionActivity | null {
+function interpretSessionLog(
+  line: string,
+  index: number,
+): SessionActivity | null {
   const codexEvent = interpretCodexEvent(line, index);
   if (codexEvent) {
     return codexEvent;
@@ -252,42 +262,82 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
 
   const created = extractDetail(line, "Session created for ticket ");
   if (created) {
-    return createActivity(`created-${index}`, "blue", "Execution prepared", created);
+    return createActivity(
+      `created-${index}`,
+      "blue",
+      "Execution prepared",
+      created,
+    );
   }
 
   const branchReserved = extractDetail(line, "Working branch reserved: ");
   if (branchReserved) {
-    return createActivity(`branch-${index}`, "gray", "Working branch", branchReserved);
+    return createActivity(
+      `branch-${index}`,
+      "gray",
+      "Working branch",
+      branchReserved,
+    );
   }
 
   const worktreePrepared = extractDetail(line, "Worktree prepared at: ");
   if (worktreePrepared) {
-    return createActivity(`worktree-${index}`, "gray", "Worktree prepared", worktreePrepared);
+    return createActivity(
+      `worktree-${index}`,
+      "gray",
+      "Worktree prepared",
+      worktreePrepared,
+    );
   }
 
   const planningMode = extractDetail(line, "Planning mode: ");
   if (planningMode) {
-    return createActivity(`planning-${index}`, "gray", "Planning mode", planningMode);
+    return createActivity(
+      `planning-${index}`,
+      "gray",
+      "Planning mode",
+      planningMode,
+    );
   }
 
   const launchPath = extractDetail(line, "Launching Codex in ");
   if (launchPath) {
-    return createActivity(`launch-${index}`, "blue", "Codex started", launchPath);
+    return createActivity(
+      `launch-${index}`,
+      "blue",
+      "Codex started",
+      launchPath,
+    );
   }
 
   const codexMessage = extractDetail(line, "[codex agent_message] ");
   if (codexMessage) {
-    return createActivity(`codex-message-${index}`, "blue", "Codex update", codexMessage);
+    return createActivity(
+      `codex-message-${index}`,
+      "blue",
+      "Codex update",
+      codexMessage,
+    );
   }
 
   const codexStderr = extractDetail(line, "[codex stderr] ");
   if (codexStderr) {
-    return createActivity(`codex-stderr-${index}`, "yellow", "Tool warning", codexStderr);
+    return createActivity(
+      `codex-stderr-${index}`,
+      "yellow",
+      "Tool warning",
+      codexStderr,
+    );
   }
 
   const codexRaw = extractDetail(line, "[codex raw] ");
   if (codexRaw) {
-    return createActivity(`codex-raw-${index}`, "blue", "Codex update", codexRaw);
+    return createActivity(
+      `codex-raw-${index}`,
+      "blue",
+      "Codex update",
+      codexRaw,
+    );
   }
 
   if (line.startsWith("[codex ") || line.startsWith("[validation ")) {
@@ -296,12 +346,22 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
 
   const validation = extractDetail(line, "Running validation: ");
   if (validation) {
-    return createActivity(`validation-${index}`, "teal", "Validation running", validation);
+    return createActivity(
+      `validation-${index}`,
+      "teal",
+      "Validation running",
+      validation,
+    );
   }
 
   const reviewReady = extractDetail(line, "Review package ready: ");
   if (reviewReady) {
-    return createActivity(`review-${index}`, "green", "Ready for review", reviewReady);
+    return createActivity(
+      `review-${index}`,
+      "green",
+      "Ready for review",
+      reviewReady,
+    );
   }
 
   if (line === "Codex finished successfully.") {
@@ -309,13 +369,18 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `finished-${index}`,
       "green",
       "Implementation finished",
-      "Codex completed the implementation phase."
+      "Codex completed the implementation phase.",
     );
   }
 
   const runtimeFailure = extractDetail(line, "[runtime failure] ");
   if (runtimeFailure) {
-    return createActivity(`failure-${index}`, "red", "Execution failed", runtimeFailure);
+    return createActivity(
+      `failure-${index}`,
+      "red",
+      "Execution failed",
+      runtimeFailure,
+    );
   }
 
   const requestedChanges = extractDetail(line, "Requested changes recorded: ");
@@ -324,17 +389,20 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `requested-changes-${index}`,
       "orange",
       "Changes requested",
-      requestedChanges
+      requestedChanges,
     );
   }
 
-  const resumeInstruction = extractDetail(line, "Resume instruction recorded: ");
+  const resumeInstruction = extractDetail(
+    line,
+    "Resume instruction recorded: ",
+  );
   if (resumeInstruction) {
     return createActivity(
       `resume-instruction-${index}`,
       "yellow",
       "Resume guidance saved",
-      resumeInstruction
+      resumeInstruction,
     );
   }
 
@@ -343,7 +411,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `resume-${index}`,
       "yellow",
       "Resume requested",
-      "The next attempt will continue from the existing worktree without extra guidance."
+      "The next attempt will continue from the existing worktree without extra guidance.",
     );
   }
 
@@ -353,13 +421,18 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `resume-guidance-${index}`,
       "yellow",
       "Resume guidance",
-      resumeGuidance
+      resumeGuidance,
     );
   }
 
   const inputRecorded = extractDetail(line, "User input recorded: ");
   if (inputRecorded) {
-    return createActivity(`input-${index}`, "yellow", "Note recorded", inputRecorded);
+    return createActivity(
+      `input-${index}`,
+      "yellow",
+      "Note recorded",
+      inputRecorded,
+    );
   }
 
   const terminalOpened = extractDetail(line, "Manual terminal opened in ");
@@ -368,7 +441,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `terminal-opened-${index}`,
       "yellow",
       "Manual terminal attached",
-      terminalOpened
+      terminalOpened,
     );
   }
 
@@ -377,7 +450,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `terminal-closed-${index}`,
       "gray",
       "Manual terminal closed",
-      "Agent control can now be restored on the existing worktree."
+      "Agent control can now be restored on the existing worktree.",
     );
   }
 
@@ -387,7 +460,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `terminal-input-${index}`,
       "yellow",
       "Manual command",
-      truncate(terminalInput, 160)
+      truncate(terminalInput, 160),
     );
   }
 
@@ -397,7 +470,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `agent-input-${index}`,
       "yellow",
       "Live input sent",
-      truncate(agentInput, 160)
+      truncate(agentInput, 160),
     );
   }
 
@@ -407,7 +480,12 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
 
   const stopped = extractDetail(line, "Execution stopped by user: ");
   if (stopped) {
-    return createActivity(`stopped-${index}`, "orange", "Execution stopped", stopped);
+    return createActivity(
+      `stopped-${index}`,
+      "orange",
+      "Execution stopped",
+      stopped,
+    );
   }
 
   if (line === "Execution stopped by user.") {
@@ -415,7 +493,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `stopped-${index}`,
       "orange",
       "Execution stopped",
-      "The current attempt was stopped intentionally and can be resumed later."
+      "The current attempt was stopped intentionally and can be resumed later.",
     );
   }
 
@@ -425,7 +503,7 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `preserved-worktree-${index}`,
       "orange",
       "Worktree preserved",
-      preservedWorktree
+      preservedWorktree,
     );
   }
 
@@ -435,31 +513,48 @@ function interpretSessionLog(line: string, index: number): SessionActivity | nul
       `preserved-branch-${index}`,
       "orange",
       "Working branch preserved",
-      preservedBranch
+      preservedBranch,
     );
   }
 
   const reuseWorktree = extractDetail(line, "Reusing worktree at: ");
   if (reuseWorktree) {
-    return createActivity(`reuse-worktree-${index}`, "blue", "Reusing worktree", reuseWorktree);
+    return createActivity(
+      `reuse-worktree-${index}`,
+      "blue",
+      "Reusing worktree",
+      reuseWorktree,
+    );
   }
 
   const reuseBranch = extractDetail(line, "Reusing working branch: ");
   if (reuseBranch) {
-    return createActivity(`reuse-branch-${index}`, "blue", "Reusing branch", reuseBranch);
+    return createActivity(
+      `reuse-branch-${index}`,
+      "blue",
+      "Reusing branch",
+      reuseBranch,
+    );
   }
 
   const newAttempt = extractDetail(line, "Starting execution attempt ");
   if (newAttempt) {
-    return createActivity(`attempt-${index}`, "blue", "New attempt", newAttempt);
+    return createActivity(
+      `attempt-${index}`,
+      "blue",
+      "New attempt",
+      newAttempt,
+    );
   }
 
-  if (line === "Session was marked interrupted after backend startup recovery.") {
+  if (
+    line === "Session was marked interrupted after backend startup recovery."
+  ) {
     return createActivity(
       `recovery-${index}`,
       "orange",
       "Restart recovery",
-      "The backend restarted while the session was active, so the session was preserved for manual resume."
+      "The backend restarted while the session was active, so the session was preserved for manual resume.",
     );
   }
 
@@ -505,7 +600,7 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
   const validationIndex = normalized.indexOf(validationMarker);
   const risksIndex = normalized.indexOf(risksMarker);
   const sectionStarts = [commitIndex, validationIndex, risksIndex].filter(
-    (value) => value >= 0
+    (value) => value >= 0,
   );
   const firstSectionStart =
     sectionStarts.length > 0 ? Math.min(...sectionStarts) : normalized.length;
@@ -513,7 +608,7 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
   const overview = normalized.slice(0, firstSectionStart).trim();
 
   const commitEndCandidates = [validationIndex, risksIndex].filter(
-    (value) => value > commitIndex
+    (value) => value > commitIndex,
   );
   const commitText =
     commitIndex >= 0
@@ -522,17 +617,18 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
             commitIndex,
             commitEndCandidates.length > 0
               ? Math.min(...commitEndCandidates)
-              : normalized.length
+              : normalized.length,
           )
           .trim()
       : "";
   const commitMatch = commitText.match(
-    /The change is committed as `([^`]+)`(?: with message `([^`]+)`)?\.?/i
+    /The change is committed as `([^`]+)`(?: with message `([^`]+)`)?\.?/i,
   );
-  const commit = commitMatch
+  const commitHash = commitMatch?.[1];
+  const commit = commitHash
     ? {
-        hash: commitMatch[1],
-        message: commitMatch[2] ?? null
+        hash: commitHash,
+        message: commitMatch[2] ?? null,
       }
     : null;
 
@@ -547,10 +643,13 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
     .split(/(?<=\.)\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
-  const validationCommands =
-    validationSentences.length > 0
-      ? Array.from(validationSentences[0].matchAll(/`([^`]+)`/g), (match) => match[1])
-      : [];
+  const firstValidationSentence = validationSentences[0];
+  const validationCommands = firstValidationSentence
+    ? Array.from(
+        firstValidationSentence.matchAll(/`([^`]+)`/g),
+        (match) => match[1],
+      ).filter((command): command is string => command !== undefined)
+    : [];
   const validationNote =
     validationSentences.length > 1
       ? validationSentences.slice(1).join(" ").trim()
@@ -561,18 +660,21 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
     validationCommands.length > 0 || validationNote
       ? {
           commands: validationCommands,
-          note: validationNote
+          note: validationNote,
         }
       : null;
 
   const risksText =
     risksIndex >= 0
-      ? normalized.slice(risksIndex + risksMarker.length).trim().replace(/\.$/, "")
+      ? normalized
+          .slice(risksIndex + risksMarker.length)
+          .trim()
+          .replace(/\.$/, "")
       : "";
   const risks = risksText
     ? risksText
         .split(
-          /,\s+(?=(?:the|`|backend|integration|Codex|MCP|extra_env_allowlist)\b)/
+          /,\s+(?=(?:the|`|backend|integration|Codex|MCP|extra_env_allowlist)\b)/,
         )
         .map((risk) => risk.trim())
         .filter(Boolean)
@@ -582,17 +684,20 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
     overview,
     commit,
     validation,
-    risks
+    risks,
   };
 }
 
-export function SessionActivityFeed({ logs, session }: SessionActivityFeedProps) {
+export function SessionActivityFeed({
+  logs,
+  session,
+}: SessionActivityFeedProps) {
   const interpretedActivities = logs
     .map((line, index) => interpretSessionLog(line, index))
     .filter((activity): activity is SessionActivity => activity !== null);
   const visibleActivities = interpretedActivities.slice(-12).reverse();
   const parsedSummary = parseExecutionSummary(
-    session.last_summary ?? fallbackSummary(session.status)
+    session.last_summary ?? fallbackSummary(session.status),
   );
 
   return (
@@ -668,8 +773,8 @@ export function SessionActivityFeed({ logs, session }: SessionActivityFeedProps)
       <Stack gap={4}>
         <Text fw={600}>Recent Activity</Text>
         <Text size="sm" c="dimmed">
-          This view highlights notable Codex and system updates instead of showing the
-          raw terminal transcript.
+          This view highlights notable Codex and system updates instead of
+          showing the raw terminal transcript.
         </Text>
         {visibleActivities.length === 0 ? (
           <Text size="sm" c="dimmed">

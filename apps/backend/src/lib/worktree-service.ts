@@ -1,8 +1,12 @@
-import { existsSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Project, RepositoryConfig, TicketFrontmatter } from "@orchestrator/contracts";
+import type {
+  Project,
+  RepositoryConfig,
+  TicketFrontmatter,
+} from "@orchestrator/contracts";
 
 import type { PreparedExecutionRuntime } from "./store.js";
 
@@ -22,7 +26,7 @@ function runGit(repoPath: string, args: string[]): string {
   try {
     return execFileSync("git", ["-C", repoPath, ...args], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim();
   } catch (error) {
     const message =
@@ -35,7 +39,7 @@ function runGitAtRoot(args: string[]): string {
   try {
     return execFileSync("git", args, {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim();
   } catch (error) {
     const message =
@@ -47,7 +51,7 @@ function runGitAtRoot(args: string[]): string {
 export function prepareWorktree(
   project: Project,
   repository: RepositoryConfig,
-  ticket: TicketFrontmatter
+  ticket: TicketFrontmatter,
 ): PreparedExecutionRuntime {
   if (ticket.working_branch) {
     throw new Error("Ticket already has a working branch");
@@ -59,10 +63,10 @@ export function prepareWorktree(
     ".local",
     "worktrees",
     project.slug,
-    `ticket-${ticket.id}`
+    `ticket-${ticket.id}`,
   );
   mkdirSync(join(process.cwd(), ".local", "worktrees", project.slug), {
-    recursive: true
+    recursive: true,
   });
 
   if (existsSync(worktreeRoot)) {
@@ -80,12 +84,17 @@ export function prepareWorktree(
       "-b",
       workingBranch,
       worktreeRoot,
-      targetBranch
+      targetBranch,
     ]);
   } catch (error) {
     if (existsSync(worktreeRoot)) {
       try {
-        runGit(repository.path, ["worktree", "remove", "--force", worktreeRoot]);
+        runGit(repository.path, [
+          "worktree",
+          "remove",
+          "--force",
+          worktreeRoot,
+        ]);
       } catch {
         // Keep the original error. Cleanup failures can be handled manually.
       }
@@ -97,19 +106,19 @@ export function prepareWorktree(
   const logs = [
     `Verified git repository: ${repository.path}`,
     `Checked out target branch: ${targetBranch}`,
-    `Created git worktree: ${worktreeRoot}`
+    `Created git worktree: ${worktreeRoot}`,
   ];
 
   return {
     workingBranch,
     worktreePath: worktreeRoot,
-    logs
+    logs,
   };
 }
 
 export function removePreparedWorktree(
   repository: RepositoryConfig,
-  worktreePath: string
+  worktreePath: string,
 ): void {
   if (!existsSync(worktreePath)) {
     return;
@@ -120,9 +129,13 @@ export function removePreparedWorktree(
 
 export function removeLocalBranch(
   repository: RepositoryConfig,
-  branchName: string
+  branchName: string,
 ): void {
-  const existingBranch = runGit(repository.path, ["branch", "--list", branchName]);
+  const existingBranch = runGit(repository.path, [
+    "branch",
+    "--list",
+    branchName,
+  ]);
   if (existingBranch.length === 0) {
     return;
   }
@@ -138,7 +151,7 @@ export function mergeReviewedBranch(
   repository: RepositoryConfig,
   worktreePath: string,
   workingBranch: string,
-  targetBranch: string
+  targetBranch: string,
 ): { logs: string[]; targetHead: string } {
   if (!existsSync(worktreePath)) {
     throw new Error(`Worktree path does not exist: ${worktreePath}`);
@@ -147,25 +160,33 @@ export function mergeReviewedBranch(
   const repoBranch = repoCurrentBranch(repository);
   if (repoBranch !== targetBranch) {
     throw new Error(
-      `Repository checkout must be on ${targetBranch} before direct merge. Current branch: ${repoBranch}`
+      `Repository checkout must be on ${targetBranch} before direct merge. Current branch: ${repoBranch}`,
     );
   }
 
   const repoStatus = gitStatusPorcelain(repository.path);
   if (repoStatus.length > 0) {
-    throw new Error("Repository checkout has uncommitted changes. Clean it before merging.");
+    throw new Error(
+      "Repository checkout has uncommitted changes. Clean it before merging.",
+    );
   }
 
-  const worktreeBranch = runGit(worktreePath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const worktreeBranch = runGit(worktreePath, [
+    "rev-parse",
+    "--abbrev-ref",
+    "HEAD",
+  ]);
   if (worktreeBranch !== workingBranch) {
     throw new Error(
-      `Ticket worktree is on ${worktreeBranch}, but ${workingBranch} was expected.`
+      `Ticket worktree is on ${worktreeBranch}, but ${workingBranch} was expected.`,
     );
   }
 
   const worktreeStatus = gitStatusPorcelain(worktreePath);
   if (worktreeStatus.length > 0) {
-    throw new Error("Ticket worktree has uncommitted changes. Commit or discard them first.");
+    throw new Error(
+      "Ticket worktree has uncommitted changes. Commit or discard them first.",
+    );
   }
 
   try {
@@ -187,12 +208,12 @@ export function mergeReviewedBranch(
     `Repository checkout verified on ${targetBranch}`,
     `Rebased ${workingBranch} onto ${targetBranch}`,
     `Fast-forward merged ${workingBranch} into ${targetBranch}`,
-    `Target branch head is now ${targetHead}`
+    `Target branch head is now ${targetHead}`,
   ];
 
   return {
     logs,
-    targetHead
+    targetHead,
   };
 }
 

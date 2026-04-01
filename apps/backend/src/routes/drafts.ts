@@ -4,13 +4,13 @@ import {
   confirmDraftInputSchema,
   createDraftInputSchema,
   refineDraftInputSchema,
-  updateDraftInputSchema
+  updateDraftInputSchema,
 } from "@orchestrator/contracts";
 
 import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
-import { parseBody } from "../lib/http.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
+import { parseBody } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 
 type DraftRouteOptions = {
@@ -31,8 +31,11 @@ function resolveDraftContext(store: Store, draftId: string) {
   }
 
   const repositories = store.listProjectRepositories(project.id);
-  const repositoryId = draft.confirmed_repo_id ?? draft.proposed_repo_id ?? repositories[0]?.id;
-  const repository = repositoryId ? store.getRepository(repositoryId) : undefined;
+  const repositoryId =
+    draft.confirmed_repo_id ?? draft.proposed_repo_id ?? repositories[0]?.id;
+  const repository = repositoryId
+    ? store.getRepository(repositoryId)
+    : undefined;
   if (!repository) {
     throw new Error("Repository not found");
   }
@@ -40,13 +43,13 @@ function resolveDraftContext(store: Store, draftId: string) {
   return {
     draft,
     project,
-    repository
+    repository,
   };
 }
 
 export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
   app,
-  { eventHub, executionRuntime, store }
+  { eventHub, executionRuntime, store },
 ) => {
   app.post("/drafts", async (request, reply) => {
     const input = parseBody(reply, createDraftInputSchema, request.body);
@@ -59,18 +62,19 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
       eventHub.publish(
         makeProtocolEvent("draft.updated", "draft", draft.id, {
-          draft
-        })
+          draft,
+        }),
       );
 
       reply.code(201).send(
         makeCommandAck(true, "Draft created", {
-          draft_id: draft.id
-        })
+          draft_id: draft.id,
+        }),
       );
     } catch (error) {
       reply.code(404).send({
-        error: error instanceof Error ? error.message : "Unable to create draft"
+        error:
+          error instanceof Error ? error.message : "Unable to create draft",
       });
     }
   });
@@ -81,15 +85,15 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
       const draft = store.getDraft(request.params.draftId);
       if (!draft) {
         reply.code(404).send({
-          error: "Draft not found"
+          error: "Draft not found",
         });
         return;
       }
 
       reply.send({
-        events: store.getDraftEvents(request.params.draftId)
+        events: store.getDraftEvents(request.params.draftId),
       });
-    }
+    },
   );
 
   app.patch<{ Params: { draftId: string } }>(
@@ -105,22 +109,23 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
         eventHub.publish(
           makeProtocolEvent("draft.updated", "draft", draft.id, {
-            draft
-          })
+            draft,
+          }),
         );
 
         reply.send(
           makeCommandAck(true, "Draft updated", {
             draft_id: draft.id,
-            project_id: draft.project_id
-          })
+            project_id: draft.project_id,
+          }),
         );
       } catch (error) {
         reply.code(404).send({
-          error: error instanceof Error ? error.message : "Unable to update draft"
+          error:
+            error instanceof Error ? error.message : "Unable to update draft",
         });
       }
-    }
+    },
   );
 
   app.post<{ Params: { draftId: string } }>(
@@ -131,7 +136,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
         if (!draft) {
           reply.code(404).send({
-            error: "Draft not found"
+            error: "Draft not found",
           });
           return;
         }
@@ -139,22 +144,23 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
         eventHub.publish(
           makeProtocolEvent("draft.deleted", "draft", draft.id, {
             draft_id: draft.id,
-            project_id: draft.project_id
-          })
+            project_id: draft.project_id,
+          }),
         );
 
         reply.send(
           makeCommandAck(true, "Draft deleted", {
             draft_id: draft.id,
-            project_id: draft.project_id
-          })
+            project_id: draft.project_id,
+          }),
         );
       } catch (error) {
         reply.code(404).send({
-          error: error instanceof Error ? error.message : "Unable to delete draft"
+          error:
+            error instanceof Error ? error.message : "Unable to delete draft",
         });
       }
-    }
+    },
   );
 
   app.post<{ Params: { draftId: string } }>(
@@ -168,11 +174,11 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
       try {
         const { draft, project, repository } = resolveDraftContext(
           store,
-          request.params.draftId
+          request.params.draftId,
         );
         if (executionRuntime.hasActiveDraftRun(draft.id)) {
           reply.code(409).send({
-            error: "Draft analysis already running"
+            error: "Draft analysis already running",
           });
           return;
         }
@@ -181,24 +187,26 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
           draft,
           project,
           repository,
-          instruction: input.instruction
+          instruction: input.instruction,
         });
 
         reply.send(
           makeCommandAck(true, "Draft refinement started", {
             draft_id: draft.id,
             project_id: project.id,
-            repo_id: repository.id
-          })
+            repo_id: repository.id,
+          }),
         );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unable to refine draft";
-        reply.code(message === "Draft analysis already running" ? 409 : 404).send({
-          error: message
-        });
+        reply
+          .code(message === "Draft analysis already running" ? 409 : 404)
+          .send({
+            error: message,
+          });
       }
-    }
+    },
   );
 
   app.post<{ Params: { draftId: string } }>(
@@ -212,11 +220,11 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
       try {
         const { draft, project, repository } = resolveDraftContext(
           store,
-          request.params.draftId
+          request.params.draftId,
         );
         if (executionRuntime.hasActiveDraftRun(draft.id)) {
           reply.code(409).send({
-            error: "Draft analysis already running"
+            error: "Draft analysis already running",
           });
           return;
         }
@@ -225,26 +233,28 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
           draft,
           project,
           repository,
-          instruction: input.instruction
+          instruction: input.instruction,
         });
 
         reply.send(
           makeCommandAck(true, "Draft feasibility check started", {
             draft_id: draft.id,
             project_id: project.id,
-            repo_id: repository.id
-          })
+            repo_id: repository.id,
+          }),
         );
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
             : "Unable to start draft feasibility check";
-        reply.code(message === "Draft analysis already running" ? 409 : 404).send({
-          error: message
-        });
+        reply
+          .code(message === "Draft analysis already running" ? 409 : 404)
+          .send({
+            error: message,
+          });
       }
-    }
+    },
   );
 
   app.post<{ Params: { draftId: string } }>(
@@ -261,25 +271,26 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
         eventHub.publish(
           makeProtocolEvent("draft.ready", "draft", request.params.draftId, {
             draft_id: request.params.draftId,
-            ticket_id: ticket.id
-          })
+            ticket_id: ticket.id,
+          }),
         );
         eventHub.publish(
           makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
-            ticket
-          })
+            ticket,
+          }),
         );
 
         reply.send(
           makeCommandAck(true, "Draft promoted to ready ticket", {
-            ticket_id: ticket.id
-          })
+            ticket_id: ticket.id,
+          }),
         );
       } catch (error) {
         reply.code(404).send({
-          error: error instanceof Error ? error.message : "Unable to confirm draft"
+          error:
+            error instanceof Error ? error.message : "Unable to confirm draft",
         });
       }
-    }
+    },
   );
 };

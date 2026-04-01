@@ -5,9 +5,11 @@ export const projectsTable = sqliteTable("projects", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   defaultTargetBranch: text("default_target_branch"),
-  maxConcurrentSessions: integer("max_concurrent_sessions").notNull().default(1),
+  maxConcurrentSessions: integer("max_concurrent_sessions")
+    .notNull()
+    .default(1),
   createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const repositoriesTable = sqliteTable("repositories", {
@@ -21,7 +23,7 @@ export const repositoriesTable = sqliteTable("repositories", {
   validationProfile: text("validation_profile", { mode: "json" }).notNull(),
   extraEnvAllowlist: text("extra_env_allowlist", { mode: "json" }).notNull(),
   createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const draftTicketStatesTable = sqliteTable("draft_ticket_states", {
@@ -33,12 +35,12 @@ export const draftTicketStatesTable = sqliteTable("draft_ticket_states", {
   confirmedRepoId: text("confirmed_repo_id"),
   proposedTicketType: text("proposed_ticket_type"),
   proposedAcceptanceCriteria: text("proposed_acceptance_criteria", {
-    mode: "json"
+    mode: "json",
   }).notNull(),
   wizardStatus: text("wizard_status").notNull(),
   splitProposalSummary: text("split_proposal_summary"),
   createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const ticketsTable = sqliteTable("tickets", {
@@ -55,7 +57,7 @@ export const ticketsTable = sqliteTable("tickets", {
   linkedPr: text("linked_pr", { mode: "json" }),
   sessionId: text("session_id"),
   createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const executionSessionsTable = sqliteTable("execution_sessions", {
@@ -73,7 +75,7 @@ export const executionSessionsTable = sqliteTable("execution_sessions", {
   startedAt: text("started_at"),
   completedAt: text("completed_at"),
   lastHeartbeatAt: text("last_heartbeat_at"),
-  lastSummary: text("last_summary")
+  lastSummary: text("last_summary"),
 });
 
 export const executionAttemptsTable = sqliteTable("execution_attempts", {
@@ -84,7 +86,7 @@ export const executionAttemptsTable = sqliteTable("execution_attempts", {
   ptyPid: integer("pty_pid"),
   startedAt: text("started_at").notNull(),
   endedAt: text("ended_at"),
-  endReason: text("end_reason")
+  endReason: text("end_reason"),
 });
 
 export const structuredEventsTable = sqliteTable("structured_events", {
@@ -93,7 +95,7 @@ export const structuredEventsTable = sqliteTable("structured_events", {
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
   eventType: text("event_type").notNull(),
-  payload: text("payload", { mode: "json" }).notNull()
+  payload: text("payload", { mode: "json" }).notNull(),
 });
 
 export const reviewPackagesTable = sqliteTable("review_packages", {
@@ -105,7 +107,7 @@ export const reviewPackagesTable = sqliteTable("review_packages", {
   changeSummary: text("change_summary").notNull(),
   validationResults: text("validation_results", { mode: "json" }).notNull(),
   remainingRisks: text("remaining_risks", { mode: "json" }).notNull(),
-  createdAt: text("created_at").notNull()
+  createdAt: text("created_at").notNull(),
 });
 
 export const requestedChangeNotesTable = sqliteTable("requested_change_notes", {
@@ -114,12 +116,12 @@ export const requestedChangeNotesTable = sqliteTable("requested_change_notes", {
   reviewPackageId: text("review_package_id"),
   authorType: text("author_type").notNull(),
   body: text("body").notNull(),
-  createdAt: text("created_at").notNull()
+  createdAt: text("created_at").notNull(),
 });
 
 export const sessionLogsTable = sqliteTable("session_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   sessionId: text("session_id").notNull(),
   line: text("line").notNull(),
-  createdAt: text("created_at").notNull()
+  createdAt: text("created_at").notNull(),
 });

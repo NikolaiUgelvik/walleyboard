@@ -3,21 +3,25 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   requestChangesInputSchema,
   resumeTicketInputSchema,
+  startTicketInputSchema,
   stopTicketInputSchema,
-  startTicketInputSchema
 } from "@orchestrator/contracts";
 
 import { makeCommandAck } from "../lib/command-ack.js";
-import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
+import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
-import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
+import {
+  parseBody,
+  parsePositiveInt,
+  sendNotImplemented,
+} from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 import { removeTicketArtifacts } from "../lib/ticket-artifacts.js";
 import {
   mergeReviewedBranch,
   prepareWorktree,
   removeLocalBranch,
-  removePreparedWorktree
+  removePreparedWorktree,
 } from "../lib/worktree-service.js";
 
 type TicketRouteOptions = {
@@ -28,23 +32,26 @@ type TicketRouteOptions = {
 
 export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   app,
-  { eventHub, executionRuntime, store }
+  { eventHub, executionRuntime, store },
 ) => {
-  app.get<{ Params: { ticketId: string } }>("/tickets/:ticketId", async (request, reply) => {
-    const ticketId = parsePositiveInt(request.params.ticketId);
-    if (!ticketId) {
-      reply.code(400).send({ error: "Invalid ticket id" });
-      return;
-    }
+  app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
 
-    const ticket = store.getTicket(ticketId);
-    if (!ticket) {
-      reply.code(404).send({ error: "Ticket not found" });
-      return;
-    }
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
 
-    return { ticket };
-  });
+      return { ticket };
+    },
+  );
 
   app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/review-package",
@@ -62,7 +69,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       }
 
       return { review_package: reviewPackage };
-    }
+    },
   );
 
   app.get<{ Params: { ticketId: string } }>(
@@ -75,9 +82,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       }
 
       return {
-        events: store.getTicketEvents(ticketId)
+        events: store.getTicketEvents(ticketId),
       };
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -113,22 +120,26 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           return;
         }
 
-        const runtime = prepareWorktree(project, repository, ticketForPreparation);
+        const runtime = prepareWorktree(
+          project,
+          repository,
+          ticketForPreparation,
+        );
         const { ticket, session, logs } = store.startTicket(
           ticketId,
           input.planning_enabled,
-          runtime
+          runtime,
         );
 
         eventHub.publish(
           makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
-            ticket
-          })
+            ticket,
+          }),
         );
         eventHub.publish(
           makeProtocolEvent("session.updated", "session", session.id, {
-            session
-          })
+            session,
+          }),
         );
         logs.forEach((logLine, index) => {
           eventHub.publish(
@@ -136,30 +147,34 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
               session_id: session.id,
               attempt_id: session.current_attempt_id,
               sequence: index,
-              chunk: logLine
-            })
+              chunk: logLine,
+            }),
           );
         });
         executionRuntime.startExecution({
           project,
           repository,
           ticket,
-          session
+          session,
         });
 
         reply.send(
-          makeCommandAck(true, "Ticket moved to in progress and execution session created", {
-            ticket_id: ticket.id,
-            session_id: session.id
-          })
+          makeCommandAck(
+            true,
+            "Ticket moved to in progress and execution session created",
+            {
+              ticket_id: ticket.id,
+              session_id: session.id,
+            },
+          ),
         );
       } catch (error) {
         reply.code(409).send({
           error:
-            error instanceof Error ? error.message : "Unable to start ticket"
+            error instanceof Error ? error.message : "Unable to start ticket",
         });
       }
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -189,44 +204,53 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
 
         await executionRuntime.stopExecution(
           ticket.session_id,
-          input.reason ?? "Execution stopped by user."
+          input.reason ?? "Execution stopped by user.",
         );
         const stopped = store.stopTicket(ticketId, input.reason);
 
         eventHub.publish(
-          makeProtocolEvent("ticket.updated", "ticket", String(stopped.ticket.id), {
-            ticket: stopped.ticket
-          })
+          makeProtocolEvent(
+            "ticket.updated",
+            "ticket",
+            String(stopped.ticket.id),
+            {
+              ticket: stopped.ticket,
+            },
+          ),
         );
         eventHub.publish(
           makeProtocolEvent("session.updated", "session", stopped.session.id, {
-            session: stopped.session
-          })
+            session: stopped.session,
+          }),
         );
         stopped.logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent("session.output", "session", stopped.session.id, {
               session_id: stopped.session.id,
-              attempt_id: stopped.attempt?.id ?? stopped.session.current_attempt_id,
+              attempt_id:
+                stopped.attempt?.id ?? stopped.session.current_attempt_id,
               sequence:
-                store.getSessionLogs(stopped.session.id).length - stopped.logs.length + index,
-              chunk: logLine
-            })
+                store.getSessionLogs(stopped.session.id).length -
+                stopped.logs.length +
+                index,
+              chunk: logLine,
+            }),
           );
         });
 
         reply.send(
           makeCommandAck(true, "Ticket execution stopped", {
             ticket_id: stopped.ticket.id,
-            session_id: stopped.session.id
-          })
+            session_id: stopped.session.id,
+          }),
         );
       } catch (error) {
         reply.code(409).send({
-          error: error instanceof Error ? error.message : "Unable to stop ticket"
+          error:
+            error instanceof Error ? error.message : "Unable to stop ticket",
         });
       }
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -258,26 +282,41 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         }
 
         eventHub.publish(
-          makeProtocolEvent("ticket.updated", "ticket", String(resumeResult.ticket.id), {
-            ticket: resumeResult.ticket
-          })
+          makeProtocolEvent(
+            "ticket.updated",
+            "ticket",
+            String(resumeResult.ticket.id),
+            {
+              ticket: resumeResult.ticket,
+            },
+          ),
         );
         eventHub.publish(
-          makeProtocolEvent("session.updated", "session", resumeResult.session.id, {
-            session: resumeResult.session
-          })
+          makeProtocolEvent(
+            "session.updated",
+            "session",
+            resumeResult.session.id,
+            {
+              session: resumeResult.session,
+            },
+          ),
         );
         resumeResult.logs.forEach((logLine, index) => {
           eventHub.publish(
-            makeProtocolEvent("session.output", "session", resumeResult.session.id, {
-              session_id: resumeResult.session.id,
-              attempt_id: resumeResult.attempt.id,
-              sequence:
-                store.getSessionLogs(resumeResult.session.id).length -
-                resumeResult.logs.length +
-                index,
-              chunk: logLine
-            })
+            makeProtocolEvent(
+              "session.output",
+              "session",
+              resumeResult.session.id,
+              {
+                session_id: resumeResult.session.id,
+                attempt_id: resumeResult.attempt.id,
+                sequence:
+                  store.getSessionLogs(resumeResult.session.id).length -
+                  resumeResult.logs.length +
+                  index,
+                chunk: logLine,
+              },
+            ),
           );
         });
 
@@ -288,21 +327,22 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           session: resumeResult.session,
           ...(input.reason && input.reason.trim().length > 0
             ? { additionalInstruction: input.reason }
-            : {})
+            : {}),
         });
 
         reply.send(
           makeCommandAck(true, "Execution session resumed", {
             ticket_id: resumeResult.ticket.id,
-            session_id: resumeResult.session.id
-          })
+            session_id: resumeResult.session.id,
+          }),
         );
       } catch (error) {
         reply.code(409).send({
-          error: error instanceof Error ? error.message : "Unable to resume ticket"
+          error:
+            error instanceof Error ? error.message : "Unable to resume ticket",
         });
       }
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -320,7 +360,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
-      const session = ticket.session_id ? store.getSession(ticket.session_id) : undefined;
+      const session = ticket.session_id
+        ? store.getSession(ticket.session_id)
+        : undefined;
       const project = store.getProject(ticket.project);
       const repository = store.getRepository(ticket.repo);
       const cleanupWarnings: string[] = [];
@@ -329,11 +371,13 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         try {
           await executionRuntime.stopExecution(
             session.id,
-            `Execution stopped because ticket #${ticket.id} was deleted.`
+            `Execution stopped because ticket #${ticket.id} was deleted.`,
           );
         } catch (error) {
           cleanupWarnings.push(
-            error instanceof Error ? error.message : "Unable to stop active execution"
+            error instanceof Error
+              ? error.message
+              : "Unable to stop active execution",
           );
         }
       }
@@ -343,7 +387,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           removePreparedWorktree(repository, session.worktree_path);
         } catch (error) {
           cleanupWarnings.push(
-            error instanceof Error ? error.message : "Unable to remove worktree"
+            error instanceof Error
+              ? error.message
+              : "Unable to remove worktree",
           );
         }
       }
@@ -353,17 +399,25 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           removeLocalBranch(repository, ticket.working_branch);
         } catch (error) {
           cleanupWarnings.push(
-            error instanceof Error ? error.message : "Unable to delete local branch"
+            error instanceof Error
+              ? error.message
+              : "Unable to delete local branch",
           );
         }
       }
 
       if (project) {
         try {
-          removeTicketArtifacts(project.slug, ticket.id, session?.id ?? ticket.session_id);
+          removeTicketArtifacts(
+            project.slug,
+            ticket.id,
+            session?.id ?? ticket.session_id,
+          );
         } catch (error) {
           cleanupWarnings.push(
-            error instanceof Error ? error.message : "Unable to remove local ticket artifacts"
+            error instanceof Error
+              ? error.message
+              : "Unable to remove local ticket artifacts",
           );
         }
       }
@@ -379,8 +433,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           ticket_id: ticketId,
           project_id: deletedTicket.project,
           session_id: deletedTicket.session_id,
-          cleanup_warnings: cleanupWarnings
-        })
+          cleanup_warnings: cleanupWarnings,
+        }),
       );
 
       reply.send(
@@ -391,11 +445,11 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
             : `Ticket deleted, but cleanup needs attention: ${cleanupWarnings.join(" | ")}`,
           {
             ticket_id: ticketId,
-            session_id: deletedTicket.session_id ?? undefined
-          }
-        )
+            session_id: deletedTicket.session_id ?? undefined,
+          },
+        ),
       );
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -427,26 +481,41 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         }
 
         eventHub.publish(
-          makeProtocolEvent("ticket.updated", "ticket", String(restartResult.ticket.id), {
-            ticket: restartResult.ticket
-          })
+          makeProtocolEvent(
+            "ticket.updated",
+            "ticket",
+            String(restartResult.ticket.id),
+            {
+              ticket: restartResult.ticket,
+            },
+          ),
         );
         eventHub.publish(
-          makeProtocolEvent("session.updated", "session", restartResult.session.id, {
-            session: restartResult.session
-          })
+          makeProtocolEvent(
+            "session.updated",
+            "session",
+            restartResult.session.id,
+            {
+              session: restartResult.session,
+            },
+          ),
         );
         restartResult.logs.forEach((logLine, index) => {
           eventHub.publish(
-            makeProtocolEvent("session.output", "session", restartResult.session.id, {
-              session_id: restartResult.session.id,
-              attempt_id: restartResult.attempt.id,
-              sequence:
-                store.getSessionLogs(restartResult.session.id).length -
-                restartResult.logs.length +
-                index,
-              chunk: logLine
-            })
+            makeProtocolEvent(
+              "session.output",
+              "session",
+              restartResult.session.id,
+              {
+                session_id: restartResult.session.id,
+                attempt_id: restartResult.attempt.id,
+                sequence:
+                  store.getSessionLogs(restartResult.session.id).length -
+                  restartResult.logs.length +
+                  index,
+                chunk: logLine,
+              },
+            ),
           );
         });
 
@@ -454,22 +523,28 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           project,
           repository,
           ticket: restartResult.ticket,
-          session: restartResult.session
+          session: restartResult.session,
         });
 
         reply.send(
-          makeCommandAck(true, "Requested changes were attached and execution restarted", {
-            ticket_id: restartResult.ticket.id,
-            session_id: restartResult.session.id
-          })
+          makeCommandAck(
+            true,
+            "Requested changes were attached and execution restarted",
+            {
+              ticket_id: restartResult.ticket.id,
+              session_id: restartResult.session.id,
+            },
+          ),
         );
       } catch (error) {
         reply.code(409).send({
           error:
-            error instanceof Error ? error.message : "Unable to request changes"
+            error instanceof Error
+              ? error.message
+              : "Unable to request changes",
         });
       }
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -481,10 +556,14 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(reply, "PR creation is intentionally deferred in the strict MVP.", {
-        ticket_id: ticketId
-      });
-    }
+      sendNotImplemented(
+        reply,
+        "PR creation is intentionally deferred in the strict MVP.",
+        {
+          ticket_id: ticketId,
+        },
+      );
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -528,7 +607,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
 
       const reviewPackage = store.getReviewPackage(ticketId);
       if (!reviewPackage) {
-        reply.code(409).send({ error: "Review package is required before merge" });
+        reply
+          .code(409)
+          .send({ error: "Review package is required before merge" });
         return;
       }
 
@@ -537,7 +618,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           repository,
           session.worktree_path,
           ticket.working_branch,
-          ticket.target_branch
+          ticket.target_branch,
         );
 
         const logLines = [...mergeResult.logs];
@@ -548,7 +629,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           logLines.push(`Removed worktree ${session.worktree_path}`);
         } catch (error) {
           cleanupWarnings.push(
-            error instanceof Error ? error.message : "Unable to remove worktree"
+            error instanceof Error
+              ? error.message
+              : "Unable to remove worktree",
           );
         }
 
@@ -557,7 +640,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           logLines.push(`Deleted local branch ${ticket.working_branch}`);
         } catch (error) {
           cleanupWarnings.push(
-            error instanceof Error ? error.message : "Unable to delete local branch"
+            error instanceof Error
+              ? error.message
+              : "Unable to delete local branch",
           );
         }
 
@@ -566,61 +651,71 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           cleanupWarnings.length === 0
             ? `Merged ${ticket.working_branch} into ${ticket.target_branch} and cleaned up local artifacts.`
             : `Merged ${ticket.working_branch} into ${ticket.target_branch}, but cleanup needs attention: ${cleanupWarnings.join(
-                " | "
+                " | ",
               )}`;
-        const mergedSession = store.updateSessionStatus(ticket.session_id, "completed", summary);
+        const mergedSession = store.updateSessionStatus(
+          ticket.session_id,
+          "completed",
+          summary,
+        );
 
         store.recordTicketEvent(ticketId, "ticket.merged", {
           ticket_id: ticketId,
           target_branch: ticket.target_branch,
           target_head: mergeResult.targetHead,
-          cleanup_warnings: cleanupWarnings
+          cleanup_warnings: cleanupWarnings,
         });
 
-        for (const line of [...logLines, ...cleanupWarnings.map((warning) => `Cleanup warning: ${warning}`)]) {
+        for (const line of [
+          ...logLines,
+          ...cleanupWarnings.map((warning) => `Cleanup warning: ${warning}`),
+        ]) {
           const sequence = store.appendSessionLog(ticket.session_id, line);
           eventHub.publish(
             makeProtocolEvent("session.output", "session", ticket.session_id, {
               session_id: ticket.session_id,
               attempt_id: session.current_attempt_id,
               sequence,
-              chunk: line
-            })
+              chunk: line,
+            }),
           );
         }
 
         eventHub.publish(
           makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
-            ticket: mergedTicket
-          })
+            ticket: mergedTicket,
+          }),
         );
         eventHub.publish(
           makeProtocolEvent("session.updated", "session", ticket.session_id, {
-            session: mergedSession
-          })
+            session: mergedSession,
+          }),
         );
 
         reply.send(
           makeCommandAck(true, "Ticket merged into the target branch", {
             ticket_id: ticketId,
-            session_id: ticket.session_id
-          })
+            session_id: ticket.session_id,
+          }),
         );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unable to merge ticket";
-        const sequence = store.appendSessionLog(ticket.session_id, `[merge blocked] ${message}`);
+        const sequence = store.appendSessionLog(
+          ticket.session_id,
+          `[merge blocked] ${message}`,
+        );
         eventHub.publish(
           makeProtocolEvent("session.output", "session", ticket.session_id, {
             session_id: ticket.session_id,
             attempt_id: session.current_attempt_id,
             sequence,
-            chunk: `[merge blocked] ${message}`
-          })
+            chunk: `[merge blocked] ${message}`,
+          }),
         );
         reply.code(409).send({ error: message });
       }
-    }
+    },
   );
 
   app.post<{ Params: { ticketId: string } }>(
@@ -635,8 +730,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       sendNotImplemented(
         reply,
         "External reconciliation is scaffolded, but GitHub integration is not implemented yet.",
-        { ticket_id: ticketId }
+        { ticket_id: ticketId },
       );
-    }
+    },
   );
 };

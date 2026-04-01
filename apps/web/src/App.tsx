@@ -9,32 +9,32 @@ import {
   Loader,
   Menu,
   Modal,
-  Select,
   SegmentedControl,
+  Select,
   SimpleGrid,
   Stack,
   Text,
   TextInput,
   Textarea,
   Title,
-  useMantineColorScheme
+  useMantineColorScheme,
 } from "@mantine/core";
-import {
-  type CommandAck,
-  type DraftTicketState,
-  type ExecutionSession,
-  type ProtocolEvent,
-  type Project,
-  type RepositoryConfig,
-  type ReviewPackage,
-  type StructuredEvent,
-  type TicketFrontmatter
+import type {
+  CommandAck,
+  DraftTicketState,
+  ExecutionSession,
+  Project,
+  ProtocolEvent,
+  RepositoryConfig,
+  ReviewPackage,
+  StructuredEvent,
+  TicketFrontmatter,
 } from "@orchestrator/contracts";
 import {
   useMutation,
   useQueries,
   useQuery,
-  useQueryClient
+  useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -44,20 +44,20 @@ import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
-const websocketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
+const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
 const boardColumns = [
   "draft",
   "ready",
   "in_progress",
   "review",
-  "done"
+  "done",
 ] satisfies TicketFrontmatter["status"][];
 const stoppableSessionStatuses = [
   "queued",
   "running",
   "paused_checkpoint",
   "paused_user_control",
-  "awaiting_input"
+  "awaiting_input",
 ] satisfies ExecutionSession["status"][];
 const boardColumnMeta: Record<
   (typeof boardColumns)[number],
@@ -66,28 +66,28 @@ const boardColumnMeta: Record<
   draft: {
     label: "Draft",
     accent: "#6b7280",
-    empty: "No draft tickets yet. Use New Draft to capture the next task."
+    empty: "No draft tickets yet. Use New Draft to capture the next task.",
   },
   ready: {
     label: "Ready",
     accent: "#2563eb",
-    empty: "No ready tickets waiting to start."
+    empty: "No ready tickets waiting to start.",
   },
   in_progress: {
     label: "In progress",
     accent: "#d97706",
-    empty: "No active Codex runs at the moment."
+    empty: "No active Codex runs at the moment.",
   },
   review: {
     label: "In review",
     accent: "#7c3aed",
-    empty: "Nothing is waiting for review right now."
+    empty: "Nothing is waiting for review right now.",
   },
   done: {
     label: "Done",
     accent: "#16a34a",
-    empty: "Nothing has been merged yet."
-  }
+    empty: "Nothing has been merged yet.",
+  },
 };
 
 type HealthResponse = {
@@ -156,10 +156,10 @@ type InspectorState =
   | { kind: "session"; sessionId: string };
 
 function isStoppableSessionStatus(
-  status: ExecutionSession["status"]
+  status: ExecutionSession["status"],
 ): status is (typeof stoppableSessionStatuses)[number] {
   return stoppableSessionStatuses.includes(
-    status as (typeof stoppableSessionStatuses)[number]
+    status as (typeof stoppableSessionStatuses)[number],
   );
 }
 
@@ -212,9 +212,9 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     response = await fetch(`${apiBaseUrl}${path}`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
   } catch {
     throw new Error("Backend unavailable. Restart the backend and try again.");
@@ -224,7 +224,10 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     let message = `Request failed: ${response.status}`;
 
     try {
-      const payload = (await response.json()) as { error?: string; message?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
       message = payload.error ?? payload.message ?? message;
     } catch {
       // Keep the default message when the response is not JSON.
@@ -242,9 +245,9 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
     response = await fetch(`${apiBaseUrl}${path}`, {
       method: "PATCH",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
   } catch {
     throw new Error("Backend unavailable. Restart the backend and try again.");
@@ -254,7 +257,10 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
     let message = `Request failed: ${response.status}`;
 
     try {
-      const payload = (await response.json()) as { error?: string; message?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
       message = payload.error ?? payload.message ?? message;
     } catch {
       // Keep the default message when the response is not JSON.
@@ -275,13 +281,18 @@ function humanizeTicketStatus(status: TicketFrontmatter["status"]): string {
   }
 }
 
-function upsertById<T extends { id: string | number }>(items: T[], nextItem: T): T[] {
+function upsertById<T extends { id: string | number }>(
+  items: T[],
+  nextItem: T,
+): T[] {
   const existingIndex = items.findIndex((item) => item.id === nextItem.id);
   if (existingIndex === -1) {
     return [nextItem, ...items];
   }
 
-  return items.map((item, index) => (index === existingIndex ? nextItem : item));
+  return items.map((item, index) =>
+    index === existingIndex ? nextItem : item,
+  );
 }
 
 function ticketStatusColor(status: TicketFrontmatter["status"]): string {
@@ -345,7 +356,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseStringList(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0,
+      )
     : [];
 }
 
@@ -378,11 +392,13 @@ function parseDraftEventMeta(event: StructuredEvent): {
             ? "Codex run failed."
             : "Codex run completed.",
     error: typeof event.payload.error === "string" ? event.payload.error : null,
-    result
+    result,
   };
 }
 
-function parseDraftQuestionsResult(value: unknown): DraftQuestionsResult | null {
+function parseDraftQuestionsResult(
+  value: unknown,
+): DraftQuestionsResult | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -397,7 +413,7 @@ function parseDraftQuestionsResult(value: unknown): DraftQuestionsResult | null 
     assumptions: parseStringList(value.assumptions),
     open_questions: parseStringList(value.open_questions),
     risks: parseStringList(value.risks),
-    suggested_draft_edits: parseStringList(value.suggested_draft_edits)
+    suggested_draft_edits: parseStringList(value.suggested_draft_edits),
   };
 }
 
@@ -410,14 +426,17 @@ function draftMatchesSearch(draft: DraftTicketState, needle: string): boolean {
     draft.title_draft,
     draft.description_draft,
     draft.proposed_ticket_type ?? "",
-    ...draft.proposed_acceptance_criteria
+    ...draft.proposed_acceptance_criteria,
   ]
     .join(" ")
     .toLowerCase()
     .includes(needle);
 }
 
-function ticketMatchesSearch(ticket: TicketFrontmatter, needle: string): boolean {
+function ticketMatchesSearch(
+  ticket: TicketFrontmatter,
+  needle: string,
+): boolean {
   if (needle.length === 0) {
     return true;
   }
@@ -429,7 +448,7 @@ function ticketMatchesSearch(ticket: TicketFrontmatter, needle: string): boolean
     ticket.ticket_type,
     ticket.target_branch,
     ticket.working_branch ?? "",
-    ...ticket.acceptance_criteria
+    ...ticket.acceptance_criteria,
   ]
     .join(" ")
     .toLowerCase()
@@ -437,7 +456,10 @@ function ticketMatchesSearch(ticket: TicketFrontmatter, needle: string): boolean
 }
 
 function focusElementById(id: string): void {
-  const element = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+  const element = document.getElementById(id) as
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | null;
   if (!element) {
     return;
   }
@@ -458,7 +480,7 @@ function ColorSchemeControl() {
       data={[
         { label: "System", value: "auto" },
         { label: "Light", value: "light" },
-        { label: "Dark", value: "dark" }
+        { label: "Dark", value: "dark" },
       ]}
     />
   );
@@ -466,25 +488,33 @@ function ColorSchemeControl() {
 
 export function App() {
   const queryClient = useQueryClient();
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [inspectorState, setInspectorState] = useState<InspectorState>({ kind: "hidden" });
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  );
+  const [inspectorState, setInspectorState] = useState<InspectorState>({
+    kind: "hidden",
+  });
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [validationCommandsText, setValidationCommandsText] = useState("");
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftDescription, setDraftDescription] = useState("");
-  const [draftEditorSourceId, setDraftEditorSourceId] = useState<string | null>(null);
+  const [draftEditorSourceId, setDraftEditorSourceId] = useState<string | null>(
+    null,
+  );
   const [draftEditorTitle, setDraftEditorTitle] = useState("");
   const [draftEditorDescription, setDraftEditorDescription] = useState("");
-  const [draftEditorTicketType, setDraftEditorTicketType] = useState<string | null>(null);
-  const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] = useState("");
+  const [draftEditorTicketType, setDraftEditorTicketType] = useState<
+    string | null
+  >(null);
+  const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] =
+    useState("");
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
   const [boardSearch, setBoardSearch] = useState("");
-  const selectedDraftId = inspectorState.kind === "draft" ? inspectorState.draftId : null;
+  const selectedDraftId =
+    inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
     inspectorState.kind === "session" ? inspectorState.sessionId : null;
   const inspectorVisible = inspectorState.kind !== "hidden";
@@ -492,40 +522,45 @@ export function App() {
   const healthQuery = useQuery({
     queryKey: ["health"],
     queryFn: () => fetchJson<HealthResponse>("/health"),
-    retry: false
+    retry: false,
   });
 
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => fetchJson<ProjectsResponse>("/projects"),
-    retry: false
+    retry: false,
   });
 
   const repositoriesQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "repositories"],
     queryFn: () =>
-      fetchJson<RepositoriesResponse>(`/projects/${selectedProjectId}/repositories`),
-    enabled: selectedProjectId !== null
+      fetchJson<RepositoriesResponse>(
+        `/projects/${selectedProjectId}/repositories`,
+      ),
+    enabled: selectedProjectId !== null,
   });
 
   const draftsQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "drafts"],
-    queryFn: () => fetchJson<DraftsResponse>(`/projects/${selectedProjectId}/drafts`),
-    enabled: selectedProjectId !== null
+    queryFn: () =>
+      fetchJson<DraftsResponse>(`/projects/${selectedProjectId}/drafts`),
+    enabled: selectedProjectId !== null,
   });
 
   const ticketsQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "tickets"],
-    queryFn: () => fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
+    queryFn: () =>
+      fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
     enabled: selectedProjectId !== null,
-    refetchInterval: selectedProjectId === null ? false : 2_000
+    refetchInterval: selectedProjectId === null ? false : 2_000,
   });
 
   const draftEventsQuery = useQuery({
     queryKey: ["drafts", selectedDraftId, "events"],
-    queryFn: () => fetchJson<DraftEventsResponse>(`/drafts/${selectedDraftId}/events`),
+    queryFn: () =>
+      fetchJson<DraftEventsResponse>(`/drafts/${selectedDraftId}/events`),
     enabled: selectedDraftId !== null,
-    retry: false
+    retry: false,
   });
 
   const sessionSummaries = useQueries({
@@ -533,10 +568,11 @@ export function App() {
       .filter((ticket) => ticket.session_id !== null)
       .map((ticket) => ({
         queryKey: ["sessions", ticket.session_id],
-        queryFn: () => fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
+        queryFn: () =>
+          fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
         enabled: ticket.session_id !== null,
-        refetchInterval: 2_000
-      }))
+        refetchInterval: 2_000,
+      })),
   });
 
   useEffect(() => {
@@ -547,7 +583,7 @@ export function App() {
     }
 
     const stillExists = projectsQuery.data?.projects.some(
-      (project) => project.id === selectedProjectId
+      (project) => project.id === selectedProjectId,
     );
     if (!stillExists) {
       setSelectedProjectId(firstProjectId);
@@ -557,7 +593,9 @@ export function App() {
   useEffect(() => {
     if (inspectorState.kind === "draft") {
       const stillExists =
-        draftsQuery.data?.drafts.some((draft) => draft.id === inspectorState.draftId) ?? false;
+        draftsQuery.data?.drafts.some(
+          (draft) => draft.id === inspectorState.draftId,
+        ) ?? false;
       if (!stillExists) {
         setInspectorState({ kind: "hidden" });
       }
@@ -567,7 +605,7 @@ export function App() {
     if (inspectorState.kind === "session") {
       const stillExists =
         ticketsQuery.data?.tickets.some(
-          (ticket) => ticket.session_id === inspectorState.sessionId
+          (ticket) => ticket.session_id === inspectorState.sessionId,
         ) ?? false;
       if (!stillExists) {
         setInspectorState({ kind: "hidden" });
@@ -578,7 +616,12 @@ export function App() {
     if (inspectorState.kind === "new_draft" && selectedProjectId === null) {
       setInspectorState({ kind: "hidden" });
     }
-  }, [draftsQuery.data?.drafts, inspectorState, selectedProjectId, ticketsQuery.data?.tickets]);
+  }, [
+    draftsQuery.data?.drafts,
+    inspectorState,
+    selectedProjectId,
+    ticketsQuery.data?.tickets,
+  ]);
 
   useEffect(() => {
     const socket = new WebSocket(websocketUrl);
@@ -595,8 +638,8 @@ export function App() {
         queryClient.setQueryData<DraftsResponse>(
           ["projects", draft.project_id, "drafts"],
           (previous) => ({
-            drafts: upsertById(previous?.drafts ?? [], draft)
-          })
+            drafts: upsertById(previous?.drafts ?? [], draft),
+          }),
         );
         return;
       }
@@ -608,7 +651,7 @@ export function App() {
         }
 
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
+          queryKey: ["projects", selectedProjectId, "drafts"],
         });
         return;
       }
@@ -623,8 +666,10 @@ export function App() {
         queryClient.setQueryData<DraftsResponse>(
           ["projects", projectId, "drafts"],
           (previous) => ({
-            drafts: (previous?.drafts ?? []).filter((draft) => draft.id !== draftId)
-          })
+            drafts: (previous?.drafts ?? []).filter(
+              (draft) => draft.id !== draftId,
+            ),
+          }),
         );
 
         if (selectedDraftId === draftId) {
@@ -642,12 +687,12 @@ export function App() {
         queryClient.setQueryData<TicketsResponse>(
           ["projects", ticket.project, "tickets"],
           (previous) => ({
-            tickets: upsertById(previous?.tickets ?? [], ticket)
-          })
+            tickets: upsertById(previous?.tickets ?? [], ticket),
+          }),
         );
         if (ticket.session_id) {
           queryClient.invalidateQueries({
-            queryKey: ["sessions", ticket.session_id]
+            queryKey: ["sessions", ticket.session_id],
           });
         }
         return;
@@ -665,16 +710,18 @@ export function App() {
         queryClient.setQueryData<TicketsResponse>(
           ["projects", projectId, "tickets"],
           (previous) => ({
-            tickets: (previous?.tickets ?? []).filter((ticket) => ticket.id !== ticketId)
-          })
+            tickets: (previous?.tickets ?? []).filter(
+              (ticket) => ticket.id !== ticketId,
+            ),
+          }),
         );
 
         if (deletedSessionId) {
           queryClient.removeQueries({
-            queryKey: ["sessions", deletedSessionId]
+            queryKey: ["sessions", deletedSessionId],
           });
           queryClient.removeQueries({
-            queryKey: ["sessions", deletedSessionId, "logs"]
+            queryKey: ["sessions", deletedSessionId, "logs"],
           });
           if (selectedSessionId === deletedSessionId) {
             setInspectorState({ kind: "hidden" });
@@ -690,7 +737,7 @@ export function App() {
         }
 
         queryClient.setQueryData<SessionResponse>(["sessions", session.id], {
-          session
+          session,
         });
         return;
       }
@@ -711,14 +758,14 @@ export function App() {
             if (logs.length === sequence) {
               return {
                 session_id: sessionId,
-                logs: [...logs, chunk]
+                logs: [...logs, chunk],
               };
             }
 
             if (logs.length <= sequence) {
               return {
                 session_id: sessionId,
-                logs
+                logs,
               };
             }
 
@@ -726,15 +773,17 @@ export function App() {
             nextLogs[sequence] = chunk;
             return {
               session_id: sessionId,
-              logs: nextLogs
+              logs: nextLogs,
             };
-          }
+          },
         );
         return;
       }
 
       if (event.event_type === "structured_event.created") {
-        const structuredEvent = event.payload.structured_event as StructuredEvent | undefined;
+        const structuredEvent = event.payload.structured_event as
+          | StructuredEvent
+          | undefined;
         if (!structuredEvent || structuredEvent.entity_type !== "draft") {
           return;
         }
@@ -744,15 +793,19 @@ export function App() {
           (previous) => ({
             events: [
               structuredEvent,
-              ...(previous?.events ?? []).filter((item) => item.id !== structuredEvent.id)
-            ]
-          })
+              ...(previous?.events ?? []).filter(
+                (item) => item.id !== structuredEvent.id,
+              ),
+            ],
+          }),
         );
         return;
       }
 
       if (event.event_type === "review_package.generated") {
-        const reviewPackage = event.payload.review_package as ReviewPackage | undefined;
+        const reviewPackage = event.payload.review_package as
+          | ReviewPackage
+          | undefined;
         if (!reviewPackage) {
           return;
         }
@@ -760,8 +813,8 @@ export function App() {
         queryClient.setQueryData<ReviewPackageResponse>(
           ["tickets", reviewPackage.ticket_id, "review-package"],
           {
-            review_package: reviewPackage
-          }
+            review_package: reviewPackage,
+          },
         );
       }
     };
@@ -775,28 +828,35 @@ export function App() {
     queryKey: ["sessions", selectedSessionId],
     queryFn: () => fetchJson<SessionResponse>(`/sessions/${selectedSessionId}`),
     enabled: selectedSessionId !== null,
-    refetchInterval: selectedSessionId === null ? false : 2_000
+    refetchInterval: selectedSessionId === null ? false : 2_000,
   });
 
   const sessionLogsQuery = useQuery({
     queryKey: ["sessions", selectedSessionId, "logs"],
-    queryFn: () => fetchJson<SessionLogsResponse>(`/sessions/${selectedSessionId}/logs`),
+    queryFn: () =>
+      fetchJson<SessionLogsResponse>(`/sessions/${selectedSessionId}/logs`),
     enabled: selectedSessionId !== null,
-    refetchInterval: selectedSessionId === null ? false : 2_000
+    refetchInterval: selectedSessionId === null ? false : 2_000,
   });
 
   const selectedSessionTicketId =
-    ticketsQuery.data?.tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
-    null;
+    ticketsQuery.data?.tickets.find(
+      (ticket) => ticket.session_id === selectedSessionId,
+    )?.id ?? null;
   const selectedSessionTicketStatus =
-    ticketsQuery.data?.tickets.find((ticket) => ticket.session_id === selectedSessionId)
-      ?.status ?? null;
+    ticketsQuery.data?.tickets.find(
+      (ticket) => ticket.session_id === selectedSessionId,
+    )?.status ?? null;
 
   const reviewPackageQuery = useQuery({
     queryKey: ["tickets", selectedSessionTicketId, "review-package"],
     queryFn: () =>
-      fetchJson<ReviewPackageResponse>(`/tickets/${selectedSessionTicketId}/review-package`),
-    enabled: selectedSessionTicketId !== null && selectedSessionTicketStatus === "review"
+      fetchJson<ReviewPackageResponse>(
+        `/tickets/${selectedSessionTicketId}/review-package`,
+      ),
+    enabled:
+      selectedSessionTicketId !== null &&
+      selectedSessionTicketStatus === "review",
   });
 
   const createProjectMutation = useMutation({
@@ -814,8 +874,8 @@ export function App() {
           name: deriveRepositoryName(input.repositoryPath, input.name),
           path: input.repositoryPath,
           target_branch: input.defaultTargetBranch,
-          validation_commands: input.validationCommands
-        }
+          validation_commands: input.validationCommands,
+        },
       }),
     onSuccess: async (ack) => {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -826,25 +886,34 @@ export function App() {
       setRepositoryPath("");
       setDefaultBranch("main");
       setValidationCommandsText("");
-    }
+    },
   });
 
   const createDraftMutation = useMutation({
-    mutationFn: (input: { projectId: string; title: string; description: string }) =>
+    mutationFn: (input: {
+      projectId: string;
+      title: string;
+      description: string;
+      proposedTicketType: string | null;
+      proposedAcceptanceCriteria: string[];
+    }) =>
       postJson<CommandAck>("/drafts", {
         project_id: input.projectId,
         title: input.title,
-        description: input.description
+        description: input.description,
+        proposed_ticket_type: input.proposedTicketType,
+        proposed_acceptance_criteria: input.proposedAcceptanceCriteria,
       }),
-    onSuccess: async () => {
-      if (selectedProjectId) {
-        await queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
-        });
+    onSuccess: async (ack, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["projects", variables.projectId, "drafts"],
+      });
+
+      const draftId = ack.resource_refs.draft_id;
+      if (draftId) {
+        setInspectorState({ kind: "draft", draftId });
       }
-      setDraftTitle("");
-      setDraftDescription("");
-    }
+    },
   });
 
   const saveDraftMutation = useMutation({
@@ -859,36 +928,38 @@ export function App() {
         title_draft: input.titleDraft,
         description_draft: input.descriptionDraft,
         proposed_ticket_type: input.proposedTicketType,
-        proposed_acceptance_criteria: input.proposedAcceptanceCriteria
+        proposed_acceptance_criteria: input.proposedAcceptanceCriteria,
       }),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
+          queryKey: ["projects", selectedProjectId, "drafts"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["drafts", variables.draftId, "events"]
-        })
+          queryKey: ["drafts", variables.draftId, "events"],
+        }),
       ]);
-    }
+    },
   });
 
   const refineDraftMutation = useMutation({
-    mutationFn: (draftId: string) => postJson<CommandAck>(`/drafts/${draftId}/refine`, {}),
+    mutationFn: (draftId: string) =>
+      postJson<CommandAck>(`/drafts/${draftId}/refine`, {}),
     onSuccess: async (_, draftId) => {
       await queryClient.invalidateQueries({
-        queryKey: ["drafts", draftId, "events"]
+        queryKey: ["drafts", draftId, "events"],
       });
-    }
+    },
   });
 
   const questionDraftMutation = useMutation({
-    mutationFn: (draftId: string) => postJson<CommandAck>(`/drafts/${draftId}/questions`, {}),
+    mutationFn: (draftId: string) =>
+      postJson<CommandAck>(`/drafts/${draftId}/questions`, {}),
     onSuccess: async (_, draftId) => {
       await queryClient.invalidateQueries({
-        queryKey: ["drafts", draftId, "events"]
+        queryKey: ["drafts", draftId, "events"],
       });
-    }
+    },
   });
 
   const confirmDraftMutation = useMutation({
@@ -913,7 +984,7 @@ export function App() {
         target_branch:
           input.repository.target_branch ??
           input.project.default_target_branch ??
-          "main"
+          "main",
       }),
     onSuccess: async () => {
       if (!selectedProjectId) {
@@ -924,13 +995,13 @@ export function App() {
 
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
+          queryKey: ["projects", selectedProjectId, "drafts"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
-        })
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
       ]);
-    }
+    },
   });
 
   const deleteDraftMutation = useMutation({
@@ -943,16 +1014,16 @@ export function App() {
 
       if (selectedProjectId) {
         await queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
+          queryKey: ["projects", selectedProjectId, "drafts"],
         });
       }
-    }
+    },
   });
 
   const startTicketMutation = useMutation({
     mutationFn: (input: { ticketId: number; planningEnabled: boolean }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/start`, {
-        planning_enabled: input.planningEnabled
+        planning_enabled: input.planningEnabled,
       }),
     onSuccess: async (ack) => {
       if (!selectedProjectId) {
@@ -962,49 +1033,52 @@ export function App() {
       if (ack.resource_refs.session_id) {
         setInspectorState({
           kind: "session",
-          sessionId: ack.resource_refs.session_id
+          sessionId: ack.resource_refs.session_id,
         });
       } else {
         setInspectorState({ kind: "hidden" });
       }
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
+          queryKey: ["projects", selectedProjectId, "tickets"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
+          queryKey: ["projects", selectedProjectId, "drafts"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", ack.resource_refs.session_id]
+          queryKey: ["sessions", ack.resource_refs.session_id],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", ack.resource_refs.session_id, "logs"]
-        })
+          queryKey: ["sessions", ack.resource_refs.session_id, "logs"],
+        }),
       ]);
-    }
+    },
   });
 
   const stopTicketMutation = useMutation({
     mutationFn: (input: { ticketId: number; reason?: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/stop`, {
-        reason: input.reason && input.reason.trim().length > 0 ? input.reason : undefined
+        reason:
+          input.reason && input.reason.trim().length > 0
+            ? input.reason
+            : undefined,
       }),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
+          queryKey: ["projects", selectedProjectId, "tickets"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["tickets", variables.ticketId, "review-package"]
+          queryKey: ["tickets", variables.ticketId, "review-package"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId]
+          queryKey: ["sessions", selectedSessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId, "logs"]
-        })
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
       ]);
-    }
+    },
   });
 
   const deleteTicketMutation = useMutation({
@@ -1017,49 +1091,49 @@ export function App() {
 
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
+          queryKey: ["projects", selectedProjectId, "tickets"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
-        })
+          queryKey: ["projects", selectedProjectId, "drafts"],
+        }),
       ]);
-    }
+    },
   });
 
   const sessionInputMutation = useMutation({
     mutationFn: (input: { sessionId: string; body: string }) =>
       postJson<CommandAck>(`/sessions/${input.sessionId}/input`, {
-        body: input.body
+        body: input.body,
       }),
     onSuccess: async (_, variables) => {
       setResumeReason("");
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["sessions", variables.sessionId]
+          queryKey: ["sessions", variables.sessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", variables.sessionId, "logs"]
-        })
+          queryKey: ["sessions", variables.sessionId, "logs"],
+        }),
       ]);
-    }
+    },
   });
 
   const terminalInputMutation = useMutation({
     mutationFn: (input: { sessionId: string; body: string }) =>
       postJson<CommandAck>(`/sessions/${input.sessionId}/input`, {
-        body: input.body
+        body: input.body,
       }),
     onSuccess: async (_, variables) => {
       setTerminalCommand("");
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["sessions", variables.sessionId]
+          queryKey: ["sessions", variables.sessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", variables.sessionId, "logs"]
-        })
+          queryKey: ["sessions", variables.sessionId, "logs"],
+        }),
       ]);
-    }
+    },
   });
 
   const terminalTakeoverMutation = useMutation({
@@ -1068,16 +1142,16 @@ export function App() {
     onSuccess: async (_, sessionId) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["sessions", sessionId]
+          queryKey: ["sessions", sessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", sessionId, "logs"]
+          queryKey: ["sessions", sessionId, "logs"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
-        })
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
       ]);
-    }
+    },
   });
 
   const terminalRestoreMutation = useMutation({
@@ -1087,119 +1161,128 @@ export function App() {
       setTerminalCommand("");
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["sessions", sessionId]
+          queryKey: ["sessions", sessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", sessionId, "logs"]
+          queryKey: ["sessions", sessionId, "logs"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
-        })
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
       ]);
-    }
+    },
   });
 
   const mergeTicketMutation = useMutation({
-    mutationFn: (ticketId: number) => postJson<CommandAck>(`/tickets/${ticketId}/merge`, {}),
+    mutationFn: (ticketId: number) =>
+      postJson<CommandAck>(`/tickets/${ticketId}/merge`, {}),
     onSuccess: async (_, ticketId) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
+          queryKey: ["projects", selectedProjectId, "tickets"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId]
+          queryKey: ["sessions", selectedSessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId, "logs"]
+          queryKey: ["sessions", selectedSessionId, "logs"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["tickets", ticketId, "review-package"]
-        })
+          queryKey: ["tickets", ticketId, "review-package"],
+        }),
       ]);
-    }
+    },
   });
 
   const requestChangesMutation = useMutation({
     mutationFn: (input: { ticketId: number; body: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/request-changes`, {
-        body: input.body
+        body: input.body,
       }),
     onSuccess: async (_, variables) => {
       setRequestedChangesBody("");
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
+          queryKey: ["projects", selectedProjectId, "tickets"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId]
+          queryKey: ["sessions", selectedSessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId, "logs"]
+          queryKey: ["sessions", selectedSessionId, "logs"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["tickets", variables.ticketId, "review-package"]
-        })
+          queryKey: ["tickets", variables.ticketId, "review-package"],
+        }),
       ]);
-    }
+    },
   });
 
   const resumeTicketMutation = useMutation({
     mutationFn: (input: { ticketId: number; reason?: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/resume`, {
-        reason: input.reason && input.reason.trim().length > 0 ? input.reason : undefined
+        reason:
+          input.reason && input.reason.trim().length > 0
+            ? input.reason
+            : undefined,
       }),
     onSuccess: async () => {
       setResumeReason("");
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "tickets"]
+          queryKey: ["projects", selectedProjectId, "tickets"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId]
+          queryKey: ["sessions", selectedSessionId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["sessions", selectedSessionId, "logs"]
-        })
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
       ]);
-    }
+    },
   });
 
   const selectedProject =
-    projectsQuery.data?.projects.find((project) => project.id === selectedProjectId) ?? null;
+    projectsQuery.data?.projects.find(
+      (project) => project.id === selectedProjectId,
+    ) ?? null;
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const selectedRepository = repositories[0] ?? null;
   const drafts = draftsQuery.data?.drafts ?? [];
-  const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
+  const selectedDraft =
+    drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const selectedDraftRepository =
     selectedDraft === null
       ? null
-      : repositories.find(
-          (item) => item.id === (selectedDraft.confirmed_repo_id ?? selectedDraft.proposed_repo_id)
-        ) ?? selectedRepository;
+      : (repositories.find(
+          (item) =>
+            item.id ===
+            (selectedDraft.confirmed_repo_id ?? selectedDraft.proposed_repo_id),
+        ) ?? selectedRepository);
   const draftEditorAcceptanceCriteriaLines = draftEditorAcceptanceCriteria
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
   const draftFormDirty =
     selectedDraft !== null &&
-    (
-      draftEditorTitle !== selectedDraft.title_draft ||
+    (draftEditorTitle !== selectedDraft.title_draft ||
       draftEditorDescription !== selectedDraft.description_draft ||
       draftEditorTicketType !== selectedDraft.proposed_ticket_type ||
       !arraysEqual(
         draftEditorAcceptanceCriteriaLines,
-        selectedDraft.proposed_acceptance_criteria
-      )
-    );
+        selectedDraft.proposed_acceptance_criteria,
+      ));
   const draftEvents = draftEventsQuery.data?.events ?? [];
-  const latestDraftEventMeta =
-    draftEvents.length > 0 ? parseDraftEventMeta(draftEvents[0]) : null;
+  const latestDraftEvent = draftEvents.at(0);
+  const latestDraftEventMeta = latestDraftEvent
+    ? parseDraftEventMeta(latestDraftEvent)
+    : null;
   const draftAnalysisActive =
     latestDraftEventMeta?.status === "started" &&
     (latestDraftEventMeta.operation === "refine" ||
       latestDraftEventMeta.operation === "questions");
   const latestQuestionsEvent = draftEvents.find(
-    (event) => event.event_type === "draft.questions.completed"
+    (event) => event.event_type === "draft.questions.completed",
   );
   const latestQuestionsResult = latestQuestionsEvent
     ? parseDraftQuestionsResult(latestQuestionsEvent.payload.result)
@@ -1214,19 +1297,23 @@ export function App() {
     sessionSummaries
       .map((query) => query.data?.session)
       .filter((value): value is ExecutionSession => value !== undefined)
-      .map((item) => [item.id, item])
+      .map((item) => [item.id, item]),
   );
 
   const searchNeedle = normalizeText(boardSearch);
-  const visibleDrafts = drafts.filter((draft) => draftMatchesSearch(draft, searchNeedle));
-  const visibleTickets = tickets.filter((ticket) => ticketMatchesSearch(ticket, searchNeedle));
+  const visibleDrafts = drafts.filter((draft) =>
+    draftMatchesSearch(draft, searchNeedle),
+  );
+  const visibleTickets = tickets.filter((ticket) =>
+    ticketMatchesSearch(ticket, searchNeedle),
+  );
 
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
     ready: [] as TicketFrontmatter[],
     in_progress: [] as TicketFrontmatter[],
     review: [] as TicketFrontmatter[],
-    done: [] as TicketFrontmatter[]
+    done: [] as TicketFrontmatter[],
   };
 
   for (const ticket of visibleTickets) {
@@ -1235,7 +1322,9 @@ export function App() {
 
   const actionItems: ActionItem[] = tickets.flatMap((ticket): ActionItem[] => {
     const sessionForTicket =
-      ticket.session_id !== null ? sessionById.get(ticket.session_id) ?? null : null;
+      ticket.session_id !== null
+        ? (sessionById.get(ticket.session_id) ?? null)
+        : null;
 
     if (ticket.status === "review" && ticket.session_id) {
       return [
@@ -1245,16 +1334,20 @@ export function App() {
           title: `Review ready for ticket #${ticket.id}`,
           message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
           sessionId: ticket.session_id,
-          actionLabel: "Open Review"
-        }
+          actionLabel: "Open Review",
+        },
       ];
     }
 
     if (
       sessionForTicket &&
-      ["awaiting_input", "failed", "interrupted", "paused_checkpoint", "paused_user_control"].includes(
-        sessionForTicket.status
-      )
+      [
+        "awaiting_input",
+        "failed",
+        "interrupted",
+        "paused_checkpoint",
+        "paused_user_control",
+      ].includes(sessionForTicket.status)
     ) {
       const label =
         sessionForTicket.status === "failed"
@@ -1275,18 +1368,17 @@ export function App() {
           title: label,
           message,
           sessionId: sessionForTicket.id,
-          actionLabel: "Open Session"
-        }
+          actionLabel: "Open Session",
+        },
       ];
     }
 
     return [];
   });
 
-  const selectedSessionTicketSession =
-    selectedSessionTicket && selectedSessionTicket.session_id
-      ? sessionById.get(selectedSessionTicket.session_id) ?? session
-      : session;
+  const selectedSessionTicketSession = selectedSessionTicket?.session_id
+    ? (sessionById.get(selectedSessionTicket.session_id) ?? session)
+    : session;
 
   const boardLoading =
     (selectedProjectId !== null && draftsQuery.isPending) ||
@@ -1297,15 +1389,31 @@ export function App() {
       ? ticketsQuery.error.message
       : null;
 
-  const activeSessionCount = tickets.filter((ticket) => ticket.status === "in_progress").length;
-  const reviewCount = tickets.filter((ticket) => ticket.status === "review").length;
+  const activeSessionCount = tickets.filter(
+    (ticket) => ticket.status === "in_progress",
+  ).length;
+  const reviewCount = tickets.filter(
+    (ticket) => ticket.status === "review",
+  ).length;
+
+  const initializeNewDraftEditor = (): void => {
+    setDraftEditorSourceId(null);
+    setDraftEditorTitle("");
+    setDraftEditorDescription("");
+    setDraftEditorTicketType("feature");
+    setDraftEditorAcceptanceCriteria("");
+  };
 
   useEffect(() => {
+    if (inspectorState.kind === "new_draft") {
+      return;
+    }
+
     if (!selectedDraft) {
       setDraftEditorSourceId(null);
       setDraftEditorTitle("");
       setDraftEditorDescription("");
-      setDraftEditorTicketType(null);
+      setDraftEditorTicketType("feature");
       setDraftEditorAcceptanceCriteria("");
       return;
     }
@@ -1316,14 +1424,14 @@ export function App() {
       setDraftEditorDescription(selectedDraft.description_draft);
       setDraftEditorTicketType(selectedDraft.proposed_ticket_type);
       setDraftEditorAcceptanceCriteria(
-        selectedDraft.proposed_acceptance_criteria.join("\n")
+        selectedDraft.proposed_acceptance_criteria.join("\n"),
       );
     }
-  }, [draftEditorSourceId, draftFormDirty, selectedDraft]);
+  }, [draftEditorSourceId, draftFormDirty, inspectorState.kind, selectedDraft]);
 
   const deleteTicket = (ticket: TicketFrontmatter): void => {
     const confirmed = window.confirm(
-      `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+      `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`,
     );
     if (!confirmed) {
       return;
@@ -1331,11 +1439,12 @@ export function App() {
 
     deleteTicketMutation.mutate({
       ticketId: ticket.id,
-      sessionId: ticket.session_id
+      sessionId: ticket.session_id,
     });
   };
 
   const openNewDraft = (): void => {
+    initializeNewDraftEditor();
     setInspectorState({ kind: "new_draft" });
     window.requestAnimationFrame(() => focusElementById("draft-title"));
   };
@@ -1382,6 +1491,53 @@ export function App() {
     </Menu>
   );
 
+  const draftEditorFields = (
+    <>
+      <TextInput
+        id="draft-title"
+        name="draftTitle"
+        label="Title"
+        placeholder="Add saved preset layouts"
+        value={draftEditorTitle}
+        onChange={(event) => setDraftEditorTitle(event.currentTarget.value)}
+        required
+      />
+      <Textarea
+        id="draft-description"
+        name="draftDescription"
+        label="Description"
+        placeholder="Users should be able to save and reuse receipt layout presets."
+        value={draftEditorDescription}
+        onChange={(event) =>
+          setDraftEditorDescription(event.currentTarget.value)
+        }
+        minRows={5}
+        required
+      />
+      <Select
+        label="Ticket type"
+        data={[
+          { value: "feature", label: "Feature" },
+          { value: "bugfix", label: "Bugfix" },
+          { value: "chore", label: "Chore" },
+          { value: "research", label: "Research" },
+        ]}
+        clearable
+        value={draftEditorTicketType}
+        onChange={setDraftEditorTicketType}
+      />
+      <Textarea
+        label="Acceptance criteria"
+        description="One acceptance criterion per line."
+        minRows={5}
+        value={draftEditorAcceptanceCriteria}
+        onChange={(event) =>
+          setDraftEditorAcceptanceCriteria(event.currentTarget.value)
+        }
+      />
+    </>
+  );
+
   return (
     <Box className="orchestrator-shell">
       <Box
@@ -1406,7 +1562,10 @@ export function App() {
                   <Text size="sm" c="dimmed">
                     No projects yet. Create the first one below.
                   </Text>
-                  <Button variant="light" onClick={() => setProjectModalOpen(true)}>
+                  <Button
+                    variant="light"
+                    onClick={() => setProjectModalOpen(true)}
+                  >
                     Create Project
                   </Button>
                 </Stack>
@@ -1416,8 +1575,12 @@ export function App() {
                     <Button
                       key={project.id}
                       className="project-nav-button"
-                      data-selected={selectedProjectId === project.id ? "true" : "false"}
-                      variant={selectedProjectId === project.id ? "filled" : "subtle"}
+                      data-selected={
+                        selectedProjectId === project.id ? "true" : "false"
+                      }
+                      variant={
+                        selectedProjectId === project.id ? "filled" : "subtle"
+                      }
                       justify="space-between"
                       onClick={() => setSelectedProjectId(project.id)}
                     >
@@ -1425,7 +1588,10 @@ export function App() {
                       <Code>{project.default_target_branch ?? "main"}</Code>
                     </Button>
                   ))}
-                  <Button variant="light" onClick={() => setProjectModalOpen(true)}>
+                  <Button
+                    variant="light"
+                    onClick={() => setProjectModalOpen(true)}
+                  >
                     Create Project
                   </Button>
                 </Stack>
@@ -1439,7 +1605,11 @@ export function App() {
               >
                 <Stack gap="xs">
                   {actionItems.map((item) => (
-                    <Box key={item.key} className="inbox-item" data-tone={item.color}>
+                    <Box
+                      key={item.key}
+                      className="inbox-item"
+                      data-tone={item.color}
+                    >
                       <Stack gap={6}>
                         <Text fw={700} size="sm">
                           {item.title}
@@ -1454,7 +1624,7 @@ export function App() {
                             onClick={() => {
                               setInspectorState({
                                 kind: "session",
-                                sessionId: item.sessionId
+                                sessionId: item.sessionId,
                               });
                             }}
                           >
@@ -1467,7 +1637,6 @@ export function App() {
                 </Stack>
               </SectionCard>
             ) : null}
-
           </Stack>
         </Box>
 
@@ -1478,7 +1647,9 @@ export function App() {
                 <Stack gap={6}>
                   <Text className="rail-kicker">Project board</Text>
                   <Title order={1} style={{ letterSpacing: "-0.05em" }}>
-                    {selectedProject ? selectedProject.name : "Select a project"}
+                    {selectedProject
+                      ? selectedProject.name
+                      : "Select a project"}
                   </Title>
                   <Text size="sm" c="dimmed" maw={820}>
                     {selectedProject
@@ -1500,7 +1671,10 @@ export function App() {
             <Box className="workbench-toolbar">
               <Box className="toolbar-group">
                 {boardColumns.map((column) => {
-                  const count = column === "draft" ? visibleDrafts.length : groupedTickets[column].length;
+                  const count =
+                    column === "draft"
+                      ? visibleDrafts.length
+                      : groupedTickets[column].length;
                   const meta = boardColumnMeta[column];
                   return (
                     <Badge
@@ -1510,7 +1684,7 @@ export function App() {
                       style={{
                         background: `${meta.accent}14`,
                         color: meta.accent,
-                        border: `1px solid ${meta.accent}22`
+                        border: `1px solid ${meta.accent}22`,
                       }}
                     >
                       {meta.label} {count}
@@ -1523,11 +1697,15 @@ export function App() {
                   className="board-search"
                   placeholder="Search tickets and drafts..."
                   value={boardSearch}
-                  onChange={(event) => setBoardSearch(event.currentTarget.value)}
+                  onChange={(event) =>
+                    setBoardSearch(event.currentTarget.value)
+                  }
                 />
                 <Button
                   disabled={!selectedProject}
-                  variant={inspectorState.kind === "new_draft" ? "filled" : "light"}
+                  variant={
+                    inspectorState.kind === "new_draft" ? "filled" : "light"
+                  }
                   onClick={openNewDraft}
                 >
                   New Draft
@@ -1541,9 +1719,10 @@ export function App() {
                 description="The board shell is ready. Pick a project from the left rail or create a new one to start using it."
               >
                 <Text size="sm" c="dimmed">
-                  Projects anchor repositories, drafts, tickets, and execution sessions. Once a
-                  project is selected, the middle canvas becomes the working board and the right
-                  panel becomes the live inspector.
+                  Projects anchor repositories, drafts, tickets, and execution
+                  sessions. Once a project is selected, the middle canvas
+                  becomes the working board and the right panel becomes the live
+                  inspector.
                 </Text>
               </SectionCard>
             ) : boardLoading ? (
@@ -1568,7 +1747,9 @@ export function App() {
                   {boardColumns.map((column) => {
                     const meta = boardColumnMeta[column];
                     const columnCount =
-                      column === "draft" ? visibleDrafts.length : groupedTickets[column].length;
+                      column === "draft"
+                        ? visibleDrafts.length
+                        : groupedTickets[column].length;
 
                     return (
                       <Box key={column} className="board-column">
@@ -1597,7 +1778,10 @@ export function App() {
                           </Group>
                         </Box>
 
-                        <Box className="board-column-stack" onClick={hideInspector}>
+                        <Box
+                          className="board-column-stack"
+                          onClick={hideInspector}
+                        >
                           {column === "draft" ? (
                             visibleDrafts.length === 0 ? (
                               <Box className="board-empty">{meta.empty}</Box>
@@ -1606,7 +1790,9 @@ export function App() {
                                 const repository =
                                   repositories.find(
                                     (item) =>
-                                      item.id === (draft.confirmed_repo_id ?? draft.proposed_repo_id)
+                                      item.id ===
+                                      (draft.confirmed_repo_id ??
+                                        draft.proposed_repo_id),
                                   ) ?? selectedRepository;
                                 const isSelected = draft.id === selectedDraftId;
 
@@ -1620,22 +1806,33 @@ export function App() {
                                     }}
                                   >
                                     <Stack gap="xs">
-                                      <Group justify="space-between" align="flex-start">
-                                        <Text fw={700} style={{ lineHeight: 1.35 }}>
+                                      <Group
+                                        justify="space-between"
+                                        align="flex-start"
+                                      >
+                                        <Text
+                                          fw={700}
+                                          style={{ lineHeight: 1.35 }}
+                                        >
                                           {draft.title_draft}
                                         </Text>
                                         <Badge variant="light" color="gray">
-                                          {draft.wizard_status.replace(/_/g, " ")}
+                                          {draft.wizard_status.replace(
+                                            /_/g,
+                                            " ",
+                                          )}
                                         </Badge>
                                       </Group>
                                       <Text size="sm" c="dimmed">
                                         {draft.description_draft}
                                       </Text>
                                       <Text className="board-card-meta">
-                                        Repository: {repository?.name ?? "unassigned"}
+                                        Repository:{" "}
+                                        {repository?.name ?? "unassigned"}
                                       </Text>
                                       <Text className="board-card-meta">
-                                        {draft.proposed_acceptance_criteria.length > 0
+                                        {draft.proposed_acceptance_criteria
+                                          .length > 0
                                           ? `${draft.proposed_acceptance_criteria.length} acceptance criteria ready`
                                           : "Run refinement to generate acceptance criteria"}
                                       </Text>
@@ -1650,58 +1847,75 @@ export function App() {
                             groupedTickets[column].map((ticket) => {
                               const ticketSession =
                                 ticket.session_id !== null
-                                  ? sessionById.get(ticket.session_id) ?? null
+                                  ? (sessionById.get(ticket.session_id) ?? null)
                                   : null;
                               const canStop =
                                 ticket.status === "in_progress" &&
                                 ticketSession !== null &&
                                 isStoppableSessionStatus(ticketSession.status);
                               const isSelected =
-                                ticket.session_id !== null && ticket.session_id === selectedSessionId;
+                                ticket.session_id !== null &&
+                                ticket.session_id === selectedSessionId;
                               const showDeleteError =
                                 deleteTicketMutation.isError &&
-                                deleteTicketMutation.variables?.ticketId === ticket.id;
+                                deleteTicketMutation.variables?.ticketId ===
+                                  ticket.id;
                               const showStopError =
                                 stopTicketMutation.isError &&
-                                stopTicketMutation.variables?.ticketId === ticket.id;
+                                stopTicketMutation.variables?.ticketId ===
+                                  ticket.id;
                               const showMergeError =
                                 mergeTicketMutation.isError &&
                                 mergeTicketMutation.variables === ticket.id;
                               const showStartPlanError =
                                 startTicketMutation.isError &&
-                                startTicketMutation.variables?.ticketId === ticket.id &&
+                                startTicketMutation.variables?.ticketId ===
+                                  ticket.id &&
                                 startTicketMutation.variables.planningEnabled;
                               const showStartNowError =
                                 startTicketMutation.isError &&
-                                startTicketMutation.variables?.ticketId === ticket.id &&
+                                startTicketMutation.variables?.ticketId ===
+                                  ticket.id &&
                                 !startTicketMutation.variables.planningEnabled;
 
-                                return (
-                                  <Box
-                                    key={ticket.id}
-                                    className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openTicketSession(ticket);
-                                    }}
-                                  >
-                                    <Stack gap="xs">
-                                      <Group justify="space-between" align="flex-start">
-                                        <Stack gap={2}>
-                                          <Text fw={700} style={{ lineHeight: 1.35 }}>
+                              return (
+                                <Box
+                                  key={ticket.id}
+                                  className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openTicketSession(ticket);
+                                  }}
+                                >
+                                  <Stack gap="xs">
+                                    <Group
+                                      justify="space-between"
+                                      align="flex-start"
+                                    >
+                                      <Stack gap={2}>
+                                        <Text
+                                          fw={700}
+                                          style={{ lineHeight: 1.35 }}
+                                        >
                                           #{ticket.id} {ticket.title}
                                         </Text>
                                         <Text className="board-card-meta">
-                                            {ticket.ticket_type} • {ticket.target_branch}
-                                          </Text>
-                                        </Stack>
-                                        <Group gap={6} align="center">
-                                          <Badge variant="light" color={ticketStatusColor(ticket.status)}>
-                                            {humanizeTicketStatus(ticket.status)}
-                                          </Badge>
-                                          {renderTicketMenu(ticket)}
-                                        </Group>
+                                          {ticket.ticket_type} •{" "}
+                                          {ticket.target_branch}
+                                        </Text>
+                                      </Stack>
+                                      <Group gap={6} align="center">
+                                        <Badge
+                                          variant="light"
+                                          color={ticketStatusColor(
+                                            ticket.status,
+                                          )}
+                                        >
+                                          {humanizeTicketStatus(ticket.status)}
+                                        </Badge>
+                                        {renderTicketMenu(ticket)}
                                       </Group>
+                                    </Group>
                                     <Text size="sm" c="dimmed">
                                       {ticket.description}
                                     </Text>
@@ -1728,20 +1942,26 @@ export function App() {
                                     ) : null}
 
                                     {column === "ready" ? (
-                                      <Group justify="flex-end" align="flex-end" gap="xs">
+                                      <Group
+                                        justify="flex-end"
+                                        align="flex-end"
+                                        gap="xs"
+                                      >
                                         <Group gap="xs">
                                           <Button
                                             variant="light"
                                             size="xs"
                                             loading={
                                               startTicketMutation.isPending &&
-                                              startTicketMutation.variables?.ticketId === ticket.id &&
-                                              startTicketMutation.variables.planningEnabled
+                                              startTicketMutation.variables
+                                                ?.ticketId === ticket.id &&
+                                              startTicketMutation.variables
+                                                .planningEnabled
                                             }
                                             onClick={() =>
                                               startTicketMutation.mutate({
                                                 ticketId: ticket.id,
-                                                planningEnabled: true
+                                                planningEnabled: true,
                                               })
                                             }
                                           >
@@ -1751,13 +1971,15 @@ export function App() {
                                             size="xs"
                                             loading={
                                               startTicketMutation.isPending &&
-                                              startTicketMutation.variables?.ticketId === ticket.id &&
-                                              !startTicketMutation.variables.planningEnabled
+                                              startTicketMutation.variables
+                                                ?.ticketId === ticket.id &&
+                                              !startTicketMutation.variables
+                                                .planningEnabled
                                             }
                                             onClick={() =>
                                               startTicketMutation.mutate({
                                                 ticketId: ticket.id,
-                                                planningEnabled: false
+                                                planningEnabled: false,
                                               })
                                             }
                                           >
@@ -1771,11 +1993,14 @@ export function App() {
                                           size="xs"
                                           loading={
                                             mergeTicketMutation.isPending &&
-                                            mergeTicketMutation.variables === ticket.id
+                                            mergeTicketMutation.variables ===
+                                              ticket.id
                                           }
                                           onClick={(event) => {
                                             event.stopPropagation();
-                                            mergeTicketMutation.mutate(ticket.id);
+                                            mergeTicketMutation.mutate(
+                                              ticket.id,
+                                            );
                                           }}
                                         >
                                           Merge
@@ -1790,12 +2015,13 @@ export function App() {
                                             size="xs"
                                             loading={
                                               stopTicketMutation.isPending &&
-                                              stopTicketMutation.variables?.ticketId === ticket.id
+                                              stopTicketMutation.variables
+                                                ?.ticketId === ticket.id
                                             }
                                             onClick={(event) => {
                                               event.stopPropagation();
                                               stopTicketMutation.mutate({
-                                                ticketId: ticket.id
+                                                ticketId: ticket.id,
                                               });
                                             }}
                                           >
@@ -1825,638 +2051,691 @@ export function App() {
           <Box className="orchestrator-detail">
             <Stack gap="md">
               {inspectorState.kind === "new_draft" && selectedProject ? (
-              <SectionCard
-                title="New draft"
-                description="Capture the next task quickly, then promote it straight from the draft column."
-              >
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    createDraftMutation.mutate({
-                      projectId: selectedProject.id,
-                      title: draftTitle,
-                      description: draftDescription
-                    });
-                  }}
+                <SectionCard
+                  title="New draft"
+                  description="Capture the full draft up front, then keep refining once the draft record exists."
                 >
-                  <Stack gap="sm">
-                    <TextInput
-                      id="draft-title"
-                      name="draftTitle"
-                      label="Title"
-                      placeholder="Add saved preset layouts"
-                      value={draftTitle}
-                      onChange={(event) => setDraftTitle(event.currentTarget.value)}
-                      required
-                    />
-                    <Textarea
-                      id="draft-description"
-                      name="draftDescription"
-                      label="Description"
-                      placeholder="Users should be able to save and reuse receipt layout presets."
-                      value={draftDescription}
-                      onChange={(event) => setDraftDescription(event.currentTarget.value)}
-                      minRows={5}
-                      required
-                    />
-                    {createDraftMutation.isError ? (
-                      <Text size="sm" c="red">
-                        {createDraftMutation.error.message}
-                      </Text>
-                    ) : null}
-                    <Group justify="space-between" align="center">
-                      <Text size="sm" c="dimmed">
-                        Drafts stay on the board until they are refined and confirmed.
-                      </Text>
-                      <Button type="submit" loading={createDraftMutation.isPending}>
-                        Save Draft
-                      </Button>
-                    </Group>
-                  </Stack>
-                </form>
-              </SectionCard>
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      createDraftMutation.mutate({
+                        projectId: selectedProject.id,
+                        title: draftEditorTitle,
+                        description: draftEditorDescription,
+                        proposedTicketType: draftEditorTicketType,
+                        proposedAcceptanceCriteria:
+                          draftEditorAcceptanceCriteriaLines,
+                      });
+                    }}
+                  >
+                    <Stack gap="sm">
+                      {draftEditorFields}
+                      {createDraftMutation.isError ? (
+                        <Text size="sm" c="red">
+                          {createDraftMutation.error.message}
+                        </Text>
+                      ) : null}
+                      <Group justify="space-between" align="center">
+                        <Text size="sm" c="dimmed">
+                          Drafts stay on the board until they are refined and
+                          confirmed.
+                        </Text>
+                        <Button
+                          type="submit"
+                          loading={createDraftMutation.isPending}
+                        >
+                          Create Draft
+                        </Button>
+                      </Group>
+                    </Stack>
+                  </form>
+                </SectionCard>
               ) : null}
 
               {inspectorState.kind === "draft" && selectedDraft ? (
-              <SectionCard
-                title="Draft inspector"
-                description="Edit the draft directly, then use Codex to refine it or check feasibility."
-              >
-                <Stack gap="md">
-                  <Group justify="space-between" align="flex-start">
-                    <Stack gap={4}>
-                      <Text className="rail-kicker">Draft</Text>
-                      <Text fw={700}>{selectedDraft.title_draft}</Text>
-                    </Stack>
-                    <Group gap="xs">
-                      {draftAnalysisActive ? (
-                        <Badge variant="light" color="blue">
-                          Codex running
-                        </Badge>
-                      ) : null}
-                      <Badge variant="light" color="gray">
-                        {selectedDraft.wizard_status.replace(/_/g, " ")}
-                      </Badge>
-                    </Group>
-                  </Group>
-
-                  <Box className="detail-meta-grid">
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Repository
-                      </Text>
-                      <Text fw={700}>{selectedDraftRepository?.name ?? "Unassigned"}</Text>
-                    </Box>
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Acceptance criteria
-                      </Text>
-                      <Text fw={700}>{selectedDraft.proposed_acceptance_criteria.length}</Text>
-                    </Box>
-                  </Box>
-
-                  <TextInput
-                    label="Title"
-                    value={draftEditorTitle}
-                    onChange={(event) => setDraftEditorTitle(event.currentTarget.value)}
-                  />
-                  <Textarea
-                    label="Description"
-                    minRows={4}
-                    value={draftEditorDescription}
-                    onChange={(event) => setDraftEditorDescription(event.currentTarget.value)}
-                  />
-                  <Select
-                    label="Ticket type"
-                    data={[
-                      { value: "feature", label: "Feature" },
-                      { value: "bugfix", label: "Bugfix" },
-                      { value: "chore", label: "Chore" },
-                      { value: "research", label: "Research" }
-                    ]}
-                    clearable
-                    value={draftEditorTicketType}
-                    onChange={setDraftEditorTicketType}
-                  />
-                  <Textarea
-                    label="Acceptance criteria"
-                    description="One acceptance criterion per line."
-                    minRows={5}
-                    value={draftEditorAcceptanceCriteria}
-                    onChange={(event) =>
-                      setDraftEditorAcceptanceCriteria(event.currentTarget.value)
-                    }
-                  />
-
-                  {draftFormDirty ? (
-                    <Text size="sm" c="dimmed">
-                      Save changes before refining, asking questions, or creating a ready ticket.
-                    </Text>
-                  ) : null}
-
-                  {saveDraftMutation.isError &&
-                  saveDraftMutation.variables?.draftId === selectedDraft.id ? (
-                    <Text size="sm" c="red">
-                      {saveDraftMutation.error.message}
-                    </Text>
-                  ) : null}
-                  {refineDraftMutation.isError &&
-                  refineDraftMutation.variables === selectedDraft.id ? (
-                    <Text size="sm" c="red">
-                      {refineDraftMutation.error.message}
-                    </Text>
-                  ) : null}
-                  {questionDraftMutation.isError &&
-                  questionDraftMutation.variables === selectedDraft.id ? (
-                    <Text size="sm" c="red">
-                      {questionDraftMutation.error.message}
-                    </Text>
-                  ) : null}
-                  {confirmDraftMutation.isError &&
-                  confirmDraftMutation.variables?.draftId === selectedDraft.id ? (
-                    <Text size="sm" c="red">
-                      {confirmDraftMutation.error.message}
-                    </Text>
-                  ) : null}
-                  {deleteDraftMutation.isError &&
-                  deleteDraftMutation.variables === selectedDraft.id ? (
-                    <Text size="sm" c="red">
-                      {deleteDraftMutation.error.message}
-                    </Text>
-                  ) : null}
-
-                  <Group justify="space-between" align="flex-start">
-                    <Button
-                      color="red"
-                      variant="subtle"
-                      loading={
-                        deleteDraftMutation.isPending &&
-                        deleteDraftMutation.variables === selectedDraft.id
-                      }
-                      onClick={() => deleteDraftMutation.mutate(selectedDraft.id)}
-                    >
-                      Delete Draft
-                    </Button>
-                    <Group gap="xs" justify="flex-end">
-                      <Button
-                        variant="light"
-                        disabled={!draftFormDirty || draftAnalysisActive}
-                        loading={
-                          saveDraftMutation.isPending &&
-                          saveDraftMutation.variables?.draftId === selectedDraft.id
-                        }
-                        onClick={() =>
-                          saveDraftMutation.mutate({
-                            draftId: selectedDraft.id,
-                            titleDraft: draftEditorTitle,
-                            descriptionDraft: draftEditorDescription,
-                            proposedTicketType: draftEditorTicketType,
-                            proposedAcceptanceCriteria: draftEditorAcceptanceCriteriaLines
-                          })
-                        }
-                      >
-                        Save Changes
-                      </Button>
-                      <Button
-                        variant="light"
-                        disabled={draftFormDirty || draftAnalysisActive || !selectedDraftRepository}
-                        loading={
-                          refineDraftMutation.isPending &&
-                          refineDraftMutation.variables === selectedDraft.id
-                        }
-                        onClick={() => refineDraftMutation.mutate(selectedDraft.id)}
-                      >
-                        Refine
-                      </Button>
-                      <Button
-                        variant="light"
-                        disabled={draftFormDirty || draftAnalysisActive || !selectedDraftRepository}
-                        loading={
-                          questionDraftMutation.isPending &&
-                          questionDraftMutation.variables === selectedDraft.id
-                        }
-                        onClick={() => questionDraftMutation.mutate(selectedDraft.id)}
-                      >
-                        Questions?
-                      </Button>
-                      <Button
-                        disabled={
-                          !selectedDraftRepository || draftFormDirty || saveDraftMutation.isPending
-                        }
-                        loading={
-                          confirmDraftMutation.isPending &&
-                          confirmDraftMutation.variables?.draftId === selectedDraft.id
-                        }
-                        onClick={() =>
-                          selectedDraftRepository &&
-                          confirmDraftMutation.mutate({
-                            draftId: selectedDraft.id,
-                            title: draftEditorTitle,
-                            description: draftEditorDescription,
-                            ticketType: draftEditorTicketType,
-                            acceptanceCriteria: draftEditorAcceptanceCriteriaLines,
-                            repository: selectedDraftRepository,
-                            project: selectedProject!
-                          })
-                        }
-                      >
-                        Create Ready
-                      </Button>
-                    </Group>
-                  </Group>
-
-                  {latestQuestionsResult ? (
-                    <Box className="detail-placeholder">
-                      <Stack gap="xs">
-                        <Group justify="space-between" align="center">
-                          <Text fw={700}>Feasibility</Text>
-                          <Badge variant="light" color="blue">
-                            {latestQuestionsResult.verdict}
-                          </Badge>
-                        </Group>
-                        <Text size="sm" c="dimmed">
-                          {latestQuestionsResult.summary}
-                        </Text>
-                        {latestQuestionsResult.assumptions.length > 0 ? (
-                          <List size="sm" spacing={4}>
-                            {latestQuestionsResult.assumptions.map((item) => (
-                              <List.Item key={`assumption-${item}`}>{item}</List.Item>
-                            ))}
-                          </List>
-                        ) : null}
-                        {latestQuestionsResult.open_questions.length > 0 ? (
-                          <List size="sm" spacing={4}>
-                            {latestQuestionsResult.open_questions.map((item) => (
-                              <List.Item key={`question-${item}`}>{item}</List.Item>
-                            ))}
-                          </List>
-                        ) : null}
-                        {latestQuestionsResult.risks.length > 0 ? (
-                          <List size="sm" spacing={4}>
-                            {latestQuestionsResult.risks.map((item) => (
-                              <List.Item key={`risk-${item}`}>{item}</List.Item>
-                            ))}
-                          </List>
-                        ) : null}
-                        {latestQuestionsResult.suggested_draft_edits.length > 0 ? (
-                          <List size="sm" spacing={4}>
-                            {latestQuestionsResult.suggested_draft_edits.map((item) => (
-                              <List.Item key={`edit-${item}`}>{item}</List.Item>
-                            ))}
-                          </List>
-                        ) : null}
-                      </Stack>
-                    </Box>
-                  ) : null}
-
-                  <Stack gap="xs">
-                    <Text fw={700}>History</Text>
-                    {draftEventsQuery.isPending ? (
-                      <Loader size="sm" />
-                    ) : draftEventsQuery.isError ? (
-                      <Text size="sm" c="red">
-                        {draftEventsQuery.error.message}
-                      </Text>
-                    ) : draftEvents.length === 0 ? (
-                      <Text size="sm" c="dimmed">
-                        No refinement or feasibility runs yet.
-                      </Text>
-                    ) : (
-                      draftEvents.map((event) => {
-                        const meta = parseDraftEventMeta(event);
-                        if (!meta) {
-                          return null;
-                        }
-
-                        return (
-                          <Box key={event.id} className="detail-meta-card">
-                            <details>
-                              <summary>
-                                {meta.operation === "refine" ? "Refine" : "Questions"} •{" "}
-                                {meta.status} • {formatTimestamp(event.occurred_at)} •{" "}
-                                {meta.summary}
-                              </summary>
-                              <Stack gap="xs" mt="sm">
-                                {meta.error ? (
-                                  <Text size="sm" c="red">
-                                    {meta.error}
-                                  </Text>
-                                ) : null}
-                                {meta.result ? (
-                                  <Box
-                                    component="pre"
-                                    className="detail-placeholder"
-                                    style={{ margin: 0, whiteSpace: "pre-wrap" }}
-                                  >
-                                    {JSON.stringify(meta.result, null, 2)}
-                                  </Box>
-                                ) : null}
-                              </Stack>
-                            </details>
-                          </Box>
-                        );
-                      })
-                    )}
-                  </Stack>
-                </Stack>
-              </SectionCard>
-              ) : null}
-
-              {inspectorState.kind === "session" ? (
-              <SectionCard
-                title="Session inspector"
-                description="Execution detail, review actions, and manual terminal control all live here."
-              >
-                {selectedSessionId === null ? (
-                  <Text size="sm" c="dimmed">
-                    Session details are not available yet.
-                  </Text>
-                ) : sessionQuery.isPending || sessionLogsQuery.isPending ? (
-                  <Loader size="sm" />
-                ) : sessionQuery.isError ? (
-                  <Text size="sm" c="red">
-                    {sessionQuery.error.message}
-                  </Text>
-                ) : session ? (
+                <SectionCard
+                  title="Draft inspector"
+                  description="Edit the draft directly, then use Codex to refine it or check feasibility."
+                >
                   <Stack gap="md">
-                  <Group justify="space-between" align="flex-start">
-                    <Stack gap={4}>
-                      <Text className="rail-kicker">Execution</Text>
-                      <Text fw={700}>
-                        {selectedSessionTicket
-                          ? `#${selectedSessionTicket.id} ${selectedSessionTicket.title}`
-                          : `Ticket #${session.ticket_id}`}
-                      </Text>
-                    </Stack>
-                    <Badge variant="light" color={sessionStatusColor(session.status)}>
-                      {session.status}
-                    </Badge>
-                  </Group>
-
-                  <Box className="detail-meta-grid">
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Session
-                      </Text>
-                      <Text fw={700}>{session.id}</Text>
-                    </Box>
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Planning
-                      </Text>
-                      <Text fw={700}>{session.planning_enabled ? "Enabled" : "Disabled"}</Text>
-                    </Box>
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Branch
-                      </Text>
-                      <Text fw={700}>{selectedSessionTicket?.working_branch ?? "Pending"}</Text>
-                    </Box>
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Worktree
-                      </Text>
-                      <Text className="inline-code">{session.worktree_path ?? "Pending"}</Text>
-                    </Box>
-                  </Box>
-
-                  {selectedSessionTicket ? (
-                    <Group justify="space-between">
+                    <Group justify="space-between" align="flex-start">
+                      <Stack gap={4}>
+                        <Text className="rail-kicker">Draft</Text>
+                        <Text fw={700}>{selectedDraft.title_draft}</Text>
+                      </Stack>
                       <Group gap="xs">
-                        {selectedSessionTicket.status === "in_progress" &&
-                        session.worktree_path &&
-                        session.status !== "paused_user_control" ? (
-                          <Button
-                            variant="light"
-                            size="xs"
-                            loading={
-                              terminalTakeoverMutation.isPending &&
-                              terminalTakeoverMutation.variables === session.id
-                            }
-                            onClick={() => terminalTakeoverMutation.mutate(session.id)}
-                          >
-                            Take Over Terminal
-                          </Button>
+                        {draftAnalysisActive ? (
+                          <Badge variant="light" color="blue">
+                            Codex running
+                          </Badge>
                         ) : null}
-                        {selectedSessionTicket.status === "in_progress" &&
-                        selectedSessionTicketSession &&
-                        isStoppableSessionStatus(selectedSessionTicketSession.status) ? (
-                          <Button
-                            color="orange"
-                            variant="light"
-                            size="xs"
-                            loading={
-                              stopTicketMutation.isPending &&
-                              stopTicketMutation.variables?.ticketId === selectedSessionTicket.id
-                            }
-                            onClick={() =>
-                              stopTicketMutation.mutate({
-                                ticketId: selectedSessionTicket.id
-                              })
-                            }
-                          >
-                            Stop Ticket
-                          </Button>
-                        ) : null}
+                        <Badge variant="light" color="gray">
+                          {selectedDraft.wizard_status.replace(/_/g, " ")}
+                        </Badge>
                       </Group>
+                    </Group>
+
+                    <Box className="detail-meta-grid">
+                      <Box className="detail-meta-card">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Repository
+                        </Text>
+                        <Text fw={700}>
+                          {selectedDraftRepository?.name ?? "Unassigned"}
+                        </Text>
+                      </Box>
+                      <Box className="detail-meta-card">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Acceptance criteria
+                        </Text>
+                        <Text fw={700}>
+                          {selectedDraft.proposed_acceptance_criteria.length}
+                        </Text>
+                      </Box>
+                    </Box>
+
+                    {draftEditorFields}
+
+                    {draftFormDirty ? (
+                      <Text size="sm" c="dimmed">
+                        Save changes before refining, asking questions, or
+                        creating a ready ticket.
+                      </Text>
+                    ) : null}
+
+                    {saveDraftMutation.isError &&
+                    saveDraftMutation.variables?.draftId ===
+                      selectedDraft.id ? (
+                      <Text size="sm" c="red">
+                        {saveDraftMutation.error.message}
+                      </Text>
+                    ) : null}
+                    {refineDraftMutation.isError &&
+                    refineDraftMutation.variables === selectedDraft.id ? (
+                      <Text size="sm" c="red">
+                        {refineDraftMutation.error.message}
+                      </Text>
+                    ) : null}
+                    {questionDraftMutation.isError &&
+                    questionDraftMutation.variables === selectedDraft.id ? (
+                      <Text size="sm" c="red">
+                        {questionDraftMutation.error.message}
+                      </Text>
+                    ) : null}
+                    {confirmDraftMutation.isError &&
+                    confirmDraftMutation.variables?.draftId ===
+                      selectedDraft.id ? (
+                      <Text size="sm" c="red">
+                        {confirmDraftMutation.error.message}
+                      </Text>
+                    ) : null}
+                    {deleteDraftMutation.isError &&
+                    deleteDraftMutation.variables === selectedDraft.id ? (
+                      <Text size="sm" c="red">
+                        {deleteDraftMutation.error.message}
+                      </Text>
+                    ) : null}
+
+                    <Group justify="space-between" align="flex-start">
                       <Button
                         color="red"
                         variant="subtle"
-                        size="xs"
                         loading={
-                          deleteTicketMutation.isPending &&
-                          deleteTicketMutation.variables?.ticketId === selectedSessionTicket.id
+                          deleteDraftMutation.isPending &&
+                          deleteDraftMutation.variables === selectedDraft.id
                         }
-                        onClick={() => deleteTicket(selectedSessionTicket)}
+                        onClick={() =>
+                          deleteDraftMutation.mutate(selectedDraft.id)
+                        }
                       >
-                        Delete Ticket
+                        Delete Draft
                       </Button>
+                      <Group gap="xs" justify="flex-end">
+                        <Button
+                          variant="light"
+                          disabled={!draftFormDirty || draftAnalysisActive}
+                          loading={
+                            saveDraftMutation.isPending &&
+                            saveDraftMutation.variables?.draftId ===
+                              selectedDraft.id
+                          }
+                          onClick={() =>
+                            saveDraftMutation.mutate({
+                              draftId: selectedDraft.id,
+                              titleDraft: draftEditorTitle,
+                              descriptionDraft: draftEditorDescription,
+                              proposedTicketType: draftEditorTicketType,
+                              proposedAcceptanceCriteria:
+                                draftEditorAcceptanceCriteriaLines,
+                            })
+                          }
+                        >
+                          Save Changes
+                        </Button>
+                        <Button
+                          variant="light"
+                          disabled={
+                            draftFormDirty ||
+                            draftAnalysisActive ||
+                            !selectedDraftRepository
+                          }
+                          loading={
+                            refineDraftMutation.isPending &&
+                            refineDraftMutation.variables === selectedDraft.id
+                          }
+                          onClick={() =>
+                            refineDraftMutation.mutate(selectedDraft.id)
+                          }
+                        >
+                          Refine
+                        </Button>
+                        <Button
+                          variant="light"
+                          disabled={
+                            draftFormDirty ||
+                            draftAnalysisActive ||
+                            !selectedDraftRepository
+                          }
+                          loading={
+                            questionDraftMutation.isPending &&
+                            questionDraftMutation.variables === selectedDraft.id
+                          }
+                          onClick={() =>
+                            questionDraftMutation.mutate(selectedDraft.id)
+                          }
+                        >
+                          Questions?
+                        </Button>
+                        <Button
+                          disabled={
+                            !selectedDraftRepository ||
+                            !selectedProject ||
+                            draftFormDirty ||
+                            saveDraftMutation.isPending
+                          }
+                          loading={
+                            confirmDraftMutation.isPending &&
+                            confirmDraftMutation.variables?.draftId ===
+                              selectedDraft.id
+                          }
+                          onClick={() =>
+                            selectedDraftRepository &&
+                            selectedProject &&
+                            confirmDraftMutation.mutate({
+                              draftId: selectedDraft.id,
+                              title: draftEditorTitle,
+                              description: draftEditorDescription,
+                              ticketType: draftEditorTicketType,
+                              acceptanceCriteria:
+                                draftEditorAcceptanceCriteriaLines,
+                              repository: selectedDraftRepository,
+                              project: selectedProject,
+                            })
+                          }
+                        >
+                          Create Ready
+                        </Button>
+                      </Group>
                     </Group>
-                  ) : null}
 
-                  {stopTicketMutation.isError ? (
-                    <Text size="sm" c="red">
-                      {stopTicketMutation.error.message}
-                    </Text>
-                  ) : null}
-                  {terminalTakeoverMutation.isError ? (
-                    <Text size="sm" c="red">
-                      {terminalTakeoverMutation.error.message}
-                    </Text>
-                  ) : null}
-                  {deleteTicketMutation.isError ? (
-                    <Text size="sm" c="red">
-                      {deleteTicketMutation.error.message}
-                    </Text>
-                  ) : null}
+                    {latestQuestionsResult ? (
+                      <Box className="detail-placeholder">
+                        <Stack gap="xs">
+                          <Group justify="space-between" align="center">
+                            <Text fw={700}>Feasibility</Text>
+                            <Badge variant="light" color="blue">
+                              {latestQuestionsResult.verdict}
+                            </Badge>
+                          </Group>
+                          <Text size="sm" c="dimmed">
+                            {latestQuestionsResult.summary}
+                          </Text>
+                          {latestQuestionsResult.assumptions.length > 0 ? (
+                            <List size="sm" spacing={4}>
+                              {latestQuestionsResult.assumptions.map((item) => (
+                                <List.Item key={`assumption-${item}`}>
+                                  {item}
+                                </List.Item>
+                              ))}
+                            </List>
+                          ) : null}
+                          {latestQuestionsResult.open_questions.length > 0 ? (
+                            <List size="sm" spacing={4}>
+                              {latestQuestionsResult.open_questions.map(
+                                (item) => (
+                                  <List.Item key={`question-${item}`}>
+                                    {item}
+                                  </List.Item>
+                                ),
+                              )}
+                            </List>
+                          ) : null}
+                          {latestQuestionsResult.risks.length > 0 ? (
+                            <List size="sm" spacing={4}>
+                              {latestQuestionsResult.risks.map((item) => (
+                                <List.Item key={`risk-${item}`}>
+                                  {item}
+                                </List.Item>
+                              ))}
+                            </List>
+                          ) : null}
+                          {latestQuestionsResult.suggested_draft_edits.length >
+                          0 ? (
+                            <List size="sm" spacing={4}>
+                              {latestQuestionsResult.suggested_draft_edits.map(
+                                (item) => (
+                                  <List.Item key={`edit-${item}`}>
+                                    {item}
+                                  </List.Item>
+                                ),
+                              )}
+                            </List>
+                          ) : null}
+                        </Stack>
+                      </Box>
+                    ) : null}
 
-                  {selectedSessionTicket?.status === "review" ? (
-                    reviewPackageQuery.isPending ? (
-                      <Loader size="sm" />
-                    ) : reviewPackage ? (
-                      <Stack gap="sm">
-                        <Text fw={700}>Review package</Text>
-                        <Text size="sm" c="dimmed">
-                          Diff artifact: <Code>{reviewPackage.diff_ref}</Code>
+                    <Stack gap="xs">
+                      <Text fw={700}>History</Text>
+                      {draftEventsQuery.isPending ? (
+                        <Loader size="sm" />
+                      ) : draftEventsQuery.isError ? (
+                        <Text size="sm" c="red">
+                          {draftEventsQuery.error.message}
                         </Text>
+                      ) : draftEvents.length === 0 ? (
                         <Text size="sm" c="dimmed">
-                          Validation results: {reviewPackage.validation_results.length}
+                          No refinement or feasibility runs yet.
                         </Text>
-                        {reviewPackage.validation_results.length > 0 ? (
-                          <List size="sm" spacing={4}>
-                            {reviewPackage.validation_results.map((result) => (
-                              <List.Item key={result.command_id}>
-                                {result.label}: {result.status}
-                              </List.Item>
-                            ))}
-                          </List>
-                        ) : null}
-                        {mergeTicketMutation.isError ? (
-                          <Text size="sm" c="red">
-                            {mergeTicketMutation.error.message}
+                      ) : (
+                        draftEvents.map((event) => {
+                          const meta = parseDraftEventMeta(event);
+                          if (!meta) {
+                            return null;
+                          }
+
+                          return (
+                            <Box key={event.id} className="detail-meta-card">
+                              <details>
+                                <summary>
+                                  {meta.operation === "refine"
+                                    ? "Refine"
+                                    : "Questions"}{" "}
+                                  • {meta.status} •{" "}
+                                  {formatTimestamp(event.occurred_at)} •{" "}
+                                  {meta.summary}
+                                </summary>
+                                <Stack gap="xs" mt="sm">
+                                  {meta.error ? (
+                                    <Text size="sm" c="red">
+                                      {meta.error}
+                                    </Text>
+                                  ) : null}
+                                  {meta.result ? (
+                                    <Box
+                                      component="pre"
+                                      className="detail-placeholder"
+                                      style={{
+                                        margin: 0,
+                                        whiteSpace: "pre-wrap",
+                                      }}
+                                    >
+                                      {JSON.stringify(meta.result, null, 2)}
+                                    </Box>
+                                  ) : null}
+                                </Stack>
+                              </details>
+                            </Box>
+                          );
+                        })
+                      )}
+                    </Stack>
+                  </Stack>
+                </SectionCard>
+              ) : null}
+
+              {inspectorState.kind === "session" ? (
+                <SectionCard
+                  title="Session inspector"
+                  description="Execution detail, review actions, and manual terminal control all live here."
+                >
+                  {selectedSessionId === null ? (
+                    <Text size="sm" c="dimmed">
+                      Session details are not available yet.
+                    </Text>
+                  ) : sessionQuery.isPending || sessionLogsQuery.isPending ? (
+                    <Loader size="sm" />
+                  ) : sessionQuery.isError ? (
+                    <Text size="sm" c="red">
+                      {sessionQuery.error.message}
+                    </Text>
+                  ) : session ? (
+                    <Stack gap="md">
+                      <Group justify="space-between" align="flex-start">
+                        <Stack gap={4}>
+                          <Text className="rail-kicker">Execution</Text>
+                          <Text fw={700}>
+                            {selectedSessionTicket
+                              ? `#${selectedSessionTicket.id} ${selectedSessionTicket.title}`
+                              : `Ticket #${session.ticket_id}`}
                           </Text>
-                        ) : null}
-                        {requestChangesMutation.isError ? (
-                          <Text size="sm" c="red">
-                            {requestChangesMutation.error.message}
+                        </Stack>
+                        <Badge
+                          variant="light"
+                          color={sessionStatusColor(session.status)}
+                        >
+                          {session.status}
+                        </Badge>
+                      </Group>
+
+                      <Box className="detail-meta-grid">
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Session
                           </Text>
-                        ) : null}
-                        <Textarea
-                          label="Requested changes"
-                          placeholder="Ask Codex to adjust the current review before you approve it."
-                          value={requestedChangesBody}
-                          onChange={(event) => setRequestedChangesBody(event.currentTarget.value)}
-                          minRows={3}
-                        />
+                          <Text fw={700}>{session.id}</Text>
+                        </Box>
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Planning
+                          </Text>
+                          <Text fw={700}>
+                            {session.planning_enabled ? "Enabled" : "Disabled"}
+                          </Text>
+                        </Box>
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Branch
+                          </Text>
+                          <Text fw={700}>
+                            {selectedSessionTicket?.working_branch ?? "Pending"}
+                          </Text>
+                        </Box>
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Worktree
+                          </Text>
+                          <Text className="inline-code">
+                            {session.worktree_path ?? "Pending"}
+                          </Text>
+                        </Box>
+                      </Box>
+
+                      {selectedSessionTicket ? (
                         <Group justify="space-between">
+                          <Group gap="xs">
+                            {selectedSessionTicket.status === "in_progress" &&
+                            session.worktree_path &&
+                            session.status !== "paused_user_control" ? (
+                              <Button
+                                variant="light"
+                                size="xs"
+                                loading={
+                                  terminalTakeoverMutation.isPending &&
+                                  terminalTakeoverMutation.variables ===
+                                    session.id
+                                }
+                                onClick={() =>
+                                  terminalTakeoverMutation.mutate(session.id)
+                                }
+                              >
+                                Take Over Terminal
+                              </Button>
+                            ) : null}
+                            {selectedSessionTicket.status === "in_progress" &&
+                            selectedSessionTicketSession &&
+                            isStoppableSessionStatus(
+                              selectedSessionTicketSession.status,
+                            ) ? (
+                              <Button
+                                color="orange"
+                                variant="light"
+                                size="xs"
+                                loading={
+                                  stopTicketMutation.isPending &&
+                                  stopTicketMutation.variables?.ticketId ===
+                                    selectedSessionTicket.id
+                                }
+                                onClick={() =>
+                                  stopTicketMutation.mutate({
+                                    ticketId: selectedSessionTicket.id,
+                                  })
+                                }
+                              >
+                                Stop Ticket
+                              </Button>
+                            ) : null}
+                          </Group>
                           <Button
-                            variant="light"
+                            color="red"
+                            variant="subtle"
+                            size="xs"
                             loading={
-                              requestChangesMutation.isPending &&
-                              requestChangesMutation.variables?.ticketId ===
+                              deleteTicketMutation.isPending &&
+                              deleteTicketMutation.variables?.ticketId ===
                                 selectedSessionTicket.id
                             }
-                            disabled={requestedChangesBody.trim().length === 0}
-                            onClick={() =>
-                              requestChangesMutation.mutate({
-                                ticketId: selectedSessionTicket.id,
-                                body: requestedChangesBody
-                              })
-                            }
+                            onClick={() => deleteTicket(selectedSessionTicket)}
                           >
-                            Request Changes
-                          </Button>
-                          <Button
-                            loading={
-                              mergeTicketMutation.isPending &&
-                              mergeTicketMutation.variables === selectedSessionTicket.id
-                            }
-                            onClick={() => mergeTicketMutation.mutate(selectedSessionTicket.id)}
-                          >
-                            Merge to {selectedSessionTicket.target_branch}
+                            Delete Ticket
                           </Button>
                         </Group>
-                      </Stack>
-                    ) : null
-                  ) : null}
+                      ) : null}
 
-                  <SessionActivityFeed logs={sessionLogs} session={session} />
+                      {stopTicketMutation.isError ? (
+                        <Text size="sm" c="red">
+                          {stopTicketMutation.error.message}
+                        </Text>
+                      ) : null}
+                      {terminalTakeoverMutation.isError ? (
+                        <Text size="sm" c="red">
+                          {terminalTakeoverMutation.error.message}
+                        </Text>
+                      ) : null}
+                      {deleteTicketMutation.isError ? (
+                        <Text size="sm" c="red">
+                          {deleteTicketMutation.error.message}
+                        </Text>
+                      ) : null}
 
-                  {session.worktree_path ? (
-                    <SessionTerminalPanel
-                      session={session}
-                      logs={sessionLogs}
-                      command={terminalCommand}
-                      onCommandChange={setTerminalCommand}
-                      onSendCommand={() => {
-                        if (!selectedSessionId) {
-                          return;
-                        }
-
-                        terminalInputMutation.mutate({
-                          sessionId: selectedSessionId,
-                          body: terminalCommand
-                        });
-                      }}
-                      onRestoreAgent={() => terminalRestoreMutation.mutate(session.id)}
-                      sendLoading={terminalInputMutation.isPending}
-                      restoreLoading={terminalRestoreMutation.isPending}
-                      error={
-                        terminalInputMutation.isError
-                          ? terminalInputMutation.error.message
-                          : terminalRestoreMutation.isError
-                            ? terminalRestoreMutation.error.message
-                            : null
-                      }
-                    />
-                  ) : null}
-
-                  {selectedSessionTicket &&
-                  ["awaiting_input", "failed", "interrupted", "paused_checkpoint"].includes(
-                    session.status
-                  ) ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        resumeTicketMutation.mutate({
-                          ticketId: selectedSessionTicket.id,
-                          reason: resumeReason
-                        });
-                      }}
-                    >
-                      <Stack gap="sm">
-                        <Textarea
-                          id="resume-reason"
-                          name="resumeReason"
-                          label="Resume guidance"
-                          placeholder="Optional. Clarify what Codex should address on the next attempt."
-                          value={resumeReason}
-                          onChange={(event) => setResumeReason(event.currentTarget.value)}
-                          minRows={3}
-                        />
-                        {resumeTicketMutation.isError ? (
-                          <Text size="sm" c="red">
-                            {resumeTicketMutation.error.message}
-                          </Text>
-                        ) : null}
-                        <Group justify="space-between">
-                          <Button
-                            variant="subtle"
-                            type="button"
-                            onClick={() => {
-                              if (!selectedSessionId) {
-                                return;
+                      {selectedSessionTicket?.status === "review" ? (
+                        reviewPackageQuery.isPending ? (
+                          <Loader size="sm" />
+                        ) : reviewPackage ? (
+                          <Stack gap="sm">
+                            <Text fw={700}>Review package</Text>
+                            <Text size="sm" c="dimmed">
+                              Diff artifact:{" "}
+                              <Code>{reviewPackage.diff_ref}</Code>
+                            </Text>
+                            <Text size="sm" c="dimmed">
+                              Validation results:{" "}
+                              {reviewPackage.validation_results.length}
+                            </Text>
+                            {reviewPackage.validation_results.length > 0 ? (
+                              <List size="sm" spacing={4}>
+                                {reviewPackage.validation_results.map(
+                                  (result) => (
+                                    <List.Item key={result.command_id}>
+                                      {result.label}: {result.status}
+                                    </List.Item>
+                                  ),
+                                )}
+                              </List>
+                            ) : null}
+                            {mergeTicketMutation.isError ? (
+                              <Text size="sm" c="red">
+                                {mergeTicketMutation.error.message}
+                              </Text>
+                            ) : null}
+                            {requestChangesMutation.isError ? (
+                              <Text size="sm" c="red">
+                                {requestChangesMutation.error.message}
+                              </Text>
+                            ) : null}
+                            <Textarea
+                              label="Requested changes"
+                              placeholder="Ask Codex to adjust the current review before you approve it."
+                              value={requestedChangesBody}
+                              onChange={(event) =>
+                                setRequestedChangesBody(
+                                  event.currentTarget.value,
+                                )
                               }
+                              minRows={3}
+                            />
+                            <Group justify="space-between">
+                              <Button
+                                variant="light"
+                                loading={
+                                  requestChangesMutation.isPending &&
+                                  requestChangesMutation.variables?.ticketId ===
+                                    selectedSessionTicket.id
+                                }
+                                disabled={
+                                  requestedChangesBody.trim().length === 0
+                                }
+                                onClick={() =>
+                                  requestChangesMutation.mutate({
+                                    ticketId: selectedSessionTicket.id,
+                                    body: requestedChangesBody,
+                                  })
+                                }
+                              >
+                                Request Changes
+                              </Button>
+                              <Button
+                                loading={
+                                  mergeTicketMutation.isPending &&
+                                  mergeTicketMutation.variables ===
+                                    selectedSessionTicket.id
+                                }
+                                onClick={() =>
+                                  mergeTicketMutation.mutate(
+                                    selectedSessionTicket.id,
+                                  )
+                                }
+                              >
+                                Merge to {selectedSessionTicket.target_branch}
+                              </Button>
+                            </Group>
+                          </Stack>
+                        ) : null
+                      ) : null}
 
-                              sessionInputMutation.mutate({
-                                sessionId: selectedSessionId,
-                                body: resumeReason || "Resume requested from the session view."
-                              });
-                            }}
-                            loading={sessionInputMutation.isPending}
-                          >
-                            Record Note Only
-                          </Button>
-                          <Button type="submit" loading={resumeTicketMutation.isPending}>
-                            Resume Execution
-                          </Button>
-                        </Group>
-                      </Stack>
-                    </form>
+                      <SessionActivityFeed
+                        logs={sessionLogs}
+                        session={session}
+                      />
+
+                      {session.worktree_path ? (
+                        <SessionTerminalPanel
+                          session={session}
+                          logs={sessionLogs}
+                          command={terminalCommand}
+                          onCommandChange={setTerminalCommand}
+                          onSendCommand={() => {
+                            if (!selectedSessionId) {
+                              return;
+                            }
+
+                            terminalInputMutation.mutate({
+                              sessionId: selectedSessionId,
+                              body: terminalCommand,
+                            });
+                          }}
+                          onRestoreAgent={() =>
+                            terminalRestoreMutation.mutate(session.id)
+                          }
+                          sendLoading={terminalInputMutation.isPending}
+                          restoreLoading={terminalRestoreMutation.isPending}
+                          error={
+                            terminalInputMutation.isError
+                              ? terminalInputMutation.error.message
+                              : terminalRestoreMutation.isError
+                                ? terminalRestoreMutation.error.message
+                                : null
+                          }
+                        />
+                      ) : null}
+
+                      {selectedSessionTicket &&
+                      [
+                        "awaiting_input",
+                        "failed",
+                        "interrupted",
+                        "paused_checkpoint",
+                      ].includes(session.status) ? (
+                        <form
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            resumeTicketMutation.mutate({
+                              ticketId: selectedSessionTicket.id,
+                              reason: resumeReason,
+                            });
+                          }}
+                        >
+                          <Stack gap="sm">
+                            <Textarea
+                              id="resume-reason"
+                              name="resumeReason"
+                              label="Resume guidance"
+                              placeholder="Optional. Clarify what Codex should address on the next attempt."
+                              value={resumeReason}
+                              onChange={(event) =>
+                                setResumeReason(event.currentTarget.value)
+                              }
+                              minRows={3}
+                            />
+                            {resumeTicketMutation.isError ? (
+                              <Text size="sm" c="red">
+                                {resumeTicketMutation.error.message}
+                              </Text>
+                            ) : null}
+                            <Group justify="space-between">
+                              <Button
+                                variant="subtle"
+                                type="button"
+                                onClick={() => {
+                                  if (!selectedSessionId) {
+                                    return;
+                                  }
+
+                                  sessionInputMutation.mutate({
+                                    sessionId: selectedSessionId,
+                                    body:
+                                      resumeReason ||
+                                      "Resume requested from the session view.",
+                                  });
+                                }}
+                                loading={sessionInputMutation.isPending}
+                              >
+                                Record Note Only
+                              </Button>
+                              <Button
+                                type="submit"
+                                loading={resumeTicketMutation.isPending}
+                              >
+                                Resume Execution
+                              </Button>
+                            </Group>
+                          </Stack>
+                        </form>
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          Use this panel when a session is waiting on you, or
+                          take over the project terminal above when direct
+                          control inside the worktree is faster than more
+                          prompting.
+                        </Text>
+                      )}
+                    </Stack>
                   ) : (
                     <Text size="sm" c="dimmed">
-                      Use this panel when a session is waiting on you, or take over the project
-                      terminal above when direct control inside the worktree is faster than more
-                      prompting.
+                      Session details are not available yet.
                     </Text>
                   )}
-                </Stack>
-                ) : (
-                  <Text size="sm" c="dimmed">
-                    Session details are not available yet.
-                  </Text>
-                )}
-              </SectionCard>
+                </SectionCard>
               ) : null}
             </Stack>
           </Box>
@@ -2480,7 +2759,7 @@ export function App() {
               validationCommands: validationCommandsText
                 .split("\n")
                 .map((line) => line.trim())
-                .filter(Boolean)
+                .filter(Boolean),
             });
           }}
         >
@@ -2521,7 +2800,9 @@ export function App() {
               label="Validation commands"
               placeholder={"npm run test\nnpm run lint"}
               value={validationCommandsText}
-              onChange={(event) => setValidationCommandsText(event.currentTarget.value)}
+              onChange={(event) =>
+                setValidationCommandsText(event.currentTarget.value)
+              }
               minRows={3}
             />
             {createProjectMutation.isError ? (

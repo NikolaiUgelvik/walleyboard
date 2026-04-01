@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import {
+  type ChildProcessWithoutNullStreams,
   execFileSync,
   spawn,
-  type ChildProcessWithoutNullStreams
 } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import readline from "node:readline";
-import { spawn as spawnPty, type IPty } from "node-pty";
 import { nanoid } from "nanoid";
+import { type IPty, spawn as spawnPty } from "node-pty";
 import { z } from "zod";
 
 import type {
@@ -18,11 +18,11 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
   ValidationCommand,
-  ValidationResult
+  ValidationResult,
 } from "@orchestrator/contracts";
 import { ticketTypeSchema } from "@orchestrator/contracts";
 
-import { makeProtocolEvent, type EventHub } from "./event-hub.js";
+import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import type { Store } from "./store.js";
 import { nowIso } from "./time.js";
 
@@ -43,7 +43,7 @@ type DraftAnalysisInput = {
   draft: DraftTicketState;
   project: Project;
   repository: RepositoryConfig;
-  instruction?: string;
+  instruction?: string | undefined;
 };
 
 type DraftAnalysisMode = "refine" | "questions";
@@ -61,7 +61,7 @@ const draftRefinementResultSchema = z.object({
   description_draft: z.string().min(1),
   proposed_ticket_type: ticketTypeSchema,
   proposed_acceptance_criteria: z.array(z.string().min(1)),
-  split_proposal_summary: z.string().nullable().optional()
+  split_proposal_summary: z.string().nullable().optional(),
 });
 
 const draftFeasibilityResultSchema = z.object({
@@ -70,7 +70,7 @@ const draftFeasibilityResultSchema = z.object({
   assumptions: z.array(z.string().min(1)).default([]),
   open_questions: z.array(z.string().min(1)).default([]),
   risks: z.array(z.string().min(1)).default([]),
-  suggested_draft_edits: z.array(z.string().min(1)).default([])
+  suggested_draft_edits: z.array(z.string().min(1)).default([]),
 });
 
 type DraftRefinementResult = z.infer<typeof draftRefinementResultSchema>;
@@ -92,19 +92,28 @@ function buildProcessEnv(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => {
       return typeof entry[1] === "string";
-    })
+    }),
   );
 }
 
 function runGit(repoPath: string, args: string[]): string {
   return execFileSync("git", ["-C", repoPath, ...args], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
 
-function writeReviewDiff(project: Project, ticketId: number, diff: string): string {
-  const reviewDir = join(process.cwd(), ".local", "review-packages", project.slug);
+function writeReviewDiff(
+  project: Project,
+  ticketId: number,
+  diff: string,
+): string {
+  const reviewDir = join(
+    process.cwd(),
+    ".local",
+    "review-packages",
+    project.slug,
+  );
   ensureDirectory(reviewDir);
   const diffPath = join(reviewDir, `ticket-${ticketId}.patch`);
   writeFileSync(diffPath, diff, "utf8");
@@ -114,21 +123,30 @@ function writeReviewDiff(project: Project, ticketId: number, diff: string): stri
 function buildValidationLogPath(
   project: Project,
   ticketId: number,
-  validationId: string
+  validationId: string,
 ): string {
   const validationDir = join(
     process.cwd(),
     ".local",
     "validation-logs",
     project.slug,
-    `ticket-${ticketId}`
+    `ticket-${ticketId}`,
   );
   ensureDirectory(validationDir);
   return join(validationDir, `${validationId}.log`);
 }
 
-function buildOutputSummaryPath(project: Project, ticketId: number, sessionId: string): string {
-  const summaryDir = join(process.cwd(), ".local", "codex-summaries", project.slug);
+function buildOutputSummaryPath(
+  project: Project,
+  ticketId: number,
+  sessionId: string,
+): string {
+  const summaryDir = join(
+    process.cwd(),
+    ".local",
+    "codex-summaries",
+    project.slug,
+  );
   ensureDirectory(summaryDir);
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
@@ -137,9 +155,14 @@ function buildDraftAnalysisOutputPath(
   project: Project,
   draftId: string,
   runId: string,
-  mode: DraftAnalysisMode
+  mode: DraftAnalysisMode,
 ): string {
-  const analysisDir = join(process.cwd(), ".local", "draft-analyses", project.slug);
+  const analysisDir = join(
+    process.cwd(),
+    ".local",
+    "draft-analyses",
+    project.slug,
+  );
   ensureDirectory(analysisDir);
   return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
 }
@@ -148,11 +171,13 @@ function buildCodexPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
   planningEnabled: boolean,
-  extraInstructions: string[]
+  extraInstructions: string[],
 ): string {
   const acceptanceCriteria =
     ticket.acceptance_criteria.length > 0
-      ? ticket.acceptance_criteria.map((criterion) => `- ${criterion}`).join("\n")
+      ? ticket.acceptance_criteria
+          .map((criterion) => `- ${criterion}`)
+          .join("\n")
       : "- Preserve the intended user workflow and keep the change small and focused.";
 
   const sections = [
@@ -169,7 +194,7 @@ function buildCodexPrompt(
     "- Stay inside this repository worktree.",
     "- Run lightweight validation when it is obvious and inexpensive.",
     "- Create a git commit before finishing if you made code changes.",
-    "- End with a concise summary that includes changed files, validation run, and remaining risks."
+    "- End with a concise summary that includes changed files, validation run, and remaining risks.",
   ];
 
   if (planningEnabled) {
@@ -177,15 +202,15 @@ function buildCodexPrompt(
       "",
       "Planning mode:",
       "- Start by outlining a concise implementation plan before you make code changes.",
-      "- After the plan is clear, carry it out in the same run and keep the final answer concise."
+      "- After the plan is clear, carry it out in the same run and keep the final answer concise.",
     );
   }
 
   if (extraInstructions.length > 0) {
     sections.push("", "Additional context:");
-    extraInstructions.forEach((instruction) => {
+    for (const instruction of extraInstructions) {
       sections.push(`- ${instruction}`);
-    });
+    }
   }
 
   return sections.join("\n");
@@ -194,7 +219,7 @@ function buildCodexPrompt(
 function buildDraftRefinementPrompt(
   draft: DraftTicketState,
   repository: RepositoryConfig,
-  instruction?: string
+  instruction?: string,
 ): string {
   const sections = [
     `Review the draft ticket inside repository ${repository.name}.`,
@@ -216,7 +241,7 @@ function buildDraftRefinementPrompt(
     "Requirements:",
     "- Keep the draft focused and implementable as a single MVP ticket.",
     "- Make acceptance criteria concrete, testable, and concise.",
-    "- Prefer the smallest forward-moving scope that still delivers value."
+    "- Prefer the smallest forward-moving scope that still delivers value.",
   ];
 
   if (instruction && instruction.trim().length > 0) {
@@ -229,7 +254,7 @@ function buildDraftRefinementPrompt(
 function buildDraftQuestionsPrompt(
   draft: DraftTicketState,
   repository: RepositoryConfig,
-  instruction?: string
+  instruction?: string,
 ): string {
   const sections = [
     `Assess feasibility for the draft ticket inside repository ${repository.name}.`,
@@ -251,7 +276,7 @@ function buildDraftQuestionsPrompt(
     "Requirements:",
     "- Focus on whether the draft is feasible and correctly scoped for this repository.",
     "- Call out missing information, risky assumptions, and likely blockers.",
-    "- Keep suggested edits concrete and short."
+    "- Keep suggested edits concrete and short.",
   ];
 
   if (instruction && instruction.trim().length > 0) {
@@ -269,7 +294,12 @@ function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
 
   const candidates = [trimmed];
   if (trimmed.startsWith("```")) {
-    candidates.push(trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim());
+    candidates.push(
+      trimmed
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```$/i, "")
+        .trim(),
+    );
   }
 
   for (const candidate of candidates) {
@@ -284,7 +314,10 @@ function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
 }
 
 function summarizeDraftRefinement(result: DraftRefinementResult): string {
-  if (result.split_proposal_summary && result.split_proposal_summary.trim().length > 0) {
+  if (
+    result.split_proposal_summary &&
+    result.split_proposal_summary.trim().length > 0
+  ) {
     return truncate(result.split_proposal_summary.trim(), 240);
   }
 
@@ -298,9 +331,12 @@ function summarizeDraftQuestions(result: DraftFeasibilityResult): string {
 function formatDraftAnalysisExitReason(
   exitCode: number | null,
   signal: NodeJS.Signals | null,
-  rawOutput: string
+  rawOutput: string,
 ): string {
-  const summary = rawOutput.trim().length > 0 ? ` Final output: ${truncate(rawOutput.trim(), 240)}` : "";
+  const summary =
+    rawOutput.trim().length > 0
+      ? ` Final output: ${truncate(rawOutput.trim(), 240)}`
+      : "";
   return `Codex exited with ${exitCode === null ? "unknown code" : `code ${exitCode}`}${
     signal ? ` and signal ${signal}` : ""
   }.${summary}`;
@@ -336,11 +372,11 @@ function summarizeCodexJsonLine(line: string): string {
 
 function streamLines(
   stream: NodeJS.ReadableStream,
-  onLine: (line: string) => void
+  onLine: (line: string) => void,
 ): void {
   const lineReader = readline.createInterface({
     input: stream,
-    crlfDelay: Number.POSITIVE_INFINITY
+    crlfDelay: Number.POSITIVE_INFINITY,
   });
 
   lineReader.on("line", onLine);
@@ -349,7 +385,7 @@ function streamLines(
 function resolveValidationWorkingDirectory(
   command: ValidationCommand,
   repository: RepositoryConfig,
-  worktreePath: string
+  worktreePath: string,
 ): string {
   if (command.working_directory === repository.path) {
     return worktreePath;
@@ -377,7 +413,10 @@ export class ExecutionRuntime {
   readonly #stoppingSessions = new Map<string, string>();
   readonly #stoppingManualTerminals = new Map<string, string>();
   readonly #exitWaiters = new Map<string, Set<(didExit: boolean) => void>>();
-  readonly #manualExitWaiters = new Map<string, Set<(didExit: boolean) => void>>();
+  readonly #manualExitWaiters = new Map<
+    string,
+    Set<(didExit: boolean) => void>
+  >();
 
   constructor({ eventHub, store }: ExecutionRuntimeOptions) {
     this.#eventHub = eventHub;
@@ -387,7 +426,7 @@ export class ExecutionRuntime {
   async stopExecution(
     sessionId: string,
     reason = "Execution stopped by user.",
-    timeoutMs = 1_500
+    timeoutMs = 1_500,
   ): Promise<boolean> {
     const child = this.#activeSessions.get(sessionId);
     if (!child) {
@@ -397,7 +436,10 @@ export class ExecutionRuntime {
     this.#stoppingSessions.set(sessionId, reason);
     child.kill("SIGTERM");
 
-    const exitedAfterTerm = await this.#waitForSessionExit(sessionId, timeoutMs);
+    const exitedAfterTerm = await this.#waitForSessionExit(
+      sessionId,
+      timeoutMs,
+    );
     if (exitedAfterTerm) {
       return true;
     }
@@ -422,14 +464,14 @@ export class ExecutionRuntime {
     draft,
     project,
     repository,
-    instruction
+    instruction,
   }: DraftAnalysisInput): void {
     this.#startDraftAnalysis({
       mode: "refine",
       draft,
       project,
       repository,
-      instruction
+      instruction,
     });
   }
 
@@ -437,21 +479,21 @@ export class ExecutionRuntime {
     draft,
     project,
     repository,
-    instruction
+    instruction,
   }: DraftAnalysisInput): void {
     this.#startDraftAnalysis({
       mode: "questions",
       draft,
       project,
       repository,
-      instruction
+      instruction,
     });
   }
 
   startManualTerminal({
     sessionId,
     worktreePath,
-    attemptId
+    attemptId,
   }: ManualTerminalStartInput): void {
     if (this.#manualTerminals.has(sessionId)) {
       return;
@@ -464,25 +506,33 @@ export class ExecutionRuntime {
         cwd: worktreePath,
         env: {
           ...buildProcessEnv(),
-          TERM: "dumb"
+          TERM: "dumb",
         },
         cols: 120,
         rows: 32,
-        name: "xterm-256color"
+        name: "xterm-256color",
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Manual terminal failed to start";
+        error instanceof Error
+          ? error.message
+          : "Manual terminal failed to start";
       throw new Error(message);
     }
 
     const logAttemptId =
-      attemptId ?? this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
+      attemptId ??
+      this.#store.getSession(sessionId)?.current_attempt_id ??
+      sessionId;
     this.#manualTerminals.set(sessionId, {
       pty: child,
-      attemptId
+      attemptId,
     });
-    this.#log(sessionId, logAttemptId, `Manual terminal opened in ${worktreePath}`);
+    this.#log(
+      sessionId,
+      logAttemptId,
+      `Manual terminal opened in ${worktreePath}`,
+    );
 
     let pendingBuffer = "";
 
@@ -501,7 +551,11 @@ export class ExecutionRuntime {
 
     child.onExit(() => {
       if (pendingBuffer.trim().length > 0) {
-        this.#log(sessionId, logAttemptId, `[terminal] ${pendingBuffer.trim()}`);
+        this.#log(
+          sessionId,
+          logAttemptId,
+          `[terminal] ${pendingBuffer.trim()}`,
+        );
         pendingBuffer = "";
       }
 
@@ -512,7 +566,10 @@ export class ExecutionRuntime {
     });
   }
 
-  async stopManualTerminal(sessionId: string, timeoutMs = 1_500): Promise<boolean> {
+  async stopManualTerminal(
+    sessionId: string,
+    timeoutMs = 1_500,
+  ): Promise<boolean> {
     const terminal = this.#manualTerminals.get(sessionId);
     if (!terminal) {
       return false;
@@ -521,7 +578,10 @@ export class ExecutionRuntime {
     this.#stoppingManualTerminals.set(sessionId, "terminal_restore");
     terminal.pty.kill("SIGTERM");
 
-    const exitedAfterTerm = await this.#waitForManualTerminalExit(sessionId, timeoutMs);
+    const exitedAfterTerm = await this.#waitForManualTerminalExit(
+      sessionId,
+      timeoutMs,
+    );
     if (exitedAfterTerm) {
       return true;
     }
@@ -541,8 +601,10 @@ export class ExecutionRuntime {
       manualTerminal.pty.write(`${normalizedBody}\r`);
       this.#log(
         sessionId,
-        manualTerminal.attemptId ?? this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId,
-        `[terminal input] ${normalizedBody}`
+        manualTerminal.attemptId ??
+          this.#store.getSession(sessionId)?.current_attempt_id ??
+          sessionId,
+        `[terminal input] ${normalizedBody}`,
       );
       return "terminal";
     }
@@ -552,10 +614,11 @@ export class ExecutionRuntime {
       return null;
     }
 
-    const attemptId = this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
+    const attemptId =
+      this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
     agentSession.write(`${normalizedBody}\r`);
     this.#log(sessionId, attemptId, `[agent input] ${normalizedBody}`);
-      return "agent";
+    return "agent";
   }
 
   #startDraftAnalysis({
@@ -563,39 +626,48 @@ export class ExecutionRuntime {
     draft,
     project,
     repository,
-    instruction
+    instruction,
   }: DraftAnalysisInput & { mode: DraftAnalysisMode }): void {
     if (this.#activeDraftRuns.has(draft.id)) {
       throw new Error("Draft analysis already running");
     }
 
     const runId = nanoid();
-    const startedEvent = this.#store.recordDraftEvent(draft.id, `draft.${mode}.started`, {
-      run_id: runId,
-      operation: mode,
-      status: "started",
-      repository_id: repository.id,
-      repository_name: repository.name,
-      instruction: instruction?.trim() ?? null,
-      summary:
-        mode === "refine"
-          ? `Codex is refining this draft in ${repository.name}.`
-          : `Codex is checking draft feasibility in ${repository.name}.`
-    });
+    const startedEvent = this.#store.recordDraftEvent(
+      draft.id,
+      `draft.${mode}.started`,
+      {
+        run_id: runId,
+        operation: mode,
+        status: "started",
+        repository_id: repository.id,
+        repository_name: repository.name,
+        instruction: instruction?.trim() ?? null,
+        summary:
+          mode === "refine"
+            ? `Codex is refining this draft in ${repository.name}.`
+            : `Codex is checking draft feasibility in ${repository.name}.`,
+      },
+    );
     this.#emitStructuredEvent(startedEvent);
 
     const prompt =
       mode === "refine"
         ? buildDraftRefinementPrompt(draft, repository, instruction)
         : buildDraftQuestionsPrompt(draft, repository, instruction);
-    const outputPath = buildDraftAnalysisOutputPath(project, draft.id, runId, mode);
+    const outputPath = buildDraftAnalysisOutputPath(
+      project,
+      draft.id,
+      runId,
+      mode,
+    );
     const child = spawn(
       "codex",
       ["exec", "--json", "--output-last-message", outputPath, prompt],
       {
         cwd: repository.path,
-        env: buildProcessEnv()
-      }
+        env: buildProcessEnv(),
+      },
     );
 
     this.#activeDraftRuns.set(draft.id, child);
@@ -628,16 +700,20 @@ export class ExecutionRuntime {
 
       finalized = true;
       this.#activeDraftRuns.delete(draft.id);
-      const failedEvent = this.#store.recordDraftEvent(draft.id, `draft.${mode}.failed`, {
-        run_id: runId,
-        operation: mode,
-        status: "failed",
-        repository_id: repository.id,
-        repository_name: repository.name,
-        summary: reason,
-        error: reason,
-        captured_output: capturedOutput
-      });
+      const failedEvent = this.#store.recordDraftEvent(
+        draft.id,
+        `draft.${mode}.failed`,
+        {
+          run_id: runId,
+          operation: mode,
+          status: "failed",
+          repository_id: repository.id,
+          repository_name: repository.name,
+          summary: reason,
+          error: reason,
+          captured_output: capturedOutput,
+        },
+      );
       this.#emitStructuredEvent(failedEvent);
     };
 
@@ -652,7 +728,9 @@ export class ExecutionRuntime {
         return;
       }
 
-      const rawOutput = existsSync(outputPath) ? readFileSync(outputPath, "utf8").trim() : "";
+      const rawOutput = existsSync(outputPath)
+        ? readFileSync(outputPath, "utf8").trim()
+        : "";
 
       if (exitCode !== 0) {
         failRun(formatDraftAnalysisExitReason(exitCode, signal, rawOutput));
@@ -661,14 +739,17 @@ export class ExecutionRuntime {
 
       try {
         if (mode === "refine") {
-          const result = parseCodexJsonResult(rawOutput, draftRefinementResultSchema);
+          const result = parseCodexJsonResult(
+            rawOutput,
+            draftRefinementResultSchema,
+          );
           const updatedDraft = this.#store.updateDraft(draft.id, {
             title_draft: result.title_draft,
             description_draft: result.description_draft,
             proposed_ticket_type: result.proposed_ticket_type,
             proposed_acceptance_criteria: result.proposed_acceptance_criteria,
             split_proposal_summary: result.split_proposal_summary ?? null,
-            wizard_status: "awaiting_confirmation"
+            wizard_status: "awaiting_confirmation",
           });
 
           finalized = true;
@@ -683,15 +764,18 @@ export class ExecutionRuntime {
               repository_id: repository.id,
               repository_name: repository.name,
               summary: summarizeDraftRefinement(result),
-              result
-            }
+              result,
+            },
           );
           this.#emitStructuredEvent(completedEvent);
           this.#emitDraftUpdated(updatedDraft);
           return;
         }
 
-        const result = parseCodexJsonResult(rawOutput, draftFeasibilityResultSchema);
+        const result = parseCodexJsonResult(
+          rawOutput,
+          draftFeasibilityResultSchema,
+        );
         finalized = true;
         this.#activeDraftRuns.delete(draft.id);
         const completedEvent = this.#store.recordDraftEvent(
@@ -704,13 +788,15 @@ export class ExecutionRuntime {
             repository_id: repository.id,
             repository_name: repository.name,
             summary: summarizeDraftQuestions(result),
-            result
-          }
+            result,
+          },
         );
         this.#emitStructuredEvent(completedEvent);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Unable to process Codex output";
+          error instanceof Error
+            ? error.message
+            : "Unable to process Codex output";
         failRun(message);
       }
     });
@@ -721,7 +807,7 @@ export class ExecutionRuntime {
     repository,
     ticket,
     session,
-    additionalInstruction
+    additionalInstruction,
   }: StartExecutionInput): void {
     if (!session.worktree_path) {
       throw new Error("Execution session has no worktree path");
@@ -737,29 +823,39 @@ export class ExecutionRuntime {
 
     const extraInstructions: string[] = [];
     const requestedChangeNote = session.latest_requested_change_note_id
-      ? this.#store.getRequestedChangeNote(session.latest_requested_change_note_id)
+      ? this.#store.getRequestedChangeNote(
+          session.latest_requested_change_note_id,
+        )
       : undefined;
     if (requestedChangeNote) {
-      extraInstructions.push(`Address the latest requested changes: ${requestedChangeNote.body}`);
+      extraInstructions.push(
+        `Address the latest requested changes: ${requestedChangeNote.body}`,
+      );
     }
     if (additionalInstruction && additionalInstruction.trim().length > 0) {
-      extraInstructions.push(`Resume guidance: ${additionalInstruction.trim()}`);
+      extraInstructions.push(
+        `Resume guidance: ${additionalInstruction.trim()}`,
+      );
     }
 
     const prompt = buildCodexPrompt(
       ticket,
       repository,
       session.planning_enabled,
-      extraInstructions
+      extraInstructions,
     );
-    const outputSummaryPath = buildOutputSummaryPath(project, ticket.id, session.id);
+    const outputSummaryPath = buildOutputSummaryPath(
+      project,
+      ticket.id,
+      session.id,
+    );
     const args = [
       "exec",
       "--json",
       "--full-auto",
       "--output-last-message",
       outputSummaryPath,
-      prompt
+      prompt,
     ];
 
     const ptyEnv = buildProcessEnv();
@@ -771,7 +867,7 @@ export class ExecutionRuntime {
         env: ptyEnv,
         cols: 120,
         rows: 32,
-        name: "xterm-256color"
+        name: "xterm-256color",
       });
     } catch (error) {
       const message =
@@ -780,42 +876,50 @@ export class ExecutionRuntime {
         ticket,
         sessionId: session.id,
         attemptId,
-        reason: `Codex failed to start: ${message}`
+        reason: `Codex failed to start: ${message}`,
       });
       return;
     }
 
     this.#activeSessions.set(session.id, child);
     this.#store.updateExecutionAttempt(attemptId, {
-      pty_pid: child.pid ?? null
+      pty_pid: child.pid ?? null,
     });
     const runningSession = this.#store.updateSessionStatus(
       session.id,
       "running",
-      "Codex execution is running inside the prepared worktree."
+      "Codex execution is running inside the prepared worktree.",
     );
     this.#emitSessionUpdated(runningSession);
-    this.#log(session.id, attemptId, `Launching Codex in ${session.worktree_path}`);
-    this.#log(session.id, attemptId, `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`);
+    this.#log(
+      session.id,
+      attemptId,
+      `Launching Codex in ${session.worktree_path}`,
+    );
+    this.#log(
+      session.id,
+      attemptId,
+      `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
+    );
     if (session.planning_enabled) {
       this.#log(
         session.id,
         attemptId,
-        "Planning mode enabled: Codex will outline a plan before editing."
+        "Planning mode enabled: Codex will outline a plan before editing.",
       );
     }
     if (requestedChangeNote) {
       this.#log(
         session.id,
         attemptId,
-        `Latest requested changes: ${truncate(requestedChangeNote.body)}`
+        `Latest requested changes: ${truncate(requestedChangeNote.body)}`,
       );
     }
     if (additionalInstruction && additionalInstruction.trim().length > 0) {
       this.#log(
         session.id,
         attemptId,
-        `Resume guidance: ${truncate(additionalInstruction.trim())}`
+        `Resume guidance: ${truncate(additionalInstruction.trim())}`,
       );
     }
 
@@ -861,7 +965,7 @@ export class ExecutionRuntime {
           summary:
             finalSummary && finalSummary.length > 0
               ? finalSummary
-              : "Codex finished successfully, but no final summary was captured."
+              : "Codex finished successfully, but no final summary was captured.",
         });
         this.#resolveExitWaiters(session.id, true);
         return;
@@ -873,7 +977,7 @@ export class ExecutionRuntime {
         attemptId,
         reason: `Codex exited with ${exitCode === undefined ? "unknown code" : `code ${exitCode}`}${
           signal ? ` and signal ${signal}` : ""
-        }.${finalSummary ? ` Final summary: ${finalSummary}` : ""}`
+        }.${finalSummary ? ` Final summary: ${finalSummary}` : ""}`,
       });
       this.#resolveExitWaiters(session.id, true);
     });
@@ -912,12 +1016,15 @@ export class ExecutionRuntime {
     }
 
     this.#exitWaiters.delete(sessionId);
-    waiters.forEach((resolve) => {
+    for (const resolve of waiters) {
       resolve(didExit);
-    });
+    }
   }
 
-  #waitForManualTerminalExit(sessionId: string, timeoutMs: number): Promise<boolean> {
+  #waitForManualTerminalExit(
+    sessionId: string,
+    timeoutMs: number,
+  ): Promise<boolean> {
     if (!this.#manualTerminals.has(sessionId)) {
       return Promise.resolve(true);
     }
@@ -950,9 +1057,9 @@ export class ExecutionRuntime {
     }
 
     this.#manualExitWaiters.delete(sessionId);
-    waiters.forEach((resolve) => {
+    for (const resolve of waiters) {
       resolve(didExit);
-    });
+    }
   }
 
   #emitSessionUpdated(session: ExecutionSession | undefined): void {
@@ -962,8 +1069,8 @@ export class ExecutionRuntime {
 
     this.#eventHub.publish(
       makeProtocolEvent("session.updated", "session", session.id, {
-        session
-      })
+        session,
+      }),
     );
   }
 
@@ -974,8 +1081,8 @@ export class ExecutionRuntime {
 
     this.#eventHub.publish(
       makeProtocolEvent("draft.updated", "draft", draft.id, {
-        draft
-      })
+        draft,
+      }),
     );
   }
 
@@ -985,9 +1092,14 @@ export class ExecutionRuntime {
     }
 
     this.#eventHub.publish(
-      makeProtocolEvent("structured_event.created", event.entity_type, event.entity_id, {
-        structured_event: event
-      })
+      makeProtocolEvent(
+        "structured_event.created",
+        event.entity_type,
+        event.entity_id,
+        {
+          structured_event: event,
+        },
+      ),
     );
   }
 
@@ -998,8 +1110,8 @@ export class ExecutionRuntime {
 
     this.#eventHub.publish(
       makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
-        ticket
-      })
+        ticket,
+      }),
     );
   }
 
@@ -1010,8 +1122,8 @@ export class ExecutionRuntime {
         session_id: sessionId,
         attempt_id: attemptId,
         sequence,
-        chunk: line
-      })
+        chunk: line,
+      }),
     );
   }
 
@@ -1027,7 +1139,7 @@ export class ExecutionRuntime {
     this.#activeSessions.delete(input.sessionId);
     this.#store.updateExecutionAttempt(input.attemptId, {
       status: "completed",
-      end_reason: "completed"
+      end_reason: "completed",
     });
 
     const session = this.#store.getSession(input.sessionId);
@@ -1040,44 +1152,63 @@ export class ExecutionRuntime {
     let diffRef = "";
 
     try {
-      commitRefs = runGit(worktreePath, ["log", "--format=%H", `${input.targetBranch}..HEAD`])
+      commitRefs = runGit(worktreePath, [
+        "log",
+        "--format=%H",
+        `${input.targetBranch}..HEAD`,
+      ])
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
 
       if (commitRefs.length === 0) {
-        throw new Error("Codex finished without creating a commit on the working branch.");
+        throw new Error(
+          "Codex finished without creating a commit on the working branch.",
+        );
       }
 
-      const diff = runGit(worktreePath, ["diff", `${input.targetBranch}...HEAD`]);
+      const diff = runGit(worktreePath, [
+        "diff",
+        `${input.targetBranch}...HEAD`,
+      ]);
       diffRef = writeReviewDiff(input.project, input.ticketId, diff);
     } catch (error) {
       const reason =
-        error instanceof Error ? error.message : "Unable to collect review artifacts";
+        error instanceof Error
+          ? error.message
+          : "Unable to collect review artifacts";
+      const ticket = this.#store.getTicket(input.ticketId);
+      if (!ticket) {
+        throw new Error("Ticket not found while collecting review artifacts");
+      }
       this.#finishFailure({
-        ticket: this.#store.getTicket(input.ticketId)!,
+        ticket,
         sessionId: input.sessionId,
         attemptId: input.attemptId,
-        reason
+        reason,
       });
       return;
     }
 
-    const { results: validationResults, blockingFailure, remainingRisks } =
-      await this.#runValidationProfile({
-        project: input.project,
-        repository: input.repository,
-        ticketId: input.ticketId,
-        sessionId: input.sessionId,
-        attemptId: input.attemptId,
-        worktreePath
-      });
+    const {
+      results: validationResults,
+      blockingFailure,
+      remainingRisks,
+    } = await this.#runValidationProfile({
+      project: input.project,
+      repository: input.repository,
+      ticketId: input.ticketId,
+      sessionId: input.sessionId,
+      attemptId: input.attemptId,
+      worktreePath,
+    });
 
     if (blockingFailure) {
-      const summary = "Codex finished, but one or more required validation commands failed.";
+      const summary =
+        "Codex finished, but one or more required validation commands failed.";
       const failedSession = this.#store.completeSession(input.sessionId, {
         status: "failed",
-        last_summary: summary
+        last_summary: summary,
       });
       this.#log(input.sessionId, input.attemptId, summary);
       this.#emitSessionUpdated(failedSession);
@@ -1091,22 +1222,31 @@ export class ExecutionRuntime {
       commit_refs: commitRefs,
       change_summary: input.summary,
       validation_results: validationResults,
-      remaining_risks: remainingRisks
+      remaining_risks: remainingRisks,
     });
 
     const ticket = this.#store.updateTicketStatus(input.ticketId, "review");
     const completedSession = this.#store.completeSession(input.sessionId, {
       status: "completed",
       last_summary: input.summary,
-      latest_review_package_id: reviewPackage.id
+      latest_review_package_id: reviewPackage.id,
     });
 
     this.#log(input.sessionId, input.attemptId, "Codex finished successfully.");
-    this.#log(input.sessionId, input.attemptId, `Review package ready: ${reviewPackage.diff_ref}`);
+    this.#log(
+      input.sessionId,
+      input.attemptId,
+      `Review package ready: ${reviewPackage.diff_ref}`,
+    );
     this.#eventHub.publish(
-      makeProtocolEvent("review_package.generated", "review_package", reviewPackage.id, {
-        review_package: reviewPackage
-      })
+      makeProtocolEvent(
+        "review_package.generated",
+        "review_package",
+        reviewPackage.id,
+        {
+          review_package: reviewPackage,
+        },
+      ),
     );
     this.#emitTicketUpdated(ticket);
     this.#emitSessionUpdated(completedSession);
@@ -1128,7 +1268,9 @@ export class ExecutionRuntime {
       return {
         results: [],
         blockingFailure: false,
-        remainingRisks: ["No validation commands are configured for this repository."]
+        remainingRisks: [
+          "No validation commands are configured for this repository.",
+        ],
       };
     }
 
@@ -1140,20 +1282,20 @@ export class ExecutionRuntime {
       this.#log(
         input.sessionId,
         input.attemptId,
-        `Running validation: ${command.label} (${command.command})`
+        `Running validation: ${command.label} (${command.command})`,
       );
       const startedAt = nowIso();
       const workingDirectory = resolveValidationWorkingDirectory(
         command,
         input.repository,
-        input.worktreePath
+        input.worktreePath,
       );
       const logLines: string[] = [];
       const child = spawn(command.command, {
         cwd: workingDirectory,
         env: process.env,
         shell: command.shell,
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", "pipe", "pipe"],
       });
 
       const result = await new Promise<ValidationResult>((resolve) => {
@@ -1165,7 +1307,11 @@ export class ExecutionRuntime {
 
         streamLines(child.stdout, (line) => {
           logLines.push(line);
-          this.#log(input.sessionId, input.attemptId, `[validation ${command.label}] ${line}`);
+          this.#log(
+            input.sessionId,
+            input.attemptId,
+            `[validation ${command.label}] ${line}`,
+          );
         });
 
         streamLines(child.stderr, (line) => {
@@ -1173,14 +1319,18 @@ export class ExecutionRuntime {
           this.#log(
             input.sessionId,
             input.attemptId,
-            `[validation ${command.label} stderr] ${line}`
+            `[validation ${command.label} stderr] ${line}`,
           );
         });
 
         child.once("error", (error) => {
           clearTimeout(timeout);
           const endedAt = nowIso();
-          const logRef = buildValidationLogPath(input.project, input.ticketId, command.id);
+          const logRef = buildValidationLogPath(
+            input.project,
+            input.ticketId,
+            command.id,
+          );
           writeFileSync(logRef, logLines.join("\n"), "utf8");
           resolve({
             command_id: command.id,
@@ -1191,14 +1341,18 @@ export class ExecutionRuntime {
             exit_code: null,
             failure_overridden: false,
             summary: `Validation failed to start: ${error.message}`,
-            log_ref: logRef
+            log_ref: logRef,
           });
         });
 
         child.once("close", (code) => {
           clearTimeout(timeout);
           const endedAt = nowIso();
-          const logRef = buildValidationLogPath(input.project, input.ticketId, command.id);
+          const logRef = buildValidationLogPath(
+            input.project,
+            input.ticketId,
+            command.id,
+          );
           writeFileSync(logRef, logLines.join("\n"), "utf8");
           resolve({
             command_id: command.id,
@@ -1214,7 +1368,7 @@ export class ExecutionRuntime {
                 : timedOut
                   ? `${command.label} timed out after ${command.timeout_ms}ms.`
                   : `${command.label} failed with exit code ${code === null ? "unknown" : code}.`,
-            log_ref: logRef
+            log_ref: logRef,
           });
         });
       });
@@ -1223,8 +1377,8 @@ export class ExecutionRuntime {
       this.#eventHub.publish(
         makeProtocolEvent("validation.updated", "session", input.sessionId, {
           session_id: input.sessionId,
-          result
-        })
+          result,
+        }),
       );
 
       if (result.status === "failed") {
@@ -1239,7 +1393,7 @@ export class ExecutionRuntime {
     return {
       results,
       blockingFailure,
-      remainingRisks
+      remainingRisks,
     };
   }
 
@@ -1252,13 +1406,17 @@ export class ExecutionRuntime {
     this.#activeSessions.delete(input.sessionId);
     this.#store.updateExecutionAttempt(input.attemptId, {
       status: "failed",
-      end_reason: input.reason
+      end_reason: input.reason,
     });
     const failedSession = this.#store.completeSession(input.sessionId, {
       status: "failed",
-      last_summary: input.reason
+      last_summary: input.reason,
     });
-    this.#log(input.sessionId, input.attemptId, `[runtime failure] ${input.reason}`);
+    this.#log(
+      input.sessionId,
+      input.attemptId,
+      `[runtime failure] ${input.reason}`,
+    );
     this.#emitSessionUpdated(failedSession);
   }
 }

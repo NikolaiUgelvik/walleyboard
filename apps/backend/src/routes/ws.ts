@@ -6,10 +6,9 @@ type WebSocketRouteOptions = {
   eventHub: EventHub;
 };
 
-export const websocketRoutes: FastifyPluginAsync<WebSocketRouteOptions> = async (
-  app,
-  { eventHub }
-) => {
+export const websocketRoutes: FastifyPluginAsync<
+  WebSocketRouteOptions
+> = async (app, { eventHub }) => {
   app.get("/ws", { websocket: true }, (socket) => {
     const unsubscribe = eventHub.subscribe((event) => {
       socket.send(JSON.stringify(event));

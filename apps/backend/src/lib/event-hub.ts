@@ -1,4 +1,8 @@
-import type { EventEntityType, EventType, ProtocolEvent } from "@orchestrator/contracts";
+import type {
+  EventEntityType,
+  EventType,
+  ProtocolEvent,
+} from "@orchestrator/contracts";
 import { nanoid } from "nanoid";
 
 import { nowIso } from "./time.js";
@@ -27,7 +31,7 @@ export function makeProtocolEvent(
   eventType: EventType,
   entityType: EventEntityType,
   entityId: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): ProtocolEvent {
   return {
     event_id: nanoid(),
@@ -35,6 +39,6 @@ export function makeProtocolEvent(
     occurred_at: nowIso(),
     entity_type: entityType,
     entity_id: entityId,
-    payload
+    payload,
   };
 }

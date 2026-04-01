@@ -3,8 +3,8 @@ import type {
   CreateProjectInput,
   DraftTicketState,
   ExecutionAttempt,
-  ExecutionSessionStatus,
   ExecutionSession,
+  ExecutionSessionStatus,
   Project,
   RepositoryConfig,
   RequestedChangeNote,
@@ -13,7 +13,7 @@ import type {
   TicketFrontmatter,
   TicketType,
   UpdateDraftInput,
-  ValidationResult
+  ValidationResult,
 } from "@orchestrator/contracts";
 
 export type ConfirmDraftInput = {
@@ -104,7 +104,7 @@ export interface Store {
   recordDraftEvent(
     draftId: string,
     eventType: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): StructuredEvent;
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
   getTicket(ticketId: number): TicketFrontmatter | undefined;
@@ -112,7 +112,7 @@ export interface Store {
   startTicket(
     ticketId: number,
     planningEnabled: boolean,
-    runtime: PreparedExecutionRuntime
+    runtime: PreparedExecutionRuntime,
   ): StartTicketResult;
   stopTicket(ticketId: number, reason?: string): StopTicketResult;
   requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
@@ -121,19 +121,22 @@ export interface Store {
   updateSessionStatus(
     sessionId: string,
     status: ExecutionSessionStatus,
-    lastSummary?: string | null
+    lastSummary?: string | null,
   ): ExecutionSession | undefined;
-  completeSession(sessionId: string, input: CompleteSessionInput): ExecutionSession | undefined;
+  completeSession(
+    sessionId: string,
+    input: CompleteSessionInput,
+  ): ExecutionSession | undefined;
   appendSessionLog(sessionId: string, line: string): number;
   updateExecutionAttempt(
     attemptId: string,
-    input: UpdateExecutionAttemptInput
+    input: UpdateExecutionAttemptInput,
   ): ExecutionAttempt | undefined;
   createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
   recoverInterruptedSessions(): StartupRecoveryResult;
   updateTicketStatus(
     ticketId: number,
-    status: TicketFrontmatter["status"]
+    status: TicketFrontmatter["status"],
   ): TicketFrontmatter | undefined;
   listSessionAttempts(sessionId: string): ExecutionAttempt[];
   getSession(sessionId: string): ExecutionSession | undefined;
@@ -142,7 +145,7 @@ export interface Store {
   recordTicketEvent(
     ticketId: number,
     eventType: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): StructuredEvent;
   deleteTicket(ticketId: number): TicketFrontmatter | undefined;
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined;

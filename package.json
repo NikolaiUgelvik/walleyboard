@@ -12,6 +12,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",
+    "prepare": "husky",
     "dev:backend": "npm --workspace @orchestrator/backend run dev",
     "dev:web": "npm --workspace @orchestrator/web run dev",
     "db:generate": "drizzle-kit generate"
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "drizzle-kit": "^0.31.0",
+    "husky": "^9.1.7",
     "typescript": "^5.8.2"
   },
   "engines": {
