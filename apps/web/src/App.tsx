@@ -61,6 +61,7 @@ const boardColumns = [
   "review",
   "done",
 ] satisfies TicketFrontmatter["status"][];
+const lastOpenProjectStorageKey = "orchestrator:last-open-project-id";
 const stoppableSessionStatuses = [
   "queued",
   "running",
@@ -117,6 +118,36 @@ const reasoningEffortOptions = [
   { value: "high", label: "High" },
   { value: "xhigh", label: "Extra high" },
 ];
+
+function readLastOpenProjectId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const projectId = window.localStorage.getItem(lastOpenProjectStorageKey);
+    return projectId && projectId.length > 0 ? projectId : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastOpenProjectId(projectId: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    if (projectId === null) {
+      window.localStorage.removeItem(lastOpenProjectStorageKey);
+      return;
+    }
+
+    window.localStorage.setItem(lastOpenProjectStorageKey, projectId);
+  } catch {
+    // Ignore storage failures and keep the in-memory selection working.
+  }
+}
 
 type ProjectModelPreset =
   | "default"
@@ -1082,15 +1113,30 @@ export function App() {
   });
 
   useEffect(() => {
-    const firstProjectId = projectsQuery.data?.projects[0]?.id ?? null;
-    if (selectedProjectId === null) {
-      setSelectedProjectId(firstProjectId);
-      setArchiveModalOpen(false);
-      setArchiveActionFeedback(null);
+    if (projectsQuery.data === undefined) {
       return;
     }
 
-    const stillExists = projectsQuery.data?.projects.some(
+    const projects = projectsQuery.data.projects;
+    const firstProjectId = projects[0]?.id ?? null;
+    if (selectedProjectId === null) {
+      const storedProjectId = readLastOpenProjectId();
+      const initialProjectId =
+        storedProjectId !== null &&
+        projects.some((project) => project.id === storedProjectId)
+          ? storedProjectId
+          : firstProjectId;
+
+      if (initialProjectId !== null) {
+        setSelectedProjectId(initialProjectId);
+        setArchiveModalOpen(false);
+        setArchiveActionFeedback(null);
+      }
+
+      return;
+    }
+
+    const stillExists = projects.some(
       (project) => project.id === selectedProjectId,
     );
     if (!stillExists) {
@@ -1098,7 +1144,11 @@ export function App() {
       setArchiveModalOpen(false);
       setArchiveActionFeedback(null);
     }
-  }, [projectsQuery.data?.projects, selectedProjectId]);
+  }, [projectsQuery.data, selectedProjectId]);
+
+  useEffect(() => {
+    writeLastOpenProjectId(selectedProjectId);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (projectOptionsProjectId === null) {
