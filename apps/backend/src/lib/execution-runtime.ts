@@ -184,10 +184,34 @@ export class ExecutionRuntime {
   readonly #eventHub: EventHub;
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();
+  readonly #stoppingSessions = new Map<string, string>();
+  readonly #exitWaiters = new Map<string, Set<(didExit: boolean) => void>>();
 
   constructor({ eventHub, store }: ExecutionRuntimeOptions) {
     this.#eventHub = eventHub;
     this.#store = store;
+  }
+
+  async stopExecution(
+    sessionId: string,
+    reason = "Execution stopped by user.",
+    timeoutMs = 1_500
+  ): Promise<boolean> {
+    const child = this.#activeSessions.get(sessionId);
+    if (!child) {
+      return false;
+    }
+
+    this.#stoppingSessions.set(sessionId, reason);
+    child.kill("SIGTERM");
+
+    const exitedAfterTerm = await this.#waitForSessionExit(sessionId, timeoutMs);
+    if (exitedAfterTerm) {
+      return true;
+    }
+
+    child.kill("SIGKILL");
+    return this.#waitForSessionExit(sessionId, 1_000);
   }
 
   startExecution({
@@ -295,6 +319,14 @@ export class ExecutionRuntime {
     });
 
     child.onExit(async ({ exitCode, signal }) => {
+      const stopReason = this.#stoppingSessions.get(session.id);
+      if (stopReason) {
+        this.#stoppingSessions.delete(session.id);
+        this.#activeSessions.delete(session.id);
+        this.#resolveExitWaiters(session.id, true);
+        return;
+      }
+
       if (pendingBuffer.trim().length > 0) {
         this.#log(session.id, attemptId, summarizeCodexJsonLine(pendingBuffer));
         pendingBuffer = "";
@@ -305,7 +337,7 @@ export class ExecutionRuntime {
         : null;
 
       if (exitCode === 0) {
-        this.#finishSuccess({
+        await this.#finishSuccess({
           project,
           repository,
           ticketId: ticket.id,
@@ -317,6 +349,7 @@ export class ExecutionRuntime {
               ? finalSummary
               : "Codex finished successfully, but no final summary was captured."
         });
+        this.#resolveExitWaiters(session.id, true);
         return;
       }
 
@@ -328,6 +361,45 @@ export class ExecutionRuntime {
           signal ? ` and signal ${signal}` : ""
         }.${finalSummary ? ` Final summary: ${finalSummary}` : ""}`
       });
+      this.#resolveExitWaiters(session.id, true);
+    });
+  }
+
+  #waitForSessionExit(sessionId: string, timeoutMs: number): Promise<boolean> {
+    if (!this.#activeSessions.has(sessionId)) {
+      return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+      const resolver = (didExit: boolean) => {
+        clearTimeout(timeoutId);
+        const waiters = this.#exitWaiters.get(sessionId);
+        waiters?.delete(resolver);
+        if (waiters && waiters.size === 0) {
+          this.#exitWaiters.delete(sessionId);
+        }
+        resolve(didExit);
+      };
+
+      const waiters = this.#exitWaiters.get(sessionId) ?? new Set();
+      waiters.add(resolver);
+      this.#exitWaiters.set(sessionId, waiters);
+
+      const timeoutId = setTimeout(() => {
+        resolver(false);
+      }, timeoutMs);
+    });
+  }
+
+  #resolveExitWaiters(sessionId: string, didExit: boolean): void {
+    const waiters = this.#exitWaiters.get(sessionId);
+    if (!waiters) {
+      return;
+    }
+
+    this.#exitWaiters.delete(sessionId);
+    waiters.forEach((resolve) => {
+      resolve(didExit);
     });
   }
 

@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   requestChangesInputSchema,
   resumeTicketInputSchema,
+  stopTicketInputSchema,
   startTicketInputSchema
 } from "@orchestrator/contracts";
 
@@ -11,6 +12,7 @@ import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
+import { removeTicketArtifacts } from "../lib/ticket-artifacts.js";
 import {
   mergeReviewedBranch,
   prepareWorktree,
@@ -161,6 +163,73 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   );
 
   app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/stop",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const input = parseBody(reply, stopTicketInputSchema, request.body);
+      if (!input) {
+        return;
+      }
+
+      try {
+        const ticket = store.getTicket(ticketId);
+        if (!ticket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+        if (!ticket.session_id) {
+          reply.code(409).send({ error: "Ticket has no execution session" });
+          return;
+        }
+
+        await executionRuntime.stopExecution(
+          ticket.session_id,
+          input.reason ?? "Execution stopped by user."
+        );
+        const stopped = store.stopTicket(ticketId, input.reason);
+
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(stopped.ticket.id), {
+            ticket: stopped.ticket
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", stopped.session.id, {
+            session: stopped.session
+          })
+        );
+        stopped.logs.forEach((logLine, index) => {
+          eventHub.publish(
+            makeProtocolEvent("session.output", "session", stopped.session.id, {
+              session_id: stopped.session.id,
+              attempt_id: stopped.attempt?.id ?? stopped.session.current_attempt_id,
+              sequence:
+                store.getSessionLogs(stopped.session.id).length - stopped.logs.length + index,
+              chunk: logLine
+            })
+          );
+        });
+
+        reply.send(
+          makeCommandAck(true, "Ticket execution stopped", {
+            ticket_id: stopped.ticket.id,
+            session_id: stopped.session.id
+          })
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error: error instanceof Error ? error.message : "Unable to stop ticket"
+        });
+      }
+    }
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/resume",
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
@@ -233,6 +302,99 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           error: error instanceof Error ? error.message : "Unable to resume ticket"
         });
       }
+    }
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/delete",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+
+      const session = ticket.session_id ? store.getSession(ticket.session_id) : undefined;
+      const project = store.getProject(ticket.project);
+      const repository = store.getRepository(ticket.repo);
+      const cleanupWarnings: string[] = [];
+
+      if (session) {
+        try {
+          await executionRuntime.stopExecution(
+            session.id,
+            `Execution stopped because ticket #${ticket.id} was deleted.`
+          );
+        } catch (error) {
+          cleanupWarnings.push(
+            error instanceof Error ? error.message : "Unable to stop active execution"
+          );
+        }
+      }
+
+      if (repository && session?.worktree_path) {
+        try {
+          removePreparedWorktree(repository, session.worktree_path);
+        } catch (error) {
+          cleanupWarnings.push(
+            error instanceof Error ? error.message : "Unable to remove worktree"
+          );
+        }
+      }
+
+      if (repository && ticket.working_branch) {
+        try {
+          removeLocalBranch(repository, ticket.working_branch);
+        } catch (error) {
+          cleanupWarnings.push(
+            error instanceof Error ? error.message : "Unable to delete local branch"
+          );
+        }
+      }
+
+      if (project) {
+        try {
+          removeTicketArtifacts(project.slug, ticket.id, session?.id ?? ticket.session_id);
+        } catch (error) {
+          cleanupWarnings.push(
+            error instanceof Error ? error.message : "Unable to remove local ticket artifacts"
+          );
+        }
+      }
+
+      const deletedTicket = store.deleteTicket(ticketId);
+      if (!deletedTicket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+
+      eventHub.publish(
+        makeProtocolEvent("ticket.deleted", "ticket", String(ticketId), {
+          ticket_id: ticketId,
+          project_id: deletedTicket.project,
+          session_id: deletedTicket.session_id,
+          cleanup_warnings: cleanupWarnings
+        })
+      );
+
+      reply.send(
+        makeCommandAck(
+          true,
+          cleanupWarnings.length === 0
+            ? "Ticket deleted and local artifacts cleaned up"
+            : `Ticket deleted, but cleanup needs attention: ${cleanupWarnings.join(" | ")}`,
+          {
+            ticket_id: ticketId,
+            session_id: deletedTicket.session_id ?? undefined
+          }
+        )
+      );
     }
   );
 

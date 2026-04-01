@@ -50,7 +50,9 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - `POST /drafts/:draftId/refine`
 - `POST /drafts/:draftId/confirm`
 - `POST /tickets/:ticketId/start`
+- `POST /tickets/:ticketId/stop`
 - `POST /tickets/:ticketId/resume`
+- `POST /tickets/:ticketId/delete`
 - `POST /tickets/:ticketId/request-changes`
 - `POST /tickets/:ticketId/create-pr`
 - `POST /tickets/:ticketId/merge`
@@ -99,6 +101,13 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - attaching a requested-changes note to the same logical session
   - creating a new execution attempt on the same worktree and branch
   - relaunching Codex with persisted review feedback or resume guidance
+- In-progress tickets now support:
+  - an explicit stop action that interrupts the active attempt
+  - preserving the same worktree and working branch for manual resume
+- Ticket deletion now supports:
+  - stopping active execution before cleanup when needed
+  - removing the ticket from persisted board state
+  - deleting orchestrator-owned local artifacts such as worktrees, local branches, summaries, and validation directories
 - The frontend now surfaces in-app action cards for:
   - review-ready tickets
   - failed sessions

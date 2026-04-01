@@ -25,6 +25,7 @@ import type {
   CreateReviewPackageInput,
   PreparedExecutionRuntime,
   RestartTicketResult,
+  StopTicketResult,
   StartupRecoveryResult,
   StartTicketResult,
   Store
@@ -929,6 +930,85 @@ export class SqliteStore implements Store {
     };
   }
 
+  stopTicket(ticketId: number, reason?: string): StopTicketResult {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+    if (ticket.status !== "in_progress") {
+      throw new Error("Only in-progress tickets can be stopped");
+    }
+    if (!ticket.session_id) {
+      throw new Error("Ticket has no execution session");
+    }
+
+    const session = this.getSession(ticket.session_id);
+    if (!session) {
+      throw new Error("Execution session not found");
+    }
+    if (
+      !["queued", "running", "paused_checkpoint", "paused_user_control", "awaiting_input"].includes(
+        session.status
+      )
+    ) {
+      throw new Error(`Session cannot be stopped from status ${session.status}`);
+    }
+
+    const timestamp = nowIso();
+    const normalizedReason = reason?.trim();
+    const summary =
+      normalizedReason && normalizedReason.length > 0
+        ? `Execution stopped by user: ${normalizedReason}`
+        : "Execution was stopped by user and can be resumed from the existing worktree.";
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?, last_heartbeat_at = ?, last_summary = ?
+          WHERE id = ?
+        `
+      )
+      .run("interrupted", timestamp, summary, session.id);
+
+    const attempt = session.current_attempt_id
+      ? this.updateExecutionAttempt(session.current_attempt_id, {
+          status: "interrupted",
+          end_reason: "user_stop"
+        }) ?? null
+      : null;
+
+    const logs = [
+      normalizedReason && normalizedReason.length > 0
+        ? `Execution stopped by user: ${normalizedReason}`
+        : "Execution stopped by user.",
+      `Worktree preserved at: ${session.worktree_path ?? "unknown"}`,
+      `Working branch preserved: ${ticket.working_branch ?? "unknown"}`
+    ];
+
+    for (const line of logs) {
+      this.#appendSessionLog(session.id, line);
+    }
+
+    this.#recordStructuredEvent("session", session.id, "session.interrupted", {
+      ticket_id: ticketId,
+      reason: normalizedReason ?? null,
+      interruption_source: "user_stop"
+    });
+    this.#recordStructuredEvent("ticket", String(ticketId), "ticket.stopped", {
+      ticket_id: ticketId,
+      session_id: session.id,
+      reason: normalizedReason ?? null
+    });
+
+    return {
+      ticket: this.getTicket(ticketId)!,
+      session: this.getSession(session.id)!,
+      attempt,
+      logs
+    };
+  }
+
   requestTicketChanges(ticketId: number, body: string): RestartTicketResult {
     const ticket = this.getTicket(ticketId);
     if (!ticket) {
@@ -1433,6 +1513,79 @@ export class SqliteStore implements Store {
     payload: Record<string, unknown>
   ): StructuredEvent {
     return this.#recordStructuredEvent("ticket", String(ticketId), eventType, payload);
+  }
+
+  deleteTicket(ticketId: number): TicketFrontmatter | undefined {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      return undefined;
+    }
+
+    const reviewPackageRows = this.#db
+      .prepare("SELECT id FROM review_packages WHERE ticket_id = ?")
+      .all(ticketId) as Array<{ id: string }>;
+    const reviewPackageIds = reviewPackageRows.map((row) => row.id);
+
+    const sessionId = ticket.session_id;
+    const attemptRows =
+      sessionId === null
+        ? []
+        : (this.#db
+            .prepare("SELECT id FROM execution_attempts WHERE session_id = ?")
+            .all(sessionId) as Array<{ id: string }>);
+    const attemptIds = attemptRows.map((row) => row.id);
+
+    this.#db.prepare("DELETE FROM requested_change_notes WHERE ticket_id = ?").run(ticketId);
+    this.#db.prepare("DELETE FROM review_packages WHERE ticket_id = ?").run(ticketId);
+
+    if (sessionId) {
+      this.#db.prepare("DELETE FROM session_logs WHERE session_id = ?").run(sessionId);
+      this.#db.prepare("DELETE FROM execution_attempts WHERE session_id = ?").run(sessionId);
+      this.#db.prepare("DELETE FROM execution_sessions WHERE id = ?").run(sessionId);
+      this.#db
+        .prepare(
+          `
+            DELETE FROM structured_events
+            WHERE entity_type = 'session' AND entity_id = ?
+          `
+        )
+        .run(sessionId);
+    }
+
+    for (const reviewPackageId of reviewPackageIds) {
+      this.#db
+        .prepare(
+          `
+            DELETE FROM structured_events
+            WHERE entity_type = 'review_package' AND entity_id = ?
+          `
+        )
+        .run(reviewPackageId);
+    }
+
+    for (const attemptId of attemptIds) {
+      this.#db
+        .prepare(
+          `
+            DELETE FROM structured_events
+            WHERE entity_type = 'attempt' AND entity_id = ?
+          `
+        )
+        .run(attemptId);
+    }
+
+    this.#db
+      .prepare(
+        `
+          DELETE FROM structured_events
+          WHERE entity_type = 'ticket' AND entity_id = ?
+        `
+      )
+      .run(String(ticketId));
+
+    this.#db.prepare("DELETE FROM tickets WHERE id = ?").run(ticketId);
+
+    return ticket;
   }
 
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined {

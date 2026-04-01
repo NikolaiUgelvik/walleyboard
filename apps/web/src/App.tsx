@@ -44,6 +44,21 @@ const boardColumns = [
   "review",
   "done"
 ] satisfies TicketFrontmatter["status"][];
+const stoppableSessionStatuses = [
+  "queued",
+  "running",
+  "paused_checkpoint",
+  "paused_user_control",
+  "awaiting_input"
+] satisfies ExecutionSession["status"][];
+
+function isStoppableSessionStatus(
+  status: ExecutionSession["status"]
+): status is (typeof stoppableSessionStatuses)[number] {
+  return stoppableSessionStatuses.includes(
+    status as (typeof stoppableSessionStatuses)[number]
+  );
+}
 
 type HealthResponse = {
   ok: true;
@@ -307,6 +322,36 @@ export function App() {
         return;
       }
 
+      if (event.event_type === "ticket.deleted") {
+        const ticketId = event.payload.ticket_id as number | undefined;
+        const projectId = event.payload.project_id as string | undefined;
+        const deletedSessionId = event.payload.session_id as string | undefined;
+
+        if (ticketId === undefined || !projectId) {
+          return;
+        }
+
+        queryClient.setQueryData<TicketsResponse>(
+          ["projects", projectId, "tickets"],
+          (previous) => ({
+            tickets: (previous?.tickets ?? []).filter((ticket) => ticket.id !== ticketId)
+          })
+        );
+
+        if (deletedSessionId) {
+          queryClient.removeQueries({
+            queryKey: ["sessions", deletedSessionId]
+          });
+          queryClient.removeQueries({
+            queryKey: ["sessions", deletedSessionId, "logs"]
+          });
+          if (selectedSessionId === deletedSessionId) {
+            setSelectedSessionId(null);
+          }
+        }
+        return;
+      }
+
       if (event.event_type === "session.updated") {
         const session = event.payload.session as ExecutionSession | undefined;
         if (!session) {
@@ -527,6 +572,48 @@ export function App() {
     }
   });
 
+  const stopTicketMutation = useMutation({
+    mutationFn: (input: { ticketId: number; reason?: string }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/stop`, {
+        reason: input.reason && input.reason.trim().length > 0 ? input.reason : undefined
+      }),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", variables.ticketId, "review-package"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"]
+        })
+      ]);
+    }
+  });
+
+  const deleteTicketMutation = useMutation({
+    mutationFn: (input: { ticketId: number; sessionId?: string | null }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/delete`, {}),
+    onSuccess: async (_, variables) => {
+      if (variables.sessionId && selectedSessionId === variables.sessionId) {
+        setSelectedSessionId(null);
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        })
+      ]);
+    }
+  });
+
   const sessionInputMutation = useMutation({
     mutationFn: (input: { sessionId: string; body: string }) =>
       postJson<CommandAck>(`/sessions/${input.sessionId}/input`, {
@@ -685,6 +772,11 @@ export function App() {
     return [];
   });
 
+  const selectedSessionTicketSession =
+    selectedSessionTicket && selectedSessionTicket.session_id
+      ? sessionById.get(selectedSessionTicket.session_id) ?? session
+      : session;
+
   return (
     <Container size="xl" py="xl">
       <Stack gap="xl">
@@ -702,7 +794,9 @@ export function App() {
             Codex exec run in its prepared worktree and moves successful runs into
             local review. Review approval can now merge the branch back into the target
             branch and clean up local artifacts. Review feedback and failed runs can now
-            relaunch the same logical session as a new attempt. Session output now renders
+            relaunch the same logical session as a new attempt. In-progress tickets can now
+            be stopped without losing their branch or worktree, and tickets can be deleted
+            with cleanup of orchestrator-managed local artifacts. Session output now renders
             inside a terminal-style view, and backend restarts now recover active sessions
             into an explicit interrupted state. Full keyboard handoff remains the next major
             milestone.
@@ -750,6 +844,8 @@ export function App() {
                 <List.Item>Configurable validation commands that gate review handoff</List.Item>
                 <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
                 <List.Item>Request changes and resume flows that reuse the same session</List.Item>
+                <List.Item>Stop action that preserves the current worktree and branch for resume</List.Item>
+                <List.Item>Delete action that removes ticket metadata and local orchestrator artifacts</List.Item>
                 <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
                 <List.Item>Read-only terminal rendering for session output</List.Item>
                 <List.Item>Conservative restart recovery that preserves interrupted sessions</List.Item>
@@ -1117,6 +1213,66 @@ export function App() {
                       "No session summary is available yet."}
                   </Text>
 
+                  {selectedSessionTicket ? (
+                    <Group justify="space-between">
+                      {selectedSessionTicket.status === "in_progress" &&
+                      selectedSessionTicketSession &&
+                      isStoppableSessionStatus(selectedSessionTicketSession.status) ? (
+                        <Button
+                          color="orange"
+                          variant="light"
+                          loading={
+                            stopTicketMutation.isPending &&
+                            stopTicketMutation.variables?.ticketId === selectedSessionTicket.id
+                          }
+                          onClick={() =>
+                            stopTicketMutation.mutate({
+                              ticketId: selectedSessionTicket.id
+                            })
+                          }
+                        >
+                          Stop Ticket
+                        </Button>
+                      ) : (
+                        <span />
+                      )}
+                      <Button
+                        color="red"
+                        variant="light"
+                        loading={
+                          deleteTicketMutation.isPending &&
+                          deleteTicketMutation.variables?.ticketId === selectedSessionTicket.id
+                        }
+                        onClick={() => {
+                          const confirmed = window.confirm(
+                            `Delete ticket #${selectedSessionTicket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+                          );
+                          if (!confirmed) {
+                            return;
+                          }
+
+                          deleteTicketMutation.mutate({
+                            ticketId: selectedSessionTicket.id,
+                            sessionId: selectedSessionTicket.session_id
+                          });
+                        }}
+                      >
+                        Delete Ticket
+                      </Button>
+                    </Group>
+                  ) : null}
+
+                  {stopTicketMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {stopTicketMutation.error.message}
+                    </Text>
+                  ) : null}
+                  {deleteTicketMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {deleteTicketMutation.error.message}
+                    </Text>
+                  ) : null}
+
                   {selectedSessionTicket?.status === "review" ? (
                     reviewPackageQuery.isPending ? (
                       <Loader size="sm" />
@@ -1311,8 +1467,20 @@ export function App() {
                             description={`Type: ${ticket.ticket_type} | Target branch: ${ticket.target_branch}`}
                           >
                             <Text size="sm" c="dimmed">
-                              {ticket.description}
-                            </Text>
+                            {ticket.description}
+                          </Text>
+                          {(() => {
+                            const ticketSession =
+                              ticket.session_id !== null
+                                ? sessionById.get(ticket.session_id) ?? null
+                                : null;
+                            const canStop =
+                              ticket.status === "in_progress" &&
+                              ticketSession !== null &&
+                              isStoppableSessionStatus(ticketSession.status);
+
+                            return (
+                              <>
                             <Group justify="space-between" align="center">
                               <Badge variant="light">{ticket.status}</Badge>
                               <Text size="sm" c="dimmed">
@@ -1332,7 +1500,36 @@ export function App() {
                                     {startTicketMutation.error.message}
                                   </Text>
                                 ) : null}
-                                <Group justify="flex-end">
+                                {deleteTicketMutation.isError &&
+                                deleteTicketMutation.variables?.ticketId === ticket.id ? (
+                                  <Text size="sm" c="red">
+                                    {deleteTicketMutation.error.message}
+                                  </Text>
+                                ) : null}
+                                <Group justify="space-between">
+                                  <Button
+                                    color="red"
+                                    variant="subtle"
+                                    loading={
+                                      deleteTicketMutation.isPending &&
+                                      deleteTicketMutation.variables?.ticketId === ticket.id
+                                    }
+                                    onClick={() => {
+                                      const confirmed = window.confirm(
+                                        `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+                                      );
+                                      if (!confirmed) {
+                                        return;
+                                      }
+
+                                      deleteTicketMutation.mutate({
+                                        ticketId: ticket.id,
+                                        sessionId: ticket.session_id
+                                      });
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
                                   <Button
                                     loading={
                                       startTicketMutation.isPending &&
@@ -1351,6 +1548,12 @@ export function App() {
                                     {mergeTicketMutation.error.message}
                                   </Text>
                                 ) : null}
+                                {deleteTicketMutation.isError &&
+                                deleteTicketMutation.variables?.ticketId === ticket.id ? (
+                                  <Text size="sm" c="red">
+                                    {deleteTicketMutation.error.message}
+                                  </Text>
+                                ) : null}
                                 <Group justify="space-between">
                                   <Button
                                     variant="light"
@@ -1358,27 +1561,143 @@ export function App() {
                                   >
                                     View Review
                                   </Button>
-                                  <Button
-                                    loading={
-                                      mergeTicketMutation.isPending &&
-                                      mergeTicketMutation.variables === ticket.id
-                                    }
-                                    onClick={() => mergeTicketMutation.mutate(ticket.id)}
-                                  >
-                                    Merge
-                                  </Button>
+                                  <Group gap="xs">
+                                    <Button
+                                      color="red"
+                                      variant="subtle"
+                                      loading={
+                                        deleteTicketMutation.isPending &&
+                                        deleteTicketMutation.variables?.ticketId === ticket.id
+                                      }
+                                      onClick={() => {
+                                        const confirmed = window.confirm(
+                                          `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+                                        );
+                                        if (!confirmed) {
+                                          return;
+                                        }
+
+                                        deleteTicketMutation.mutate({
+                                          ticketId: ticket.id,
+                                          sessionId: ticket.session_id
+                                        });
+                                      }}
+                                    >
+                                      Delete
+                                    </Button>
+                                    <Button
+                                      loading={
+                                        mergeTicketMutation.isPending &&
+                                        mergeTicketMutation.variables === ticket.id
+                                      }
+                                      onClick={() => mergeTicketMutation.mutate(ticket.id)}
+                                    >
+                                      Merge
+                                    </Button>
+                                  </Group>
                                 </Group>
                               </>
                             ) : ticket.session_id ? (
-                              <Group justify="flex-end">
-                                <Button
-                                  variant="light"
-                                  onClick={() => setSelectedSessionId(ticket.session_id)}
-                                >
-                                  View Session
-                                </Button>
-                              </Group>
-                            ) : null}
+                              <>
+                                {(stopTicketMutation.isError &&
+                                  stopTicketMutation.variables?.ticketId === ticket.id) ||
+                                (deleteTicketMutation.isError &&
+                                  deleteTicketMutation.variables?.ticketId === ticket.id) ? (
+                                  <Text size="sm" c="red">
+                                    {stopTicketMutation.variables?.ticketId === ticket.id
+                                      ? stopTicketMutation.error?.message
+                                      : deleteTicketMutation.error?.message}
+                                  </Text>
+                                ) : null}
+                                <Group justify="space-between">
+                                  <Button
+                                    color="red"
+                                    variant="subtle"
+                                    loading={
+                                      deleteTicketMutation.isPending &&
+                                      deleteTicketMutation.variables?.ticketId === ticket.id
+                                    }
+                                    onClick={() => {
+                                      const confirmed = window.confirm(
+                                        `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+                                      );
+                                      if (!confirmed) {
+                                        return;
+                                      }
+
+                                      deleteTicketMutation.mutate({
+                                        ticketId: ticket.id,
+                                        sessionId: ticket.session_id
+                                      });
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                  <Group gap="xs">
+                                    {canStop ? (
+                                      <Button
+                                        color="orange"
+                                        variant="light"
+                                        loading={
+                                          stopTicketMutation.isPending &&
+                                          stopTicketMutation.variables?.ticketId === ticket.id
+                                        }
+                                        onClick={() =>
+                                          stopTicketMutation.mutate({
+                                            ticketId: ticket.id
+                                          })
+                                        }
+                                      >
+                                        Stop
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      variant="light"
+                                      onClick={() => setSelectedSessionId(ticket.session_id)}
+                                    >
+                                      View Session
+                                    </Button>
+                                  </Group>
+                                </Group>
+                              </>
+                            ) : (
+                              <>
+                                {deleteTicketMutation.isError &&
+                                deleteTicketMutation.variables?.ticketId === ticket.id ? (
+                                  <Text size="sm" c="red">
+                                    {deleteTicketMutation.error.message}
+                                  </Text>
+                                ) : null}
+                                <Group justify="flex-end">
+                                  <Button
+                                    color="red"
+                                    variant="subtle"
+                                    loading={
+                                      deleteTicketMutation.isPending &&
+                                      deleteTicketMutation.variables?.ticketId === ticket.id
+                                    }
+                                    onClick={() => {
+                                      const confirmed = window.confirm(
+                                        `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
+                                      );
+                                      if (!confirmed) {
+                                        return;
+                                      }
+
+                                      deleteTicketMutation.mutate({
+                                        ticketId: ticket.id,
+                                        sessionId: ticket.session_id
+                                      });
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </Group>
+                              </>
+                            )}
+                              </>
+                            );
+                          })()}
                           </SectionCard>
                         ))
                       )}

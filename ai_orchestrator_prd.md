@@ -178,8 +178,10 @@ The intended v1 happy path is:
 8. The agent implements the change, creates commits on the working branch, and moves the ticket to `Review` only after producing a review package.
 9. In `Review`, the user inspects the diff, commits, summaries, and test results, then either requests changes, creates a PR, or merges directly.
 10. If the user requests changes, the same ticket, worktree, branch, and execution session return to `In Progress`.
-11. If the user merges directly, the system merges into the target branch, marks the ticket `Done`, and cleans up the worktree and local working branch.
-12. If the user creates a PR, the ticket remains in `Review` until the PR is merged, after which the ticket becomes `Done` and cleanup runs.
+11. If the user stops an in-progress ticket, the active attempt is interrupted, the ticket remains in `In Progress`, and the worktree and working branch are preserved for explicit resume.
+12. If the user deletes a ticket, the system should stop any active execution first, remove orchestrator-managed local artifacts, remove the ticket from the board, and delete persisted orchestrator metadata.
+13. If the user merges directly, the system merges into the target branch, marks the ticket `Done`, and cleans up the worktree and local working branch.
+14. If the user creates a PR, the ticket remains in `Review` until the PR is merged, after which the ticket becomes `Done` and cleanup runs.
 
 ## 7. Functional Requirements
 
@@ -253,6 +255,28 @@ Before execution begins, the user should see an approval summary that includes:
 - Generated working branch
 - Whether the planning flag is enabled
 - Whether the ticket will start immediately or remain queued because of concurrency limits
+
+#### Stop Ticket Action
+- The user should be able to stop a ticket while it is `in_progress`.
+- Stop should be available only when the ticket has an active or resumable execution session in a non-terminal state such as `queued`, `running`, `paused_checkpoint`, `paused_user_control`, or `awaiting_input`.
+- Stopping a ticket should:
+  - Interrupt the current process attempt
+  - Move the execution session to `interrupted`
+  - Keep the ticket itself in `in_progress`
+  - Preserve the existing worktree and working branch
+  - Record the stop reason in logs and structured events when provided
+- After stop completes, the user should be able to resume the same logical session from the preserved worktree and branch.
+
+#### Delete Ticket Action
+- The user should be able to delete any board-visible ticket.
+- Deleting a ticket is a destructive orchestration action, not a ticket-state transition.
+- If the ticket has active execution, the system must stop that execution before cleanup proceeds.
+- Deleting a ticket should remove:
+  - The persisted ticket record
+  - Associated execution-session metadata, attempts, logs, requested-change notes, and review-package metadata
+  - Orchestrator-owned local artifacts for the ticket, including the worktree, local working branch, stored review diff, validation logs, and persisted session summary files when present
+- Deleting a ticket must not revert or rewrite code that has already been merged into the target branch.
+- If some cleanup step fails, the system should still remove the orchestrator record and surface cleanup warnings to the user.
 
 ### 7.3 Worktree and Branch Management
 - Each ticket must execute in its own isolated worktree.
@@ -462,10 +486,11 @@ Allowed ticket transitions:
   - Actor: system
   - Guard: direct merge succeeds or linked PR is observed as merged
   - Side effects: finalize logs, cleanup artifacts, persist completion metadata
-- `in_progress -> ready`
-  - Actor: user
-  - Guard: execution is stopped intentionally after failure or interruption
-  - Side effects: preserve worktree and branch, mark session non-running
+
+Deletion semantics:
+- User-driven deletion may remove a ticket entirely from any board-visible state instead of transitioning it to another ticket state.
+- Deletion must first stop active execution when present, then remove orchestrator-managed metadata and local artifacts.
+- Deletion of a `done` ticket must not modify already-merged target-branch code.
 
 #### Execution Session States
 - `queued`
@@ -481,6 +506,9 @@ Allowed execution session transitions:
 - `queued -> running`
   - Actor: scheduler
   - Guard: concurrency slot is available and prerequisites are satisfied
+- `queued -> interrupted`
+  - Actor: user or system
+  - Guard: explicit stop requested or recovery converts a queued session into a non-running state
 - `running -> paused_checkpoint`
   - Actor: agent
   - Guard: checkpoint requested for approval or clarification
@@ -491,8 +519,17 @@ Allowed execution session transitions:
   - Actor: user
   - Guard: user takes terminal control
 - `running -> interrupted`
-  - Actor: system
-  - Guard: PTY process is lost or backend restarts before clean completion
+  - Actor: user or system
+  - Guard: explicit stop requested, PTY process is lost, or backend restarts before clean completion
+- `paused_checkpoint -> interrupted`
+  - Actor: user
+  - Guard: explicit stop requested
+- `awaiting_input -> interrupted`
+  - Actor: user
+  - Guard: explicit stop requested
+- `paused_user_control -> interrupted`
+  - Actor: user
+  - Guard: explicit stop requested
 - `running -> failed`
   - Actor: system or agent
   - Guard: unrecoverable execution failure occurs
@@ -600,8 +637,12 @@ The backend should expose command-style mutation APIs for at least:
   - Apply accepted wizard decisions and attempt to create a `ready` ticket
 - `POST /tickets/:ticketId/start`
   - Move a ready ticket into `in_progress`
+- `POST /tickets/:ticketId/stop`
+  - Interrupt an in-progress execution session while preserving the worktree and working branch for resume
 - `POST /tickets/:ticketId/resume`
   - Resume a queued, interrupted, paused, or failed execution session when allowed
+- `POST /tickets/:ticketId/delete`
+  - Delete the ticket record and clean up orchestrator-owned local artifacts
 - `POST /tickets/:ticketId/request-changes`
   - Move a review ticket back to `in_progress` with a `RequestedChangeNote`
 - `POST /tickets/:ticketId/create-pr`
@@ -1335,6 +1376,8 @@ The MVP should prove one reliable end-to-end workflow:
   - summary
   - remaining risks
 - Request-changes loop back to the same ticket, worktree, branch, and session
+- Explicit stop action that preserves the in-progress ticket and existing worktree for manual resume
+- Ticket deletion with best-effort cleanup of orchestrator-owned local artifacts
 - Direct merge flow with rebase-then-merge
 - Local worktree and local branch cleanup after successful merge
 - Ticket Markdown plus SQLite-backed indexed state

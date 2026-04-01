@@ -45,6 +45,13 @@ export type RestartTicketResult = {
   requestedChangeNote?: RequestedChangeNote;
 };
 
+export type StopTicketResult = {
+  ticket: TicketFrontmatter;
+  session: ExecutionSession;
+  attempt: ExecutionAttempt | null;
+  logs: string[];
+};
+
 export type CreateReviewPackageInput = {
   ticket_id: number;
   session_id: string;
@@ -93,6 +100,7 @@ export interface Store {
     planningEnabled: boolean,
     runtime: PreparedExecutionRuntime
   ): StartTicketResult;
+  stopTicket(ticketId: number, reason?: string): StopTicketResult;
   requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
   resumeTicket(ticketId: number, reason?: string): RestartTicketResult;
   addSessionInput(sessionId: string, body: string): ExecutionSession;
@@ -122,5 +130,6 @@ export interface Store {
     eventType: string,
     payload: Record<string, unknown>
   ): StructuredEvent;
+  deleteTicket(ticketId: number): TicketFrontmatter | undefined;
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined;
 }

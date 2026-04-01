@@ -122,6 +122,11 @@ export function removeLocalBranch(
   repository: RepositoryConfig,
   branchName: string
 ): void {
+  const existingBranch = runGit(repository.path, ["branch", "--list", branchName]);
+  if (existingBranch.length === 0) {
+    return;
+  }
+
   runGit(repository.path, ["branch", "-D", branchName]);
 }
 

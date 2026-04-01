@@ -26,6 +26,8 @@ This repository contains the implementation starter pack for the AI orchestrator
   - session log streaming and automatic transition into `review`
   - local review diff artifact generation
   - request-changes and resume flows that create new attempts on the same session/worktree
+  - stopping an in-progress ticket while preserving the worktree and working branch for resume
+  - deleting a ticket with cleanup of its session metadata and local orchestrator artifacts
   - visible in-app action cards for review-ready and waiting sessions
   - a read-only xterm session terminal backed by a PTY-based Codex runtime
   - conservative backend-startup recovery that marks active sessions interrupted

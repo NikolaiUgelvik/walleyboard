@@ -51,6 +51,10 @@ export const startTicketInputSchema = z.object({
   planning_enabled: z.boolean().optional().default(false)
 });
 
+export const stopTicketInputSchema = z.object({
+  reason: z.string().min(1).optional()
+});
+
 export const resumeTicketInputSchema = z.object({
   reason: z.string().min(1).optional()
 });
@@ -185,6 +189,7 @@ export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
 export type RefineDraftInput = z.infer<typeof refineDraftInputSchema>;
 export type ConfirmDraftInput = z.infer<typeof confirmDraftInputSchema>;
 export type StartTicketInput = z.infer<typeof startTicketInputSchema>;
+export type StopTicketInput = z.infer<typeof stopTicketInputSchema>;
 export type ResumeTicketInput = z.infer<typeof resumeTicketInputSchema>;
 export type RequestChangesInput = z.infer<typeof requestChangesInputSchema>;
 export type CheckpointResponseInput = z.infer<typeof checkpointResponseInputSchema>;
