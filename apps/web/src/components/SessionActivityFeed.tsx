@@ -1,4 +1,4 @@
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { Badge, Code, Group, List, Stack, Text } from "@mantine/core";
 import type { ExecutionSession } from "@orchestrator/contracts";
 
 type SessionActivityFeedProps = {
@@ -18,6 +18,23 @@ type SessionActivity = {
 type ParsedCodexEvent = {
   eventType: string;
   payload: Record<string, unknown>;
+};
+
+type ParsedExecutionSummary = {
+  overview: string;
+  commit:
+    | {
+        hash: string;
+        message: string | null;
+      }
+    | null;
+  validation:
+    | {
+        commands: string[];
+        note: string | null;
+      }
+    | null;
+  risks: string[];
 };
 
 function createActivity(
@@ -479,19 +496,173 @@ function fallbackSummary(status: ExecutionSession["status"]): string {
   }
 }
 
+function parseExecutionSummary(summary: string): ParsedExecutionSummary {
+  const normalized = summary.trim();
+  const commitMarker = "The change is committed as ";
+  const validationMarker = "Validation run:";
+  const risksMarker = "Remaining risks:";
+  const commitIndex = normalized.indexOf(commitMarker);
+  const validationIndex = normalized.indexOf(validationMarker);
+  const risksIndex = normalized.indexOf(risksMarker);
+  const sectionStarts = [commitIndex, validationIndex, risksIndex].filter(
+    (value) => value >= 0
+  );
+  const firstSectionStart =
+    sectionStarts.length > 0 ? Math.min(...sectionStarts) : normalized.length;
+
+  const overview = normalized.slice(0, firstSectionStart).trim();
+
+  const commitEndCandidates = [validationIndex, risksIndex].filter(
+    (value) => value > commitIndex
+  );
+  const commitText =
+    commitIndex >= 0
+      ? normalized
+          .slice(
+            commitIndex,
+            commitEndCandidates.length > 0
+              ? Math.min(...commitEndCandidates)
+              : normalized.length
+          )
+          .trim()
+      : "";
+  const commitMatch = commitText.match(
+    /The change is committed as `([^`]+)`(?: with message `([^`]+)`)?\.?/i
+  );
+  const commit = commitMatch
+    ? {
+        hash: commitMatch[1],
+        message: commitMatch[2] ?? null
+      }
+    : null;
+
+  const validationEnd = risksIndex >= 0 ? risksIndex : normalized.length;
+  const validationText =
+    validationIndex >= 0
+      ? normalized
+          .slice(validationIndex + validationMarker.length, validationEnd)
+          .trim()
+      : "";
+  const validationSentences = validationText
+    .split(/(?<=\.)\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const validationCommands =
+    validationSentences.length > 0
+      ? Array.from(validationSentences[0].matchAll(/`([^`]+)`/g), (match) => match[1])
+      : [];
+  const validationNote =
+    validationSentences.length > 1
+      ? validationSentences.slice(1).join(" ").trim()
+      : validationCommands.length === 0 && validationText.length > 0
+        ? validationText
+        : null;
+  const validation =
+    validationCommands.length > 0 || validationNote
+      ? {
+          commands: validationCommands,
+          note: validationNote
+        }
+      : null;
+
+  const risksText =
+    risksIndex >= 0
+      ? normalized.slice(risksIndex + risksMarker.length).trim().replace(/\.$/, "")
+      : "";
+  const risks = risksText
+    ? risksText
+        .split(
+          /,\s+(?=(?:the|`|backend|integration|Codex|MCP|extra_env_allowlist)\b)/
+        )
+        .map((risk) => risk.trim())
+        .filter(Boolean)
+    : [];
+
+  return {
+    overview,
+    commit,
+    validation,
+    risks
+  };
+}
+
 export function SessionActivityFeed({ logs, session }: SessionActivityFeedProps) {
   const interpretedActivities = logs
     .map((line, index) => interpretSessionLog(line, index))
     .filter((activity): activity is SessionActivity => activity !== null);
   const visibleActivities = interpretedActivities.slice(-12).reverse();
+  const parsedSummary = parseExecutionSummary(
+    session.last_summary ?? fallbackSummary(session.status)
+  );
 
   return (
     <Stack gap="md">
       <Stack gap={4}>
         <Text fw={600}>Execution Summary</Text>
-        <Text size="sm" c="dimmed">
-          {session.last_summary ?? fallbackSummary(session.status)}
-        </Text>
+        {parsedSummary.overview ? (
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Outcome
+            </Text>
+            <Text size="sm" c="dimmed">
+              {parsedSummary.overview}
+            </Text>
+          </Stack>
+        ) : null}
+        {parsedSummary.commit ? (
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Commit
+            </Text>
+            <Group gap="xs" wrap="wrap">
+              <Code>{parsedSummary.commit.hash}</Code>
+              {parsedSummary.commit.message ? (
+                <Text size="sm" c="dimmed">
+                  {parsedSummary.commit.message}
+                </Text>
+              ) : null}
+            </Group>
+          </Stack>
+        ) : null}
+        {parsedSummary.validation ? (
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Validation
+            </Text>
+            {parsedSummary.validation.commands.length > 0 ? (
+              <List size="sm" spacing={4}>
+                {parsedSummary.validation.commands.map((command) => (
+                  <List.Item key={command}>
+                    <Code>{command}</Code>
+                  </List.Item>
+                ))}
+              </List>
+            ) : null}
+            {parsedSummary.validation.note ? (
+              <Text size="sm" c="dimmed">
+                {parsedSummary.validation.note}
+              </Text>
+            ) : null}
+          </Stack>
+        ) : null}
+        {parsedSummary.risks.length > 0 ? (
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Remaining Risks
+            </Text>
+            {parsedSummary.risks.length === 1 ? (
+              <Text size="sm" c="dimmed">
+                {parsedSummary.risks[0]}
+              </Text>
+            ) : (
+              <List size="sm" spacing={4}>
+                {parsedSummary.risks.map((risk) => (
+                  <List.Item key={risk}>{risk}</List.Item>
+                ))}
+              </List>
+            )}
+          </Stack>
+        ) : null}
       </Stack>
 
       <Stack gap={4}>
