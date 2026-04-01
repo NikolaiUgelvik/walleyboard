@@ -10,6 +10,7 @@ import { makeCommandAck } from "../lib/command-ack.js";
 import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
 import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
+import { prepareWorktree } from "../lib/worktree-service.js";
 
 type TicketRouteOptions = {
   eventHub: EventHub;
@@ -85,9 +86,29 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       }
 
       try {
+        const ticketForPreparation = store.getTicket(ticketId);
+        if (!ticketForPreparation) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        const project = store.getProject(ticketForPreparation.project);
+        if (!project) {
+          reply.code(404).send({ error: "Project not found" });
+          return;
+        }
+
+        const repository = store.getRepository(ticketForPreparation.repo);
+        if (!repository) {
+          reply.code(404).send({ error: "Repository not found" });
+          return;
+        }
+
+        const runtime = prepareWorktree(project, repository, ticketForPreparation);
         const { ticket, session, logs } = store.startTicket(
           ticketId,
-          input.planning_enabled
+          input.planning_enabled,
+          runtime
         );
 
         eventHub.publish(
@@ -104,6 +125,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           eventHub.publish(
             makeProtocolEvent("session.output", "session", session.id, {
               session_id: session.id,
+              attempt_id: session.current_attempt_id,
               sequence: index,
               chunk: logLine
             })

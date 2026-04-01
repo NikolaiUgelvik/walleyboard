@@ -26,7 +26,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 ## First Implementation Milestones
 
 1. Implement the Codex adapter boundary.
-2. Implement worktree lifecycle and sandbox lifecycle services.
+2. Implement sandbox lifecycle services around the prepared worktree runtime.
 3. Replace the waiting-state execution placeholder with a real PTY-backed agent runtime.
 4. Add validation execution and real review-package generation.
 5. Add direct merge flow and cleanup.
@@ -81,10 +81,10 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - Starting a `ready` ticket now creates:
   - a persisted execution session
   - a first execution attempt record
+  - a prepared git worktree and working branch
   - waiting-state session logs
   - an `in_progress` ticket transition on the board
 - Session input is recorded and appended to session logs.
 - The execution session is still a waiting-state placeholder:
-  - no worktree is created yet
   - no Codex process is launched yet
   - no terminal stream is attached yet

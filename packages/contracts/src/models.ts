@@ -148,6 +148,7 @@ export const executionSessionSchema = z.object({
   ticket_id: z.number().int().positive(),
   project_id: opaqueIdSchema,
   repo_id: opaqueIdSchema,
+  worktree_path: absolutePathSchema.nullable(),
   status: executionSessionStatusSchema,
   planning_enabled: z.boolean(),
   current_attempt_id: opaqueIdSchema.nullable(),

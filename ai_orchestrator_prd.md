@@ -1377,13 +1377,13 @@ The repository implementation currently covers a subset of the MVP slice:
 - Starting a `ready` ticket now creates:
   - a persisted execution session
   - a first execution attempt record
+  - a prepared local git worktree and working branch
   - waiting-state session logs
   - an `in_progress` ticket transition on the board
 - Session input can be recorded and is appended to session logs.
 
 The repository implementation does not yet cover these MVP items:
 - real Codex execution
-- isolated worktree creation
 - terminal streaming
 - validation execution
 - review package generation

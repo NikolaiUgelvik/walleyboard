@@ -433,7 +433,7 @@ export function App() {
               <List.Item>Persisted draft ticket creation</List.Item>
               <List.Item>Refinement pass that generates acceptance criteria</List.Item>
               <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
-              <List.Item>Startable execution sessions with persisted waiting-state logs</List.Item>
+              <List.Item>Startable execution sessions with prepared git worktrees and waiting-state logs</List.Item>
             </List>
           </SectionCard>
         </SimpleGrid>
@@ -707,7 +707,7 @@ export function App() {
 
             <SectionCard
               title="Execution Session"
-              description="Starting a ready ticket now creates a persisted execution session and waiting-state log, even though the real Codex runner is still pending."
+              description="Starting a ready ticket now prepares a git worktree, creates a persisted execution session, and captures waiting-state logs while the real Codex runner is still pending."
             >
               {selectedSessionId === null ? (
                 <Text size="sm" c="dimmed">
@@ -741,6 +741,10 @@ export function App() {
                     <Stack gap={4}>
                       <Text fw={600}>Working branch</Text>
                       <Code>{selectedSessionTicket?.working_branch ?? "pending"}</Code>
+                    </Stack>
+                    <Stack gap={4}>
+                      <Text fw={600}>Worktree</Text>
+                      <Code>{session.worktree_path ?? "pending"}</Code>
                     </Stack>
                   </SimpleGrid>
 

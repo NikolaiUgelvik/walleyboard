@@ -21,6 +21,7 @@ import { nanoid } from "nanoid";
 import { nowIso } from "./time.js";
 import type {
   ConfirmDraftInput,
+  PreparedExecutionRuntime,
   StartTicketResult,
   Store
 } from "./store.js";
@@ -178,6 +179,7 @@ function mapExecutionSession(row: Record<string, unknown>): ExecutionSession {
     ticket_id: Number(row.ticket_id),
     project_id: String(row.project_id),
     repo_id: String(row.repo_id),
+    worktree_path: row.worktree_path === null ? null : String(row.worktree_path),
     status: String(row.status) as ExecutionSession["status"],
     planning_enabled: Boolean(row.planning_enabled),
     current_attempt_id:
@@ -315,6 +317,7 @@ export class SqliteStore implements Store {
         ticket_id INTEGER NOT NULL,
         project_id TEXT NOT NULL,
         repo_id TEXT NOT NULL,
+        worktree_path TEXT,
         status TEXT NOT NULL,
         planning_enabled INTEGER NOT NULL,
         current_attempt_id TEXT,
@@ -381,6 +384,20 @@ export class SqliteStore implements Store {
       CREATE INDEX IF NOT EXISTS idx_events_entity ON structured_events(entity_type, entity_id, occurred_at DESC);
       CREATE INDEX IF NOT EXISTS idx_session_logs_session_id ON session_logs(session_id, id ASC);
     `);
+
+    this.#ensureColumn("execution_sessions", "worktree_path", "TEXT");
+  }
+
+  #ensureColumn(tableName: string, columnName: string, definition: string): void {
+    const columns = this.#db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all() as Array<{ name: string }>;
+
+    if (columns.some((column) => column.name === columnName)) {
+      return;
+    }
+
+    this.#db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
   }
 
   #recordStructuredEvent(
@@ -441,6 +458,13 @@ export class SqliteStore implements Store {
       .prepare("SELECT * FROM projects WHERE id = ?")
       .get(projectId) as Record<string, unknown> | undefined;
     return row ? mapProject(row) : undefined;
+  }
+
+  getRepository(repositoryId: string): RepositoryConfig | undefined {
+    const row = this.#db
+      .prepare("SELECT * FROM repositories WHERE id = ?")
+      .get(repositoryId) as Record<string, unknown> | undefined;
+    return row ? mapRepository(row) : undefined;
   }
 
   createProject(input: CreateProjectInput): {
@@ -605,23 +629,18 @@ export class SqliteStore implements Store {
       throw new Error("Repository not found");
     }
 
-    const nextTicketRow = this.#db
-      .prepare("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM tickets WHERE project_id = ?")
-      .get(draft.project_id) as { next_id: number };
-    const ticketId = Number(nextTicketRow.next_id);
     const timestamp = nowIso();
 
-    this.#db
+    const insertTicket = this.#db
       .prepare(
         `
           INSERT INTO tickets (
-            id, project_id, repo_id, status, title, ticket_type, working_branch,
+            project_id, repo_id, status, title, ticket_type, working_branch,
             target_branch, linked_pr, session_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
-        ticketId,
         draft.project_id,
         input.repo_id,
         "ready",
@@ -634,6 +653,7 @@ export class SqliteStore implements Store {
         timestamp,
         timestamp
       );
+    const ticketId = Number(insertTicket.lastInsertRowid);
 
     this.#db
       .prepare("DELETE FROM draft_ticket_states WHERE id = ?")
@@ -662,7 +682,11 @@ export class SqliteStore implements Store {
     return row ? mapReviewPackage(row) : undefined;
   }
 
-  startTicket(ticketId: number, planningEnabled: boolean): StartTicketResult {
+  startTicket(
+    ticketId: number,
+    planningEnabled: boolean,
+    runtime: PreparedExecutionRuntime
+  ): StartTicketResult {
     const ticket = this.getTicket(ticketId);
     if (!ticket) {
       throw new Error("Ticket not found");
@@ -690,9 +714,8 @@ export class SqliteStore implements Store {
     const sessionId = nanoid();
     const attemptId = nanoid();
     const timestamp = nowIso();
-    const workingBranch = deriveWorkingBranch(ticket.id, ticket.title);
     const summary =
-      "Execution session created. The real Codex runner and worktree lifecycle are still pending, so this session is parked in a waiting state.";
+      "Execution session created and worktree prepared. The real Codex runner is still pending, so this session is parked in a waiting state.";
 
     this.#db
       .prepare(
@@ -702,16 +725,16 @@ export class SqliteStore implements Store {
           WHERE id = ?
         `
       )
-      .run("in_progress", sessionId, workingBranch, timestamp, ticketId);
+      .run("in_progress", sessionId, runtime.workingBranch, timestamp, ticketId);
 
     this.#db
       .prepare(
         `
           INSERT INTO execution_sessions (
-            id, ticket_id, project_id, repo_id, status, planning_enabled, current_attempt_id,
+            id, ticket_id, project_id, repo_id, worktree_path, status, planning_enabled, current_attempt_id,
             latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
             started_at, completed_at, last_heartbeat_at, last_summary
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -719,6 +742,7 @@ export class SqliteStore implements Store {
         ticket.id,
         ticket.project,
         ticket.repo,
+        runtime.worktreePath,
         "awaiting_input",
         planningEnabled ? 1 : 0,
         attemptId,
@@ -743,9 +767,11 @@ export class SqliteStore implements Store {
 
     const logs = [
       `Session created for ticket #${ticket.id}: ${ticket.title}`,
-      `Working branch reserved: ${workingBranch}`,
+      `Working branch reserved: ${runtime.workingBranch}`,
+      `Worktree prepared at: ${runtime.worktreePath}`,
       `Planning mode: ${planningEnabled ? "enabled" : "disabled"}`,
-      "Execution runtime is not wired yet in this build.",
+      ...runtime.logs,
+      "Codex runtime is not wired yet in this build.",
       "Session is waiting for input so the UI, persistence, and transport layers can be exercised."
     ];
 
@@ -756,12 +782,14 @@ export class SqliteStore implements Store {
     this.#recordStructuredEvent("ticket", String(ticket.id), "ticket.started", {
       ticket_id: ticket.id,
       session_id: sessionId,
-      working_branch: workingBranch
+      working_branch: runtime.workingBranch,
+      worktree_path: runtime.worktreePath
     });
     this.#recordStructuredEvent("session", sessionId, "session.started", {
       ticket_id: ticket.id,
       attempt_id: attemptId,
-      planning_enabled: planningEnabled
+      planning_enabled: planningEnabled,
+      worktree_path: runtime.worktreePath
     });
 
     return {

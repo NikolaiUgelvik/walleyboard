@@ -19,14 +19,13 @@ This repository contains the implementation starter pack for the AI orchestrator
 - frontend shell that talks to the backend and supports:
   - project setup
   - draft-to-ready ticket flow
-  - starting a ready ticket into a persisted execution session
+  - starting a ready ticket into a persisted execution session with a prepared git worktree
   - waiting-state session input and log display
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
 ## What It Does Not Do Yet
 
 - launch Codex
-- create worktrees
 - manage Bubblewrap sandboxes
 - execute validation commands
 - render live terminal output
@@ -46,5 +45,5 @@ Those remain the next implementation milestones.
 ## Next Steps
 
 - Implement the Codex adapter.
-- Add worktree creation and sandbox orchestration.
+- Add sandbox orchestration around the prepared worktree runtime.
 - Replace the waiting-state execution placeholder with real terminal-backed agent execution.

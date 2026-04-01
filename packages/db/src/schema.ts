@@ -42,7 +42,7 @@ export const draftTicketStatesTable = sqliteTable("draft_ticket_states", {
 });
 
 export const ticketsTable = sqliteTable("tickets", {
-  id: integer("id").primaryKey(),
+  id: integer("id").primaryKey({ autoIncrement: true }),
   projectId: text("project_id").notNull(),
   repoId: text("repo_id").notNull(),
   status: text("status").notNull(),
@@ -61,6 +61,7 @@ export const executionSessionsTable = sqliteTable("execution_sessions", {
   ticketId: integer("ticket_id").notNull(),
   projectId: text("project_id").notNull(),
   repoId: text("repo_id").notNull(),
+  worktreePath: text("worktree_path"),
   status: text("status").notNull(),
   planningEnabled: integer("planning_enabled", { mode: "boolean" }).notNull(),
   currentAttemptId: text("current_attempt_id"),
