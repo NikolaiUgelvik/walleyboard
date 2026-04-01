@@ -20,18 +20,19 @@ This repository contains the implementation starter pack for the AI orchestrator
   - project setup
   - draft-to-ready ticket flow
   - starting a ready ticket into a persisted execution session with a prepared git worktree
-  - waiting-state session input and log display
+  - real `codex exec` launches from the prepared worktree
+  - session log streaming and automatic transition into `review`
+  - local review diff artifact generation
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
 ## What It Does Not Do Yet
 
-- launch Codex
 - manage Bubblewrap sandboxes
 - execute validation commands
 - render live terminal output
-- generate real review packages
-- start real Codex-backed execution inside a worktree
 - resume real execution sessions after interruption
+- support checkpoint or mid-run input handoff for running Codex exec sessions
+- merge reviewed branches back into the target branch
 
 Those remain the next implementation milestones.
 
@@ -44,6 +45,6 @@ Those remain the next implementation milestones.
 
 ## Next Steps
 
-- Implement the Codex adapter.
-- Add sandbox orchestration around the prepared worktree runtime.
-- Replace the waiting-state execution placeholder with real terminal-backed agent execution.
+- Add sandbox orchestration around the live Codex runtime.
+- Add validation execution before review handoff.
+- Implement direct merge and cleanup once review is approved.

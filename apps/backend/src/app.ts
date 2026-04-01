@@ -2,6 +2,7 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 
 import { EventHub } from "./lib/event-hub.js";
+import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { healthRoutes } from "./routes/health.js";
@@ -17,6 +18,7 @@ export async function createApp() {
 
   const eventHub = new EventHub();
   const store = new SqliteStore();
+  const executionRuntime = new ExecutionRuntime({ eventHub, store });
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
@@ -32,7 +34,7 @@ export async function createApp() {
   await app.register(healthRoutes);
   await app.register(projectRoutes, { eventHub, store });
   await app.register(draftRoutes, { eventHub, store });
-  await app.register(ticketRoutes, { eventHub, store });
+  await app.register(ticketRoutes, { eventHub, store, executionRuntime });
   await app.register(sessionRoutes, { eventHub, store });
   await app.register(websocketRoutes, { eventHub });
 

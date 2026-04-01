@@ -20,7 +20,9 @@ import { nanoid } from "nanoid";
 
 import { nowIso } from "./time.js";
 import type {
+  CompleteSessionInput,
   ConfirmDraftInput,
+  CreateReviewPackageInput,
   PreparedExecutionRuntime,
   StartTicketResult,
   Store
@@ -152,7 +154,9 @@ function mapTicket(row: Record<string, unknown>): TicketFrontmatter {
     repo: String(row.repo_id),
     status: String(row.status) as TicketFrontmatter["status"],
     title: String(row.title),
+    description: String(row.description ?? ""),
     ticket_type: String(row.ticket_type) as TicketFrontmatter["ticket_type"],
+    acceptance_criteria: parseJson(row.acceptance_criteria, []),
     working_branch: row.working_branch === null ? null : String(row.working_branch),
     target_branch: String(row.target_branch),
     linked_pr: parseJson(row.linked_pr, null),
@@ -301,7 +305,9 @@ export class SqliteStore implements Store {
         repo_id TEXT NOT NULL,
         status TEXT NOT NULL,
         title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
         ticket_type TEXT NOT NULL,
+        acceptance_criteria TEXT NOT NULL DEFAULT '[]',
         working_branch TEXT,
         target_branch TEXT NOT NULL,
         linked_pr TEXT,
@@ -386,6 +392,13 @@ export class SqliteStore implements Store {
     `);
 
     this.#ensureColumn("execution_sessions", "worktree_path", "TEXT");
+    this.#ensureColumn("tickets", "description", "TEXT NOT NULL DEFAULT ''");
+    this.#ensureColumn(
+      "tickets",
+      "acceptance_criteria",
+      "TEXT NOT NULL DEFAULT '[]'"
+    );
+    this.#backfillTicketContext();
   }
 
   #ensureColumn(tableName: string, columnName: string, definition: string): void {
@@ -398,6 +411,74 @@ export class SqliteStore implements Store {
     }
 
     this.#db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
+  }
+
+  #backfillTicketContext(): void {
+    const ticketsNeedingContext = this.#db
+      .prepare(
+        `
+          SELECT id, description, acceptance_criteria
+          FROM tickets
+          WHERE description = '' OR acceptance_criteria = '[]'
+        `
+      )
+      .all() as Array<{
+      id: number;
+      description: string;
+      acceptance_criteria: string;
+    }>;
+
+    for (const ticket of ticketsNeedingContext) {
+      const eventRow = this.#db
+        .prepare(
+          `
+            SELECT payload
+            FROM structured_events
+            WHERE entity_type = 'ticket'
+              AND entity_id = ?
+              AND event_type = 'ticket.created'
+            ORDER BY occurred_at DESC
+            LIMIT 1
+          `
+        )
+        .get(String(ticket.id)) as { payload: string } | undefined;
+
+      if (!eventRow) {
+        continue;
+      }
+
+      const payload = parseJson(eventRow.payload, {}) as {
+        description?: unknown;
+        acceptance_criteria?: unknown;
+      };
+      const description =
+        ticket.description.length > 0
+          ? ticket.description
+          : typeof payload.description === "string"
+            ? normalizeDescription(payload.description)
+            : "";
+      const acceptanceCriteria =
+        ticket.acceptance_criteria !== "[]"
+          ? ticket.acceptance_criteria
+          : stringifyJson(
+              Array.isArray(payload.acceptance_criteria)
+                ? payload.acceptance_criteria
+                    .filter((criterion): criterion is string => typeof criterion === "string")
+                    .map((criterion) => criterion.trim())
+                    .filter(Boolean)
+                : []
+            );
+
+      this.#db
+        .prepare(
+          `
+            UPDATE tickets
+            SET description = ?, acceptance_criteria = ?
+            WHERE id = ?
+          `
+        )
+        .run(description, acceptanceCriteria, ticket.id);
+    }
   }
 
   #recordStructuredEvent(
@@ -444,6 +525,11 @@ export class SqliteStore implements Store {
         `
       )
       .run(sessionId, line, nowIso());
+  }
+
+  appendSessionLog(sessionId: string, line: string): number {
+    this.#appendSessionLog(sessionId, line);
+    return this.getSessionLogs(sessionId).length - 1;
   }
 
   listProjects(): Project[] {
@@ -635,9 +721,10 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO tickets (
-            project_id, repo_id, status, title, ticket_type, working_branch,
-            target_branch, linked_pr, session_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            project_id, repo_id, status, title, description, ticket_type,
+            acceptance_criteria, working_branch, target_branch, linked_pr,
+            session_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -645,7 +732,9 @@ export class SqliteStore implements Store {
         input.repo_id,
         "ready",
         normalizeTitle(input.title),
+        normalizeDescription(input.description),
         input.ticket_type,
+        stringifyJson(input.acceptance_criteria),
         null,
         input.target_branch,
         null,
@@ -715,7 +804,7 @@ export class SqliteStore implements Store {
     const attemptId = nanoid();
     const timestamp = nowIso();
     const summary =
-      "Execution session created and worktree prepared. The real Codex runner is still pending, so this session is parked in a waiting state.";
+      "Execution session created, worktree prepared, and Codex launch requested.";
 
     this.#db
       .prepare(
@@ -771,8 +860,7 @@ export class SqliteStore implements Store {
       `Worktree prepared at: ${runtime.worktreePath}`,
       `Planning mode: ${planningEnabled ? "enabled" : "disabled"}`,
       ...runtime.logs,
-      "Codex runtime is not wired yet in this build.",
-      "Session is waiting for input so the UI, persistence, and transport layers can be exercised."
+      "Codex launch has been handed off to the execution runtime."
     ];
 
     for (const line of logs) {
@@ -808,7 +896,7 @@ export class SqliteStore implements Store {
 
     const timestamp = nowIso();
     const summary =
-      "User input was recorded. The runtime is still not connected, so the session remains parked in the waiting state.";
+      "User input was recorded for the session. Live checkpoint handoff is not implemented yet, so the note is stored for a future attempt.";
 
     this.#appendSessionLog(sessionId, `User input recorded: ${body.trim()}`);
 
@@ -851,6 +939,140 @@ export class SqliteStore implements Store {
       .run(status, nowIso(), lastSummary ?? existingSession.last_summary, sessionId);
 
     return this.getSession(sessionId);
+  }
+
+  completeSession(
+    sessionId: string,
+    input: CompleteSessionInput
+  ): ExecutionSession | undefined {
+    const existingSession = this.getSession(sessionId);
+    if (!existingSession) {
+      return undefined;
+    }
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?,
+              last_heartbeat_at = ?,
+              completed_at = ?,
+              last_summary = ?,
+              latest_review_package_id = ?
+          WHERE id = ?
+        `
+      )
+      .run(
+        input.status,
+        nowIso(),
+        nowIso(),
+        input.last_summary ?? existingSession.last_summary,
+        input.latest_review_package_id ?? existingSession.latest_review_package_id,
+        sessionId
+      );
+
+    return this.getSession(sessionId);
+  }
+
+  updateExecutionAttempt(
+    attemptId: string,
+    input: {
+      status?: ExecutionAttempt["status"];
+      pty_pid?: number | null;
+      end_reason?: string | null;
+    }
+  ): ExecutionAttempt | undefined {
+    const row = this.#db
+      .prepare("SELECT * FROM execution_attempts WHERE id = ?")
+      .get(attemptId) as Record<string, unknown> | undefined;
+    if (!row) {
+      return undefined;
+    }
+
+    const existingAttempt = mapExecutionAttempt(row);
+    const nextStatus = input.status ?? existingAttempt.status;
+    const shouldEnd = input.status !== undefined && input.status !== "running";
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_attempts
+          SET status = ?,
+              pty_pid = ?,
+              ended_at = ?,
+              end_reason = ?
+          WHERE id = ?
+        `
+      )
+      .run(
+        nextStatus,
+        input.pty_pid !== undefined ? input.pty_pid : existingAttempt.pty_pid,
+        shouldEnd ? nowIso() : existingAttempt.ended_at,
+        input.end_reason ?? existingAttempt.end_reason,
+        attemptId
+      );
+
+    const updatedRow = this.#db
+      .prepare("SELECT * FROM execution_attempts WHERE id = ?")
+      .get(attemptId) as Record<string, unknown> | undefined;
+    return updatedRow ? mapExecutionAttempt(updatedRow) : undefined;
+  }
+
+  createReviewPackage(input: CreateReviewPackageInput): ReviewPackage {
+    const id = nanoid();
+    const timestamp = nowIso();
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO review_packages (
+            id, ticket_id, session_id, diff_ref, commit_refs, change_summary,
+            validation_results, remaining_risks, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(
+        id,
+        input.ticket_id,
+        input.session_id,
+        input.diff_ref,
+        stringifyJson(input.commit_refs),
+        input.change_summary,
+        stringifyJson(input.validation_results),
+        stringifyJson(input.remaining_risks),
+        timestamp
+      );
+
+    this.#recordStructuredEvent("review_package", id, "review_package.generated", {
+      ticket_id: input.ticket_id,
+      session_id: input.session_id,
+      diff_ref: input.diff_ref,
+      commit_refs: input.commit_refs
+    });
+
+    return this.getReviewPackage(input.ticket_id)!;
+  }
+
+  updateTicketStatus(
+    ticketId: number,
+    status: TicketFrontmatter["status"]
+  ): TicketFrontmatter | undefined {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      return undefined;
+    }
+
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET status = ?, updated_at = ?
+          WHERE id = ?
+        `
+      )
+      .run(status, nowIso(), ticketId);
+
+    return this.getTicket(ticketId);
   }
 
   listSessionAttempts(sessionId: string): ExecutionAttempt[] {

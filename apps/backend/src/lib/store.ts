@@ -11,7 +11,8 @@ import type {
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
-  TicketType
+  TicketType,
+  ValidationResult
 } from "@orchestrator/contracts";
 
 export type ConfirmDraftInput = {
@@ -34,6 +35,28 @@ export type StartTicketResult = {
   session: ExecutionSession;
   attempt: ExecutionAttempt;
   logs: string[];
+};
+
+export type CreateReviewPackageInput = {
+  ticket_id: number;
+  session_id: string;
+  diff_ref: string;
+  commit_refs: string[];
+  change_summary: string;
+  validation_results: ValidationResult[];
+  remaining_risks: string[];
+};
+
+export type UpdateExecutionAttemptInput = {
+  status?: ExecutionAttempt["status"];
+  pty_pid?: number | null;
+  end_reason?: string | null;
+};
+
+export type CompleteSessionInput = {
+  status: ExecutionSessionStatus;
+  last_summary?: string | null;
+  latest_review_package_id?: string | null;
 };
 
 export interface Store {
@@ -64,6 +87,17 @@ export interface Store {
     status: ExecutionSessionStatus,
     lastSummary?: string | null
   ): ExecutionSession | undefined;
+  completeSession(sessionId: string, input: CompleteSessionInput): ExecutionSession | undefined;
+  appendSessionLog(sessionId: string, line: string): number;
+  updateExecutionAttempt(
+    attemptId: string,
+    input: UpdateExecutionAttemptInput
+  ): ExecutionAttempt | undefined;
+  createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
+  updateTicketStatus(
+    ticketId: number,
+    status: TicketFrontmatter["status"]
+  ): TicketFrontmatter | undefined;
   listSessionAttempts(sessionId: string): ExecutionAttempt[];
   getSession(sessionId: string): ExecutionSession | undefined;
   getSessionLogs(sessionId: string): string[];

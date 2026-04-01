@@ -173,7 +173,8 @@ export function App() {
   const ticketsQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "tickets"],
     queryFn: () => fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
-    enabled: selectedProjectId !== null
+    enabled: selectedProjectId !== null,
+    refetchInterval: selectedProjectId === null ? false : 2_000
   });
 
   const inferredSessionId =
@@ -211,13 +212,15 @@ export function App() {
   const sessionQuery = useQuery({
     queryKey: ["sessions", selectedSessionId],
     queryFn: () => fetchJson<SessionResponse>(`/sessions/${selectedSessionId}`),
-    enabled: selectedSessionId !== null
+    enabled: selectedSessionId !== null,
+    refetchInterval: selectedSessionId === null ? false : 2_000
   });
 
   const sessionLogsQuery = useQuery({
     queryKey: ["sessions", selectedSessionId, "logs"],
     queryFn: () => fetchJson<SessionLogsResponse>(`/sessions/${selectedSessionId}/logs`),
-    enabled: selectedSessionId !== null
+    enabled: selectedSessionId !== null,
+    refetchInterval: selectedSessionId === null ? false : 2_000
   });
 
   const createProjectMutation = useMutation({
@@ -392,8 +395,10 @@ export function App() {
           <Text c="dimmed" maw={900}>
             This build now covers the first usable local workflow: configure a project,
             create a draft ticket, refine it into an execution-ready shape, and place
-            the resulting ticket on the board. Codex execution, terminal control, and
-            review/merge automation are still the next milestones.
+            the resulting ticket on the board. Starting a ticket now launches a real
+            Codex exec run in its prepared worktree and moves successful runs into
+            local review. Terminal control, validation, and merge automation are still
+            the next milestones.
           </Text>
         </Stack>
 
@@ -433,7 +438,9 @@ export function App() {
               <List.Item>Persisted draft ticket creation</List.Item>
               <List.Item>Refinement pass that generates acceptance criteria</List.Item>
               <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
-              <List.Item>Startable execution sessions with prepared git worktrees and waiting-state logs</List.Item>
+              <List.Item>Prepared git worktrees per started ticket</List.Item>
+              <List.Item>Real Codex exec runs with streaming session logs</List.Item>
+              <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
             </List>
           </SectionCard>
         </SimpleGrid>
@@ -707,7 +714,7 @@ export function App() {
 
             <SectionCard
               title="Execution Session"
-              description="Starting a ready ticket now prepares a git worktree, creates a persisted execution session, and captures waiting-state logs while the real Codex runner is still pending."
+              description="Starting a ready ticket now prepares a git worktree, launches Codex exec, and streams backend-captured session logs while the run is active."
             >
               {selectedSessionId === null ? (
                 <Text size="sm" c="dimmed">
@@ -768,45 +775,52 @@ export function App() {
                     )}
                   </Stack>
 
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (!selectedSessionId) {
-                        return;
-                      }
+                  {session.status === "awaiting_input" ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!selectedSessionId) {
+                          return;
+                        }
 
-                      sessionInputMutation.mutate({
-                        sessionId: selectedSessionId,
-                        body: sessionInput
-                      });
-                    }}
-                  >
-                    <Stack gap="sm">
-                      <Textarea
-                        id="session-input"
-                        name="sessionInput"
-                        label="Session input"
-                        placeholder="Add the next instruction or clarification for the waiting session."
-                        value={sessionInput}
-                        onChange={(event) => setSessionInput(event.currentTarget.value)}
-                        minRows={3}
-                      />
-                      {sessionInputMutation.isError ? (
-                        <Text size="sm" c="red">
-                          {sessionInputMutation.error.message}
-                        </Text>
-                      ) : null}
-                      <Group justify="flex-end">
-                        <Button
-                          type="submit"
-                          loading={sessionInputMutation.isPending}
-                          disabled={sessionInput.trim().length === 0}
-                        >
-                          Record Input
-                        </Button>
-                      </Group>
-                    </Stack>
-                  </form>
+                        sessionInputMutation.mutate({
+                          sessionId: selectedSessionId,
+                          body: sessionInput
+                        });
+                      }}
+                    >
+                      <Stack gap="sm">
+                        <Textarea
+                          id="session-input"
+                          name="sessionInput"
+                          label="Session input"
+                          placeholder="Add the next instruction or clarification for the waiting session."
+                          value={sessionInput}
+                          onChange={(event) => setSessionInput(event.currentTarget.value)}
+                          minRows={3}
+                        />
+                        {sessionInputMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {sessionInputMutation.error.message}
+                          </Text>
+                        ) : null}
+                        <Group justify="flex-end">
+                          <Button
+                            type="submit"
+                            loading={sessionInputMutation.isPending}
+                            disabled={sessionInput.trim().length === 0}
+                          >
+                            Record Input
+                          </Button>
+                        </Group>
+                      </Stack>
+                    </form>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Direct mid-run input is not wired yet for Codex exec sessions. The
+                      log and summary above reflect the current run state.
+                    </Text>
+                  )}
                 </Stack>
               ) : (
                 <Text size="sm" c="dimmed">
@@ -817,7 +831,7 @@ export function App() {
 
             <SectionCard
               title="Board"
-              description="Tickets now persist, move into in-progress execution sessions, and expose their current state on the board."
+              description="Tickets persist, run inside isolated worktrees, and move across the board as session state changes."
             >
               {ticketsQuery.isPending ? (
                 <Loader size="sm" />
@@ -864,6 +878,9 @@ export function App() {
                             title={`#${ticket.id} ${ticket.title}`}
                             description={`Type: ${ticket.ticket_type} | Target branch: ${ticket.target_branch}`}
                           >
+                            <Text size="sm" c="dimmed">
+                              {ticket.description}
+                            </Text>
                             <Group justify="space-between" align="center">
                               <Badge variant="light">{ticket.status}</Badge>
                               <Text size="sm" c="dimmed">
@@ -872,6 +889,9 @@ export function App() {
                             </Group>
                             <Text size="sm" c="dimmed">
                               Branch: {ticket.working_branch ?? "not created yet"}
+                            </Text>
+                            <Text size="sm" c="dimmed">
+                              Acceptance criteria: {ticket.acceptance_criteria.length}
                             </Text>
                             {column === "ready" ? (
                               <>

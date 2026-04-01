@@ -134,7 +134,9 @@ export const ticketFrontmatterSchema = z.object({
   repo: opaqueIdSchema,
   status: ticketStatusSchema,
   title: z.string().min(1),
+  description: z.string(),
   ticket_type: ticketTypeSchema,
+  acceptance_criteria: z.array(z.string().min(1)),
   working_branch: z.string().min(1).nullable(),
   target_branch: z.string().min(1),
   linked_pr: pullRequestRefSchema.nullable(),
@@ -179,9 +181,12 @@ export const structuredEventSchema = z.object({
     "ticket",
     "session",
     "attempt",
+    "draft",
+    "review_package",
     "worktree",
     "git",
-    "pull_request"
+    "pull_request",
+    "system"
   ]),
   entity_id: opaqueIdSchema,
   event_type: z.string().min(1),

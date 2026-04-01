@@ -1370,25 +1370,6 @@ The MVP should prove one reliable end-to-end workflow:
 6. Validation runner and review package generation
 7. Direct merge flow and cleanup
 
-### 11.6 Current Implementation Status (Non-Normative)
-The repository implementation currently covers a subset of the MVP slice:
-- Project configuration is implemented and persisted locally.
-- Draft ticket creation, refinement, and promotion to `ready` are implemented and persisted locally.
-- Starting a `ready` ticket now creates:
-  - a persisted execution session
-  - a first execution attempt record
-  - a prepared local git worktree and working branch
-  - waiting-state session logs
-  - an `in_progress` ticket transition on the board
-- Session input can be recorded and is appended to session logs.
-
-The repository implementation does not yet cover these MVP items:
-- real Codex execution
-- terminal streaming
-- validation execution
-- review package generation
-- direct merge flow
-
 ## 12. Open Questions
 - What should the ticket detail layout prioritize first: terminal, structured events, diff view, or metadata?
 - Should project configuration later support repo descriptions, test commands, environment variables, or secrets references?

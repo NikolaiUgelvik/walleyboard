@@ -8,18 +8,20 @@ import {
 
 import { makeCommandAck } from "../lib/command-ack.js";
 import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
+import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 import { prepareWorktree } from "../lib/worktree-service.js";
 
 type TicketRouteOptions = {
   eventHub: EventHub;
+  executionRuntime: ExecutionRuntime;
   store: Store;
 };
 
 export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   app,
-  { eventHub, store }
+  { eventHub, executionRuntime, store }
 ) => {
   app.get<{ Params: { ticketId: string } }>("/tickets/:ticketId", async (request, reply) => {
     const ticketId = parsePositiveInt(request.params.ticketId);
@@ -131,13 +133,12 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
             })
           );
         });
-        eventHub.publish(
-          makeProtocolEvent("session.input_requested", "session", session.id, {
-            session_id: session.id,
-            reason:
-              "Execution runtime is not wired yet, so the session is parked in a waiting state."
-          })
-        );
+        executionRuntime.startExecution({
+          project,
+          repository,
+          ticket,
+          session
+        });
 
         reply.send(
           makeCommandAck(true, "Ticket moved to in progress and execution session created", {
