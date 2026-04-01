@@ -154,3 +154,42 @@ test("planning sessions keep plan approval state across retries", () => {
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("archived tickets stay in storage but leave active project lists", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-archive-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Archive Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const completedTicket = store.updateTicketStatus(ticket.id, "done");
+    assert.equal(completedTicket?.status, "done");
+
+    const archivedTicket = store.archiveTicket(ticket.id);
+    assert.equal(archivedTicket?.id, ticket.id);
+    assert.deepEqual(store.listProjectTickets(project.id), []);
+    assert.equal(
+      store.listProjectTickets(project.id, { includeArchived: true }).length,
+      1,
+    );
+
+    const reopenedStore = new SqliteStore(databasePath);
+    assert.deepEqual(reopenedStore.listProjectTickets(project.id), []);
+    assert.equal(reopenedStore.getTicket(ticket.id)?.id, ticket.id);
+    assert.equal(
+      reopenedStore.listProjectTickets(project.id, { includeArchived: true })
+        .length,
+      1,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

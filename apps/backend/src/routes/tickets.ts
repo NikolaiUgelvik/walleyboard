@@ -351,6 +351,50 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   );
 
   app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/archive",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      try {
+        const archivedTicket = store.archiveTicket(ticketId);
+        if (!archivedTicket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        store.recordTicketEvent(ticketId, "ticket.archived", {
+          ticket_id: archivedTicket.id,
+          project_id: archivedTicket.project,
+          session_id: archivedTicket.session_id,
+        });
+        eventHub.publish(
+          makeProtocolEvent("ticket.archived", "ticket", String(ticketId), {
+            ticket_id: archivedTicket.id,
+            project_id: archivedTicket.project,
+            session_id: archivedTicket.session_id,
+          }),
+        );
+
+        reply.send(
+          makeCommandAck(true, "Ticket archived", {
+            project_id: archivedTicket.project,
+            ticket_id: archivedTicket.id,
+            session_id: archivedTicket.session_id ?? undefined,
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to archive ticket";
+        reply.code(409).send({ error: message });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/delete",
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);

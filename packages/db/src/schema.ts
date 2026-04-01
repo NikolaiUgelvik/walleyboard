@@ -62,6 +62,7 @@ export const ticketsTable = sqliteTable("tickets", {
   targetBranch: text("target_branch").notNull(),
   linkedPr: text("linked_pr", { mode: "json" }),
   sessionId: text("session_id"),
+  archivedAt: text("archived_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

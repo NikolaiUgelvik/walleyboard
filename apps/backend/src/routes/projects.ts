@@ -142,7 +142,9 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       }
 
       const drafts = store.listProjectDrafts(project.id);
-      const tickets = store.listProjectTickets(project.id);
+      const tickets = store.listProjectTickets(project.id, {
+        includeArchived: true,
+      });
       const activeDraft = drafts.find((draft) =>
         executionRuntime.hasActiveDraftRun(draft.id),
       );

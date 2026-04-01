@@ -964,6 +964,32 @@ export function App() {
         return;
       }
 
+      if (event.event_type === "ticket.archived") {
+        const ticketId = event.payload.ticket_id as number | undefined;
+        const projectId = event.payload.project_id as string | undefined;
+        const archivedSessionId = event.payload.session_id as
+          | string
+          | undefined;
+
+        if (ticketId === undefined || !projectId) {
+          return;
+        }
+
+        queryClient.setQueryData<TicketsResponse>(
+          ["projects", projectId, "tickets"],
+          (previous) => ({
+            tickets: (previous?.tickets ?? []).filter(
+              (ticket) => ticket.id !== ticketId,
+            ),
+          }),
+        );
+
+        if (archivedSessionId && selectedSessionId === archivedSessionId) {
+          setInspectorState({ kind: "hidden" });
+        }
+        return;
+      }
+
       if (event.event_type === "session.updated") {
         const session = event.payload.session as ExecutionSession | undefined;
         if (!session) {
@@ -1432,6 +1458,29 @@ export function App() {
           queryKey: ["projects", selectedProjectId, "drafts"],
         }),
       ]);
+    },
+  });
+
+  const archiveTicketMutation = useMutation({
+    mutationFn: (input: { ticketId: number; sessionId?: string | null }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/archive`, {}),
+    onSuccess: async (_, variables) => {
+      if (variables.sessionId && selectedSessionId === variables.sessionId) {
+        setInspectorState({ kind: "hidden" });
+      }
+
+      queryClient.setQueryData<TicketsResponse>(
+        ["projects", selectedProjectId, "tickets"],
+        (previous) => ({
+          tickets: (previous?.tickets ?? []).filter(
+            (ticket) => ticket.id !== variables.ticketId,
+          ),
+        }),
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: ["projects", selectedProjectId, "tickets"],
+      });
     },
   });
 
@@ -2015,6 +2064,20 @@ export function App() {
     });
   };
 
+  const archiveTicket = (ticket: TicketFrontmatter): void => {
+    const confirmed = window.confirm(
+      `Archive ticket #${ticket.id}? This keeps its data in storage and removes it from active ticket views.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    archiveTicketMutation.mutate({
+      ticketId: ticket.id,
+      sessionId: ticket.session_id,
+    });
+  };
+
   const openNewDraft = (): void => {
     initializeNewDraftEditor();
     setInspectorState({ kind: "new_draft" });
@@ -2099,6 +2162,16 @@ export function App() {
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown onClick={(event) => event.stopPropagation()}>
+        {ticket.status === "done" ? (
+          <Menu.Item
+            onClick={(event) => {
+              event.stopPropagation();
+              archiveTicket(ticket);
+            }}
+          >
+            Archive
+          </Menu.Item>
+        ) : null}
         <Menu.Item
           color="red"
           onClick={(event) => {
@@ -2493,6 +2566,10 @@ export function App() {
                                 deleteTicketMutation.isError &&
                                 deleteTicketMutation.variables?.ticketId ===
                                   ticket.id;
+                              const showArchiveError =
+                                archiveTicketMutation.isError &&
+                                archiveTicketMutation.variables?.ticketId ===
+                                  ticket.id;
                               const showStopError =
                                 stopTicketMutation.isError &&
                                 stopTicketMutation.variables?.ticketId ===
@@ -2556,6 +2633,11 @@ export function App() {
                                     {showDeleteError ? (
                                       <Text size="sm" c="red">
                                         {deleteTicketMutation.error.message}
+                                      </Text>
+                                    ) : null}
+                                    {showArchiveError ? (
+                                      <Text size="sm" c="red">
+                                        {archiveTicketMutation.error.message}
                                       </Text>
                                     ) : null}
                                     {showStopError ? (

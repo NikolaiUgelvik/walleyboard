@@ -163,6 +163,7 @@ export const sessionLogsResponseSchema = z.object({
 
 export const eventTypeSchema = z.enum([
   "ticket.updated",
+  "ticket.archived",
   "ticket.deleted",
   "draft.updated",
   "draft.deleted",

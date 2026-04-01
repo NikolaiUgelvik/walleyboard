@@ -93,6 +93,10 @@ export type StartupRecoveryResult = {
   sessions: ExecutionSession[];
 };
 
+export type ListProjectTicketsOptions = {
+  includeArchived?: boolean;
+};
+
 export interface Store {
   listProjects(): Project[];
   getProject(projectId: string): Project | undefined;
@@ -105,7 +109,10 @@ export interface Store {
   deleteProject(projectId: string): Project | undefined;
   listProjectRepositories(projectId: string): RepositoryConfig[];
   listProjectDrafts(projectId: string): DraftTicketState[];
-  listProjectTickets(projectId: string): TicketFrontmatter[];
+  listProjectTickets(
+    projectId: string,
+    options?: ListProjectTicketsOptions,
+  ): TicketFrontmatter[];
   createDraft(input: CreateDraftInput): DraftTicketState;
   getDraft(draftId: string): DraftTicketState | undefined;
   updateDraft(draftId: string, input: UpdateDraftRecordInput): DraftTicketState;
@@ -162,6 +169,7 @@ export interface Store {
     eventType: string,
     payload: Record<string, unknown>,
   ): StructuredEvent;
+  archiveTicket(ticketId: number): TicketFrontmatter | undefined;
   deleteTicket(ticketId: number): TicketFrontmatter | undefined;
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined;
 }

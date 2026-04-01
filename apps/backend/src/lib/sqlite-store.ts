@@ -25,6 +25,7 @@ import type {
   CompleteSessionInput,
   ConfirmDraftInput,
   CreateReviewPackageInput,
+  ListProjectTicketsOptions,
   PreparedExecutionRuntime,
   RestartTicketResult,
   StartTicketResult,
@@ -425,6 +426,7 @@ export class SqliteStore implements Store {
         target_branch TEXT NOT NULL,
         linked_pr TEXT,
         session_id TEXT,
+        archived_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -519,6 +521,7 @@ export class SqliteStore implements Store {
       "acceptance_criteria",
       "TEXT NOT NULL DEFAULT '[]'",
     );
+    this.#ensureColumn("tickets", "archived_at", "TEXT");
     this.#ensureColumn("projects", "draft_analysis_model", "TEXT");
     this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "ticket_work_model", "TEXT");
@@ -898,7 +901,9 @@ export class SqliteStore implements Store {
       this.deleteDraft(draft.id);
     }
 
-    for (const ticket of this.listProjectTickets(projectId)) {
+    for (const ticket of this.listProjectTickets(projectId, {
+      includeArchived: true,
+    })) {
       this.deleteTicket(ticket.id);
     }
 
@@ -928,12 +933,22 @@ export class SqliteStore implements Store {
     return rows.map(mapDraft);
   }
 
-  listProjectTickets(projectId: string): TicketFrontmatter[] {
+  listProjectTickets(
+    projectId: string,
+    options: ListProjectTicketsOptions = {},
+  ): TicketFrontmatter[] {
+    const { includeArchived = false } = options;
     const rows = this.#db
       .prepare(
-        "SELECT * FROM tickets WHERE project_id = ? ORDER BY updated_at DESC, id DESC",
+        `
+          SELECT *
+          FROM tickets
+          WHERE project_id = ?
+            AND (? OR archived_at IS NULL)
+          ORDER BY updated_at DESC, id DESC
+        `,
       )
-      .all(projectId) as Record<string, unknown>[];
+      .all(projectId, includeArchived ? 1 : 0) as Record<string, unknown>[];
     return rows.map(mapTicket);
   }
 
@@ -2101,6 +2116,39 @@ export class SqliteStore implements Store {
       eventType,
       payload,
     );
+  }
+
+  archiveTicket(ticketId: number): TicketFrontmatter | undefined {
+    const ticketRow = this.#db
+      .prepare("SELECT status, archived_at FROM tickets WHERE id = ?")
+      .get(ticketId) as
+      | { status: string; archived_at: string | null }
+      | undefined;
+
+    if (!ticketRow) {
+      return undefined;
+    }
+
+    if (ticketRow.archived_at !== null) {
+      throw new Error("Ticket already archived");
+    }
+
+    if (ticketRow.status !== "done") {
+      throw new Error("Only completed tickets can be archived");
+    }
+
+    const timestamp = nowIso();
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET archived_at = ?, updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(timestamp, timestamp, ticketId);
+
+    return this.getTicket(ticketId);
   }
 
   deleteTicket(ticketId: number): TicketFrontmatter | undefined {
