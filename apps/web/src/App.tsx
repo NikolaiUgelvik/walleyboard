@@ -2305,10 +2305,7 @@ export function App() {
             </SectionCard>
 
             {actionItems.length > 0 ? (
-              <SectionCard
-                title="Inbox"
-                description="Sessions that need a decision or direct intervention stay visible here."
-              >
+              <SectionCard title="Inbox">
                 <Stack gap="xs">
                   {actionItems.map((item) => (
                     <Box
