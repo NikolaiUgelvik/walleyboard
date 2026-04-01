@@ -104,6 +104,45 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
   }
 });
 
+test("updateProject persists repository target branch changes", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-project-options-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Project Options",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+        target_branch: "main",
+      },
+    });
+
+    store.updateProject(project.id, {
+      repository_target_branches: [
+        {
+          repository_id: repository.id,
+          target_branch: "release/1.0",
+        },
+      ],
+    });
+
+    assert.equal(
+      store.getRepository(repository.id)?.target_branch,
+      "release/1.0",
+    );
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reloadedStore.getRepository(repository.id)?.target_branch,
+      "release/1.0",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("starting beyond the running cap keeps the ticket in progress and queues the session", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-queue-start-"));
 

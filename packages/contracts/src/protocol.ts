@@ -36,6 +36,14 @@ export const updateProjectInputSchema = z.object({
   draft_analysis_reasoning_effort: reasoningEffortSchema.nullable().optional(),
   ticket_work_model: z.string().min(1).nullable().optional(),
   ticket_work_reasoning_effort: reasoningEffortSchema.nullable().optional(),
+  repository_target_branches: z
+    .array(
+      z.object({
+        repository_id: opaqueIdSchema,
+        target_branch: z.string().min(1),
+      }),
+    )
+    .optional(),
 });
 
 export const createDraftInputSchema = z.object({
@@ -134,6 +142,18 @@ export const projectResponseSchema = z.object({
 
 export const repositoriesResponseSchema = z.object({
   repositories: z.array(repositoryConfigSchema),
+});
+
+export const repositoryBranchChoicesSchema = z.object({
+  repository_id: opaqueIdSchema,
+  repository_name: z.string().min(1),
+  current_target_branch: z.string().min(1).nullable(),
+  branches: z.array(z.string().min(1)),
+  error: z.string().min(1).nullable(),
+});
+
+export const repositoryBranchesResponseSchema = z.object({
+  repository_branches: z.array(repositoryBranchChoicesSchema),
 });
 
 export const draftsResponseSchema = z.object({
@@ -259,6 +279,9 @@ export const pullRequestUpdatedEventPayloadSchema = pullRequestRefSchema;
 
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectInputSchema>;
+export type RepositoryBranchChoices = z.infer<
+  typeof repositoryBranchChoicesSchema
+>;
 export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
 export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;
 export type RefineDraftInput = z.infer<typeof refineDraftInputSchema>;
@@ -279,6 +302,9 @@ export type CheckpointResponseInput = z.infer<
 export type SessionInput = z.infer<typeof sessionInputSchema>;
 export type CommandAck = z.infer<typeof commandAckSchema>;
 export type DraftEventsResponse = z.infer<typeof draftEventsResponseSchema>;
+export type RepositoryBranchesResponse = z.infer<
+  typeof repositoryBranchesResponseSchema
+>;
 export type ProtocolEvent = z.infer<typeof protocolEventSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventEntityType = z.infer<typeof eventEntityTypeSchema>;

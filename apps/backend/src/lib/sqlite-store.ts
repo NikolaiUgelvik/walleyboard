@@ -910,7 +910,16 @@ export class SqliteStore implements Store {
       input.ticket_work_reasoning_effort === undefined
         ? project.ticket_work_reasoning_effort
         : normalizeOptionalReasoningEffort(input.ticket_work_reasoning_effort);
+    const repositoryTargetBranchUpdates =
+      input.repository_target_branches ?? [];
     const timestamp = nowIso();
+
+    for (const repositoryUpdate of repositoryTargetBranchUpdates) {
+      const repository = this.getRepository(repositoryUpdate.repository_id);
+      if (!repository || repository.project_id !== projectId) {
+        throw new Error("Repository not found");
+      }
+    }
 
     this.#db
       .prepare(
@@ -936,6 +945,23 @@ export class SqliteStore implements Store {
         timestamp,
         projectId,
       );
+
+    for (const repositoryUpdate of repositoryTargetBranchUpdates) {
+      this.#db
+        .prepare(
+          `
+            UPDATE repositories
+            SET target_branch = ?,
+                updated_at = ?
+            WHERE id = ?
+          `,
+        )
+        .run(
+          repositoryUpdate.target_branch,
+          timestamp,
+          repositoryUpdate.repository_id,
+        );
+    }
 
     return requireValue(
       this.getProject(projectId),

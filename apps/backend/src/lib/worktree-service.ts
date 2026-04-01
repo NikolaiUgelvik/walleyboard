@@ -143,6 +143,43 @@ function normalizeOptionalCommand(
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function listGitRemotes(repoPath: string): string[] {
+  const output = runGit(repoPath, ["remote"]);
+  if (output.length === 0) {
+    return [];
+  }
+
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+export function fetchRepositoryBranches(
+  repository: RepositoryConfig,
+): string[] {
+  runGit(repository.path, ["rev-parse", "--is-inside-work-tree"]);
+
+  if (listGitRemotes(repository.path).length > 0) {
+    runGit(repository.path, ["fetch", "--all", "--prune", "--quiet"]);
+  }
+
+  const output = runGit(repository.path, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads",
+    "refs/remotes",
+  ]);
+  const branches = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.endsWith("/HEAD"));
+
+  return [...new Set(branches)].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 function tryRemoveWorktreeRoot(worktreePath: string): void {
   try {
     rmdirSync(dirname(worktreePath));

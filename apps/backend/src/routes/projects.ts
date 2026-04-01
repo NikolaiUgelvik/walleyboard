@@ -11,6 +11,7 @@ import { parseBody } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
 import {
+  fetchRepositoryBranches,
   removeLocalBranch,
   removePreparedWorktree,
 } from "../lib/worktree-service.js";
@@ -52,9 +53,15 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to update project";
-      reply.code(message === "Project not found" ? 404 : 409).send({
-        error: message,
-      });
+      reply
+        .code(
+          message === "Project not found" || message === "Repository not found"
+            ? 404
+            : 409,
+        )
+        .send({
+          error: message,
+        });
     }
   };
 
@@ -81,6 +88,44 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     async (request) => ({
       repositories: store.listProjectRepositories(request.params.projectId),
     }),
+  );
+
+  app.get<{ Params: { projectId: string } }>(
+    "/projects/:projectId/repository-branches",
+    async (request, reply) => {
+      const project = store.getProject(request.params.projectId);
+      if (!project) {
+        reply.code(404).send({ error: "Project not found" });
+        return;
+      }
+
+      return {
+        repository_branches: store
+          .listProjectRepositories(project.id)
+          .map((repository) => {
+            try {
+              return {
+                repository_id: repository.id,
+                repository_name: repository.name,
+                current_target_branch: repository.target_branch,
+                branches: fetchRepositoryBranches(repository),
+                error: null,
+              };
+            } catch (error) {
+              return {
+                repository_id: repository.id,
+                repository_name: repository.name,
+                current_target_branch: repository.target_branch,
+                branches: [],
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Unable to fetch repository branches",
+              };
+            }
+          }),
+      };
+    },
   );
 
   app.get<{ Params: { projectId: string } }>(

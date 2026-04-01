@@ -34,6 +34,8 @@ import type {
   Project,
   ProtocolEvent,
   ReasoningEffort,
+  RepositoryBranchChoices,
+  RepositoryBranchesResponse,
   RepositoryConfig,
   ReviewPackage,
   StructuredEvent,
@@ -262,6 +264,78 @@ function deriveRepositoryName(path: string, fallback: string): string {
   return segments.at(-1) ?? (slugify(fallback) || "repo");
 }
 
+function resolveRepositoryTargetBranch(
+  repository: RepositoryConfig,
+  defaultTargetBranch: string | null,
+): string {
+  return repository.target_branch ?? defaultTargetBranch ?? "";
+}
+
+function mapRepositoryTargetBranches(
+  repositories: RepositoryConfig[],
+  defaultTargetBranch: string | null,
+): Record<string, string> {
+  const next: Record<string, string> = {};
+
+  for (const repository of repositories) {
+    const targetBranch = resolveRepositoryTargetBranch(
+      repository,
+      defaultTargetBranch,
+    );
+    if (targetBranch.length > 0) {
+      next[repository.id] = targetBranch;
+    }
+  }
+
+  return next;
+}
+
+function mergeRepositoryTargetBranches(
+  current: Record<string, string>,
+  repositories: RepositoryConfig[],
+  defaultTargetBranch: string | null,
+): Record<string, string> {
+  const next = mapRepositoryTargetBranches(repositories, defaultTargetBranch);
+
+  for (const repository of repositories) {
+    const currentValue = current[repository.id];
+    if (typeof currentValue === "string" && currentValue.length > 0) {
+      next[repository.id] = currentValue;
+    }
+  }
+
+  return next;
+}
+
+function repositoryTargetBranchesEqual(
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
+function buildRepositoryBranchOptions(
+  branches: string[],
+  currentTargetBranch: string | null,
+): { value: string; label: string }[] {
+  const optionValues = currentTargetBranch
+    ? [currentTargetBranch, ...branches]
+    : branches;
+  return [...new Set(optionValues)]
+    .filter((value) => value.length > 0)
+    .sort((left, right) => left.localeCompare(right))
+    .map((value) => ({
+      value,
+      label: value,
+    }));
+}
+
 function deriveWorkingBranchPreview(ticket: TicketFrontmatter): string {
   return `codex/ticket-${ticket.id}-${slugify(ticket.title).slice(0, 24)}`;
 }
@@ -467,6 +541,10 @@ async function saveProjectOptionsRequest(
     draft_analysis_reasoning_effort: ReasoningEffort | null;
     ticket_work_model: string | null;
     ticket_work_reasoning_effort: ReasoningEffort | null;
+    repository_target_branches?: Array<{
+      repository_id: string;
+      target_branch: string;
+    }>;
   },
 ): Promise<CommandAck> {
   try {
@@ -1009,6 +1087,10 @@ export function App() {
     projectOptionsPostWorktreeCommand,
     setProjectOptionsPostWorktreeCommand,
   ] = useState("");
+  const [
+    projectOptionsRepositoryTargetBranches,
+    setProjectOptionsRepositoryTargetBranches,
+  ] = useState<Record<string, string>>({});
   const [projectOptionsFormError, setProjectOptionsFormError] = useState<
     string | null
   >(null);
@@ -1094,6 +1176,25 @@ export function App() {
     enabled:
       draftEditorProjectId !== null &&
       draftEditorProjectId !== selectedProjectId,
+  });
+
+  const projectOptionsRepositoriesQuery = useQuery({
+    queryKey: ["projects", projectOptionsProjectId, "repositories"],
+    queryFn: () =>
+      fetchJson<RepositoriesResponse>(
+        `/projects/${projectOptionsProjectId}/repositories`,
+      ),
+    enabled: projectOptionsProjectId !== null,
+  });
+
+  const projectOptionsBranchesQuery = useQuery({
+    queryKey: ["projects", projectOptionsProjectId, "repository-branches"],
+    queryFn: () =>
+      fetchJson<RepositoryBranchesResponse>(
+        `/projects/${projectOptionsProjectId}/repository-branches`,
+      ),
+    enabled: projectOptionsProjectId !== null,
+    retry: false,
   });
 
   const draftsQuery = useQuery({
@@ -1200,10 +1301,35 @@ export function App() {
       ) ?? false;
     if (!stillExists) {
       setProjectOptionsProjectId(null);
+      setProjectOptionsRepositoryTargetBranches({});
       setProjectOptionsFormError(null);
       setProjectDeleteConfirmText("");
     }
   }, [projectOptionsProjectId, projectsQuery.data?.projects]);
+
+  useEffect(() => {
+    if (projectOptionsRepositoriesQuery.data === undefined) {
+      return;
+    }
+
+    const defaultTargetBranch =
+      projectsQuery.data?.projects.find(
+        (project) => project.id === projectOptionsProjectId,
+      )?.default_target_branch ?? null;
+
+    setProjectOptionsRepositoryTargetBranches((current) => {
+      const next = mergeRepositoryTargetBranches(
+        current,
+        projectOptionsRepositoriesQuery.data.repositories,
+        defaultTargetBranch,
+      );
+      return repositoryTargetBranchesEqual(current, next) ? current : next;
+    });
+  }, [
+    projectOptionsProjectId,
+    projectOptionsRepositoriesQuery.data,
+    projectsQuery.data,
+  ]);
 
   useEffect(() => {
     if (inspectorState.kind === "draft") {
@@ -1638,6 +1764,10 @@ export function App() {
       draftAnalysisReasoningEffort: ReasoningEffort | null;
       ticketWorkModel: string | null;
       ticketWorkReasoningEffort: ReasoningEffort | null;
+      repositoryTargetBranches: Array<{
+        repositoryId: string;
+        targetBranch: string;
+      }>;
     }) =>
       saveProjectOptionsRequest(input.projectId, {
         pre_worktree_command: input.preWorktreeCommand,
@@ -1646,10 +1776,24 @@ export function App() {
         draft_analysis_reasoning_effort: input.draftAnalysisReasoningEffort,
         ticket_work_model: input.ticketWorkModel,
         ticket_work_reasoning_effort: input.ticketWorkReasoningEffort,
+        repository_target_branches: input.repositoryTargetBranches.map(
+          (repository) => ({
+            repository_id: repository.repositoryId,
+            target_branch: repository.targetBranch,
+          }),
+        ),
       }),
-    onSuccess: async () => {
+    onSuccess: async (_, input) => {
       setProjectOptionsFormError(null);
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", input.projectId, "repositories"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", input.projectId, "repository-branches"],
+        }),
+      ]);
     },
   });
 
@@ -1674,8 +1818,12 @@ export function App() {
       queryClient.removeQueries({
         queryKey: ["projects", projectId, "tickets"],
       });
+      queryClient.removeQueries({
+        queryKey: ["projects", projectId, "repository-branches"],
+      });
 
       setProjectOptionsProjectId(null);
+      setProjectOptionsRepositoryTargetBranches({});
       setProjectOptionsFormError(null);
       setProjectDeleteConfirmText("");
 
@@ -2288,6 +2436,19 @@ export function App() {
     projectsQuery.data?.projects.find(
       (project) => project.id === draftEditorProjectId,
     ) ?? null;
+  const projectOptionsRepositories =
+    projectOptionsRepositoriesQuery.data?.repositories ?? [];
+  const projectOptionsBranchChoices =
+    projectOptionsBranchesQuery.data?.repository_branches ?? [];
+  const projectOptionsBranchesByRepositoryId = new Map<
+    string,
+    RepositoryBranchChoices
+  >(
+    projectOptionsBranchChoices.map((repositoryBranches) => [
+      repositoryBranches.repository_id,
+      repositoryBranches,
+    ]),
+  );
   const projectOptionsDraftModelValue = resolveProjectModelValue(
     projectOptionsDraftModelPreset,
     projectOptionsDraftModelCustom,
@@ -2304,6 +2465,18 @@ export function App() {
     resolveOptionalProjectCommandValue(projectOptionsPreWorktreeCommand);
   const projectOptionsPostWorktreeCommandValue =
     resolveOptionalProjectCommandValue(projectOptionsPostWorktreeCommand);
+  const projectOptionsRepositoryBranchesDirty =
+    projectOptionsProject !== null &&
+    projectOptionsRepositories.some((repository) => {
+      const currentTargetBranch = resolveRepositoryTargetBranch(
+        repository,
+        projectOptionsProject.default_target_branch,
+      );
+      const selectedTargetBranch =
+        projectOptionsRepositoryTargetBranches[repository.id] ??
+        currentTargetBranch;
+      return selectedTargetBranch !== currentTargetBranch;
+    });
   const projectOptionsDirty =
     projectOptionsProject !== null &&
     (projectOptionsPreWorktreeCommandValue !==
@@ -2317,7 +2490,8 @@ export function App() {
       projectOptionsTicketModelValue !==
         projectOptionsProject.ticket_work_model ||
       projectOptionsTicketReasoningEffortValue !==
-        projectOptionsProject.ticket_work_reasoning_effort);
+        projectOptionsProject.ticket_work_reasoning_effort ||
+      projectOptionsRepositoryBranchesDirty);
   const canDeleteProject =
     projectOptionsProject !== null &&
     projectDeleteConfirmText.trim() === projectOptionsProject.slug;
@@ -2747,6 +2921,7 @@ export function App() {
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);
+    setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
     updateProjectMutation.reset();
@@ -2754,6 +2929,13 @@ export function App() {
   };
 
   const openProjectOptions = (project: Project): void => {
+    const cachedRepositories =
+      queryClient.getQueryData<RepositoriesResponse>([
+        "projects",
+        project.id,
+        "repositories",
+      ])?.repositories ?? [];
+
     setProjectOptionsProjectId(project.id);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
@@ -2779,10 +2961,24 @@ export function App() {
     );
     setProjectOptionsPreWorktreeCommand(project.pre_worktree_command ?? "");
     setProjectOptionsPostWorktreeCommand(project.post_worktree_command ?? "");
+    setProjectOptionsRepositoryTargetBranches(
+      mapRepositoryTargetBranches(
+        cachedRepositories,
+        project.default_target_branch,
+      ),
+    );
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
     updateProjectMutation.reset();
     deleteProjectMutation.reset();
+  };
+
+  const refreshProjectOptionsBranches = (): void => {
+    setProjectOptionsFormError(null);
+    void Promise.all([
+      projectOptionsRepositoriesQuery.refetch(),
+      projectOptionsBranchesQuery.refetch(),
+    ]);
   };
 
   const saveProjectOptions = (): void => {
@@ -2810,6 +3006,32 @@ export function App() {
       return;
     }
 
+    const repositoryTargetBranches = projectOptionsRepositories.flatMap(
+      (repository) => {
+        const currentTargetBranch = resolveRepositoryTargetBranch(
+          repository,
+          projectOptionsProject.default_target_branch,
+        );
+        const selectedTargetBranch =
+          projectOptionsRepositoryTargetBranches[repository.id] ??
+          currentTargetBranch;
+
+        if (
+          selectedTargetBranch.trim().length === 0 ||
+          selectedTargetBranch === currentTargetBranch
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            repositoryId: repository.id,
+            targetBranch: selectedTargetBranch,
+          },
+        ];
+      },
+    );
+
     setProjectOptionsFormError(null);
     updateProjectMutation.mutate({
       projectId: projectOptionsProject.id,
@@ -2819,6 +3041,7 @@ export function App() {
       draftAnalysisReasoningEffort: projectOptionsDraftReasoningEffortValue,
       ticketWorkModel: projectOptionsTicketModelValue,
       ticketWorkReasoningEffort: projectOptionsTicketReasoningEffortValue,
+      repositoryTargetBranches,
     });
   };
 
@@ -4952,6 +5175,157 @@ export function App() {
                     );
                   }}
                 />
+              </Stack>
+
+              <Stack gap="sm">
+                <Group justify="space-between" align="flex-end">
+                  <Box>
+                    <Text fw={600}>Repository target branches</Text>
+                    <Text size="sm" c="dimmed">
+                      Fetched branch names are listed for each configured
+                      repository. Refresh to retry branch retrieval before
+                      saving.
+                    </Text>
+                  </Box>
+                  <Button
+                    type="button"
+                    variant="light"
+                    size="xs"
+                    loading={projectOptionsBranchesQuery.isFetching}
+                    onClick={refreshProjectOptionsBranches}
+                  >
+                    Refresh branches
+                  </Button>
+                </Group>
+
+                {projectOptionsRepositoriesQuery.isPending ? (
+                  <Loader size="sm" />
+                ) : projectOptionsRepositoriesQuery.isError ? (
+                  <Group justify="space-between" align="flex-start">
+                    <Text size="sm" c="red">
+                      {projectOptionsRepositoriesQuery.error.message}
+                    </Text>
+                    <Button
+                      type="button"
+                      variant="subtle"
+                      size="compact-sm"
+                      onClick={refreshProjectOptionsBranches}
+                    >
+                      Retry
+                    </Button>
+                  </Group>
+                ) : projectOptionsRepositories.length === 0 ? (
+                  <Text size="sm" c="dimmed">
+                    No repositories are configured for this project.
+                  </Text>
+                ) : (
+                  <Stack gap="sm">
+                    {projectOptionsRepositories.map((repository) => {
+                      const currentTargetBranch = resolveRepositoryTargetBranch(
+                        repository,
+                        projectOptionsProject.default_target_branch,
+                      );
+                      const branchChoices =
+                        projectOptionsBranchesByRepositoryId.get(repository.id);
+                      const selectedTargetBranch =
+                        projectOptionsRepositoryTargetBranches[repository.id] ??
+                        (currentTargetBranch.length > 0
+                          ? currentTargetBranch
+                          : null);
+                      const branchOptions = buildRepositoryBranchOptions(
+                        branchChoices?.branches ?? [],
+                        currentTargetBranch || null,
+                      );
+
+                      return (
+                        <Box key={repository.id} className="detail-meta-card">
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start">
+                              <Box>
+                                <Text fw={600}>{repository.name}</Text>
+                                <Code>{repository.path}</Code>
+                              </Box>
+                              <Text size="sm" c="dimmed">
+                                Current target branch:{" "}
+                                {currentTargetBranch || "Not configured"}
+                              </Text>
+                            </Group>
+
+                            <Select
+                              label="Target branch"
+                              placeholder={
+                                branchChoices?.error
+                                  ? "Refresh branches to retry"
+                                  : projectOptionsBranchesQuery.isPending ||
+                                      projectOptionsBranchesQuery.isFetching
+                                    ? "Loading branches…"
+                                    : "Select a branch"
+                              }
+                              data={branchOptions}
+                              value={selectedTargetBranch}
+                              searchable
+                              nothingFoundMessage="No branches found"
+                              disabled={
+                                projectOptionsBranchesQuery.isError ||
+                                (branchChoices?.error !== null &&
+                                  branchChoices?.error !== undefined) ||
+                                (branchChoices === undefined &&
+                                  projectOptionsBranchesQuery.isPending) ||
+                                branchOptions.length === 0
+                              }
+                              onChange={(value) => {
+                                if (!value) {
+                                  return;
+                                }
+
+                                setProjectOptionsFormError(null);
+                                updateProjectMutation.reset();
+                                setProjectOptionsRepositoryTargetBranches(
+                                  (current) => ({
+                                    ...current,
+                                    [repository.id]: value,
+                                  }),
+                                );
+                              }}
+                            />
+
+                            {branchChoices?.error ? (
+                              <Group justify="space-between" align="flex-start">
+                                <Text size="sm" c="red">
+                                  {branchChoices.error}
+                                </Text>
+                                <Button
+                                  type="button"
+                                  variant="subtle"
+                                  size="compact-sm"
+                                  onClick={refreshProjectOptionsBranches}
+                                >
+                                  Retry
+                                </Button>
+                              </Group>
+                            ) : null}
+                          </Stack>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                )}
+
+                {projectOptionsBranchesQuery.isError ? (
+                  <Group justify="space-between" align="flex-start">
+                    <Text size="sm" c="red">
+                      {projectOptionsBranchesQuery.error.message}
+                    </Text>
+                    <Button
+                      type="button"
+                      variant="subtle"
+                      size="compact-sm"
+                      onClick={refreshProjectOptionsBranches}
+                    >
+                      Retry
+                    </Button>
+                  </Group>
+                ) : null}
               </Stack>
 
               {projectOptionsFormError ? (

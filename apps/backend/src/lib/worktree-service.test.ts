@@ -9,6 +9,7 @@ import type { RepositoryConfig } from "../../../../packages/contracts/src/index.
 
 import {
   AutomaticMergeRecoveryError,
+  fetchRepositoryBranches,
   mergeReviewedBranch,
 } from "./worktree-service.js";
 
@@ -47,6 +48,54 @@ function createRepositoryConfig(path: string): RepositoryConfig {
     updated_at: "2026-04-01T00:00:00.000Z",
   };
 }
+
+test("fetchRepositoryBranches returns local and remote branch names", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-repo-branches-"));
+
+  try {
+    const remotePath = join(tempDir, "remote.git");
+    const repoPath = join(tempDir, "repo");
+    const updaterPath = join(tempDir, "updater");
+
+    execFileSync("git", ["init", "--bare", remotePath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    execFileSync("git", ["clone", remotePath, repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+    runGit(repoPath, ["push", "-u", "origin", "main"]);
+    execFileSync(
+      "git",
+      ["--git-dir", remotePath, "symbolic-ref", "HEAD", "refs/heads/main"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    runGit(repoPath, ["checkout", "-b", "feature/local"]);
+    runGit(repoPath, ["checkout", "main"]);
+
+    execFileSync("git", ["clone", remotePath, updaterPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(updaterPath);
+    runGit(updaterPath, ["checkout", "-b", "release/1.0"]);
+    runGit(updaterPath, ["push", "-u", "origin", "release/1.0"]);
+
+    assert.deepEqual(
+      fetchRepositoryBranches(createRepositoryConfig(repoPath)),
+      ["feature/local", "main", "origin/main", "origin/release/1.0"],
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
 
 test("mergeReviewedBranch refreshes the target branch before rebasing and merging", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-refresh-"));
