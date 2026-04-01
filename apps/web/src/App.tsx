@@ -973,6 +973,8 @@ export function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   );
+  const [projectSelectionHydrated, setProjectSelectionHydrated] =
+    useState(false);
   const [inspectorState, setInspectorState] = useState<InspectorState>({
     kind: "hidden",
   });
@@ -1163,6 +1165,7 @@ export function App() {
         setArchiveActionFeedback(null);
       }
 
+      setProjectSelectionHydrated(true);
       return;
     }
 
@@ -1174,11 +1177,17 @@ export function App() {
       setArchiveModalOpen(false);
       setArchiveActionFeedback(null);
     }
+
+    setProjectSelectionHydrated(true);
   }, [projectsQuery.data, selectedProjectId]);
 
   useEffect(() => {
+    if (!projectSelectionHydrated) {
+      return;
+    }
+
     writeLastOpenProjectId(selectedProjectId);
-  }, [selectedProjectId]);
+  }, [projectSelectionHydrated, selectedProjectId]);
 
   useEffect(() => {
     if (projectOptionsProjectId === null) {
