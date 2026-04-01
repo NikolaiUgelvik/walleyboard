@@ -10,11 +10,13 @@ import type {
   ExecutionSession,
   ExecutionSessionStatus,
   Project,
+  ReasoningEffort,
   RepositoryConfig,
   RequestedChangeNote,
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
+  UpdateProjectInput,
 } from "@orchestrator/contracts";
 import { nanoid } from "nanoid";
 
@@ -64,6 +66,23 @@ function normalizeDescription(value: string): string {
   }
 
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function normalizeOptionalModel(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeOptionalReasoningEffort(
+  value: ReasoningEffort | null | undefined,
+): ReasoningEffort | null {
+  return value ?? null;
 }
 
 function parseJson<T>(value: unknown, fallback: T): T {
@@ -125,6 +144,24 @@ function mapProject(row: Record<string, unknown>): Project {
       row.default_target_branch === null
         ? null
         : String(row.default_target_branch),
+    draft_analysis_model:
+      row.draft_analysis_model === null
+        ? null
+        : String(row.draft_analysis_model),
+    draft_analysis_reasoning_effort:
+      row.draft_analysis_reasoning_effort === null
+        ? null
+        : (String(
+            row.draft_analysis_reasoning_effort,
+          ) as Project["draft_analysis_reasoning_effort"]),
+    ticket_work_model:
+      row.ticket_work_model === null ? null : String(row.ticket_work_model),
+    ticket_work_reasoning_effort:
+      row.ticket_work_reasoning_effort === null
+        ? null
+        : (String(
+            row.ticket_work_reasoning_effort,
+          ) as Project["ticket_work_reasoning_effort"]),
     max_concurrent_sessions: Number(row.max_concurrent_sessions),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
@@ -301,6 +338,10 @@ export class SqliteStore implements Store {
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         default_target_branch TEXT,
+        draft_analysis_model TEXT,
+        draft_analysis_reasoning_effort TEXT,
+        ticket_work_model TEXT,
+        ticket_work_reasoning_effort TEXT,
         max_concurrent_sessions INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -436,6 +477,10 @@ export class SqliteStore implements Store {
       "acceptance_criteria",
       "TEXT NOT NULL DEFAULT '[]'",
     );
+    this.#ensureColumn("projects", "draft_analysis_model", "TEXT");
+    this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
+    this.#ensureColumn("projects", "ticket_work_model", "TEXT");
+    this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
     this.#backfillTicketContext();
   }
 
@@ -643,8 +688,10 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, default_target_branch, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            id, slug, name, default_target_branch, draft_analysis_model,
+            draft_analysis_reasoning_effort, ticket_work_model,
+            ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -652,6 +699,10 @@ export class SqliteStore implements Store {
         slug,
         input.name.trim(),
         defaultTargetBranch,
+        null,
+        null,
+        null,
+        null,
         1,
         timestamp,
         timestamp,
@@ -702,6 +753,81 @@ export class SqliteStore implements Store {
         "Repository not found after creation",
       ),
     };
+  }
+
+  updateProject(projectId: string, input: UpdateProjectInput): Project {
+    const project = this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const draftAnalysisModel =
+      input.draft_analysis_model === undefined
+        ? project.draft_analysis_model
+        : normalizeOptionalModel(input.draft_analysis_model);
+    const draftAnalysisReasoningEffort =
+      input.draft_analysis_reasoning_effort === undefined
+        ? project.draft_analysis_reasoning_effort
+        : normalizeOptionalReasoningEffort(
+            input.draft_analysis_reasoning_effort,
+          );
+    const ticketWorkModel =
+      input.ticket_work_model === undefined
+        ? project.ticket_work_model
+        : normalizeOptionalModel(input.ticket_work_model);
+    const ticketWorkReasoningEffort =
+      input.ticket_work_reasoning_effort === undefined
+        ? project.ticket_work_reasoning_effort
+        : normalizeOptionalReasoningEffort(input.ticket_work_reasoning_effort);
+    const timestamp = nowIso();
+
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET draft_analysis_model = ?,
+              draft_analysis_reasoning_effort = ?,
+              ticket_work_model = ?,
+              ticket_work_reasoning_effort = ?,
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        draftAnalysisModel,
+        draftAnalysisReasoningEffort,
+        ticketWorkModel,
+        ticketWorkReasoningEffort,
+        timestamp,
+        projectId,
+      );
+
+    return requireValue(
+      this.getProject(projectId),
+      "Project not found after update",
+    );
+  }
+
+  deleteProject(projectId: string): Project | undefined {
+    const project = this.getProject(projectId);
+    if (!project) {
+      return undefined;
+    }
+
+    for (const draft of this.listProjectDrafts(projectId)) {
+      this.deleteDraft(draft.id);
+    }
+
+    for (const ticket of this.listProjectTickets(projectId)) {
+      this.deleteTicket(ticket.id);
+    }
+
+    this.#db
+      .prepare("DELETE FROM repositories WHERE project_id = ?")
+      .run(projectId);
+    this.#db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+
+    return project;
   }
 
   listProjectRepositories(projectId: string): RepositoryConfig[] {

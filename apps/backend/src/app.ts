@@ -42,7 +42,7 @@ export async function createApp() {
 
   await app.register(websocket);
   await app.register(healthRoutes);
-  await app.register(projectRoutes, { eventHub, store });
+  await app.register(projectRoutes, { store, executionRuntime });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, { eventHub, store, executionRuntime });
   await app.register(sessionRoutes, { eventHub, store, executionRuntime });

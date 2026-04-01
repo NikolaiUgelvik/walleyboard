@@ -92,6 +92,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
       reply.send({
         events: store.getDraftEvents(request.params.draftId),
+        active_run: executionRuntime.hasActiveDraftRun(request.params.draftId),
       });
     },
   );

@@ -14,6 +14,7 @@ import type {
   DraftTicketState,
   ExecutionSession,
   Project,
+  ReasoningEffort,
   RepositoryConfig,
   StructuredEvent,
   TicketFrontmatter,
@@ -76,6 +77,8 @@ const draftFeasibilityResultSchema = z.object({
 type DraftRefinementResult = z.infer<typeof draftRefinementResultSchema>;
 type DraftFeasibilityResult = z.infer<typeof draftFeasibilityResultSchema>;
 
+const draftAnalysisTimeoutMs = 180_000;
+
 function truncate(value: string, maxLength = 600): string {
   if (value.length <= maxLength) {
     return value;
@@ -86,6 +89,21 @@ function truncate(value: string, maxLength = 600): string {
 
 function ensureDirectory(path: string): void {
   mkdirSync(path, { recursive: true });
+}
+
+function normalizeOptionalModel(model: string | null): string | null {
+  if (model === null) {
+    return null;
+  }
+
+  const trimmed = model.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeOptionalReasoningEffort(
+  effort: ReasoningEffort | null,
+): ReasoningEffort | null {
+  return effort ?? null;
 }
 
 function buildProcessEnv(): Record<string, string> {
@@ -167,6 +185,27 @@ function buildDraftAnalysisOutputPath(
   return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
 }
 
+function appendCodexModelArgs(
+  args: string[],
+  options: {
+    model: string | null;
+    reasoningEffort: ReasoningEffort | null;
+  },
+): void {
+  const model = normalizeOptionalModel(options.model);
+  const reasoningEffort = normalizeOptionalReasoningEffort(
+    options.reasoningEffort,
+  );
+
+  if (model) {
+    args.push("--model", model);
+  }
+
+  if (reasoningEffort) {
+    args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
+  }
+}
+
 function buildCodexPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
@@ -218,12 +257,11 @@ function buildCodexPrompt(
 
 function buildDraftRefinementPrompt(
   draft: DraftTicketState,
-  repository: RepositoryConfig,
   instruction?: string,
 ): string {
   const sections = [
-    `Review the draft ticket inside repository ${repository.name}.`,
-    "Read repository context as needed, but do not modify any files.",
+    "Review the draft ticket text only.",
+    "Do not inspect the repository and do not modify any files.",
     "Return JSON only with no markdown fences or commentary.",
     "",
     "Current draft:",
@@ -239,9 +277,11 @@ function buildDraftRefinementPrompt(
     '{"title_draft":"string","description_draft":"string","proposed_ticket_type":"feature|bugfix|chore|research","proposed_acceptance_criteria":["string"],"split_proposal_summary":"string|null"}',
     "",
     "Requirements:",
-    "- Keep the draft focused and implementable as a single MVP ticket.",
-    "- Make acceptance criteria concrete, testable, and concise.",
-    "- Prefer the smallest forward-moving scope that still delivers value.",
+    "- Correct grammar, wording, clarity, and readability.",
+    "- Preserve the original intent and overall scope unless the wording is clearly contradictory or confusing.",
+    "- Keep the existing ticket type unless the draft text makes it obviously incorrect.",
+    "- Make acceptance criteria concrete, testable, and concise without expanding scope.",
+    '- Set "split_proposal_summary" to null unless the draft already clearly describes multiple separate tickets.',
   ];
 
   if (instruction && instruction.trim().length > 0) {
@@ -653,7 +693,7 @@ export class ExecutionRuntime {
 
     const prompt =
       mode === "refine"
-        ? buildDraftRefinementPrompt(draft, repository, instruction)
+        ? buildDraftRefinementPrompt(draft, instruction)
         : buildDraftQuestionsPrompt(draft, repository, instruction);
     const outputPath = buildDraftAnalysisOutputPath(
       project,
@@ -663,12 +703,32 @@ export class ExecutionRuntime {
     );
     const child = spawn(
       "codex",
-      ["exec", "--json", "--output-last-message", outputPath, prompt],
+      (() => {
+        const model = normalizeOptionalModel(project.draft_analysis_model);
+        const reasoningEffort = normalizeOptionalReasoningEffort(
+          project.draft_analysis_reasoning_effort,
+        );
+        const args = [
+          "exec",
+          "--json",
+          "--full-auto",
+          "--output-last-message",
+          outputPath,
+        ];
+
+        appendCodexModelArgs(args, {
+          model,
+          reasoningEffort,
+        });
+        args.push(prompt);
+        return args;
+      })(),
       {
         cwd: repository.path,
         env: buildProcessEnv(),
       },
     );
+    child.stdin.end();
 
     this.#activeDraftRuns.set(draft.id, child);
 
@@ -717,13 +777,29 @@ export class ExecutionRuntime {
       this.#emitStructuredEvent(failedEvent);
     };
 
+    const timeoutId = setTimeout(() => {
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (!finalized) {
+          child.kill("SIGKILL");
+        }
+      }, 1_000);
+      failRun(
+        `Codex ${mode === "refine" ? "refinement" : "feasibility"} timed out after ${Math.round(
+          draftAnalysisTimeoutMs / 1_000,
+        )} seconds.`,
+      );
+    }, draftAnalysisTimeoutMs);
+
     child.once("error", (error) => {
+      clearTimeout(timeoutId);
       const message =
         error instanceof Error ? error.message : "Codex failed to start";
       failRun(`Codex failed to start: ${message}`);
     });
 
     child.once("close", (exitCode, signal) => {
+      clearTimeout(timeoutId);
       if (finalized) {
         return;
       }
@@ -855,8 +931,16 @@ export class ExecutionRuntime {
       "--full-auto",
       "--output-last-message",
       outputSummaryPath,
-      prompt,
     ];
+    const model = normalizeOptionalModel(project.ticket_work_model);
+    const reasoningEffort = normalizeOptionalReasoningEffort(
+      project.ticket_work_reasoning_effort,
+    );
+    appendCodexModelArgs(args, {
+      model,
+      reasoningEffort,
+    });
+    args.push(prompt);
 
     const ptyEnv = buildProcessEnv();
     let child: IPty;
@@ -901,6 +985,16 @@ export class ExecutionRuntime {
       attemptId,
       `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
     );
+    if (model) {
+      this.#log(session.id, attemptId, `Model override: ${model}`);
+    }
+    if (reasoningEffort) {
+      this.#log(
+        session.id,
+        attemptId,
+        `Reasoning effort override: ${reasoningEffort}`,
+      );
+    }
     if (session.planning_enabled) {
       this.#log(
         session.id,

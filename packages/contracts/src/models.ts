@@ -19,6 +19,8 @@ export const ticketTypeSchema = z.enum([
   "research",
 ]);
 
+export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+
 export const executionSessionStatusSchema = z.enum([
   "queued",
   "running",
@@ -113,6 +115,10 @@ export const projectSchema = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
   default_target_branch: z.string().min(1).nullable(),
+  draft_analysis_model: z.string().min(1).nullable(),
+  draft_analysis_reasoning_effort: reasoningEffortSchema.nullable(),
+  ticket_work_model: z.string().min(1).nullable(),
+  ticket_work_reasoning_effort: reasoningEffortSchema.nullable(),
   max_concurrent_sessions: z.number().int().positive(),
   created_at: timestampSchema,
   updated_at: timestampSchema,
@@ -224,6 +230,7 @@ export type StructuredEvent = z.infer<typeof structuredEventSchema>;
 export type ReviewPackage = z.infer<typeof reviewPackageSchema>;
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketType = z.infer<typeof ticketTypeSchema>;
+export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
 export type ExecutionSessionStatus = z.infer<
   typeof executionSessionStatusSchema
 >;

@@ -25,6 +25,7 @@ import type {
   ExecutionSession,
   Project,
   ProtocolEvent,
+  ReasoningEffort,
   RepositoryConfig,
   ReviewPackage,
   StructuredEvent,
@@ -90,6 +91,31 @@ const boardColumnMeta: Record<
   },
 };
 
+const projectModelPresetValues = [
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex",
+  "gpt-5.3-codex-spark",
+] as const;
+const projectModelPresetOptions = [
+  { value: "default", label: "Default" },
+  ...projectModelPresetValues.map((value) => ({ value, label: value })),
+  { value: "custom", label: "Custom" },
+];
+const reasoningEffortOptions = [
+  { value: "default", label: "Default" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra high" },
+];
+
+type ProjectModelPreset =
+  | "default"
+  | (typeof projectModelPresetValues)[number]
+  | "custom";
+type ProjectReasoningEffortSelection = "default" | ReasoningEffort;
+
 type HealthResponse = {
   ok: true;
   service: "backend";
@@ -114,6 +140,7 @@ type TicketsResponse = {
 
 type DraftEventsResponse = {
   events: StructuredEvent[];
+  active_run: boolean;
 };
 
 type SessionResponse = {
@@ -192,9 +219,12 @@ async function fetchJson<T>(path: string): Promise<T> {
     let message = `Request failed: ${response.status}`;
 
     try {
-      const body = (await response.json()) as { error?: string };
-      if (body.error) {
-        message = body.error;
+      const body = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
+      if (body.message || body.error) {
+        message = body.message ?? body.error ?? message;
       }
     } catch {
       // Keep the default message when the response is not JSON.
@@ -228,7 +258,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
         error?: string;
         message?: string;
       };
-      message = payload.error ?? payload.message ?? message;
+      message = payload.message ?? payload.error ?? message;
     } catch {
       // Keep the default message when the response is not JSON.
     }
@@ -261,7 +291,7 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
         error?: string;
         message?: string;
       };
-      message = payload.error ?? payload.message ?? message;
+      message = payload.message ?? payload.error ?? message;
     } catch {
       // Keep the default message when the response is not JSON.
     }
@@ -270,6 +300,48 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+function isRouteNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message === "Not Found" ||
+    error.message.includes("Route POST:") ||
+    error.message.includes("Route PATCH:")
+  );
+}
+
+async function saveProjectOptionsRequest(
+  projectId: string,
+  body: {
+    draft_analysis_model: string | null;
+    draft_analysis_reasoning_effort: ReasoningEffort | null;
+    ticket_work_model: string | null;
+    ticket_work_reasoning_effort: ReasoningEffort | null;
+  },
+): Promise<CommandAck> {
+  try {
+    return await postJson<CommandAck>(`/projects/${projectId}/update`, body);
+  } catch (error) {
+    if (!isRouteNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    return await patchJson<CommandAck>(`/projects/${projectId}`, body);
+  } catch (error) {
+    if (isRouteNotFoundError(error)) {
+      throw new Error(
+        "Project options save endpoint is unavailable. Restart the backend and try again.",
+      );
+    }
+
+    throw error;
+  }
 }
 
 function humanizeTicketStatus(status: TicketFrontmatter["status"]): string {
@@ -339,6 +411,54 @@ function arraysEqual(left: string[], right: string[]): boolean {
   }
 
   return left.every((value, index) => value === right[index]);
+}
+
+function resolveProjectModelPreset(
+  model: Project["draft_analysis_model"],
+): ProjectModelPreset {
+  if (model === null) {
+    return "default";
+  }
+
+  return projectModelPresetValues.includes(
+    model as (typeof projectModelPresetValues)[number],
+  )
+    ? (model as (typeof projectModelPresetValues)[number])
+    : "custom";
+}
+
+function resolveProjectCustomModelValue(
+  model: Project["draft_analysis_model"],
+): string {
+  return resolveProjectModelPreset(model) === "custom" ? (model ?? "") : "";
+}
+
+function resolveProjectModelValue(
+  preset: ProjectModelPreset,
+  customValue: string,
+): string | null {
+  if (preset === "default") {
+    return null;
+  }
+
+  if (preset === "custom") {
+    const trimmed = customValue.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  return preset;
+}
+
+function resolveProjectReasoningEffortSelection(
+  effort: Project["draft_analysis_reasoning_effort"],
+): ProjectReasoningEffortSelection {
+  return effort ?? "default";
+}
+
+function resolveProjectReasoningEffortValue(
+  selection: ProjectReasoningEffortSelection,
+): ReasoningEffort | null {
+  return selection === "default" ? null : selection;
 }
 
 function formatTimestamp(value: string): string {
@@ -495,6 +615,29 @@ export function App() {
     kind: "hidden",
   });
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
+    string | null
+  >(null);
+  const [projectOptionsDraftModelPreset, setProjectOptionsDraftModelPreset] =
+    useState<ProjectModelPreset>("default");
+  const [projectOptionsDraftModelCustom, setProjectOptionsDraftModelCustom] =
+    useState("");
+  const [
+    projectOptionsDraftReasoningEffort,
+    setProjectOptionsDraftReasoningEffort,
+  ] = useState<ProjectReasoningEffortSelection>("default");
+  const [projectOptionsTicketModelPreset, setProjectOptionsTicketModelPreset] =
+    useState<ProjectModelPreset>("default");
+  const [projectOptionsTicketModelCustom, setProjectOptionsTicketModelCustom] =
+    useState("");
+  const [
+    projectOptionsTicketReasoningEffort,
+    setProjectOptionsTicketReasoningEffort,
+  ] = useState<ProjectReasoningEffortSelection>("default");
+  const [projectOptionsFormError, setProjectOptionsFormError] = useState<
+    string | null
+  >(null);
+  const [projectDeleteConfirmText, setProjectDeleteConfirmText] = useState("");
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
@@ -560,6 +703,7 @@ export function App() {
     queryFn: () =>
       fetchJson<DraftEventsResponse>(`/drafts/${selectedDraftId}/events`),
     enabled: selectedDraftId !== null,
+    refetchInterval: selectedDraftId === null ? false : 2_000,
     retry: false,
   });
 
@@ -589,6 +733,22 @@ export function App() {
       setSelectedProjectId(firstProjectId);
     }
   }, [projectsQuery.data?.projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (projectOptionsProjectId === null) {
+      return;
+    }
+
+    const stillExists =
+      projectsQuery.data?.projects.some(
+        (project) => project.id === projectOptionsProjectId,
+      ) ?? false;
+    if (!stillExists) {
+      setProjectOptionsProjectId(null);
+      setProjectOptionsFormError(null);
+      setProjectDeleteConfirmText("");
+    }
+  }, [projectOptionsProjectId, projectsQuery.data?.projects]);
 
   useEffect(() => {
     if (inspectorState.kind === "draft") {
@@ -791,6 +951,14 @@ export function App() {
         queryClient.setQueryData<DraftEventsResponse>(
           ["drafts", structuredEvent.entity_id, "events"],
           (previous) => ({
+            active_run: (() => {
+              const meta = parseDraftEventMeta(structuredEvent);
+              if (!meta) {
+                return previous?.active_run ?? false;
+              }
+
+              return meta.status === "started";
+            })(),
             events: [
               structuredEvent,
               ...(previous?.events ?? []).filter(
@@ -847,6 +1015,10 @@ export function App() {
     ticketsQuery.data?.tickets.find(
       (ticket) => ticket.session_id === selectedSessionId,
     )?.status ?? null;
+  const projectOptionsProject =
+    projectsQuery.data?.projects.find(
+      (project) => project.id === projectOptionsProjectId,
+    ) ?? null;
 
   const reviewPackageQuery = useQuery({
     queryKey: ["tickets", selectedSessionTicketId, "review-package"],
@@ -886,6 +1058,61 @@ export function App() {
       setRepositoryPath("");
       setDefaultBranch("main");
       setValidationCommandsText("");
+    },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: (input: {
+      projectId: string;
+      draftAnalysisModel: string | null;
+      draftAnalysisReasoningEffort: ReasoningEffort | null;
+      ticketWorkModel: string | null;
+      ticketWorkReasoningEffort: ReasoningEffort | null;
+    }) =>
+      saveProjectOptionsRequest(input.projectId, {
+        draft_analysis_model: input.draftAnalysisModel,
+        draft_analysis_reasoning_effort: input.draftAnalysisReasoningEffort,
+        ticket_work_model: input.ticketWorkModel,
+        ticket_work_reasoning_effort: input.ticketWorkReasoningEffort,
+      }),
+    onSuccess: async () => {
+      setProjectOptionsFormError(null);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: string) =>
+      postJson<CommandAck>(`/projects/${projectId}/delete`, {}),
+    onSuccess: async (_, projectId) => {
+      const remainingProjects =
+        queryClient
+          .getQueryData<ProjectsResponse>(["projects"])
+          ?.projects.filter((project) => project.id !== projectId) ?? [];
+
+      queryClient.setQueryData<ProjectsResponse>(["projects"], {
+        projects: remainingProjects,
+      });
+      queryClient.removeQueries({
+        queryKey: ["projects", projectId, "repositories"],
+      });
+      queryClient.removeQueries({
+        queryKey: ["projects", projectId, "drafts"],
+      });
+      queryClient.removeQueries({
+        queryKey: ["projects", projectId, "tickets"],
+      });
+
+      setProjectOptionsProjectId(null);
+      setProjectOptionsFormError(null);
+      setProjectDeleteConfirmText("");
+
+      if (selectedProjectId === projectId) {
+        setSelectedProjectId(remainingProjects[0]?.id ?? null);
+        setInspectorState({ kind: "hidden" });
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 
@@ -1246,6 +1473,31 @@ export function App() {
     projectsQuery.data?.projects.find(
       (project) => project.id === selectedProjectId,
     ) ?? null;
+  const projectOptionsDraftModelValue = resolveProjectModelValue(
+    projectOptionsDraftModelPreset,
+    projectOptionsDraftModelCustom,
+  );
+  const projectOptionsDraftReasoningEffortValue =
+    resolveProjectReasoningEffortValue(projectOptionsDraftReasoningEffort);
+  const projectOptionsTicketModelValue = resolveProjectModelValue(
+    projectOptionsTicketModelPreset,
+    projectOptionsTicketModelCustom,
+  );
+  const projectOptionsTicketReasoningEffortValue =
+    resolveProjectReasoningEffortValue(projectOptionsTicketReasoningEffort);
+  const projectOptionsDirty =
+    projectOptionsProject !== null &&
+    (projectOptionsDraftModelValue !==
+      projectOptionsProject.draft_analysis_model ||
+      projectOptionsDraftReasoningEffortValue !==
+        projectOptionsProject.draft_analysis_reasoning_effort ||
+      projectOptionsTicketModelValue !==
+        projectOptionsProject.ticket_work_model ||
+      projectOptionsTicketReasoningEffortValue !==
+        projectOptionsProject.ticket_work_reasoning_effort);
+  const canDeleteProject =
+    projectOptionsProject !== null &&
+    projectDeleteConfirmText.trim() === projectOptionsProject.slug;
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const selectedRepository = repositories[0] ?? null;
   const drafts = draftsQuery.data?.drafts ?? [];
@@ -1277,10 +1529,7 @@ export function App() {
   const latestDraftEventMeta = latestDraftEvent
     ? parseDraftEventMeta(latestDraftEvent)
     : null;
-  const draftAnalysisActive =
-    latestDraftEventMeta?.status === "started" &&
-    (latestDraftEventMeta.operation === "refine" ||
-      latestDraftEventMeta.operation === "questions");
+  const draftAnalysisActive = draftEventsQuery.data?.active_run ?? false;
   const latestQuestionsEvent = draftEvents.find(
     (event) => event.event_type === "draft.questions.completed",
   );
@@ -1429,6 +1678,79 @@ export function App() {
     }
   }, [draftEditorSourceId, draftFormDirty, inspectorState.kind, selectedDraft]);
 
+  const closeProjectOptionsModal = (): void => {
+    setProjectOptionsProjectId(null);
+    setProjectOptionsFormError(null);
+    setProjectDeleteConfirmText("");
+    updateProjectMutation.reset();
+    deleteProjectMutation.reset();
+  };
+
+  const openProjectOptions = (project: Project): void => {
+    setProjectOptionsProjectId(project.id);
+    setProjectOptionsDraftModelPreset(
+      resolveProjectModelPreset(project.draft_analysis_model),
+    );
+    setProjectOptionsDraftModelCustom(
+      resolveProjectCustomModelValue(project.draft_analysis_model),
+    );
+    setProjectOptionsDraftReasoningEffort(
+      resolveProjectReasoningEffortSelection(
+        project.draft_analysis_reasoning_effort,
+      ),
+    );
+    setProjectOptionsTicketModelPreset(
+      resolveProjectModelPreset(project.ticket_work_model),
+    );
+    setProjectOptionsTicketModelCustom(
+      resolveProjectCustomModelValue(project.ticket_work_model),
+    );
+    setProjectOptionsTicketReasoningEffort(
+      resolveProjectReasoningEffortSelection(
+        project.ticket_work_reasoning_effort,
+      ),
+    );
+    setProjectOptionsFormError(null);
+    setProjectDeleteConfirmText("");
+    updateProjectMutation.reset();
+    deleteProjectMutation.reset();
+  };
+
+  const saveProjectOptions = (): void => {
+    if (!projectOptionsProject) {
+      return;
+    }
+
+    if (
+      projectOptionsDraftModelPreset === "custom" &&
+      projectOptionsDraftModelValue === null
+    ) {
+      setProjectOptionsFormError(
+        "Enter a model ID for the custom draft analysis model.",
+      );
+      return;
+    }
+
+    if (
+      projectOptionsTicketModelPreset === "custom" &&
+      projectOptionsTicketModelValue === null
+    ) {
+      setProjectOptionsFormError(
+        "Enter a model ID for the custom ticket work model.",
+      );
+      return;
+    }
+
+    setProjectOptionsFormError(null);
+    updateProjectMutation.mutate({
+      projectId: projectOptionsProject.id,
+      draftAnalysisModel: projectOptionsDraftModelValue,
+      draftAnalysisReasoningEffort: projectOptionsDraftReasoningEffortValue,
+      ticketWorkModel: projectOptionsTicketModelValue,
+      ticketWorkReasoningEffort: projectOptionsTicketReasoningEffortValue,
+    });
+  };
+
   const deleteTicket = (ticket: TicketFrontmatter): void => {
     const confirmed = window.confirm(
       `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`,
@@ -1572,21 +1894,34 @@ export function App() {
               ) : (
                 <Stack gap="xs">
                   {projectsQuery.data.projects.map((project) => (
-                    <Button
-                      key={project.id}
-                      className="project-nav-button"
-                      data-selected={
-                        selectedProjectId === project.id ? "true" : "false"
-                      }
-                      variant={
-                        selectedProjectId === project.id ? "filled" : "subtle"
-                      }
-                      justify="space-between"
-                      onClick={() => setSelectedProjectId(project.id)}
-                    >
-                      <span>{project.name}</span>
-                      <Code>{project.default_target_branch ?? "main"}</Code>
-                    </Button>
+                    <Group key={project.id} gap="xs" wrap="nowrap">
+                      <Button
+                        className="project-nav-button"
+                        data-selected={
+                          selectedProjectId === project.id ? "true" : "false"
+                        }
+                        variant={
+                          selectedProjectId === project.id ? "filled" : "subtle"
+                        }
+                        justify="space-between"
+                        style={{ flex: 1 }}
+                        onClick={() => setSelectedProjectId(project.id)}
+                      >
+                        <span>{project.name}</span>
+                        <Code>{project.default_target_branch ?? "main"}</Code>
+                      </Button>
+                      <ActionIcon
+                        aria-label={`Project options for ${project.name}`}
+                        color="gray"
+                        variant="subtle"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openProjectOptions(project);
+                        }}
+                      >
+                        ...
+                      </ActionIcon>
+                    </Group>
                   ))}
                   <Button
                     variant="light"
@@ -2741,6 +3076,200 @@ export function App() {
           </Box>
         ) : null}
       </Box>
+
+      <Modal
+        opened={projectOptionsProject !== null}
+        onClose={closeProjectOptionsModal}
+        title={
+          projectOptionsProject
+            ? `Project options • ${projectOptionsProject.name}`
+            : "Project options"
+        }
+        centered
+        size="lg"
+      >
+        {projectOptionsProject ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveProjectOptions();
+            }}
+          >
+            <Stack gap="md">
+              <Text size="sm" c="dimmed">
+                Model overrides are optional. Default leaves Codex on its normal
+                model selection path for this project.
+              </Text>
+
+              <Stack gap="sm">
+                <Select
+                  label="Draft refining model"
+                  description="Used for both Refine and Questions? draft analysis runs."
+                  data={projectModelPresetOptions}
+                  value={projectOptionsDraftModelPreset}
+                  onChange={(value) => {
+                    if (!value) {
+                      return;
+                    }
+
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsDraftModelPreset(
+                      value as ProjectModelPreset,
+                    );
+                  }}
+                />
+                {projectOptionsDraftModelPreset === "custom" ? (
+                  <TextInput
+                    label="Custom draft model ID"
+                    placeholder="gpt-5.3-spark"
+                    value={projectOptionsDraftModelCustom}
+                    onChange={(event) => {
+                      setProjectOptionsFormError(null);
+                      updateProjectMutation.reset();
+                      setProjectOptionsDraftModelCustom(
+                        event.currentTarget.value,
+                      );
+                    }}
+                  />
+                ) : null}
+                <Select
+                  label="Draft refining reasoning effort"
+                  data={reasoningEffortOptions}
+                  value={projectOptionsDraftReasoningEffort}
+                  onChange={(value) => {
+                    if (!value) {
+                      return;
+                    }
+
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsDraftReasoningEffort(
+                      value as ProjectReasoningEffortSelection,
+                    );
+                  }}
+                />
+              </Stack>
+
+              <Stack gap="sm">
+                <Select
+                  label="General ticket work model"
+                  description="Used when Codex starts or resumes ticket implementation work."
+                  data={projectModelPresetOptions}
+                  value={projectOptionsTicketModelPreset}
+                  onChange={(value) => {
+                    if (!value) {
+                      return;
+                    }
+
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsTicketModelPreset(
+                      value as ProjectModelPreset,
+                    );
+                  }}
+                />
+                {projectOptionsTicketModelPreset === "custom" ? (
+                  <TextInput
+                    label="Custom ticket work model ID"
+                    placeholder="gpt-5.3-spark"
+                    value={projectOptionsTicketModelCustom}
+                    onChange={(event) => {
+                      setProjectOptionsFormError(null);
+                      updateProjectMutation.reset();
+                      setProjectOptionsTicketModelCustom(
+                        event.currentTarget.value,
+                      );
+                    }}
+                  />
+                ) : null}
+                <Select
+                  label="General ticket work reasoning effort"
+                  data={reasoningEffortOptions}
+                  value={projectOptionsTicketReasoningEffort}
+                  onChange={(value) => {
+                    if (!value) {
+                      return;
+                    }
+
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsTicketReasoningEffort(
+                      value as ProjectReasoningEffortSelection,
+                    );
+                  }}
+                />
+              </Stack>
+
+              {projectOptionsFormError ? (
+                <Text size="sm" c="red">
+                  {projectOptionsFormError}
+                </Text>
+              ) : null}
+              {updateProjectMutation.isError ? (
+                <Text size="sm" c="red">
+                  {updateProjectMutation.error.message}
+                </Text>
+              ) : null}
+
+              <Group justify="flex-end">
+                <Button
+                  type="submit"
+                  loading={updateProjectMutation.isPending}
+                  disabled={!projectOptionsDirty}
+                >
+                  Save Options
+                </Button>
+              </Group>
+
+              <Box className="project-options-danger-zone">
+                <Stack gap="sm">
+                  <Text
+                    size="xs"
+                    tt="uppercase"
+                    fw={700}
+                    className="project-options-danger-kicker"
+                  >
+                    Danger zone
+                  </Text>
+                  <Text size="sm" className="project-options-danger-copy">
+                    Delete this project to remove its drafts, tickets, sessions,
+                    and orchestrator-managed local artifacts. The source
+                    repository directory stays on disk.
+                  </Text>
+                  <TextInput
+                    label={`Type ${projectOptionsProject.slug} to confirm`}
+                    value={projectDeleteConfirmText}
+                    onChange={(event) => {
+                      deleteProjectMutation.reset();
+                      setProjectDeleteConfirmText(event.currentTarget.value);
+                    }}
+                  />
+                  {deleteProjectMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {deleteProjectMutation.error.message}
+                    </Text>
+                  ) : null}
+                  <Group justify="flex-end">
+                    <Button
+                      type="button"
+                      color="red"
+                      variant="light"
+                      loading={deleteProjectMutation.isPending}
+                      disabled={!canDeleteProject}
+                      onClick={() =>
+                        deleteProjectMutation.mutate(projectOptionsProject.id)
+                      }
+                    >
+                      Delete Project
+                    </Button>
+                  </Group>
+                </Stack>
+              </Box>
+            </Stack>
+          </form>
+        ) : null}
+      </Modal>
 
       <Modal
         opened={projectModalOpen}

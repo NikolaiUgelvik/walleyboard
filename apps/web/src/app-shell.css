@@ -10,6 +10,10 @@
   --orchestrator-border: rgba(24, 34, 48, 0.08);
   --orchestrator-border-strong: rgba(24, 34, 48, 0.16);
   --orchestrator-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --orchestrator-danger-bg: rgba(255, 244, 243, 0.94);
+  --orchestrator-danger-border: rgba(239, 68, 68, 0.24);
+  --orchestrator-danger-kicker: #ef4444;
+  --orchestrator-danger-copy: #6b7280;
 }
 
 :root[data-mantine-color-scheme="dark"] {
@@ -24,6 +28,10 @@
   --orchestrator-border: rgba(152, 166, 183, 0.14);
   --orchestrator-border-strong: rgba(152, 166, 183, 0.24);
   --orchestrator-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  --orchestrator-danger-bg: rgba(82, 33, 41, 0.28);
+  --orchestrator-danger-border: rgba(248, 113, 113, 0.3);
+  --orchestrator-danger-kicker: #fda4af;
+  --orchestrator-danger-copy: #d8e0ea;
 }
 
 .orchestrator-shell {
@@ -258,6 +266,21 @@
 .inline-code {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 12px;
+}
+
+.project-options-danger-zone {
+  border: 1px solid var(--orchestrator-danger-border);
+  border-radius: 12px;
+  padding: 1rem;
+  background: var(--orchestrator-danger-bg);
+}
+
+.project-options-danger-kicker {
+  color: var(--orchestrator-danger-kicker);
+}
+
+.project-options-danger-copy {
+  color: var(--orchestrator-danger-copy);
 }
 
 @media (max-width: 1400px) {

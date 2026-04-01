@@ -13,6 +13,7 @@ import type {
   TicketFrontmatter,
   TicketType,
   UpdateDraftInput,
+  UpdateProjectInput,
   ValidationResult,
 } from "@orchestrator/contracts";
 
@@ -92,6 +93,8 @@ export interface Store {
     project: Project;
     repository: RepositoryConfig;
   };
+  updateProject(projectId: string, input: UpdateProjectInput): Project;
+  deleteProject(projectId: string): Project | undefined;
   listProjectRepositories(projectId: string): RepositoryConfig[];
   listProjectDrafts(projectId: string): DraftTicketState[];
   listProjectTickets(projectId: string): TicketFrontmatter[];

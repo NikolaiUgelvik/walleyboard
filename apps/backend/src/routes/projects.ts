@@ -1,21 +1,63 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 
-import { createProjectInputSchema } from "@orchestrator/contracts";
+import {
+  createProjectInputSchema,
+  updateProjectInputSchema,
+} from "@orchestrator/contracts";
 
 import { makeCommandAck } from "../lib/command-ack.js";
-import type { EventHub } from "../lib/event-hub.js";
+import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
+import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
+import {
+  removeLocalBranch,
+  removePreparedWorktree,
+} from "../lib/worktree-service.js";
 
 type ProjectRouteOptions = {
-  eventHub: EventHub;
   store: Store;
+  executionRuntime: ExecutionRuntime;
 };
+
+const activeProjectSessionStatuses = new Set([
+  "queued",
+  "running",
+  "paused_checkpoint",
+  "paused_user_control",
+  "awaiting_input",
+]);
 
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   app,
-  { store },
+  { store, executionRuntime },
 ) => {
+  const handleProjectUpdate = async (
+    projectId: string,
+    body: unknown,
+    reply: FastifyReply,
+  ) => {
+    const input = parseBody(reply, updateProjectInputSchema, body);
+    if (!input) {
+      return;
+    }
+
+    try {
+      const project = store.updateProject(projectId, input);
+      reply.send(
+        makeCommandAck(true, "Project options saved", {
+          project_id: project.id,
+        }),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to update project";
+      reply.code(message === "Project not found" ? 404 : 409).send({
+        error: message,
+      });
+    }
+  };
+
   app.get("/projects", async () => ({
     projects: store.listProjects(),
   }));
@@ -77,4 +119,126 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       });
     }
   });
+
+  app.patch<{ Params: { projectId: string } }>(
+    "/projects/:projectId",
+    async (request, reply) =>
+      handleProjectUpdate(request.params.projectId, request.body, reply),
+  );
+
+  app.post<{ Params: { projectId: string } }>(
+    "/projects/:projectId/update",
+    async (request, reply) =>
+      handleProjectUpdate(request.params.projectId, request.body, reply),
+  );
+
+  app.post<{ Params: { projectId: string } }>(
+    "/projects/:projectId/delete",
+    async (request, reply) => {
+      const project = store.getProject(request.params.projectId);
+      if (!project) {
+        reply.code(404).send({ error: "Project not found" });
+        return;
+      }
+
+      const drafts = store.listProjectDrafts(project.id);
+      const tickets = store.listProjectTickets(project.id);
+      const activeDraft = drafts.find((draft) =>
+        executionRuntime.hasActiveDraftRun(draft.id),
+      );
+      if (activeDraft) {
+        reply.code(409).send({
+          error: `Stop the active draft run for "${activeDraft.title_draft}" before deleting this project.`,
+        });
+        return;
+      }
+
+      const sessions = tickets.flatMap((ticket) => {
+        if (!ticket.session_id) {
+          return [];
+        }
+
+        const session = store.getSession(ticket.session_id);
+        return session ? [session] : [];
+      });
+      const blockingSession = sessions.find(
+        (session) =>
+          activeProjectSessionStatuses.has(session.status) ||
+          executionRuntime.hasActiveExecution(session.id) ||
+          executionRuntime.hasManualTerminal(session.id),
+      );
+      if (blockingSession) {
+        reply.code(409).send({
+          error:
+            "Stop or finish the project's active execution work before deleting it.",
+        });
+        return;
+      }
+
+      const cleanupWarnings: string[] = [];
+      let canRemoveWorktreeRoot = true;
+
+      for (const ticket of tickets) {
+        const repository = store.getRepository(ticket.repo);
+        const session = ticket.session_id
+          ? store.getSession(ticket.session_id)
+          : undefined;
+
+        if (repository && session?.worktree_path) {
+          try {
+            removePreparedWorktree(repository, session.worktree_path);
+          } catch (error) {
+            canRemoveWorktreeRoot = false;
+            cleanupWarnings.push(
+              error instanceof Error
+                ? error.message
+                : "Unable to remove worktree",
+            );
+          }
+        }
+
+        if (repository && ticket.working_branch) {
+          try {
+            removeLocalBranch(repository, ticket.working_branch);
+          } catch (error) {
+            cleanupWarnings.push(
+              error instanceof Error
+                ? error.message
+                : "Unable to delete local branch",
+            );
+          }
+        }
+      }
+
+      try {
+        removeProjectArtifacts(project.slug, {
+          includeWorktrees: canRemoveWorktreeRoot,
+        });
+      } catch (error) {
+        cleanupWarnings.push(
+          error instanceof Error
+            ? error.message
+            : "Unable to remove local project artifacts",
+        );
+      }
+
+      const deletedProject = store.deleteProject(project.id);
+      if (!deletedProject) {
+        reply.code(404).send({ error: "Project not found" });
+        return;
+      }
+
+      reply.send(
+        makeCommandAck(
+          true,
+          cleanupWarnings.length === 0
+            ? "Project deleted and local artifacts cleaned up"
+            : `Project deleted, but cleanup needs attention: ${cleanupWarnings.join(" | ")}`,
+          {
+            project_id: deletedProject.id,
+          },
+        ),
+      );
+    },
+  );
 };

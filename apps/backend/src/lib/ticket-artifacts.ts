@@ -58,3 +58,33 @@ export function removeTicketArtifacts(
 
   return removedPaths;
 }
+
+export function removeProjectArtifacts(
+  projectSlug: string,
+  options?: { includeWorktrees?: boolean },
+): string[] {
+  const removedPaths: string[] = [];
+  const includeWorktrees = options?.includeWorktrees ?? true;
+  const paths = [
+    includeWorktrees
+      ? join(process.cwd(), ".local", "worktrees", projectSlug)
+      : null,
+    join(process.cwd(), ".local", "review-packages", projectSlug),
+    join(process.cwd(), ".local", "validation-logs", projectSlug),
+    join(process.cwd(), ".local", "codex-summaries", projectSlug),
+    join(process.cwd(), ".local", "draft-analyses", projectSlug),
+  ];
+
+  for (const path of paths) {
+    if (!path) {
+      continue;
+    }
+
+    const removedPath = removePathIfPresent(path);
+    if (removedPath) {
+      removedPaths.push(removedPath);
+    }
+  }
+
+  return removedPaths;
+}

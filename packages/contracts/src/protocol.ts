@@ -8,6 +8,7 @@ import {
   opaqueIdSchema,
   projectSchema,
   pullRequestRefSchema,
+  reasoningEffortSchema,
   repositoryConfigSchema,
   reviewPackageSchema,
   structuredEventSchema,
@@ -26,6 +27,13 @@ export const createProjectInputSchema = z.object({
     target_branch: z.string().min(1).nullable().optional(),
     validation_commands: z.array(z.string().min(1)).optional(),
   }),
+});
+
+export const updateProjectInputSchema = z.object({
+  draft_analysis_model: z.string().min(1).nullable().optional(),
+  draft_analysis_reasoning_effort: reasoningEffortSchema.nullable().optional(),
+  ticket_work_model: z.string().min(1).nullable().optional(),
+  ticket_work_reasoning_effort: reasoningEffortSchema.nullable().optional(),
 });
 
 export const createDraftInputSchema = z.object({
@@ -123,6 +131,7 @@ export const ticketsResponseSchema = z.object({
 
 export const draftEventsResponseSchema = z.object({
   events: z.array(structuredEventSchema),
+  active_run: z.boolean(),
 });
 
 export const ticketResponseSchema = z.object({
@@ -199,6 +208,7 @@ export const sessionOutputEventPayloadSchema = z.object({
 export const pullRequestUpdatedEventPayloadSchema = pullRequestRefSchema;
 
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
+export type UpdateProjectInput = z.infer<typeof updateProjectInputSchema>;
 export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
 export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;
 export type RefineDraftInput = z.infer<typeof refineDraftInputSchema>;

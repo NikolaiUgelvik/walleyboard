@@ -5,6 +5,10 @@ export const projectsTable = sqliteTable("projects", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   defaultTargetBranch: text("default_target_branch"),
+  draftAnalysisModel: text("draft_analysis_model"),
+  draftAnalysisReasoningEffort: text("draft_analysis_reasoning_effort"),
+  ticketWorkModel: text("ticket_work_model"),
+  ticketWorkReasoningEffort: text("ticket_work_reasoning_effort"),
   maxConcurrentSessions: integer("max_concurrent_sessions")
     .notNull()
     .default(1),
