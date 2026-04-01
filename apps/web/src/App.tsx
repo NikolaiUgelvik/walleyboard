@@ -43,6 +43,11 @@ import "./app-shell.css";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
+import {
+  type PendingDraftEditorSync,
+  emptyDraftEditorFields,
+  resolveDraftEditorSync,
+} from "./lib/draft-editor-sync.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
 const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
@@ -163,15 +168,6 @@ type ActionItem = {
   message: string;
   sessionId: string;
   actionLabel: string;
-};
-
-type PendingDraftEditorSync = {
-  draftId: string;
-  sourceUpdatedAt: string;
-  title: string;
-  description: string;
-  ticketType: string | null;
-  acceptanceCriteria: string;
 };
 
 type NewDraftAction = "save" | "refine" | "questions" | "confirm";
@@ -715,9 +711,8 @@ export function App() {
   );
   const [draftEditorTitle, setDraftEditorTitle] = useState("");
   const [draftEditorDescription, setDraftEditorDescription] = useState("");
-  const [draftEditorTicketType, setDraftEditorTicketType] = useState<
-    string | null
-  >(null);
+  const [draftEditorTicketType, setDraftEditorTicketType] =
+    useState<DraftTicketState["proposed_ticket_type"]>(null);
   const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] =
     useState("");
   const [pendingDraftEditorSync, setPendingDraftEditorSync] =
@@ -1846,11 +1841,12 @@ export function App() {
     (ticket) => ticket.status === "review",
   ).length;
 
-  const capturePendingDraftEditorSync = (
-    draft: DraftTicketState,
-  ): PendingDraftEditorSync => ({
-    draftId: draft.id,
-    sourceUpdatedAt: draft.updated_at,
+  const capturePendingDraftEditorSync = (input: {
+    draftId: string;
+    sourceUpdatedAt: string | null;
+  }): PendingDraftEditorSync => ({
+    draftId: input.draftId,
+    sourceUpdatedAt: input.sourceUpdatedAt,
     title: draftEditorTitle,
     description: draftEditorDescription,
     ticketType: draftEditorTicketType,
@@ -1858,11 +1854,11 @@ export function App() {
   });
 
   const initializeNewDraftEditor = (): void => {
-    setDraftEditorSourceId(null);
-    setDraftEditorTitle("");
-    setDraftEditorDescription("");
-    setDraftEditorTicketType("feature");
-    setDraftEditorAcceptanceCriteria("");
+    setDraftEditorSourceId(emptyDraftEditorFields.sourceId);
+    setDraftEditorTitle(emptyDraftEditorFields.title);
+    setDraftEditorDescription(emptyDraftEditorFields.description);
+    setDraftEditorTicketType(emptyDraftEditorFields.ticketType);
+    setDraftEditorAcceptanceCriteria(emptyDraftEditorFields.acceptanceCriteria);
     setPendingDraftEditorSync(null);
     setPendingNewDraftAction(null);
   };
@@ -1894,11 +1890,12 @@ export function App() {
             "drafts",
           ])
           ?.drafts.find((draft) => draft.id === draftId);
-        if (createdDraft) {
-          setPendingDraftEditorSync(
-            capturePendingDraftEditorSync(createdDraft),
-          );
-        }
+        setPendingDraftEditorSync(
+          capturePendingDraftEditorSync({
+            draftId,
+            sourceUpdatedAt: createdDraft?.updated_at ?? null,
+          }),
+        );
       }
 
       return draftId;
@@ -1915,51 +1912,58 @@ export function App() {
     }
 
     if (!selectedDraft) {
-      setDraftEditorSourceId(null);
-      setDraftEditorTitle("");
-      setDraftEditorDescription("");
-      setDraftEditorTicketType("feature");
-      setDraftEditorAcceptanceCriteria("");
-      setPendingDraftEditorSync(null);
-      return;
-    }
-
-    const pendingSyncTargetsSelectedDraft =
-      pendingDraftEditorSync?.draftId === selectedDraft.id;
-    const pendingSyncMatchesCurrentEditor =
-      pendingSyncTargetsSelectedDraft &&
-      pendingDraftEditorSync.title === draftEditorTitle &&
-      pendingDraftEditorSync.description === draftEditorDescription &&
-      pendingDraftEditorSync.ticketType === draftEditorTicketType &&
-      pendingDraftEditorSync.acceptanceCriteria ===
-        draftEditorAcceptanceCriteria;
-    const shouldApplyPendingDraftSync =
-      pendingSyncMatchesCurrentEditor &&
-      pendingDraftEditorSync.sourceUpdatedAt !== selectedDraft.updated_at;
-
-    if (pendingSyncTargetsSelectedDraft && !pendingSyncMatchesCurrentEditor) {
-      setPendingDraftEditorSync(null);
-      return;
-    }
-
-    if (
-      draftEditorSourceId !== selectedDraft.id ||
-      (pendingDraftEditorSync === null && !draftFormDirty) ||
-      shouldApplyPendingDraftSync
-    ) {
-      setDraftEditorSourceId(selectedDraft.id);
-      setDraftEditorTitle(selectedDraft.title_draft);
-      setDraftEditorDescription(selectedDraft.description_draft);
-      setDraftEditorTicketType(selectedDraft.proposed_ticket_type);
-      setDraftEditorAcceptanceCriteria(
-        selectedDraft.proposed_acceptance_criteria.join("\n"),
-      );
-      if (
-        pendingDraftEditorSync !== null &&
-        (!pendingSyncTargetsSelectedDraft || shouldApplyPendingDraftSync)
-      ) {
-        setPendingDraftEditorSync(null);
+      const syncResult = resolveDraftEditorSync({
+        draftFormDirty,
+        editor: {
+          sourceId: draftEditorSourceId,
+          title: draftEditorTitle,
+          description: draftEditorDescription,
+          ticketType: draftEditorTicketType,
+          acceptanceCriteria: draftEditorAcceptanceCriteria,
+        },
+        pendingSync: pendingDraftEditorSync,
+        selectedDraft: null,
+      });
+      if (syncResult.nextEditor) {
+        setDraftEditorSourceId(syncResult.nextEditor.sourceId);
+        setDraftEditorTitle(syncResult.nextEditor.title);
+        setDraftEditorDescription(syncResult.nextEditor.description);
+        setDraftEditorTicketType(syncResult.nextEditor.ticketType);
+        setDraftEditorAcceptanceCriteria(
+          syncResult.nextEditor.acceptanceCriteria,
+        );
       }
+      if (syncResult.nextPendingSync !== undefined) {
+        setPendingDraftEditorSync(syncResult.nextPendingSync);
+      }
+      return;
+    }
+
+    const syncResult = resolveDraftEditorSync({
+      draftFormDirty,
+      editor: {
+        sourceId: draftEditorSourceId,
+        title: draftEditorTitle,
+        description: draftEditorDescription,
+        ticketType: draftEditorTicketType,
+        acceptanceCriteria: draftEditorAcceptanceCriteria,
+      },
+      pendingSync: pendingDraftEditorSync,
+      selectedDraft,
+    });
+
+    if (syncResult.nextEditor) {
+      setDraftEditorSourceId(syncResult.nextEditor.sourceId);
+      setDraftEditorTitle(syncResult.nextEditor.title);
+      setDraftEditorDescription(syncResult.nextEditor.description);
+      setDraftEditorTicketType(syncResult.nextEditor.ticketType);
+      setDraftEditorAcceptanceCriteria(
+        syncResult.nextEditor.acceptanceCriteria,
+      );
+    }
+
+    if (syncResult.nextPendingSync !== undefined) {
+      setPendingDraftEditorSync(syncResult.nextPendingSync);
     }
   }, [
     draftEditorAcceptanceCriteria,
@@ -2218,7 +2222,17 @@ export function App() {
         ]}
         clearable
         value={draftEditorTicketType}
-        onChange={setDraftEditorTicketType}
+        onChange={(value) => {
+          if (
+            value === null ||
+            value === "feature" ||
+            value === "bugfix" ||
+            value === "chore" ||
+            value === "research"
+          ) {
+            setDraftEditorTicketType(value);
+          }
+        }}
       />
       <Textarea
         label="Acceptance criteria"
@@ -3048,7 +3062,10 @@ export function App() {
                           }
                           onClick={() => {
                             setPendingDraftEditorSync(
-                              capturePendingDraftEditorSync(selectedDraft),
+                              capturePendingDraftEditorSync({
+                                draftId: selectedDraft.id,
+                                sourceUpdatedAt: selectedDraft.updated_at,
+                              }),
                             );
                             refineDraftMutation.mutate(selectedDraft.id);
                           }}
@@ -3069,7 +3086,10 @@ export function App() {
                           }
                           onClick={() => {
                             setPendingDraftEditorSync(
-                              capturePendingDraftEditorSync(selectedDraft),
+                              capturePendingDraftEditorSync({
+                                draftId: selectedDraft.id,
+                                sourceUpdatedAt: selectedDraft.updated_at,
+                              }),
                             );
                             revertDraftRefineMutation.mutate(selectedDraft.id);
                           }}
