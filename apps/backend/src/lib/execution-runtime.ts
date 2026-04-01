@@ -292,11 +292,13 @@ function buildCodexPlanPrompt(
 
 function buildDraftRefinementPrompt(
   draft: DraftTicketState,
+  repository: RepositoryConfig,
   instruction?: string,
 ): string {
   const sections = [
-    "Review the draft ticket text only.",
-    "Do not inspect the repository and do not modify any files.",
+    `Refine the draft ticket for repository ${repository.name}.`,
+    "Inspect repository context as needed, but do not modify any files.",
+    "Scan the repository for relevant Markdown (.md) files and read their text when it helps infer the user's intent.",
     "Return JSON only with no markdown fences or commentary.",
     "",
     "Current draft:",
@@ -314,6 +316,7 @@ function buildDraftRefinementPrompt(
     "Requirements:",
     "- Correct grammar, wording, clarity, and readability.",
     "- Preserve the original intent and overall scope unless the wording is clearly contradictory or confusing.",
+    "- Use relevant repository context, especially Markdown documentation, to infer domain terms, existing workflows, and user intent.",
     "- Keep the existing ticket type unless the draft text makes it obviously incorrect.",
     "- Make acceptance criteria concrete, testable, and concise without expanding scope.",
     '- Set "split_proposal_summary" to null unless the draft already clearly describes multiple separate tickets.',
@@ -728,7 +731,7 @@ export class ExecutionRuntime {
 
     const prompt =
       mode === "refine"
-        ? buildDraftRefinementPrompt(draft, instruction)
+        ? buildDraftRefinementPrompt(draft, repository, instruction)
         : buildDraftQuestionsPrompt(draft, repository, instruction);
     const outputPath = buildDraftAnalysisOutputPath(
       project,
