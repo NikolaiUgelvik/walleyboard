@@ -177,16 +177,28 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
       const cleanupWarnings: string[] = [];
       let canRemoveWorktreeRoot = true;
+      let deferredWorktreeCleanup = false;
 
       for (const ticket of tickets) {
         const repository = store.getRepository(ticket.repo);
         const session = ticket.session_id
           ? store.getSession(ticket.session_id)
           : undefined;
+        let skipLocalBranchCleanup = false;
 
         if (repository && session?.worktree_path) {
           try {
-            removePreparedWorktree(repository, session.worktree_path);
+            const worktreeRemoval = removePreparedWorktree(
+              repository,
+              session.worktree_path,
+              project.post_worktree_command,
+              ticket.working_branch,
+            );
+            if (worktreeRemoval.status === "scheduled") {
+              canRemoveWorktreeRoot = false;
+              deferredWorktreeCleanup = true;
+              skipLocalBranchCleanup = true;
+            }
           } catch (error) {
             canRemoveWorktreeRoot = false;
             cleanupWarnings.push(
@@ -197,7 +209,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
           }
         }
 
-        if (repository && ticket.working_branch) {
+        if (repository && ticket.working_branch && !skipLocalBranchCleanup) {
           try {
             removeLocalBranch(repository, ticket.working_branch);
           } catch (error) {
@@ -232,7 +244,9 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         makeCommandAck(
           true,
           cleanupWarnings.length === 0
-            ? "Project deleted and local artifacts cleaned up"
+            ? deferredWorktreeCleanup
+              ? "Project deleted. Worktree cleanup is continuing in the background."
+              : "Project deleted and local artifacts cleaned up"
             : `Project deleted, but cleanup needs attention: ${cleanupWarnings.join(" | ")}`,
           {
             project_id: deletedProject.id,

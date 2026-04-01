@@ -85,6 +85,17 @@ function normalizeOptionalReasoningEffort(
   return value ?? null;
 }
 
+function normalizeOptionalCommand(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function parseJson<T>(value: unknown, fallback: T): T {
   if (typeof value !== "string" || value.length === 0) {
     return fallback;
@@ -144,6 +155,14 @@ function mapProject(row: Record<string, unknown>): Project {
       row.default_target_branch === null
         ? null
         : String(row.default_target_branch),
+    pre_worktree_command:
+      row.pre_worktree_command === null
+        ? null
+        : String(row.pre_worktree_command),
+    post_worktree_command:
+      row.post_worktree_command === null
+        ? null
+        : String(row.post_worktree_command),
     draft_analysis_model:
       row.draft_analysis_model === null
         ? null
@@ -338,6 +357,8 @@ export class SqliteStore implements Store {
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         default_target_branch TEXT,
+        pre_worktree_command TEXT,
+        post_worktree_command TEXT,
         draft_analysis_model TEXT,
         draft_analysis_reasoning_effort TEXT,
         ticket_work_model TEXT,
@@ -481,6 +502,8 @@ export class SqliteStore implements Store {
     this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "ticket_work_model", "TEXT");
     this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
+    this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
+    this.#ensureColumn("projects", "post_worktree_command", "TEXT");
     this.#backfillTicketContext();
   }
 
@@ -688,10 +711,11 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, default_target_branch, draft_analysis_model,
+            id, slug, name, default_target_branch, pre_worktree_command,
+            post_worktree_command, draft_analysis_model,
             draft_analysis_reasoning_effort, ticket_work_model,
             ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -699,6 +723,8 @@ export class SqliteStore implements Store {
         slug,
         input.name.trim(),
         defaultTargetBranch,
+        null,
+        null,
         null,
         null,
         null,
@@ -765,6 +791,14 @@ export class SqliteStore implements Store {
       input.draft_analysis_model === undefined
         ? project.draft_analysis_model
         : normalizeOptionalModel(input.draft_analysis_model);
+    const preWorktreeCommand =
+      input.pre_worktree_command === undefined
+        ? project.pre_worktree_command
+        : normalizeOptionalCommand(input.pre_worktree_command);
+    const postWorktreeCommand =
+      input.post_worktree_command === undefined
+        ? project.post_worktree_command
+        : normalizeOptionalCommand(input.post_worktree_command);
     const draftAnalysisReasoningEffort =
       input.draft_analysis_reasoning_effort === undefined
         ? project.draft_analysis_reasoning_effort
@@ -785,7 +819,9 @@ export class SqliteStore implements Store {
       .prepare(
         `
           UPDATE projects
-          SET draft_analysis_model = ?,
+          SET pre_worktree_command = ?,
+              post_worktree_command = ?,
+              draft_analysis_model = ?,
               draft_analysis_reasoning_effort = ?,
               ticket_work_model = ?,
               ticket_work_reasoning_effort = ?,
@@ -794,6 +830,8 @@ export class SqliteStore implements Store {
         `,
       )
       .run(
+        preWorktreeCommand,
+        postWorktreeCommand,
         draftAnalysisModel,
         draftAnalysisReasoningEffort,
         ticketWorkModel,

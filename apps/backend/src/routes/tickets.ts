@@ -22,6 +22,7 @@ import {
   prepareWorktree,
   removeLocalBranch,
   removePreparedWorktree,
+  runPreWorktreeCommand,
 } from "../lib/worktree-service.js";
 
 type TicketRouteOptions = {
@@ -157,6 +158,10 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           ticket,
           session,
         });
+        runPreWorktreeCommand(
+          runtime.worktreePath,
+          project.pre_worktree_command,
+        );
 
         reply.send(
           makeCommandAck(
@@ -366,6 +371,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       const project = store.getProject(ticket.project);
       const repository = store.getRepository(ticket.repo);
       const cleanupWarnings: string[] = [];
+      let deferredWorktreeCleanup = false;
+      let skipLocalBranchCleanup = false;
 
       if (session) {
         try {
@@ -384,7 +391,16 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
 
       if (repository && session?.worktree_path) {
         try {
-          removePreparedWorktree(repository, session.worktree_path);
+          const worktreeRemoval = removePreparedWorktree(
+            repository,
+            session.worktree_path,
+            project?.post_worktree_command,
+            ticket.working_branch,
+          );
+          if (worktreeRemoval.status === "scheduled") {
+            deferredWorktreeCleanup = true;
+            skipLocalBranchCleanup = true;
+          }
         } catch (error) {
           cleanupWarnings.push(
             error instanceof Error
@@ -394,7 +410,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         }
       }
 
-      if (repository && ticket.working_branch) {
+      if (repository && ticket.working_branch && !skipLocalBranchCleanup) {
         try {
           removeLocalBranch(repository, ticket.working_branch);
         } catch (error) {
@@ -441,7 +457,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         makeCommandAck(
           true,
           cleanupWarnings.length === 0
-            ? "Ticket deleted and local artifacts cleaned up"
+            ? deferredWorktreeCleanup
+              ? "Ticket deleted. Worktree cleanup is continuing in the background."
+              : "Ticket deleted and local artifacts cleaned up"
             : `Ticket deleted, but cleanup needs attention: ${cleanupWarnings.join(" | ")}`,
           {
             ticket_id: ticketId,
@@ -604,6 +622,11 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         reply.code(404).send({ error: "Repository not found" });
         return;
       }
+      const project = store.getProject(ticket.project);
+      if (!project) {
+        reply.code(404).send({ error: "Project not found" });
+        return;
+      }
 
       const reviewPackage = store.getReviewPackage(ticketId);
       if (!reviewPackage) {
@@ -623,10 +646,25 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
 
         const logLines = [...mergeResult.logs];
         const cleanupWarnings: string[] = [];
+        let deferredWorktreeCleanup = false;
+        let skipLocalBranchCleanup = false;
 
         try {
-          removePreparedWorktree(repository, session.worktree_path);
-          logLines.push(`Removed worktree ${session.worktree_path}`);
+          const worktreeRemoval = removePreparedWorktree(
+            repository,
+            session.worktree_path,
+            project.post_worktree_command,
+            ticket.working_branch,
+          );
+          if (worktreeRemoval.status === "scheduled") {
+            deferredWorktreeCleanup = true;
+            skipLocalBranchCleanup = true;
+          }
+          logLines.push(
+            worktreeRemoval.status === "scheduled"
+              ? `Scheduled worktree removal for ${session.worktree_path} after the post-worktree command finishes`
+              : `Removed worktree ${session.worktree_path}`,
+          );
         } catch (error) {
           cleanupWarnings.push(
             error instanceof Error
@@ -635,21 +673,25 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           );
         }
 
-        try {
-          removeLocalBranch(repository, ticket.working_branch);
-          logLines.push(`Deleted local branch ${ticket.working_branch}`);
-        } catch (error) {
-          cleanupWarnings.push(
-            error instanceof Error
-              ? error.message
-              : "Unable to delete local branch",
-          );
+        if (!skipLocalBranchCleanup) {
+          try {
+            removeLocalBranch(repository, ticket.working_branch);
+            logLines.push(`Deleted local branch ${ticket.working_branch}`);
+          } catch (error) {
+            cleanupWarnings.push(
+              error instanceof Error
+                ? error.message
+                : "Unable to delete local branch",
+            );
+          }
         }
 
         const mergedTicket = store.updateTicketStatus(ticketId, "done");
         const summary =
           cleanupWarnings.length === 0
-            ? `Merged ${ticket.working_branch} into ${ticket.target_branch} and cleaned up local artifacts.`
+            ? deferredWorktreeCleanup
+              ? `Merged ${ticket.working_branch} into ${ticket.target_branch}. Worktree cleanup is continuing in the background.`
+              : `Merged ${ticket.working_branch} into ${ticket.target_branch} and cleaned up local artifacts.`
             : `Merged ${ticket.working_branch} into ${ticket.target_branch}, but cleanup needs attention: ${cleanupWarnings.join(
                 " | ",
               )}`;

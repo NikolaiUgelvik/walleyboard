@@ -327,6 +327,8 @@ function isRouteNotFoundError(error: unknown): boolean {
 async function saveProjectOptionsRequest(
   projectId: string,
   body: {
+    pre_worktree_command: string | null;
+    post_worktree_command: string | null;
     draft_analysis_model: string | null;
     draft_analysis_reasoning_effort: ReasoningEffort | null;
     ticket_work_model: string | null;
@@ -469,6 +471,11 @@ function resolveProjectReasoningEffortValue(
   selection: ProjectReasoningEffortSelection,
 ): ReasoningEffort | null {
   return selection === "default" ? null : selection;
+}
+
+function resolveOptionalProjectCommandValue(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function formatTimestamp(value: string): string {
@@ -682,6 +689,14 @@ export function App() {
     projectOptionsTicketReasoningEffort,
     setProjectOptionsTicketReasoningEffort,
   ] = useState<ProjectReasoningEffortSelection>("default");
+  const [
+    projectOptionsPreWorktreeCommand,
+    setProjectOptionsPreWorktreeCommand,
+  ] = useState("");
+  const [
+    projectOptionsPostWorktreeCommand,
+    setProjectOptionsPostWorktreeCommand,
+  ] = useState("");
   const [projectOptionsFormError, setProjectOptionsFormError] = useState<
     string | null
   >(null);
@@ -1117,12 +1132,16 @@ export function App() {
   const updateProjectMutation = useMutation({
     mutationFn: (input: {
       projectId: string;
+      preWorktreeCommand: string | null;
+      postWorktreeCommand: string | null;
       draftAnalysisModel: string | null;
       draftAnalysisReasoningEffort: ReasoningEffort | null;
       ticketWorkModel: string | null;
       ticketWorkReasoningEffort: ReasoningEffort | null;
     }) =>
       saveProjectOptionsRequest(input.projectId, {
+        pre_worktree_command: input.preWorktreeCommand,
+        post_worktree_command: input.postWorktreeCommand,
         draft_analysis_model: input.draftAnalysisModel,
         draft_analysis_reasoning_effort: input.draftAnalysisReasoningEffort,
         ticket_work_model: input.ticketWorkModel,
@@ -1568,10 +1587,18 @@ export function App() {
   );
   const projectOptionsTicketReasoningEffortValue =
     resolveProjectReasoningEffortValue(projectOptionsTicketReasoningEffort);
+  const projectOptionsPreWorktreeCommandValue =
+    resolveOptionalProjectCommandValue(projectOptionsPreWorktreeCommand);
+  const projectOptionsPostWorktreeCommandValue =
+    resolveOptionalProjectCommandValue(projectOptionsPostWorktreeCommand);
   const projectOptionsDirty =
     projectOptionsProject !== null &&
-    (projectOptionsDraftModelValue !==
-      projectOptionsProject.draft_analysis_model ||
+    (projectOptionsPreWorktreeCommandValue !==
+      projectOptionsProject.pre_worktree_command ||
+      projectOptionsPostWorktreeCommandValue !==
+        projectOptionsProject.post_worktree_command ||
+      projectOptionsDraftModelValue !==
+        projectOptionsProject.draft_analysis_model ||
       projectOptionsDraftReasoningEffortValue !==
         projectOptionsProject.draft_analysis_reasoning_effort ||
       projectOptionsTicketModelValue !==
@@ -1882,6 +1909,8 @@ export function App() {
         project.ticket_work_reasoning_effort,
       ),
     );
+    setProjectOptionsPreWorktreeCommand(project.pre_worktree_command ?? "");
+    setProjectOptionsPostWorktreeCommand(project.post_worktree_command ?? "");
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
     updateProjectMutation.reset();
@@ -1916,6 +1945,8 @@ export function App() {
     setProjectOptionsFormError(null);
     updateProjectMutation.mutate({
       projectId: projectOptionsProject.id,
+      preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
+      postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
       draftAnalysisModel: projectOptionsDraftModelValue,
       draftAnalysisReasoningEffort: projectOptionsDraftReasoningEffortValue,
       ticketWorkModel: projectOptionsTicketModelValue,
@@ -3456,6 +3487,37 @@ export function App() {
                 Model overrides are optional. Default leaves Codex on its normal
                 model selection path for this project.
               </Text>
+
+              <Stack gap="sm">
+                <Textarea
+                  label="Pre-worktree command"
+                  description="Runs inside each new worktree without blocking Codex startup."
+                  placeholder="npm install"
+                  value={projectOptionsPreWorktreeCommand}
+                  onChange={(event) => {
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsPreWorktreeCommand(
+                      event.currentTarget.value,
+                    );
+                  }}
+                  minRows={2}
+                />
+                <Textarea
+                  label="Post-worktree command"
+                  description="Runs inside the worktree before background teardown removes it."
+                  placeholder="npm run cleanup"
+                  value={projectOptionsPostWorktreeCommand}
+                  onChange={(event) => {
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsPostWorktreeCommand(
+                      event.currentTarget.value,
+                    );
+                  }}
+                  minRows={2}
+                />
+              </Stack>
 
               <Stack gap="sm">
                 <Select

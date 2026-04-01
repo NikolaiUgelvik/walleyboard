@@ -115,6 +115,8 @@ export const projectSchema = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
   default_target_branch: z.string().min(1).nullable(),
+  pre_worktree_command: z.string().min(1).nullable(),
+  post_worktree_command: z.string().min(1).nullable(),
   draft_analysis_model: z.string().min(1).nullable(),
   draft_analysis_reasoning_effort: reasoningEffortSchema.nullable(),
   ticket_work_model: z.string().min(1).nullable(),

@@ -30,6 +30,8 @@ export const createProjectInputSchema = z.object({
 });
 
 export const updateProjectInputSchema = z.object({
+  pre_worktree_command: z.string().min(1).nullable().optional(),
+  post_worktree_command: z.string().min(1).nullable().optional(),
   draft_analysis_model: z.string().min(1).nullable().optional(),
   draft_analysis_reasoning_effort: reasoningEffortSchema.nullable().optional(),
   ticket_work_model: z.string().min(1).nullable().optional(),

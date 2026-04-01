@@ -1,6 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, rmdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import type {
   Project,
@@ -47,6 +47,48 @@ function runGitAtRoot(args: string[]): string {
     throw new Error(`Git command failed (${args.join(" ")}): ${message}`);
   }
 }
+
+function normalizeOptionalCommand(
+  command: string | null | undefined,
+): string | null {
+  if (typeof command !== "string") {
+    return command ?? null;
+  }
+
+  const trimmed = command.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function tryRemoveWorktreeRoot(worktreePath: string): void {
+  try {
+    rmdirSync(dirname(worktreePath));
+  } catch {
+    // Ignore missing or non-empty project worktree roots.
+  }
+}
+
+export function runPreWorktreeCommand(
+  worktreePath: string,
+  command: string | null | undefined,
+): boolean {
+  const normalizedCommand = normalizeOptionalCommand(command);
+  if (!normalizedCommand || !existsSync(worktreePath)) {
+    return false;
+  }
+
+  const child = spawn("sh", ["-lc", normalizedCommand], {
+    cwd: worktreePath,
+    env: process.env,
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return true;
+}
+
+export type PreparedWorktreeRemovalResult = {
+  status: "removed" | "scheduled";
+};
 
 export function prepareWorktree(
   project: Project,
@@ -119,12 +161,38 @@ export function prepareWorktree(
 export function removePreparedWorktree(
   repository: RepositoryConfig,
   worktreePath: string,
-): void {
+  postWorktreeCommand?: string | null,
+  workingBranch?: string | null,
+): PreparedWorktreeRemovalResult {
   if (!existsSync(worktreePath)) {
-    return;
+    return { status: "removed" };
+  }
+
+  const normalizedCommand = normalizeOptionalCommand(postWorktreeCommand);
+  if (normalizedCommand) {
+    const child = spawn(
+      "sh",
+      [
+        "-lc",
+        'cd "$1" && sh -lc "$2"; status=$?; git -C "$3" worktree remove --force "$1"; removal_status=$?; if [ $removal_status -eq 0 ] && [ -n "$4" ]; then git -C "$3" branch -D "$4" >/dev/null 2>&1 || true; fi; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status',
+        "sh",
+        worktreePath,
+        normalizedCommand,
+        repository.path,
+        workingBranch ?? "",
+      ],
+      {
+        detached: true,
+        stdio: "ignore",
+      },
+    );
+    child.unref();
+    return { status: "scheduled" };
   }
 
   runGit(repository.path, ["worktree", "remove", "--force", worktreePath]);
+  tryRemoveWorktreeRoot(worktreePath);
+  return { status: "removed" };
 }
 
 export function removeLocalBranch(

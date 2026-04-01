@@ -5,6 +5,8 @@ export const projectsTable = sqliteTable("projects", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   defaultTargetBranch: text("default_target_branch"),
+  preWorktreeCommand: text("pre_worktree_command"),
+  postWorktreeCommand: text("post_worktree_command"),
   draftAnalysisModel: text("draft_analysis_model"),
   draftAnalysisReasoningEffort: text("draft_analysis_reasoning_effort"),
   ticketWorkModel: text("ticket_work_model"),
