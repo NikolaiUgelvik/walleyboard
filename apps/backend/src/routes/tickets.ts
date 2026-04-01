@@ -242,6 +242,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
             }),
           );
         });
+        executionRuntime.startQueuedSessions(ticket.project);
 
         reply.send(
           makeCommandAck(true, "Ticket execution stopped", {
@@ -487,6 +488,9 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       if (!deletedTicket) {
         reply.code(404).send({ error: "Ticket not found" });
         return;
+      }
+      if (project) {
+        executionRuntime.startQueuedSessions(project.id);
       }
 
       eventHub.publish(

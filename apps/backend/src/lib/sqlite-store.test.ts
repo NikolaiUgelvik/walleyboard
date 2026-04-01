@@ -104,6 +104,112 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
   }
 });
 
+test("starting beyond the running cap keeps the ticket in progress and queues the session", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-queue-start-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Queued Start Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const tickets = Array.from({ length: 5 }, (_, index) =>
+      createReadyTicket(store, project.id, repository.id, index + 1),
+    );
+
+    const startedSessions = tickets.map((ticket, index) =>
+      store.startTicket(ticket.id, false, {
+        workingBranch: `codex/ticket-${index + 1}`,
+        worktreePath: join(tempDir, "worktrees", `ticket-${index + 1}`),
+        logs: [`Started session ${index + 1}`],
+      }),
+    );
+
+    for (const result of startedSessions.slice(0, 4)) {
+      assert.equal(result.session.status, "awaiting_input");
+    }
+
+    const queuedStart = startedSessions[4];
+    const queuedTicket = tickets[4];
+    assert.ok(queuedStart);
+    assert.ok(queuedTicket);
+    assert.equal(store.getTicket(queuedTicket.id)?.status, "in_progress");
+    assert.equal(queuedStart.session.status, "queued");
+    assert.ok(store.getSession(queuedStart.session.id)?.queue_entered_at);
+    assert.equal(
+      store.listSessionAttempts(queuedStart.session.id)[0]?.status,
+      "queued",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("queued sessions are claimed in FIFO order when a slot opens", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-queue-order-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Queued Order Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const tickets = Array.from({ length: 6 }, (_, index) =>
+      createReadyTicket(store, project.id, repository.id, index + 1),
+    );
+
+    const sessions = tickets.map((ticket, index) =>
+      store.startTicket(ticket.id, false, {
+        workingBranch: `codex/ticket-${index + 1}`,
+        worktreePath: join(tempDir, "worktrees", `ticket-${index + 1}`),
+        logs: [`Started session ${index + 1}`],
+      }),
+    );
+
+    const fifthSession = sessions[4];
+    const sixthSession = sessions[5];
+    const firstSession = sessions[0];
+    const secondSession = sessions[1];
+    assert.ok(fifthSession);
+    assert.ok(sixthSession);
+    assert.ok(firstSession);
+    assert.ok(secondSession);
+
+    assert.equal(fifthSession.session.status, "queued");
+    assert.equal(sixthSession.session.status, "queued");
+
+    store.completeSession(firstSession.session.id, {
+      status: "failed",
+      last_summary: "First session freed its running slot.",
+    });
+
+    const firstClaimed = store.claimNextQueuedSession(project.id);
+    assert.equal(firstClaimed?.id, fifthSession.session.id);
+    assert.equal(firstClaimed?.status, "awaiting_input");
+    assert.equal(firstClaimed?.queue_entered_at, null);
+
+    store.completeSession(secondSession.session.id, {
+      status: "failed",
+      last_summary: "Second session freed its running slot.",
+    });
+
+    const secondClaimed = store.claimNextQueuedSession(project.id);
+    assert.equal(secondClaimed?.id, sixthSession.session.id);
+    assert.equal(secondClaimed?.status, "awaiting_input");
+    assert.equal(secondClaimed?.queue_entered_at, null);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("planning sessions keep plan approval state across retries", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-planning-"));
 

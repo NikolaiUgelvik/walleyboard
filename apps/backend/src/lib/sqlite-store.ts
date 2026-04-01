@@ -45,12 +45,9 @@ type JsonValue =
   | boolean
   | null;
 
-const activeExecutionSessionStatuses = [
-  "queued",
-  "running",
-  "paused_checkpoint",
-  "paused_user_control",
+const slotOccupyingExecutionSessionStatuses = [
   "awaiting_input",
+  "running",
 ] as const;
 const defaultMaxConcurrentSessions = 4;
 
@@ -733,7 +730,7 @@ export class SqliteStore implements Store {
     }
   }
 
-  #countActiveSessionsForProject(
+  #countOccupiedExecutionSlotsForProject(
     projectId: string,
     excludedSessionId?: string,
   ): number {
@@ -744,13 +741,13 @@ export class SqliteStore implements Store {
           FROM execution_sessions
           WHERE project_id = ?
             ${excludedSessionId ? "AND id != ?" : ""}
-            AND status IN (${activeExecutionSessionStatuses.map(() => "?").join(", ")})
+            AND status IN (${slotOccupyingExecutionSessionStatuses.map(() => "?").join(", ")})
         `,
       )
       .get(
         projectId,
         ...(excludedSessionId ? [excludedSessionId] : []),
-        ...activeExecutionSessionStatuses,
+        ...slotOccupyingExecutionSessionStatuses,
       ) as { count: number };
 
     return Number(row.count);
@@ -1269,24 +1266,22 @@ export class SqliteStore implements Store {
     if (!project) {
       throw new Error("Project not found");
     }
-    if (
-      this.#countActiveSessionsForProject(ticket.project) >=
-      project.max_concurrent_sessions
-    ) {
-      throw new Error(
-        `Project has reached its active execution limit of ${project.max_concurrent_sessions} sessions`,
-      );
-    }
-
     const sessionId = nanoid();
     const attemptId = nanoid();
     const timestamp = nowIso();
+    const shouldQueue =
+      this.#countOccupiedExecutionSlotsForProject(ticket.project) >=
+      project.max_concurrent_sessions;
     const planStatus: ExecutionPlanStatus = planningEnabled
       ? "drafting"
       : "not_requested";
-    const summary = planningEnabled
-      ? "Execution session created, worktree prepared, and plan requested from Codex."
-      : "Execution session created, worktree prepared, and Codex launch requested.";
+    const summary = shouldQueue
+      ? planningEnabled
+        ? "Execution queued. The worktree is ready and planning will begin when a project slot opens."
+        : "Execution queued. The worktree is ready and Codex will start when a project slot opens."
+      : planningEnabled
+        ? "Execution session created, worktree prepared, and plan requested from Codex."
+        : "Execution session created, worktree prepared, and Codex launch requested.";
 
     this.#db
       .prepare(
@@ -1320,14 +1315,14 @@ export class SqliteStore implements Store {
         ticket.project,
         ticket.repo,
         runtime.worktreePath,
-        "awaiting_input",
+        shouldQueue ? "queued" : "awaiting_input",
         planningEnabled ? 1 : 0,
         planStatus,
         null,
         attemptId,
         null,
         null,
-        null,
+        shouldQueue ? timestamp : null,
         timestamp,
         null,
         timestamp,
@@ -1342,7 +1337,7 @@ export class SqliteStore implements Store {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
-      .run(attemptId, sessionId, 1, "running", null, timestamp, null, null);
+      .run(attemptId, sessionId, 1, "queued", null, timestamp, null, null);
 
     const logs = [
       `Session created for ticket #${ticket.id}: ${ticket.title}`,
@@ -1350,7 +1345,9 @@ export class SqliteStore implements Store {
       `Worktree prepared at: ${runtime.worktreePath}`,
       `Planning mode: ${planningEnabled ? "enabled" : "disabled"}`,
       ...runtime.logs,
-      "Codex launch has been handed off to the execution runtime.",
+      shouldQueue
+        ? `Execution queued. ${project.max_concurrent_sessions} running slots are already in use for this project.`
+        : "Codex launch has been handed off to the execution runtime.",
     ];
 
     for (const line of logs) {
@@ -1500,15 +1497,6 @@ export class SqliteStore implements Store {
     if (!project) {
       throw new Error("Project not found");
     }
-    if (
-      this.#countActiveSessionsForProject(ticket.project, session.id) >=
-      project.max_concurrent_sessions
-    ) {
-      throw new Error(
-        `Project has reached its active execution limit of ${project.max_concurrent_sessions} sessions`,
-      );
-    }
-
     const reviewPackage = this.getReviewPackage(ticketId);
     if (!reviewPackage) {
       throw new Error("Review package not found");
@@ -1518,8 +1506,12 @@ export class SqliteStore implements Store {
     const attemptId = nanoid();
     const timestamp = nowIso();
     const attemptNumber = this.#nextAttemptNumber(session.id);
-    const summary =
-      "Review feedback was recorded and the execution session is relaunching on the existing worktree.";
+    const shouldQueue =
+      this.#countOccupiedExecutionSlotsForProject(ticket.project) >=
+      project.max_concurrent_sessions;
+    const summary = shouldQueue
+      ? "Review feedback was recorded. The session is queued and will relaunch on the existing worktree when a project slot opens."
+      : "Review feedback was recorded and the execution session is relaunching on the existing worktree.";
 
     this.#db
       .prepare(
@@ -1546,6 +1538,7 @@ export class SqliteStore implements Store {
         `
           UPDATE execution_sessions
           SET status = ?,
+              queue_entered_at = ?,
               current_attempt_id = ?,
               latest_requested_change_note_id = ?,
               completed_at = ?,
@@ -1555,7 +1548,8 @@ export class SqliteStore implements Store {
         `,
       )
       .run(
-        "awaiting_input",
+        shouldQueue ? "queued" : "awaiting_input",
+        shouldQueue ? timestamp : null,
         attemptId,
         noteId,
         null,
@@ -1576,7 +1570,7 @@ export class SqliteStore implements Store {
         attemptId,
         session.id,
         attemptNumber,
-        "running",
+        "queued",
         null,
         timestamp,
         null,
@@ -1587,7 +1581,9 @@ export class SqliteStore implements Store {
       formatMarkdownLog("Requested changes recorded", body),
       `Reusing worktree at: ${session.worktree_path}`,
       `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
-      `Starting execution attempt ${attemptNumber}.`,
+      shouldQueue
+        ? `Queued execution attempt ${attemptNumber} until a project running slot opens.`
+        : `Starting execution attempt ${attemptNumber}.`,
     ];
 
     for (const line of logs) {
@@ -1670,18 +1666,12 @@ export class SqliteStore implements Store {
     if (!project) {
       throw new Error("Project not found");
     }
-    if (
-      this.#countActiveSessionsForProject(ticket.project, session.id) >=
-      project.max_concurrent_sessions
-    ) {
-      throw new Error(
-        `Project has reached its active execution limit of ${project.max_concurrent_sessions} sessions`,
-      );
-    }
-
     const attemptId = nanoid();
     const timestamp = nowIso();
     const attemptNumber = this.#nextAttemptNumber(session.id);
+    const shouldQueue =
+      this.#countOccupiedExecutionSlotsForProject(ticket.project) >=
+      project.max_concurrent_sessions;
     const reasonBody = hasMeaningfulContent(reason) ? reason : null;
     const nextPlanStatus: ExecutionPlanStatus =
       session.planning_enabled && session.plan_status !== "approved"
@@ -1689,13 +1679,16 @@ export class SqliteStore implements Store {
         : session.plan_status;
     const summary = reasonBody
       ? formatMarkdownLog("Execution resume requested", reasonBody)
-      : "Execution resume requested on the existing worktree.";
+      : shouldQueue
+        ? "Execution resume requested. The session is queued and will start when a project slot opens."
+        : "Execution resume requested on the existing worktree.";
 
     this.#db
       .prepare(
         `
           UPDATE execution_sessions
           SET status = ?,
+              queue_entered_at = ?,
               plan_status = ?,
               plan_summary = ?,
               current_attempt_id = ?,
@@ -1706,7 +1699,8 @@ export class SqliteStore implements Store {
         `,
       )
       .run(
-        "awaiting_input",
+        shouldQueue ? "queued" : "awaiting_input",
+        shouldQueue ? timestamp : null,
         nextPlanStatus,
         nextPlanStatus === "drafting" ? null : session.plan_summary,
         attemptId,
@@ -1728,7 +1722,7 @@ export class SqliteStore implements Store {
         attemptId,
         session.id,
         attemptNumber,
-        "running",
+        "queued",
         null,
         timestamp,
         null,
@@ -1741,7 +1735,9 @@ export class SqliteStore implements Store {
         : "Resume requested without additional instruction.",
       `Reusing worktree at: ${session.worktree_path}`,
       `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
-      `Starting execution attempt ${attemptNumber}.`,
+      shouldQueue
+        ? `Queued execution attempt ${attemptNumber} until a project running slot opens.`
+        : `Starting execution attempt ${attemptNumber}.`,
     ];
 
     for (const line of logs) {
@@ -1870,6 +1866,49 @@ export class SqliteStore implements Store {
       );
 
     return this.getSession(sessionId);
+  }
+
+  claimNextQueuedSession(projectId: string): ExecutionSession | undefined {
+    const project = this.getProject(projectId);
+    if (!project) {
+      return undefined;
+    }
+
+    if (
+      this.#countOccupiedExecutionSlotsForProject(projectId) >=
+      project.max_concurrent_sessions
+    ) {
+      return undefined;
+    }
+
+    const queuedSession = this.#db
+      .prepare(
+        `
+          SELECT id
+          FROM execution_sessions
+          WHERE project_id = ?
+            AND status = 'queued'
+          ORDER BY queue_entered_at ASC, started_at ASC, id ASC
+          LIMIT 1
+        `,
+      )
+      .get(projectId) as { id: string } | undefined;
+
+    if (!queuedSession) {
+      return undefined;
+    }
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?, queue_entered_at = ?, last_heartbeat_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run("awaiting_input", null, nowIso(), queuedSession.id);
+
+    return this.getSession(queuedSession.id);
   }
 
   completeSession(

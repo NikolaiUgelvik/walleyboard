@@ -86,7 +86,7 @@ const boardColumnMeta: Record<
   in_progress: {
     label: "In progress",
     accent: "#d97706",
-    empty: "No active Codex runs at the moment.",
+    empty: "No tickets are currently in progress.",
   },
   review: {
     label: "In review",
@@ -484,6 +484,21 @@ function sessionStatusColor(status: ExecutionSession["status"]): string {
       return "gray";
     default:
       return "blue";
+  }
+}
+
+function humanizeSessionStatus(status: ExecutionSession["status"]): string {
+  switch (status) {
+    case "paused_checkpoint":
+      return "Awaiting plan feedback";
+    case "paused_user_control":
+      return "Manual control";
+    case "awaiting_input":
+      return "Preparing";
+    default: {
+      const normalized = status.replace(/_/g, " ");
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
   }
 }
 
@@ -2104,8 +2119,11 @@ export function App() {
       ? ticketsQuery.error.message
       : null;
 
-  const activeSessionCount = tickets.filter(
-    (ticket) => ticket.status === "in_progress",
+  const runningSessionCount = Array.from(sessionById.values()).filter(
+    (activeSession) => activeSession.status === "running",
+  ).length;
+  const queuedSessionCount = Array.from(sessionById.values()).filter(
+    (activeSession) => activeSession.status === "queued",
   ).length;
   const reviewCount = tickets.filter(
     (ticket) => ticket.status === "review",
@@ -2704,7 +2722,8 @@ export function App() {
                   <Badge variant="light" color="green">
                     {healthQuery.data?.service ?? "backend"}
                   </Badge>
-                  <Badge variant="outline">{activeSessionCount} running</Badge>
+                  <Badge variant="outline">{runningSessionCount} running</Badge>
+                  <Badge variant="outline">{queuedSessionCount} queued</Badge>
                   <Badge variant="outline">{reviewCount} in review</Badge>
                 </Group>
               </Group>
@@ -2982,6 +3001,25 @@ export function App() {
                                         ticket.description,
                                       )}
                                     />
+                                    {ticketSession ? (
+                                      <Group gap={8}>
+                                        <Badge
+                                          variant="outline"
+                                          color={sessionStatusColor(
+                                            ticketSession.status,
+                                          )}
+                                        >
+                                          {humanizeSessionStatus(
+                                            ticketSession.status,
+                                          )}
+                                        </Badge>
+                                        {ticketSession.status === "queued" ? (
+                                          <Text size="xs" c="dimmed">
+                                            Waiting for a running slot
+                                          </Text>
+                                        ) : null}
+                                      </Group>
+                                    ) : null}
 
                                     {showDeleteError ? (
                                       <Text size="sm" c="red">
@@ -3603,7 +3641,7 @@ export function App() {
                           variant="light"
                           color={sessionStatusColor(session.status)}
                         >
-                          {session.status}
+                          {humanizeSessionStatus(session.status)}
                         </Badge>
                       </Group>
 
@@ -3674,6 +3712,13 @@ export function App() {
                             </Stack>
                           ) : null}
                         </Stack>
+                      ) : null}
+
+                      {session.status === "queued" ? (
+                        <Text size="sm" c="dimmed">
+                          This ticket is in progress and waiting for one of the
+                          project's running slots to open.
+                        </Text>
                       ) : null}
 
                       {selectedSessionTicket ? (

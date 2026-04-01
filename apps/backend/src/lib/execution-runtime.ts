@@ -102,6 +102,23 @@ function formatMarkdownLog(label: string, body: string): string {
   return `${label}:\n${body}`;
 }
 
+function extractMarkdownLogBody(
+  summary: string | null | undefined,
+  label: string,
+): string | null {
+  if (!hasMeaningfulContent(summary)) {
+    return null;
+  }
+
+  const prefix = `${label}:\n`;
+  if (!summary.startsWith(prefix)) {
+    return null;
+  }
+
+  const body = summary.slice(prefix.length).trim();
+  return body.length > 0 ? body : null;
+}
+
 function appendMarkdownSection(
   sections: string[],
   label: string,
@@ -628,6 +645,76 @@ export class ExecutionRuntime {
     return this.#manualTerminals.has(sessionId);
   }
 
+  startQueuedSessions(projectId: string): void {
+    while (true) {
+      const session = this.#store.claimNextQueuedSession(projectId);
+      if (!session) {
+        return;
+      }
+
+      const ticket = this.#store.getTicket(session.ticket_id);
+      const project = ticket
+        ? this.#store.getProject(ticket.project)
+        : undefined;
+      const repository = ticket
+        ? this.#store.getRepository(ticket.repo)
+        : undefined;
+      const attemptId = session.current_attempt_id;
+
+      if (!ticket || !project || !repository || !attemptId) {
+        const reason =
+          "Queued execution could not start because required session metadata was missing.";
+
+        if (attemptId) {
+          this.#store.updateExecutionAttempt(attemptId, {
+            status: "failed",
+            end_reason: reason,
+          });
+          this.#log(session.id, attemptId, `[runtime failure] ${reason}`);
+        }
+
+        const failedSession = this.#store.completeSession(session.id, {
+          status: "failed",
+          last_summary: reason,
+        });
+        this.#emitSessionUpdated(failedSession);
+        continue;
+      }
+
+      this.#log(
+        session.id,
+        attemptId,
+        "A project execution slot opened. Launching this queued session.",
+      );
+      this.#emitSessionUpdated(session);
+
+      try {
+        this.startExecution({
+          project,
+          repository,
+          ticket,
+          session,
+        });
+      } catch (error) {
+        const reason =
+          error instanceof Error
+            ? `Queued execution failed to start: ${error.message}`
+            : "Queued execution failed to start.";
+
+        this.#store.updateExecutionAttempt(attemptId, {
+          status: "failed",
+          end_reason: reason,
+        });
+        const failedSession = this.#store.completeSession(session.id, {
+          status: "failed",
+          last_summary: reason,
+        });
+        this.#log(session.id, attemptId, `[runtime failure] ${reason}`);
+        this.#emitSessionUpdated(failedSession);
+      }
+    }
+  }
+
   runDraftRefinement({
     draft,
     project,
@@ -1015,6 +1102,9 @@ export class ExecutionRuntime {
     session,
     additionalInstruction,
   }: StartExecutionInput): void {
+    if (session.status === "queued") {
+      return;
+    }
     if (!session.worktree_path) {
       throw new Error("Execution session has no worktree path");
     }
@@ -1028,6 +1118,12 @@ export class ExecutionRuntime {
     }
 
     const extraInstructions: PromptContextSection[] = [];
+    const persistedResumeGuidance = hasMeaningfulContent(additionalInstruction)
+      ? null
+      : extractMarkdownLogBody(
+          session.last_summary,
+          "Execution resume requested",
+        );
     const requestedChangeNote = session.latest_requested_change_note_id
       ? this.#store.getRequestedChangeNote(
           session.latest_requested_change_note_id,
@@ -1043,6 +1139,11 @@ export class ExecutionRuntime {
       extraInstructions.push({
         label: "Resume guidance",
         content: additionalInstruction,
+      });
+    } else if (persistedResumeGuidance) {
+      extraInstructions.push({
+        label: "Resume guidance",
+        content: persistedResumeGuidance,
       });
     }
 
@@ -1104,6 +1205,7 @@ export class ExecutionRuntime {
 
     this.#activeSessions.set(session.id, child);
     this.#store.updateExecutionAttempt(attemptId, {
+      status: "running",
       pty_pid: child.pid ?? null,
     });
     const runningSession = this.#store.updateSessionStatus(
@@ -1154,6 +1256,12 @@ export class ExecutionRuntime {
         attemptId,
         formatMarkdownLog("Resume guidance", additionalInstruction),
       );
+    } else if (persistedResumeGuidance) {
+      this.#log(
+        session.id,
+        attemptId,
+        formatMarkdownLog("Resume guidance", persistedResumeGuidance),
+      );
     }
 
     let pendingBuffer = "";
@@ -1197,6 +1305,7 @@ export class ExecutionRuntime {
 
         if (executionMode === "plan") {
           this.#finishPlanSuccess({
+            projectId: ticket.project,
             sessionId: session.id,
             attemptId,
             summary,
@@ -1457,6 +1566,7 @@ export class ExecutionRuntime {
       });
       this.#log(input.sessionId, input.attemptId, summary);
       this.#emitSessionUpdated(failedSession);
+      this.startQueuedSessions(input.project.id);
       return;
     }
 
@@ -1495,9 +1605,11 @@ export class ExecutionRuntime {
     );
     this.#emitTicketUpdated(ticket);
     this.#emitSessionUpdated(completedSession);
+    this.startQueuedSessions(input.project.id);
   }
 
   #finishPlanSuccess(input: {
+    projectId: string;
     sessionId: string;
     attemptId: string;
     summary: string;
@@ -1527,6 +1639,7 @@ export class ExecutionRuntime {
       "Plan feedback requested: confirm the plan to continue or request changes to revise it.",
     );
     this.#emitSessionUpdated(waitingSession);
+    this.startQueuedSessions(input.projectId);
   }
 
   async #runValidationProfile(input: {
@@ -1695,5 +1808,6 @@ export class ExecutionRuntime {
       `[runtime failure] ${input.reason}`,
     );
     this.#emitSessionUpdated(failedSession);
+    this.startQueuedSessions(input.ticket.project);
   }
 }

@@ -36,6 +36,7 @@ export const executionSessionStatusSchema = z.enum([
 ]);
 
 export const executionAttemptStatusSchema = z.enum([
+  "queued",
   "running",
   "interrupted",
   "failed",

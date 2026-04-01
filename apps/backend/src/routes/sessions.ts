@@ -143,6 +143,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             session: updatedSession,
           }),
         );
+        executionRuntime.startQueuedSessions(ticket.project);
 
         reply.send(
           makeCommandAck(true, "Manual terminal takeover started", {

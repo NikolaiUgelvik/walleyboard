@@ -145,6 +145,7 @@ export interface Store {
     status: ExecutionSessionStatus,
     lastSummary?: string | null,
   ): ExecutionSession | undefined;
+  claimNextQueuedSession(projectId: string): ExecutionSession | undefined;
   completeSession(
     sessionId: string,
     input: CompleteSessionInput,
