@@ -165,6 +165,15 @@ type ActionItem = {
   actionLabel: string;
 };
 
+type PendingDraftEditorSync = {
+  draftId: string;
+  sourceUpdatedAt: string;
+  title: string;
+  description: string;
+  ticketType: string | null;
+  acceptanceCriteria: string;
+};
+
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
 type DraftQuestionsResult = {
@@ -690,6 +699,8 @@ export function App() {
   >(null);
   const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] =
     useState("");
+  const [pendingDraftEditorSync, setPendingDraftEditorSync] =
+    useState<PendingDraftEditorSync | null>(null);
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
@@ -1211,6 +1222,11 @@ export function App() {
   const refineDraftMutation = useMutation({
     mutationFn: (draftId: string) =>
       postJson<CommandAck>(`/drafts/${draftId}/refine`, {}),
+    onError: (_, draftId) => {
+      if (pendingDraftEditorSync?.draftId === draftId) {
+        setPendingDraftEditorSync(null);
+      }
+    },
     onSuccess: async (_, draftId) => {
       await Promise.all([
         queryClient.invalidateQueries({
@@ -1226,6 +1242,11 @@ export function App() {
   const revertDraftRefineMutation = useMutation({
     mutationFn: (draftId: string) =>
       postJson<CommandAck>(`/drafts/${draftId}/refine/revert`, {}),
+    onError: (_, draftId) => {
+      if (pendingDraftEditorSync?.draftId === draftId) {
+        setPendingDraftEditorSync(null);
+      }
+    },
     onSuccess: async (_, draftId) => {
       await Promise.all([
         queryClient.invalidateQueries({
@@ -1706,12 +1727,24 @@ export function App() {
     (ticket) => ticket.status === "review",
   ).length;
 
+  const capturePendingDraftEditorSync = (
+    draft: DraftTicketState,
+  ): PendingDraftEditorSync => ({
+    draftId: draft.id,
+    sourceUpdatedAt: draft.updated_at,
+    title: draftEditorTitle,
+    description: draftEditorDescription,
+    ticketType: draftEditorTicketType,
+    acceptanceCriteria: draftEditorAcceptanceCriteria,
+  });
+
   const initializeNewDraftEditor = (): void => {
     setDraftEditorSourceId(null);
     setDraftEditorTitle("");
     setDraftEditorDescription("");
     setDraftEditorTicketType("feature");
     setDraftEditorAcceptanceCriteria("");
+    setPendingDraftEditorSync(null);
   };
 
   useEffect(() => {
@@ -1725,10 +1758,33 @@ export function App() {
       setDraftEditorDescription("");
       setDraftEditorTicketType("feature");
       setDraftEditorAcceptanceCriteria("");
+      setPendingDraftEditorSync(null);
       return;
     }
 
-    if (draftEditorSourceId !== selectedDraft.id || !draftFormDirty) {
+    const pendingSyncTargetsSelectedDraft =
+      pendingDraftEditorSync?.draftId === selectedDraft.id;
+    const pendingSyncMatchesCurrentEditor =
+      pendingSyncTargetsSelectedDraft &&
+      pendingDraftEditorSync.title === draftEditorTitle &&
+      pendingDraftEditorSync.description === draftEditorDescription &&
+      pendingDraftEditorSync.ticketType === draftEditorTicketType &&
+      pendingDraftEditorSync.acceptanceCriteria ===
+        draftEditorAcceptanceCriteria;
+    const shouldApplyPendingDraftSync =
+      pendingSyncMatchesCurrentEditor &&
+      pendingDraftEditorSync.sourceUpdatedAt !== selectedDraft.updated_at;
+
+    if (pendingSyncTargetsSelectedDraft && !pendingSyncMatchesCurrentEditor) {
+      setPendingDraftEditorSync(null);
+      return;
+    }
+
+    if (
+      draftEditorSourceId !== selectedDraft.id ||
+      (pendingDraftEditorSync === null && !draftFormDirty) ||
+      shouldApplyPendingDraftSync
+    ) {
       setDraftEditorSourceId(selectedDraft.id);
       setDraftEditorTitle(selectedDraft.title_draft);
       setDraftEditorDescription(selectedDraft.description_draft);
@@ -1736,8 +1792,26 @@ export function App() {
       setDraftEditorAcceptanceCriteria(
         selectedDraft.proposed_acceptance_criteria.join("\n"),
       );
+      if (
+        pendingDraftEditorSync !== null &&
+        (!pendingSyncTargetsSelectedDraft ||
+          draftEditorSourceId !== selectedDraft.id ||
+          shouldApplyPendingDraftSync)
+      ) {
+        setPendingDraftEditorSync(null);
+      }
     }
-  }, [draftEditorSourceId, draftFormDirty, inspectorState.kind, selectedDraft]);
+  }, [
+    draftEditorAcceptanceCriteria,
+    draftEditorDescription,
+    draftEditorSourceId,
+    draftEditorTicketType,
+    draftEditorTitle,
+    draftFormDirty,
+    inspectorState.kind,
+    pendingDraftEditorSync,
+    selectedDraft,
+  ]);
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);
@@ -2625,9 +2699,12 @@ export function App() {
                             refineDraftMutation.isPending &&
                             refineDraftMutation.variables === selectedDraft.id
                           }
-                          onClick={() =>
-                            refineDraftMutation.mutate(selectedDraft.id)
-                          }
+                          onClick={() => {
+                            setPendingDraftEditorSync(
+                              capturePendingDraftEditorSync(selectedDraft),
+                            );
+                            refineDraftMutation.mutate(selectedDraft.id);
+                          }}
                         >
                           Refine
                         </Button>
@@ -2643,9 +2720,12 @@ export function App() {
                             revertDraftRefineMutation.variables ===
                               selectedDraft.id
                           }
-                          onClick={() =>
-                            revertDraftRefineMutation.mutate(selectedDraft.id)
-                          }
+                          onClick={() => {
+                            setPendingDraftEditorSync(
+                              capturePendingDraftEditorSync(selectedDraft),
+                            );
+                            revertDraftRefineMutation.mutate(selectedDraft.id);
+                          }}
                         >
                           Revert Refine
                         </Button>
