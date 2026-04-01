@@ -26,6 +26,7 @@ type StartExecutionInput = {
   repository: RepositoryConfig;
   ticket: TicketFrontmatter;
   session: ExecutionSession;
+  additionalInstruction?: string;
 };
 
 function truncate(value: string, maxLength = 600): string {
@@ -77,13 +78,17 @@ function buildOutputSummaryPath(project: Project, ticketId: number, sessionId: s
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
 
-function buildCodexPrompt(ticket: TicketFrontmatter, repository: RepositoryConfig): string {
+function buildCodexPrompt(
+  ticket: TicketFrontmatter,
+  repository: RepositoryConfig,
+  extraInstructions: string[]
+): string {
   const acceptanceCriteria =
     ticket.acceptance_criteria.length > 0
       ? ticket.acceptance_criteria.map((criterion) => `- ${criterion}`).join("\n")
       : "- Preserve the intended user workflow and keep the change small and focused.";
 
-  return [
+  const sections = [
     `Implement ticket #${ticket.id} in the repository ${repository.name}.`,
     "",
     `Title: ${ticket.title}`,
@@ -98,7 +103,16 @@ function buildCodexPrompt(ticket: TicketFrontmatter, repository: RepositoryConfi
     "- Run lightweight validation when it is obvious and inexpensive.",
     "- Create a git commit before finishing if you made code changes.",
     "- End with a concise summary that includes changed files, validation run, and remaining risks."
-  ].join("\n");
+  ];
+
+  if (extraInstructions.length > 0) {
+    sections.push("", "Additional context:");
+    extraInstructions.forEach((instruction) => {
+      sections.push(`- ${instruction}`);
+    });
+  }
+
+  return sections.join("\n");
 }
 
 function summarizeCodexJsonLine(line: string): string {
@@ -167,7 +181,13 @@ export class ExecutionRuntime {
     this.#store = store;
   }
 
-  startExecution({ project, repository, ticket, session }: StartExecutionInput): void {
+  startExecution({
+    project,
+    repository,
+    ticket,
+    session,
+    additionalInstruction
+  }: StartExecutionInput): void {
     if (!session.worktree_path) {
       throw new Error("Execution session has no worktree path");
     }
@@ -180,7 +200,18 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no current attempt");
     }
 
-    const prompt = buildCodexPrompt(ticket, repository);
+    const extraInstructions: string[] = [];
+    const requestedChangeNote = session.latest_requested_change_note_id
+      ? this.#store.getRequestedChangeNote(session.latest_requested_change_note_id)
+      : undefined;
+    if (requestedChangeNote) {
+      extraInstructions.push(`Address the latest requested changes: ${requestedChangeNote.body}`);
+    }
+    if (additionalInstruction && additionalInstruction.trim().length > 0) {
+      extraInstructions.push(`Resume guidance: ${additionalInstruction.trim()}`);
+    }
+
+    const prompt = buildCodexPrompt(ticket, repository, extraInstructions);
     const outputSummaryPath = buildOutputSummaryPath(project, ticket.id, session.id);
     const args = [
       "exec",
@@ -209,6 +240,20 @@ export class ExecutionRuntime {
     this.#emitSessionUpdated(runningSession);
     this.#log(session.id, attemptId, `Launching Codex in ${session.worktree_path}`);
     this.#log(session.id, attemptId, `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`);
+    if (requestedChangeNote) {
+      this.#log(
+        session.id,
+        attemptId,
+        `Latest requested changes: ${truncate(requestedChangeNote.body)}`
+      );
+    }
+    if (additionalInstruction && additionalInstruction.trim().length > 0) {
+      this.#log(
+        session.id,
+        attemptId,
+        `Resume guidance: ${truncate(additionalInstruction.trim())}`
+      );
+    }
 
     streamLines(child.stdout, (line) => {
       this.#log(session.id, attemptId, summarizeCodexJsonLine(line));

@@ -174,11 +174,65 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        `Resume scaffolding is in place, but execution attempts are not implemented yet. reason=${input.reason ?? "none"}`,
-        { ticket_id: ticketId }
-      );
+      try {
+        const resumeResult = store.resumeTicket(ticketId, input.reason);
+        const project = store.getProject(resumeResult.ticket.project);
+        if (!project) {
+          reply.code(404).send({ error: "Project not found" });
+          return;
+        }
+
+        const repository = store.getRepository(resumeResult.ticket.repo);
+        if (!repository) {
+          reply.code(404).send({ error: "Repository not found" });
+          return;
+        }
+
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(resumeResult.ticket.id), {
+            ticket: resumeResult.ticket
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", resumeResult.session.id, {
+            session: resumeResult.session
+          })
+        );
+        resumeResult.logs.forEach((logLine, index) => {
+          eventHub.publish(
+            makeProtocolEvent("session.output", "session", resumeResult.session.id, {
+              session_id: resumeResult.session.id,
+              attempt_id: resumeResult.attempt.id,
+              sequence:
+                store.getSessionLogs(resumeResult.session.id).length -
+                resumeResult.logs.length +
+                index,
+              chunk: logLine
+            })
+          );
+        });
+
+        executionRuntime.startExecution({
+          project,
+          repository,
+          ticket: resumeResult.ticket,
+          session: resumeResult.session,
+          ...(input.reason && input.reason.trim().length > 0
+            ? { additionalInstruction: input.reason }
+            : {})
+        });
+
+        reply.send(
+          makeCommandAck(true, "Execution session resumed", {
+            ticket_id: resumeResult.ticket.id,
+            session_id: resumeResult.session.id
+          })
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error: error instanceof Error ? error.message : "Unable to resume ticket"
+        });
+      }
     }
   );
 
@@ -196,11 +250,63 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        `Request-changes scaffolding is in place, but review-to-execution handoff is not implemented yet. note=${input.body}`,
-        { ticket_id: ticketId }
-      );
+      try {
+        const restartResult = store.requestTicketChanges(ticketId, input.body);
+        const project = store.getProject(restartResult.ticket.project);
+        if (!project) {
+          reply.code(404).send({ error: "Project not found" });
+          return;
+        }
+
+        const repository = store.getRepository(restartResult.ticket.repo);
+        if (!repository) {
+          reply.code(404).send({ error: "Repository not found" });
+          return;
+        }
+
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(restartResult.ticket.id), {
+            ticket: restartResult.ticket
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", restartResult.session.id, {
+            session: restartResult.session
+          })
+        );
+        restartResult.logs.forEach((logLine, index) => {
+          eventHub.publish(
+            makeProtocolEvent("session.output", "session", restartResult.session.id, {
+              session_id: restartResult.session.id,
+              attempt_id: restartResult.attempt.id,
+              sequence:
+                store.getSessionLogs(restartResult.session.id).length -
+                restartResult.logs.length +
+                index,
+              chunk: logLine
+            })
+          );
+        });
+
+        executionRuntime.startExecution({
+          project,
+          repository,
+          ticket: restartResult.ticket,
+          session: restartResult.session
+        });
+
+        reply.send(
+          makeCommandAck(true, "Requested changes were attached and execution restarted", {
+            ticket_id: restartResult.ticket.id,
+            session_id: restartResult.session.id
+          })
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to request changes"
+        });
+      }
     }
   );
 

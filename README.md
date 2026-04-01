@@ -25,6 +25,7 @@ This repository contains the implementation starter pack for the AI orchestrator
   - validation commands that run before review handoff
   - session log streaming and automatic transition into `review`
   - local review diff artifact generation
+  - request-changes and resume flows that create new attempts on the same session/worktree
   - direct merge from `review` into the target branch with local worktree and branch cleanup
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
@@ -32,7 +33,7 @@ This repository contains the implementation starter pack for the AI orchestrator
 
 - manage Bubblewrap sandboxes
 - render live terminal output
-- resume real execution sessions after interruption
+- restore live execution after an application restart
 - support checkpoint or mid-run input handoff for running Codex exec sessions
 
 Those remain the next implementation milestones.
@@ -47,5 +48,5 @@ Those remain the next implementation milestones.
 ## Next Steps
 
 - Add sandbox orchestration around the live Codex runtime.
-- Add richer validation configuration and override handling.
-- Add request-changes and resume flows on top of the persisted execution session.
+- Replace the log-only session view with PTY-backed terminal control.
+- Add in-app notifications for sessions that need user input or approval.

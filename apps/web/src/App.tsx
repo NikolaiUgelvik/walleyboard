@@ -149,7 +149,8 @@ export function App() {
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [sessionInput, setSessionInput] = useState("");
+  const [requestedChangesBody, setRequestedChangesBody] = useState("");
+  const [resumeReason, setResumeReason] = useState("");
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -371,7 +372,7 @@ export function App() {
         body: input.body
       }),
     onSuccess: async (_, variables) => {
-      setSessionInput("");
+      setResumeReason("");
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["sessions", variables.sessionId]
@@ -398,6 +399,51 @@ export function App() {
         }),
         queryClient.invalidateQueries({
           queryKey: ["tickets", ticketId, "review-package"]
+        })
+      ]);
+    }
+  });
+
+  const requestChangesMutation = useMutation({
+    mutationFn: (input: { ticketId: number; body: string }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/request-changes`, {
+        body: input.body
+      }),
+    onSuccess: async (_, variables) => {
+      setRequestedChangesBody("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", variables.ticketId, "review-package"]
+        })
+      ]);
+    }
+  });
+
+  const resumeTicketMutation = useMutation({
+    mutationFn: (input: { ticketId: number; reason?: string }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/resume`, {
+        reason: input.reason && input.reason.trim().length > 0 ? input.reason : undefined
+      }),
+    onSuccess: async () => {
+      setResumeReason("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"]
         })
       ]);
     }
@@ -442,8 +488,9 @@ export function App() {
             the resulting ticket on the board. Starting a ticket now launches a real
             Codex exec run in its prepared worktree and moves successful runs into
             local review. Review approval can now merge the branch back into the target
-            branch and clean up local artifacts. Terminal control and mid-run handoff are
-            still the next milestones.
+            branch and clean up local artifacts. Review feedback and failed runs can now
+            relaunch the same logical session as a new attempt. Terminal control and
+            in-app notifications are still the next milestones.
           </Text>
         </Stack>
 
@@ -487,6 +534,7 @@ export function App() {
                 <List.Item>Real Codex exec runs with streaming session logs</List.Item>
                 <List.Item>Configurable validation commands that gate review handoff</List.Item>
                 <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
+                <List.Item>Request changes and resume flows that reuse the same session</List.Item>
                 <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
               </List>
           </SectionCard>
@@ -854,7 +902,36 @@ export function App() {
                             {mergeTicketMutation.error.message}
                           </Text>
                         ) : null}
-                        <Group justify="flex-end">
+                        {requestChangesMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {requestChangesMutation.error.message}
+                          </Text>
+                        ) : null}
+                        <Textarea
+                          label="Requested changes"
+                          placeholder="Ask Codex to adjust the current review before you approve it."
+                          value={requestedChangesBody}
+                          onChange={(event) => setRequestedChangesBody(event.currentTarget.value)}
+                          minRows={3}
+                        />
+                        <Group justify="space-between">
+                          <Button
+                            variant="light"
+                            loading={
+                              requestChangesMutation.isPending &&
+                              requestChangesMutation.variables?.ticketId ===
+                                selectedSessionTicket.id
+                            }
+                            disabled={requestedChangesBody.trim().length === 0}
+                            onClick={() =>
+                              requestChangesMutation.mutate({
+                                ticketId: selectedSessionTicket.id,
+                                body: requestedChangesBody
+                              })
+                            }
+                          >
+                            Request Changes
+                          </Button>
                           <Button
                             loading={
                               mergeTicketMutation.isPending &&
@@ -884,42 +961,57 @@ export function App() {
                     )}
                   </Stack>
 
-                  {session.status === "awaiting_input" ? (
+                  {selectedSessionTicket &&
+                  ["awaiting_input", "failed", "interrupted", "paused_checkpoint", "paused_user_control"].includes(
+                    session.status
+                  ) ? (
                     <form
                       onSubmit={(event) => {
                         event.preventDefault();
-                        if (!selectedSessionId) {
-                          return;
-                        }
-
-                        sessionInputMutation.mutate({
-                          sessionId: selectedSessionId,
-                          body: sessionInput
+                        resumeTicketMutation.mutate({
+                          ticketId: selectedSessionTicket.id,
+                          reason: resumeReason
                         });
                       }}
                     >
                       <Stack gap="sm">
                         <Textarea
-                          id="session-input"
-                          name="sessionInput"
-                          label="Session input"
-                          placeholder="Add the next instruction or clarification for the waiting session."
-                          value={sessionInput}
-                          onChange={(event) => setSessionInput(event.currentTarget.value)}
+                          id="resume-reason"
+                          name="resumeReason"
+                          label="Resume guidance"
+                          placeholder="Optional. Clarify what Codex should address on the next attempt."
+                          value={resumeReason}
+                          onChange={(event) => setResumeReason(event.currentTarget.value)}
                           minRows={3}
                         />
-                        {sessionInputMutation.isError ? (
+                        {resumeTicketMutation.isError ? (
                           <Text size="sm" c="red">
-                            {sessionInputMutation.error.message}
+                            {resumeTicketMutation.error.message}
                           </Text>
                         ) : null}
-                        <Group justify="flex-end">
+                        <Group justify="space-between">
+                          <Button
+                            variant="subtle"
+                            type="button"
+                            onClick={() => {
+                              if (!selectedSessionId) {
+                                return;
+                              }
+
+                              sessionInputMutation.mutate({
+                                sessionId: selectedSessionId,
+                                body: resumeReason || "Resume requested from the session view."
+                              });
+                            }}
+                            loading={sessionInputMutation.isPending}
+                          >
+                            Record Note Only
+                          </Button>
                           <Button
                             type="submit"
-                            loading={sessionInputMutation.isPending}
-                            disabled={sessionInput.trim().length === 0}
+                            loading={resumeTicketMutation.isPending}
                           >
-                            Record Input
+                            Resume Execution
                           </Button>
                         </Group>
                       </Stack>

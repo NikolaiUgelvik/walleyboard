@@ -37,6 +37,14 @@ export type StartTicketResult = {
   logs: string[];
 };
 
+export type RestartTicketResult = {
+  ticket: TicketFrontmatter;
+  session: ExecutionSession;
+  attempt: ExecutionAttempt;
+  logs: string[];
+  requestedChangeNote?: RequestedChangeNote;
+};
+
 export type CreateReviewPackageInput = {
   ticket_id: number;
   session_id: string;
@@ -81,6 +89,8 @@ export interface Store {
     planningEnabled: boolean,
     runtime: PreparedExecutionRuntime
   ): StartTicketResult;
+  requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
+  resumeTicket(ticketId: number, reason?: string): RestartTicketResult;
   addSessionInput(sessionId: string, body: string): ExecutionSession;
   updateSessionStatus(
     sessionId: string,

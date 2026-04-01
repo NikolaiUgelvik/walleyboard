@@ -24,6 +24,7 @@ import type {
   ConfirmDraftInput,
   CreateReviewPackageInput,
   PreparedExecutionRuntime,
+  RestartTicketResult,
   StartTicketResult,
   Store
 } from "./store.js";
@@ -527,6 +528,35 @@ export class SqliteStore implements Store {
       .run(sessionId, line, nowIso());
   }
 
+  #countOtherActiveSessions(sessionId: string): number {
+    const row = this.#db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM execution_sessions
+          WHERE id != ?
+            AND status IN ('queued', 'running', 'paused_checkpoint', 'paused_user_control', 'awaiting_input')
+        `
+      )
+      .get(sessionId) as { count: number };
+
+    return Number(row.count);
+  }
+
+  #nextAttemptNumber(sessionId: string): number {
+    const row = this.#db
+      .prepare(
+        `
+          SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt_number
+          FROM execution_attempts
+          WHERE session_id = ?
+        `
+      )
+      .get(sessionId) as { max_attempt_number: number };
+
+    return Number(row.max_attempt_number) + 1;
+  }
+
   appendSessionLog(sessionId: string, line: string): number {
     this.#appendSessionLog(sessionId, line);
     return this.getSessionLogs(sessionId).length - 1;
@@ -894,6 +924,219 @@ export class SqliteStore implements Store {
       ticket: this.getTicket(ticket.id)!,
       session: this.getSession(sessionId)!,
       attempt: this.listSessionAttempts(sessionId)[0]!,
+      logs
+    };
+  }
+
+  requestTicketChanges(ticketId: number, body: string): RestartTicketResult {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+    if (ticket.status !== "review") {
+      throw new Error("Only review tickets can request changes");
+    }
+    if (!ticket.session_id) {
+      throw new Error("Ticket has no execution session");
+    }
+
+    const session = this.getSession(ticket.session_id);
+    if (!session) {
+      throw new Error("Execution session not found");
+    }
+    if (!session.worktree_path) {
+      throw new Error("Execution session has no prepared worktree");
+    }
+    if (this.#countOtherActiveSessions(session.id) > 0) {
+      throw new Error("Only one active execution session is supported in the current MVP slice");
+    }
+
+    const reviewPackage = this.getReviewPackage(ticketId);
+    if (!reviewPackage) {
+      throw new Error("Review package not found");
+    }
+
+    const noteId = nanoid();
+    const attemptId = nanoid();
+    const timestamp = nowIso();
+    const attemptNumber = this.#nextAttemptNumber(session.id);
+    const normalizedBody = body.trim();
+    const summary =
+      "Review feedback was recorded and the execution session is relaunching on the existing worktree.";
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO requested_change_notes (
+            id, ticket_id, review_package_id, author_type, body, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(noteId, ticketId, reviewPackage.id, "user", normalizedBody, timestamp);
+
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET status = ?, updated_at = ?
+          WHERE id = ?
+        `
+      )
+      .run("in_progress", timestamp, ticketId);
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?,
+              current_attempt_id = ?,
+              latest_requested_change_note_id = ?,
+              completed_at = ?,
+              last_heartbeat_at = ?,
+              last_summary = ?
+          WHERE id = ?
+        `
+      )
+      .run(
+        "awaiting_input",
+        attemptId,
+        noteId,
+        null,
+        timestamp,
+        summary,
+        session.id
+      );
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO execution_attempts (
+            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(attemptId, session.id, attemptNumber, "running", null, timestamp, null, null);
+
+    const logs = [
+      `Requested changes recorded: ${normalizedBody}`,
+      `Reusing worktree at: ${session.worktree_path}`,
+      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
+      `Starting execution attempt ${attemptNumber}.`
+    ];
+
+    for (const line of logs) {
+      this.#appendSessionLog(session.id, line);
+    }
+
+    this.#recordStructuredEvent("ticket", String(ticketId), "ticket.changes_requested", {
+      ticket_id: ticketId,
+      session_id: session.id,
+      requested_change_note_id: noteId,
+      review_package_id: reviewPackage.id,
+      attempt_id: attemptId
+    });
+    this.#recordStructuredEvent("session", session.id, "session.relaunched", {
+      ticket_id: ticketId,
+      attempt_id: attemptId,
+      reason: "review_changes",
+      requested_change_note_id: noteId
+    });
+
+    return {
+      ticket: this.getTicket(ticketId)!,
+      session: this.getSession(session.id)!,
+      attempt: this.listSessionAttempts(session.id)[attemptNumber - 1]!,
+      logs,
+      requestedChangeNote: this.getRequestedChangeNote(noteId)!
+    };
+  }
+
+  resumeTicket(ticketId: number, reason?: string): RestartTicketResult {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+    if (ticket.status !== "in_progress") {
+      throw new Error("Only in-progress tickets can be resumed");
+    }
+    if (!ticket.session_id) {
+      throw new Error("Ticket has no execution session");
+    }
+
+    const session = this.getSession(ticket.session_id);
+    if (!session) {
+      throw new Error("Execution session not found");
+    }
+    if (!session.worktree_path) {
+      throw new Error("Execution session has no prepared worktree");
+    }
+    if (
+      !["failed", "interrupted", "awaiting_input", "paused_checkpoint", "paused_user_control"].includes(
+        session.status
+      )
+    ) {
+      throw new Error(`Session cannot be resumed from status ${session.status}`);
+    }
+    if (this.#countOtherActiveSessions(session.id) > 0) {
+      throw new Error("Only one active execution session is supported in the current MVP slice");
+    }
+
+    const attemptId = nanoid();
+    const timestamp = nowIso();
+    const attemptNumber = this.#nextAttemptNumber(session.id);
+    const normalizedReason = reason?.trim();
+    const summary =
+      normalizedReason && normalizedReason.length > 0
+        ? `Execution resume requested: ${normalizedReason}`
+        : "Execution resume requested on the existing worktree.";
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?,
+              current_attempt_id = ?,
+              completed_at = ?,
+              last_heartbeat_at = ?,
+              last_summary = ?
+          WHERE id = ?
+        `
+      )
+      .run("awaiting_input", attemptId, null, timestamp, summary, session.id);
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO execution_attempts (
+            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(attemptId, session.id, attemptNumber, "running", null, timestamp, null, null);
+
+    const logs = [
+      normalizedReason && normalizedReason.length > 0
+        ? `Resume instruction recorded: ${normalizedReason}`
+        : "Resume requested without additional instruction.",
+      `Reusing worktree at: ${session.worktree_path}`,
+      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
+      `Starting execution attempt ${attemptNumber}.`
+    ];
+
+    for (const line of logs) {
+      this.#appendSessionLog(session.id, line);
+    }
+
+    this.#recordStructuredEvent("session", session.id, "session.resumed", {
+      ticket_id: ticketId,
+      attempt_id: attemptId,
+      reason: normalizedReason ?? null
+    });
+
+    return {
+      ticket,
+      session: this.getSession(session.id)!,
+      attempt: this.listSessionAttempts(session.id)[attemptNumber - 1]!,
       logs
     };
   }
