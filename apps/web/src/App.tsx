@@ -2193,7 +2193,9 @@ export function App() {
                         onClick={() => setSelectedProjectId(project.id)}
                       >
                         <span>{project.name}</span>
-                        <Code>{project.default_target_branch ?? "main"}</Code>
+                        <Code style={{ marginInlineStart: 8 }}>
+                          {project.default_target_branch ?? "main"}
+                        </Code>
                       </Button>
                       <ActionIcon
                         aria-label={`Project options for ${project.name}`}
