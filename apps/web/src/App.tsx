@@ -1833,7 +1833,7 @@ export function App() {
         onChange={(event) =>
           setDraftEditorDescription(event.currentTarget.value)
         }
-        minRows={5}
+        rows={8}
         required
       />
       <Select
@@ -1851,7 +1851,7 @@ export function App() {
       <Textarea
         label="Acceptance criteria"
         description="One acceptance criterion per line."
-        minRows={5}
+        rows={8}
         value={draftEditorAcceptanceCriteria}
         onChange={(event) =>
           setDraftEditorAcceptanceCriteria(event.currentTarget.value)
