@@ -57,6 +57,10 @@ type ManualTerminalStartInput = {
 
 type ForwardedInputTarget = "agent" | "terminal";
 type ExecutionMode = "plan" | "implementation";
+type PromptContextSection = {
+  label: string;
+  content: string;
+};
 
 const draftRefinementResultSchema = z.object({
   title_draft: z.string().min(1),
@@ -86,6 +90,62 @@ function truncate(value: string, maxLength = 600): string {
   }
 
   return `${value.slice(0, maxLength - 1)}...`;
+}
+
+function hasMeaningfulContent(
+  value: string | null | undefined,
+): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function formatMarkdownLog(label: string, body: string): string {
+  return `${label}:\n${body}`;
+}
+
+function appendMarkdownSection(
+  sections: string[],
+  label: string,
+  content: string | null | undefined,
+): void {
+  sections.push(`${label}:`, hasMeaningfulContent(content) ? content : "None.");
+}
+
+function appendCriteriaSections(
+  sections: string[],
+  criteria: string[],
+  emptyFallback: string,
+): void {
+  sections.push("Acceptance criteria:");
+
+  if (criteria.length === 0) {
+    sections.push(emptyFallback);
+    return;
+  }
+
+  for (const [index, criterion] of criteria.entries()) {
+    sections.push(`Criterion ${index + 1}:`, criterion);
+    if (index < criteria.length - 1) {
+      sections.push("");
+    }
+  }
+}
+
+function appendContextSections(
+  sections: string[],
+  label: string,
+  items: PromptContextSection[],
+): void {
+  if (items.length === 0) {
+    return;
+  }
+
+  sections.push("", `${label}:`);
+  for (const [index, item] of items.entries()) {
+    sections.push(`${item.label}:`, item.content);
+    if (index < items.length - 1) {
+      sections.push("");
+    }
+  }
 }
 
 function ensureDirectory(path: string): void {
@@ -210,24 +270,24 @@ function appendCodexModelArgs(
 function buildCodexImplementationPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
-  extraInstructions: string[],
+  extraInstructions: PromptContextSection[],
   approvedPlanSummary?: string | null,
 ): string {
-  const acceptanceCriteria =
-    ticket.acceptance_criteria.length > 0
-      ? ticket.acceptance_criteria
-          .map((criterion) => `- ${criterion}`)
-          .join("\n")
-      : "- Preserve the intended user workflow and keep the change small and focused.";
-
   const sections = [
     `Implement ticket #${ticket.id} in the repository ${repository.name}.`,
     "",
-    `Title: ${ticket.title}`,
-    `Description: ${ticket.description}`,
-    "",
-    "Acceptance criteria:",
-    acceptanceCriteria,
+  ];
+
+  appendMarkdownSection(sections, "Title", ticket.title);
+  sections.push("");
+  appendMarkdownSection(sections, "Description", ticket.description);
+  sections.push("");
+  appendCriteriaSections(
+    sections,
+    ticket.acceptance_criteria,
+    "Preserve the intended user workflow and keep the change small and focused.",
+  );
+  sections.push(
     "",
     "Execution rules:",
     "- Make the smallest complete change that satisfies the ticket.",
@@ -235,18 +295,14 @@ function buildCodexImplementationPrompt(
     "- Run lightweight validation when it is obvious and inexpensive.",
     "- Create a git commit before finishing if you made code changes.",
     "- End with a concise summary that includes changed files, validation run, and remaining risks.",
-  ];
+  );
 
-  if (approvedPlanSummary && approvedPlanSummary.trim().length > 0) {
-    sections.push("", "Approved plan:", approvedPlanSummary.trim());
+  if (hasMeaningfulContent(approvedPlanSummary)) {
+    sections.push("");
+    appendMarkdownSection(sections, "Approved plan", approvedPlanSummary);
   }
 
-  if (extraInstructions.length > 0) {
-    sections.push("", "Additional context:");
-    for (const instruction of extraInstructions) {
-      sections.push(`- ${instruction}`);
-    }
-  }
+  appendContextSections(sections, "Additional context", extraInstructions);
 
   return sections.join("\n");
 }
@@ -254,23 +310,23 @@ function buildCodexImplementationPrompt(
 function buildCodexPlanPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
-  extraInstructions: string[],
+  extraInstructions: PromptContextSection[],
 ): string {
-  const acceptanceCriteria =
-    ticket.acceptance_criteria.length > 0
-      ? ticket.acceptance_criteria
-          .map((criterion) => `- ${criterion}`)
-          .join("\n")
-      : "- Preserve the intended user workflow and keep the change small and focused.";
-
   const sections = [
     `Plan ticket #${ticket.id} in the repository ${repository.name}.`,
     "",
-    `Title: ${ticket.title}`,
-    `Description: ${ticket.description}`,
-    "",
-    "Acceptance criteria:",
-    acceptanceCriteria,
+  ];
+
+  appendMarkdownSection(sections, "Title", ticket.title);
+  sections.push("");
+  appendMarkdownSection(sections, "Description", ticket.description);
+  sections.push("");
+  appendCriteriaSections(
+    sections,
+    ticket.acceptance_criteria,
+    "Preserve the intended user workflow and keep the change small and focused.",
+  );
+  sections.push(
     "",
     "Execution rules:",
     "- Stay inside this repository worktree.",
@@ -278,14 +334,8 @@ function buildCodexPlanPrompt(
     "- Do not modify files, create commits, or run write operations.",
     "- Return a concise implementation plan only.",
     "- End with a short plan summary that the user can approve or revise.",
-  ];
-
-  if (extraInstructions.length > 0) {
-    sections.push("", "Additional context:");
-    for (const instruction of extraInstructions) {
-      sections.push(`- ${instruction}`);
-    }
-  }
+  );
+  appendContextSections(sections, "Additional context", extraInstructions);
 
   return sections.join("\n");
 }
@@ -302,13 +352,32 @@ function buildDraftRefinementPrompt(
     "Return JSON only with no markdown fences or commentary.",
     "",
     "Current draft:",
-    `title_draft: ${draft.title_draft}`,
-    `description_draft: ${draft.description_draft}`,
-    `proposed_ticket_type: ${draft.proposed_ticket_type ?? "feature"}`,
-    "proposed_acceptance_criteria:",
-    ...(draft.proposed_acceptance_criteria.length > 0
-      ? draft.proposed_acceptance_criteria.map((criterion) => `- ${criterion}`)
-      : ["- None yet"]),
+  ];
+
+  appendMarkdownSection(sections, "title_draft", draft.title_draft);
+  sections.push("");
+  appendMarkdownSection(sections, "description_draft", draft.description_draft);
+  sections.push("");
+  appendMarkdownSection(
+    sections,
+    "proposed_ticket_type",
+    draft.proposed_ticket_type ?? "feature",
+  );
+  sections.push("", "proposed_acceptance_criteria:");
+  if (draft.proposed_acceptance_criteria.length > 0) {
+    for (const [
+      index,
+      criterion,
+    ] of draft.proposed_acceptance_criteria.entries()) {
+      sections.push(`criterion_${index + 1}:`, criterion);
+      if (index < draft.proposed_acceptance_criteria.length - 1) {
+        sections.push("");
+      }
+    }
+  } else {
+    sections.push("None yet.");
+  }
+  sections.push(
     "",
     "Return strict JSON with this shape:",
     '{"title_draft":"string","description_draft":"string","proposed_ticket_type":"feature|bugfix|chore|research","proposed_acceptance_criteria":["string"],"split_proposal_summary":"string|null"}',
@@ -320,10 +389,11 @@ function buildDraftRefinementPrompt(
     "- Keep the existing ticket type unless the draft text makes it obviously incorrect.",
     "- Make acceptance criteria concrete, testable, and concise without expanding scope.",
     '- Set "split_proposal_summary" to null unless the draft already clearly describes multiple separate tickets.',
-  ];
+  );
 
-  if (instruction && instruction.trim().length > 0) {
-    sections.push("", `Additional instruction: ${instruction.trim()}`);
+  if (hasMeaningfulContent(instruction)) {
+    sections.push("");
+    appendMarkdownSection(sections, "Additional instruction", instruction);
   }
 
   return sections.join("\n");
@@ -340,13 +410,32 @@ function buildDraftQuestionsPrompt(
     "Return JSON only with no markdown fences or commentary.",
     "",
     "Draft under review:",
-    `title_draft: ${draft.title_draft}`,
-    `description_draft: ${draft.description_draft}`,
-    `proposed_ticket_type: ${draft.proposed_ticket_type ?? "feature"}`,
-    "proposed_acceptance_criteria:",
-    ...(draft.proposed_acceptance_criteria.length > 0
-      ? draft.proposed_acceptance_criteria.map((criterion) => `- ${criterion}`)
-      : ["- None yet"]),
+  ];
+
+  appendMarkdownSection(sections, "title_draft", draft.title_draft);
+  sections.push("");
+  appendMarkdownSection(sections, "description_draft", draft.description_draft);
+  sections.push("");
+  appendMarkdownSection(
+    sections,
+    "proposed_ticket_type",
+    draft.proposed_ticket_type ?? "feature",
+  );
+  sections.push("", "proposed_acceptance_criteria:");
+  if (draft.proposed_acceptance_criteria.length > 0) {
+    for (const [
+      index,
+      criterion,
+    ] of draft.proposed_acceptance_criteria.entries()) {
+      sections.push(`criterion_${index + 1}:`, criterion);
+      if (index < draft.proposed_acceptance_criteria.length - 1) {
+        sections.push("");
+      }
+    }
+  } else {
+    sections.push("None yet.");
+  }
+  sections.push(
     "",
     "Return strict JSON with this shape:",
     '{"verdict":"string","summary":"string","assumptions":["string"],"open_questions":["string"],"risks":["string"],"suggested_draft_edits":["string"]}',
@@ -355,10 +444,11 @@ function buildDraftQuestionsPrompt(
     "- Focus on whether the draft is feasible and correctly scoped for this repository.",
     "- Call out missing information, risky assumptions, and likely blockers.",
     "- Keep suggested edits concrete and short.",
-  ];
+  );
 
-  if (instruction && instruction.trim().length > 0) {
-    sections.push("", `Additional instruction: ${instruction.trim()}`);
+  if (hasMeaningfulContent(instruction)) {
+    sections.push("");
+    appendMarkdownSection(sections, "Additional instruction", instruction);
   }
 
   return sections.join("\n");
@@ -669,20 +759,19 @@ export class ExecutionRuntime {
   }
 
   forwardInput(sessionId: string, body: string): ForwardedInputTarget | null {
-    const normalizedBody = body.replace(/\s+$/, "");
-    if (normalizedBody.length === 0) {
+    if (!hasMeaningfulContent(body)) {
       return null;
     }
 
     const manualTerminal = this.#manualTerminals.get(sessionId);
     if (manualTerminal) {
-      manualTerminal.pty.write(`${normalizedBody}\r`);
+      manualTerminal.pty.write(`${body}\r`);
       this.#log(
         sessionId,
         manualTerminal.attemptId ??
           this.#store.getSession(sessionId)?.current_attempt_id ??
           sessionId,
-        `[terminal input] ${normalizedBody}`,
+        `[terminal input] ${body}`,
       );
       return "terminal";
     }
@@ -694,8 +783,8 @@ export class ExecutionRuntime {
 
     const attemptId =
       this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
-    agentSession.write(`${normalizedBody}\r`);
-    this.#log(sessionId, attemptId, `[agent input] ${normalizedBody}`);
+    agentSession.write(`${body}\r`);
+    this.#log(sessionId, attemptId, `[agent input]\n${body}`);
     return "agent";
   }
 
@@ -720,7 +809,7 @@ export class ExecutionRuntime {
         status: "started",
         repository_id: repository.id,
         repository_name: repository.name,
-        instruction: instruction?.trim() ?? null,
+        instruction: hasMeaningfulContent(instruction) ? instruction : null,
         summary:
           mode === "refine"
             ? `Codex is refining this draft in ${repository.name}.`
@@ -938,21 +1027,23 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no current attempt");
     }
 
-    const extraInstructions: string[] = [];
+    const extraInstructions: PromptContextSection[] = [];
     const requestedChangeNote = session.latest_requested_change_note_id
       ? this.#store.getRequestedChangeNote(
           session.latest_requested_change_note_id,
         )
       : undefined;
     if (requestedChangeNote) {
-      extraInstructions.push(
-        `Address the latest requested changes: ${requestedChangeNote.body}`,
-      );
+      extraInstructions.push({
+        label: "Latest requested changes",
+        content: requestedChangeNote.body,
+      });
     }
-    if (additionalInstruction && additionalInstruction.trim().length > 0) {
-      extraInstructions.push(
-        `Resume guidance: ${additionalInstruction.trim()}`,
-      );
+    if (hasMeaningfulContent(additionalInstruction)) {
+      extraInstructions.push({
+        label: "Resume guidance",
+        content: additionalInstruction,
+      });
     }
 
     const executionMode: ExecutionMode =
@@ -1054,14 +1145,14 @@ export class ExecutionRuntime {
       this.#log(
         session.id,
         attemptId,
-        `Latest requested changes: ${truncate(requestedChangeNote.body)}`,
+        formatMarkdownLog("Latest requested changes", requestedChangeNote.body),
       );
     }
-    if (additionalInstruction && additionalInstruction.trim().length > 0) {
+    if (hasMeaningfulContent(additionalInstruction)) {
       this.#log(
         session.id,
         attemptId,
-        `Resume guidance: ${truncate(additionalInstruction.trim())}`,
+        formatMarkdownLog("Resume guidance", additionalInstruction),
       );
     }
 
@@ -1428,7 +1519,7 @@ export class ExecutionRuntime {
     this.#log(
       input.sessionId,
       input.attemptId,
-      `Plan summary: ${truncate(input.summary)}`,
+      formatMarkdownLog("Plan summary", input.summary),
     );
     this.#log(
       input.sessionId,

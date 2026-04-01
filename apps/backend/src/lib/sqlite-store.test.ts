@@ -193,3 +193,113 @@ test("archived tickets stay in storage but leave active project lists", () => {
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("markdown content is preserved across draft, ticket, and session note flows", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-markdown-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Markdown Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const draftDescription = [
+      "# Ticket Description",
+      "",
+      "- Keep **bold** formatting",
+      '- Preserve [links](https://example.com "docs") literally in storage',
+    ].join("\n");
+    const draftCriteria = [
+      "**First** acceptance criterion",
+      "[Second criterion](https://example.com)",
+    ];
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "**Markdown** draft",
+      description: draftDescription,
+      proposed_acceptance_criteria: draftCriteria,
+    });
+
+    assert.equal(draft.title_draft, "**Markdown** draft");
+    assert.equal(draft.description_draft, draftDescription);
+    assert.deepEqual(draft.proposed_acceptance_criteria, draftCriteria);
+
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: draft.proposed_acceptance_criteria,
+      target_branch: "main",
+    });
+
+    assert.equal(ticket.title, "**Markdown** draft");
+    assert.equal(ticket.description, draftDescription);
+    assert.deepEqual(ticket.acceptance_criteria, draftCriteria);
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-markdown",
+      worktreePath: join(tempDir, "worktrees", "ticket-markdown"),
+      logs: ["Started markdown session"],
+    });
+
+    const sessionInput = [
+      "## Session note",
+      "",
+      "- Keep the raw Markdown",
+      "- Do not collapse whitespace",
+    ].join("\n");
+    store.addSessionInput(started.session.id, sessionInput);
+    assert.equal(
+      store.getSessionLogs(started.session.id).at(-1),
+      `User input recorded:\n${sessionInput}`,
+    );
+
+    store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Summary",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+
+    const requestedChanges = [
+      "# Requested Changes",
+      "",
+      "1. Fix the [broken path](https://example.com/fix).",
+      "2. Keep _emphasis_ intact.",
+    ].join("\n");
+    const restarted = store.requestTicketChanges(ticket.id, requestedChanges);
+    assert.ok(restarted.requestedChangeNote);
+    assert.equal(restarted.requestedChangeNote.body, requestedChanges);
+    assert.equal(
+      store.getSessionLogs(started.session.id).at(-4),
+      `Requested changes recorded:\n${requestedChanges}`,
+    );
+
+    const resumeInstruction = [
+      "### Resume Guidance",
+      "",
+      "- Re-check the markdown renderer",
+      "- Keep `code` spans untouched",
+    ].join("\n");
+    const resumed = store.resumeTicket(ticket.id, resumeInstruction);
+    assert.equal(
+      resumed.session.last_summary,
+      `Execution resume requested:\n${resumeInstruction}`,
+    );
+    assert.equal(
+      store.getSessionLogs(started.session.id).at(-4),
+      `Resume instruction recorded:\n${resumeInstruction}`,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

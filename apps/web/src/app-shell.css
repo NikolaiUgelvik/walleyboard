@@ -218,6 +218,125 @@
   line-height: 1.4;
 }
 
+.markdown-content {
+  color: inherit;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content blockquote,
+.markdown-content pre {
+  margin: 0.5em 0 0;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin: 0.75em 0 0.35em;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+}
+
+.markdown-content h1 {
+  font-size: 1.4em;
+}
+
+.markdown-content h2 {
+  font-size: 1.25em;
+}
+
+.markdown-content h3 {
+  font-size: 1.15em;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.25rem;
+}
+
+.markdown-content li + li {
+  margin-top: 0.2rem;
+}
+
+.markdown-content a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.markdown-content code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.92em;
+  background: var(--orchestrator-panel-soft);
+  border: 1px solid var(--orchestrator-border);
+  border-radius: 6px;
+  padding: 0.08rem 0.3rem;
+}
+
+.markdown-content pre {
+  background: var(--orchestrator-panel-soft);
+  border: 1px solid var(--orchestrator-border);
+  border-radius: 10px;
+  padding: 0.8rem;
+  overflow-x: auto;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--orchestrator-border-strong);
+  color: var(--orchestrator-muted);
+  margin-left: 0;
+  padding-left: 0.85rem;
+}
+
+.markdown-content--inline {
+  display: inline;
+}
+
+.markdown-content--inline p,
+.markdown-content--inline ul,
+.markdown-content--inline ol,
+.markdown-content--inline blockquote,
+.markdown-content--inline pre,
+.markdown-content--inline h1,
+.markdown-content--inline h2,
+.markdown-content--inline h3,
+.markdown-content--inline h4,
+.markdown-content--inline h5,
+.markdown-content--inline h6 {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+.markdown-muted {
+  color: var(--orchestrator-muted);
+}
+
+.markdown-small {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .board-empty {
   background: var(--orchestrator-empty);
   border: 1px dashed var(--orchestrator-border);

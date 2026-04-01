@@ -40,6 +40,7 @@ import type {
 } from "../../../packages/contracts/src/index.js";
 
 import "./app-shell.css";
+import { MarkdownContent } from "./components/MarkdownContent.js";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
@@ -591,6 +592,159 @@ function parseDraftQuestionsResult(
     risks: parseStringList(value.risks),
     suggested_draft_edits: parseStringList(value.suggested_draft_edits),
   };
+}
+
+function parseDraftRefinementResult(value: unknown): {
+  title_draft: string;
+  description_draft: string;
+  proposed_ticket_type: DraftTicketState["proposed_ticket_type"];
+  proposed_acceptance_criteria: string[];
+  split_proposal_summary: string | null;
+} | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    typeof value.title_draft !== "string" ||
+    typeof value.description_draft !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    title_draft: value.title_draft,
+    description_draft: value.description_draft,
+    proposed_ticket_type:
+      value.proposed_ticket_type === "feature" ||
+      value.proposed_ticket_type === "bugfix" ||
+      value.proposed_ticket_type === "chore" ||
+      value.proposed_ticket_type === "research"
+        ? value.proposed_ticket_type
+        : null,
+    proposed_acceptance_criteria: parseStringList(
+      value.proposed_acceptance_criteria,
+    ),
+    split_proposal_summary:
+      typeof value.split_proposal_summary === "string"
+        ? value.split_proposal_summary
+        : value.split_proposal_summary === null
+          ? null
+          : null,
+  };
+}
+
+function MarkdownListItems({ items }: { items: string[] }) {
+  return (
+    <List size="sm" spacing={4}>
+      {items.map((item, index) => (
+        <List.Item key={`${index}-${item.slice(0, 32)}`}>
+          <MarkdownContent content={item} />
+        </List.Item>
+      ))}
+    </List>
+  );
+}
+
+function DraftQuestionsResultView({
+  result,
+}: {
+  result: DraftQuestionsResult;
+}) {
+  return (
+    <Stack gap="xs">
+      <Group justify="space-between" align="center">
+        <Text fw={700}>Feasibility</Text>
+        <Badge variant="light" color="blue">
+          {result.verdict}
+        </Badge>
+      </Group>
+      <MarkdownContent
+        className="markdown-muted markdown-small"
+        content={result.summary}
+      />
+      {result.assumptions.length > 0 ? (
+        <MarkdownListItems items={result.assumptions} />
+      ) : null}
+      {result.open_questions.length > 0 ? (
+        <MarkdownListItems items={result.open_questions} />
+      ) : null}
+      {result.risks.length > 0 ? (
+        <MarkdownListItems items={result.risks} />
+      ) : null}
+      {result.suggested_draft_edits.length > 0 ? (
+        <MarkdownListItems items={result.suggested_draft_edits} />
+      ) : null}
+    </Stack>
+  );
+}
+
+function DraftEventResultView({
+  result,
+}: {
+  result: Record<string, unknown>;
+}) {
+  const questionsResult = parseDraftQuestionsResult(result);
+  if (questionsResult) {
+    return <DraftQuestionsResultView result={questionsResult} />;
+  }
+
+  const refinementResult = parseDraftRefinementResult(result);
+  if (refinementResult) {
+    return (
+      <Stack gap="xs">
+        <Stack gap={2}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+            Title
+          </Text>
+          <MarkdownContent content={refinementResult.title_draft} inline />
+        </Stack>
+        <Stack gap={2}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+            Description
+          </Text>
+          <MarkdownContent
+            className="markdown-muted markdown-small"
+            content={refinementResult.description_draft}
+          />
+        </Stack>
+        {refinementResult.split_proposal_summary ? (
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Split Proposal
+            </Text>
+            <MarkdownContent
+              className="markdown-muted markdown-small"
+              content={refinementResult.split_proposal_summary}
+            />
+          </Stack>
+        ) : null}
+        {refinementResult.proposed_acceptance_criteria.length > 0 ? (
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Acceptance Criteria
+            </Text>
+            <MarkdownListItems
+              items={refinementResult.proposed_acceptance_criteria}
+            />
+          </Stack>
+        ) : null}
+      </Stack>
+    );
+  }
+
+  return (
+    <Box
+      component="pre"
+      className="detail-placeholder"
+      style={{
+        margin: 0,
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {JSON.stringify(result, null, 2)}
+    </Box>
+  );
 }
 
 function draftMatchesSearch(draft: DraftTicketState, needle: string): boolean {
@@ -1699,8 +1853,7 @@ export function App() {
         ) ?? selectedRepository);
   const draftEditorAcceptanceCriteriaLines = draftEditorAcceptanceCriteria
     .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((line) => line.trim().length > 0);
   const draftEditorCanPersist =
     draftEditorTitle.trim().length > 0 &&
     draftEditorDescription.trim().length > 0;
@@ -2321,9 +2474,10 @@ export function App() {
                         <Text fw={700} size="sm">
                           {item.title}
                         </Text>
-                        <Text size="sm" c="dimmed">
-                          {item.message}
-                        </Text>
+                        <MarkdownContent
+                          className="markdown-muted markdown-small"
+                          content={item.message}
+                        />
                         <Group justify="flex-end">
                           <Button
                             variant="light"
@@ -2517,12 +2671,17 @@ export function App() {
                                         justify="space-between"
                                         align="flex-start"
                                       >
-                                        <Text
-                                          fw={700}
-                                          style={{ lineHeight: 1.35 }}
+                                        <Box
+                                          style={{
+                                            fontWeight: 700,
+                                            lineHeight: 1.35,
+                                          }}
                                         >
-                                          {draft.title_draft}
-                                        </Text>
+                                          <MarkdownContent
+                                            content={draft.title_draft}
+                                            inline
+                                          />
+                                        </Box>
                                         <Badge variant="light" color="gray">
                                           {draft.wizard_status.replace(
                                             /_/g,
@@ -2530,9 +2689,10 @@ export function App() {
                                           )}
                                         </Badge>
                                       </Group>
-                                      <Text size="sm" c="dimmed">
-                                        {draft.description_draft}
-                                      </Text>
+                                      <MarkdownContent
+                                        className="markdown-muted markdown-small"
+                                        content={draft.description_draft}
+                                      />
                                       <Text className="board-card-meta">
                                         Repository:{" "}
                                         {repository?.name ?? "unassigned"}
@@ -2604,12 +2764,20 @@ export function App() {
                                       align="flex-start"
                                     >
                                       <Stack gap={2}>
-                                        <Text
-                                          fw={700}
-                                          style={{ lineHeight: 1.35 }}
+                                        <Box
+                                          style={{
+                                            fontWeight: 700,
+                                            lineHeight: 1.35,
+                                          }}
                                         >
-                                          #{ticket.id} {ticket.title}
-                                        </Text>
+                                          <Text component="span" inherit>
+                                            #{ticket.id}{" "}
+                                          </Text>
+                                          <MarkdownContent
+                                            content={ticket.title}
+                                            inline
+                                          />
+                                        </Box>
                                         <Text className="board-card-meta">
                                           {ticket.ticket_type} •{" "}
                                           {ticket.target_branch}
@@ -2627,9 +2795,10 @@ export function App() {
                                         {renderTicketMenu(ticket)}
                                       </Group>
                                     </Group>
-                                    <Text size="sm" c="dimmed">
-                                      {ticket.description}
-                                    </Text>
+                                    <MarkdownContent
+                                      className="markdown-muted markdown-small"
+                                      content={ticket.description}
+                                    />
 
                                     {showDeleteError ? (
                                       <Text size="sm" c="red">
@@ -2781,11 +2950,16 @@ export function App() {
                       <Group justify="space-between" align="flex-start">
                         <Stack gap={4}>
                           <Text className="rail-kicker">Draft</Text>
-                          <Text fw={700}>
-                            {draftEditorTitle.trim().length > 0
-                              ? draftEditorTitle
-                              : "Unsaved draft"}
-                          </Text>
+                          <Box style={{ fontWeight: 700 }}>
+                            <MarkdownContent
+                              content={
+                                draftEditorTitle.trim().length > 0
+                                  ? draftEditorTitle
+                                  : "Unsaved draft"
+                              }
+                              inline
+                            />
+                          </Box>
                         </Stack>
                         <Badge variant="light" color="gray">
                           unsaved
@@ -2922,7 +3096,12 @@ export function App() {
                     <Group justify="space-between" align="flex-start">
                       <Stack gap={4}>
                         <Text className="rail-kicker">Draft</Text>
-                        <Text fw={700}>{selectedDraft.title_draft}</Text>
+                        <Box style={{ fontWeight: 700 }}>
+                          <MarkdownContent
+                            content={selectedDraft.title_draft}
+                            inline
+                          />
+                        </Box>
                       </Stack>
                       <Group gap="xs">
                         {draftAnalysisActive ? (
@@ -3137,58 +3316,9 @@ export function App() {
 
                     {latestQuestionsResult ? (
                       <Box className="detail-placeholder">
-                        <Stack gap="xs">
-                          <Group justify="space-between" align="center">
-                            <Text fw={700}>Feasibility</Text>
-                            <Badge variant="light" color="blue">
-                              {latestQuestionsResult.verdict}
-                            </Badge>
-                          </Group>
-                          <Text size="sm" c="dimmed">
-                            {latestQuestionsResult.summary}
-                          </Text>
-                          {latestQuestionsResult.assumptions.length > 0 ? (
-                            <List size="sm" spacing={4}>
-                              {latestQuestionsResult.assumptions.map((item) => (
-                                <List.Item key={`assumption-${item}`}>
-                                  {item}
-                                </List.Item>
-                              ))}
-                            </List>
-                          ) : null}
-                          {latestQuestionsResult.open_questions.length > 0 ? (
-                            <List size="sm" spacing={4}>
-                              {latestQuestionsResult.open_questions.map(
-                                (item) => (
-                                  <List.Item key={`question-${item}`}>
-                                    {item}
-                                  </List.Item>
-                                ),
-                              )}
-                            </List>
-                          ) : null}
-                          {latestQuestionsResult.risks.length > 0 ? (
-                            <List size="sm" spacing={4}>
-                              {latestQuestionsResult.risks.map((item) => (
-                                <List.Item key={`risk-${item}`}>
-                                  {item}
-                                </List.Item>
-                              ))}
-                            </List>
-                          ) : null}
-                          {latestQuestionsResult.suggested_draft_edits.length >
-                          0 ? (
-                            <List size="sm" spacing={4}>
-                              {latestQuestionsResult.suggested_draft_edits.map(
-                                (item) => (
-                                  <List.Item key={`edit-${item}`}>
-                                    {item}
-                                  </List.Item>
-                                ),
-                              )}
-                            </List>
-                          ) : null}
-                        </Stack>
+                        <DraftQuestionsResultView
+                          result={latestQuestionsResult}
+                        />
                       </Box>
                     ) : null}
 
@@ -3220,25 +3350,24 @@ export function App() {
                                     : "Questions"}{" "}
                                   • {meta.status} •{" "}
                                   {formatTimestamp(event.occurred_at)} •{" "}
-                                  {meta.summary}
+                                  <MarkdownContent
+                                    content={meta.summary}
+                                    inline
+                                  />
                                 </summary>
                                 <Stack gap="xs" mt="sm">
                                   {meta.error ? (
-                                    <Text size="sm" c="red">
-                                      {meta.error}
-                                    </Text>
+                                    <Box c="red">
+                                      <MarkdownContent
+                                        className="markdown-small"
+                                        content={meta.error}
+                                      />
+                                    </Box>
                                   ) : null}
                                   {meta.result ? (
-                                    <Box
-                                      component="pre"
-                                      className="detail-placeholder"
-                                      style={{
-                                        margin: 0,
-                                        whiteSpace: "pre-wrap",
-                                      }}
-                                    >
-                                      {JSON.stringify(meta.result, null, 2)}
-                                    </Box>
+                                    <DraftEventResultView
+                                      result={meta.result}
+                                    />
                                   ) : null}
                                 </Stack>
                               </details>
@@ -3271,11 +3400,21 @@ export function App() {
                       <Group justify="space-between" align="flex-start">
                         <Stack gap={4}>
                           <Text className="rail-kicker">Execution</Text>
-                          <Text fw={700}>
-                            {selectedSessionTicket
-                              ? `#${selectedSessionTicket.id} ${selectedSessionTicket.title}`
-                              : `Ticket #${session.ticket_id}`}
-                          </Text>
+                          <Box style={{ fontWeight: 700 }}>
+                            {selectedSessionTicket ? (
+                              <>
+                                <Text component="span" inherit>
+                                  #{selectedSessionTicket.id}{" "}
+                                </Text>
+                                <MarkdownContent
+                                  content={selectedSessionTicket.title}
+                                  inline
+                                />
+                              </>
+                            ) : (
+                              `Ticket #${session.ticket_id}`
+                            )}
+                          </Box>
                         </Stack>
                         <Badge
                           variant="light"
@@ -3325,6 +3464,34 @@ export function App() {
                           </Text>
                         </Box>
                       </Box>
+
+                      {selectedSessionTicket ? (
+                        <Stack gap="xs">
+                          <Text fw={700}>Ticket details</Text>
+                          <MarkdownContent
+                            className="markdown-muted markdown-small"
+                            content={selectedSessionTicket.description}
+                          />
+                          {selectedSessionTicket.acceptance_criteria.length >
+                          0 ? (
+                            <Stack gap={2}>
+                              <Text
+                                size="xs"
+                                c="dimmed"
+                                tt="uppercase"
+                                fw={700}
+                              >
+                                Acceptance Criteria
+                              </Text>
+                              <MarkdownListItems
+                                items={
+                                  selectedSessionTicket.acceptance_criteria
+                                }
+                              />
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      ) : null}
 
                       {selectedSessionTicket ? (
                         <Group justify="space-between">
@@ -3415,13 +3582,10 @@ export function App() {
                               ? "Plan awaiting feedback"
                               : "Latest plan"}
                           </Text>
-                          <Text
-                            size="sm"
-                            c="dimmed"
-                            style={{ whiteSpace: "pre-wrap" }}
-                          >
-                            {session.plan_summary}
-                          </Text>
+                          <MarkdownContent
+                            className="markdown-muted markdown-small"
+                            content={session.plan_summary}
+                          />
                         </Stack>
                       ) : null}
 
@@ -3435,6 +3599,10 @@ export function App() {
                               Diff artifact:{" "}
                               <Code>{reviewPackage.diff_ref}</Code>
                             </Text>
+                            <MarkdownContent
+                              className="markdown-muted markdown-small"
+                              content={reviewPackage.change_summary}
+                            />
                             <Text size="sm" c="dimmed">
                               Validation results:{" "}
                               {reviewPackage.validation_results.length}
@@ -3449,6 +3617,21 @@ export function App() {
                                   ),
                                 )}
                               </List>
+                            ) : null}
+                            {reviewPackage.remaining_risks.length > 0 ? (
+                              <Stack gap={2}>
+                                <Text
+                                  size="xs"
+                                  c="dimmed"
+                                  tt="uppercase"
+                                  fw={700}
+                                >
+                                  Remaining Risks
+                                </Text>
+                                <MarkdownListItems
+                                  items={reviewPackage.remaining_risks}
+                                />
+                              </Stack>
                             ) : null}
                             {mergeTicketMutation.isError ? (
                               <Text size="sm" c="red">

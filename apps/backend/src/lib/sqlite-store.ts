@@ -63,21 +63,25 @@ function slugify(value: string): string {
 }
 
 function normalizeTitle(value: string): string {
-  const trimmed = value.trim().replace(/\s+/g, " ");
-  if (trimmed.length === 0) {
-    return trimmed;
-  }
-
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return value.trim();
 }
 
-function normalizeDescription(value: string): string {
-  const trimmed = value.trim().replace(/\s+/g, " ");
-  if (trimmed.length === 0) {
-    return trimmed;
-  }
+function preserveMarkdown(value: string): string {
+  return value;
+}
 
-  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+function hasMeaningfulContent(
+  value: string | null | undefined,
+): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function preserveMarkdownList(values: string[]): string[] {
+  return values.filter((value) => hasMeaningfulContent(value));
+}
+
+function formatMarkdownLog(label: string, body: string): string {
+  return `${label}:\n${body}`;
 }
 
 function normalizeOptionalModel(
@@ -141,13 +145,11 @@ function deriveAcceptanceCriteria(
   criteria.add(`Implement ${title}.`);
 
   if (description.length > 0) {
-    criteria.add(`Cover the workflow described in: ${description}`);
+    criteria.add(`Cover the workflow described in:\n${description}`);
   }
 
-  if (instruction && instruction.trim().length > 0) {
-    criteria.add(
-      `Account for refinement guidance: ${normalizeDescription(instruction)}`,
-    );
+  if (hasMeaningfulContent(instruction)) {
+    criteria.add(`Account for refinement guidance:\n${instruction}`);
   }
 
   criteria.add("Keep the user-facing workflow coherent and testable.");
@@ -592,20 +594,19 @@ export class SqliteStore implements Store {
         ticket.description.length > 0
           ? ticket.description
           : typeof payload.description === "string"
-            ? normalizeDescription(payload.description)
+            ? payload.description
             : "";
       const acceptanceCriteria =
         ticket.acceptance_criteria !== "[]"
           ? ticket.acceptance_criteria
           : stringifyJson(
               Array.isArray(payload.acceptance_criteria)
-                ? payload.acceptance_criteria
-                    .filter(
+                ? preserveMarkdownList(
+                    payload.acceptance_criteria.filter(
                       (criterion): criterion is string =>
                         typeof criterion === "string",
-                    )
-                    .map((criterion) => criterion.trim())
-                    .filter(Boolean)
+                    ),
+                  )
                 : [],
             );
 
@@ -965,9 +966,7 @@ export class SqliteStore implements Store {
         : input.proposed_ticket_type;
     const proposedAcceptanceCriteria = (
       input.proposed_acceptance_criteria ?? []
-    )
-      .map((criterion) => normalizeDescription(criterion))
-      .filter((criterion) => criterion.length > 0);
+    ).filter((criterion) => hasMeaningfulContent(criterion));
     const timestamp = nowIso();
     const draftId = nanoid();
 
@@ -985,7 +984,7 @@ export class SqliteStore implements Store {
         draftId,
         input.project_id,
         normalizeTitle(input.title),
-        normalizeDescription(input.description),
+        preserveMarkdown(input.description),
         firstRepository?.id ?? null,
         null,
         proposedTicketType,
@@ -1019,7 +1018,7 @@ export class SqliteStore implements Store {
     }
 
     const title = normalizeTitle(input.title_draft ?? draft.title_draft);
-    const description = normalizeDescription(
+    const description = preserveMarkdown(
       input.description_draft ?? draft.description_draft,
     );
     const proposedTicketType =
@@ -1029,9 +1028,7 @@ export class SqliteStore implements Store {
     const proposedAcceptanceCriteria =
       input.proposed_acceptance_criteria === undefined
         ? draft.proposed_acceptance_criteria
-        : input.proposed_acceptance_criteria
-            .map((criterion) => normalizeDescription(criterion))
-            .filter((criterion) => criterion.length > 0);
+        : preserveMarkdownList(input.proposed_acceptance_criteria);
     const splitProposalSummary =
       input.split_proposal_summary === undefined
         ? draft.split_proposal_summary
@@ -1090,7 +1087,7 @@ export class SqliteStore implements Store {
     }
 
     const title = normalizeTitle(draft.title_draft);
-    const description = normalizeDescription(draft.description_draft);
+    const description = preserveMarkdown(draft.description_draft);
     const acceptanceCriteria = deriveAcceptanceCriteria(
       title,
       description,
@@ -1152,9 +1149,9 @@ export class SqliteStore implements Store {
         input.repo_id,
         "ready",
         normalizeTitle(input.title),
-        normalizeDescription(input.description),
+        preserveMarkdown(input.description),
         input.ticket_type,
-        stringifyJson(input.acceptance_criteria),
+        stringifyJson(preserveMarkdownList(input.acceptance_criteria)),
         null,
         input.target_branch,
         null,
@@ -1170,8 +1167,8 @@ export class SqliteStore implements Store {
 
     this.recordTicketEvent(ticketId, "ticket.created", {
       title: normalizeTitle(input.title),
-      description: normalizeDescription(input.description),
-      acceptance_criteria: input.acceptance_criteria,
+      description: preserveMarkdown(input.description),
+      acceptance_criteria: preserveMarkdownList(input.acceptance_criteria),
     });
 
     return requireValue(
@@ -1365,11 +1362,10 @@ export class SqliteStore implements Store {
     }
 
     const timestamp = nowIso();
-    const normalizedReason = reason?.trim();
-    const summary =
-      normalizedReason && normalizedReason.length > 0
-        ? `Execution stopped by user: ${normalizedReason}`
-        : "Execution was stopped by user and can be resumed from the existing worktree.";
+    const reasonBody = hasMeaningfulContent(reason) ? reason : null;
+    const summary = reasonBody
+      ? formatMarkdownLog("Execution stopped by user", reasonBody)
+      : "Execution was stopped by user and can be resumed from the existing worktree.";
 
     this.#db
       .prepare(
@@ -1389,8 +1385,8 @@ export class SqliteStore implements Store {
       : null;
 
     const logs = [
-      normalizedReason && normalizedReason.length > 0
-        ? `Execution stopped by user: ${normalizedReason}`
+      reasonBody
+        ? formatMarkdownLog("Execution stopped by user", reasonBody)
         : "Execution stopped by user.",
       `Worktree preserved at: ${session.worktree_path ?? "unknown"}`,
       `Working branch preserved: ${ticket.working_branch ?? "unknown"}`,
@@ -1402,13 +1398,13 @@ export class SqliteStore implements Store {
 
     this.#recordStructuredEvent("session", session.id, "session.interrupted", {
       ticket_id: ticketId,
-      reason: normalizedReason ?? null,
+      reason: reasonBody,
       interruption_source: "user_stop",
     });
     this.#recordStructuredEvent("ticket", String(ticketId), "ticket.stopped", {
       ticket_id: ticketId,
       session_id: session.id,
-      reason: normalizedReason ?? null,
+      reason: reasonBody,
     });
 
     return {
@@ -1466,7 +1462,6 @@ export class SqliteStore implements Store {
     const attemptId = nanoid();
     const timestamp = nowIso();
     const attemptNumber = this.#nextAttemptNumber(session.id);
-    const normalizedBody = body.trim();
     const summary =
       "Review feedback was recorded and the execution session is relaunching on the existing worktree.";
 
@@ -1478,14 +1473,7 @@ export class SqliteStore implements Store {
           ) VALUES (?, ?, ?, ?, ?, ?)
         `,
       )
-      .run(
-        noteId,
-        ticketId,
-        reviewPackage.id,
-        "user",
-        normalizedBody,
-        timestamp,
-      );
+      .run(noteId, ticketId, reviewPackage.id, "user", body, timestamp);
 
     this.#db
       .prepare(
@@ -1540,7 +1528,7 @@ export class SqliteStore implements Store {
       );
 
     const logs = [
-      `Requested changes recorded: ${normalizedBody}`,
+      formatMarkdownLog("Requested changes recorded", body),
       `Reusing worktree at: ${session.worktree_path}`,
       `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
       `Starting execution attempt ${attemptNumber}.`,
@@ -1638,15 +1626,14 @@ export class SqliteStore implements Store {
     const attemptId = nanoid();
     const timestamp = nowIso();
     const attemptNumber = this.#nextAttemptNumber(session.id);
-    const normalizedReason = reason?.trim();
+    const reasonBody = hasMeaningfulContent(reason) ? reason : null;
     const nextPlanStatus: ExecutionPlanStatus =
       session.planning_enabled && session.plan_status !== "approved"
         ? "drafting"
         : session.plan_status;
-    const summary =
-      normalizedReason && normalizedReason.length > 0
-        ? `Execution resume requested: ${normalizedReason}`
-        : "Execution resume requested on the existing worktree.";
+    const summary = reasonBody
+      ? formatMarkdownLog("Execution resume requested", reasonBody)
+      : "Execution resume requested on the existing worktree.";
 
     this.#db
       .prepare(
@@ -1693,8 +1680,8 @@ export class SqliteStore implements Store {
       );
 
     const logs = [
-      normalizedReason && normalizedReason.length > 0
-        ? `Resume instruction recorded: ${normalizedReason}`
+      reasonBody
+        ? formatMarkdownLog("Resume instruction recorded", reasonBody)
         : "Resume requested without additional instruction.",
       `Reusing worktree at: ${session.worktree_path}`,
       `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
@@ -1708,7 +1695,7 @@ export class SqliteStore implements Store {
     this.#recordStructuredEvent("session", session.id, "session.resumed", {
       ticket_id: ticketId,
       attempt_id: attemptId,
-      reason: normalizedReason ?? null,
+      reason: reasonBody,
     });
 
     return {
@@ -1735,7 +1722,10 @@ export class SqliteStore implements Store {
     const summary =
       "User input was recorded for the session. If no live process was attached, the note will be available for the next attempt.";
 
-    this.#appendSessionLog(sessionId, `User input recorded: ${body.trim()}`);
+    this.#appendSessionLog(
+      sessionId,
+      formatMarkdownLog("User input recorded", body),
+    );
 
     this.#db
       .prepare(

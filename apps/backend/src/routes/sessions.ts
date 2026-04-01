@@ -310,14 +310,16 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
           }
 
           const approved = input.approved === true;
-          const feedback = input.body.trim();
-          const normalizedFeedback =
-            feedback.length > 0
-              ? feedback
+          const feedbackBody =
+            input.body.trim().length > 0
+              ? input.body
               : approved
                 ? "Plan approved. Continue with implementation."
                 : "Please revise the implementation plan.";
 
+          const feedbackLogLine = approved
+            ? `Plan approved by user:\n${feedbackBody}`
+            : `Plan changes requested:\n${feedbackBody}`;
           const updatedPlanSession = store.updateSessionPlan(activeSession.id, {
             plan_status: approved ? "approved" : "drafting",
             plan_summary: approved ? activeSession.plan_summary : null,
@@ -332,9 +334,6 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             return;
           }
 
-          const feedbackLogLine = approved
-            ? `Plan approved by user: ${normalizedFeedback}`
-            : `Plan changes requested: ${normalizedFeedback}`;
           const sequence = store.appendSessionLog(
             activeSession.id,
             feedbackLogLine,
@@ -355,10 +354,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             ),
           );
 
-          const resumeResult = store.resumeTicket(
-            ticket.id,
-            normalizedFeedback,
-          );
+          const resumeResult = store.resumeTicket(ticket.id, feedbackBody);
 
           eventHub.publish(
             makeProtocolEvent(
@@ -394,7 +390,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             repository,
             ticket: resumeResult.ticket,
             session: resumeResult.session,
-            additionalInstruction: normalizedFeedback,
+            additionalInstruction: feedbackBody,
           });
 
           reply.send(
@@ -416,7 +412,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
           request.params.sessionId,
           input.approved === undefined
             ? input.body
-            : `Checkpoint response (approved=${input.approved}): ${input.body}`,
+            : `Checkpoint response (approved=${input.approved}):\n${input.body}`,
         );
 
         if (forwardedTo) {
@@ -453,7 +449,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
         const session = store.addSessionInput(
           request.params.sessionId,
-          `Checkpoint response (approved=${input.approved ?? false}): ${input.body}`,
+          `Checkpoint response (approved=${input.approved ?? false}):\n${input.body}`,
         );
 
         eventHub.publish(
@@ -464,7 +460,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         eventHub.publish(
           makeProtocolEvent("session.output", "session", session.id, {
             session_id: session.id,
-            chunk: `Checkpoint response recorded: ${input.body}`,
+            chunk: `Checkpoint response recorded:\n${input.body}`,
             sequence: store.getSessionLogs(session.id).length - 1,
           }),
         );
@@ -544,7 +540,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         eventHub.publish(
           makeProtocolEvent("session.output", "session", session.id, {
             session_id: session.id,
-            chunk: `User input recorded: ${input.body}`,
+            chunk: `User input recorded:\n${input.body}`,
             sequence: store.getSessionLogs(session.id).length - 1,
           }),
         );

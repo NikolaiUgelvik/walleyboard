@@ -1,5 +1,6 @@
 import { Badge, Code, Group, List, Stack, Text } from "@mantine/core";
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
+import { MarkdownContent } from "./MarkdownContent.js";
 
 type SessionActivityFeedProps = {
   logs: string[];
@@ -56,10 +57,19 @@ function createActivity(
 
 function extractDetail(line: string, prefix: string): string | null {
   if (!line.startsWith(prefix)) {
+    if (prefix.endsWith(" ")) {
+      const multilinePrefix = `${prefix.trimEnd()}\n`;
+      if (!line.startsWith(multilinePrefix)) {
+        return null;
+      }
+
+      return line.slice(multilinePrefix.length);
+    }
+
     return null;
   }
 
-  return line.slice(prefix.length).trim();
+  return line.slice(prefix.length);
 }
 
 function truncate(value: string, maxLength = 240): string {
@@ -206,7 +216,7 @@ function interpretCodexEvent(
       `codex-message-${index}`,
       "blue",
       "Codex update",
-      truncate(text),
+      text,
     );
   }
 
@@ -752,9 +762,10 @@ export function SessionActivityFeed({
             <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
               Outcome
             </Text>
-            <Text size="sm" c="dimmed">
-              {parsedSummary.overview}
-            </Text>
+            <MarkdownContent
+              className="markdown-muted markdown-small"
+              content={parsedSummary.overview}
+            />
           </Stack>
         ) : null}
         {parsedSummary.commit ? (
@@ -787,9 +798,10 @@ export function SessionActivityFeed({
               </List>
             ) : null}
             {parsedSummary.validation.note ? (
-              <Text size="sm" c="dimmed">
-                {parsedSummary.validation.note}
-              </Text>
+              <MarkdownContent
+                className="markdown-muted markdown-small"
+                content={parsedSummary.validation.note}
+              />
             ) : null}
           </Stack>
         ) : null}
@@ -799,13 +811,16 @@ export function SessionActivityFeed({
               Remaining Risks
             </Text>
             {parsedSummary.risks.length === 1 ? (
-              <Text size="sm" c="dimmed">
-                {parsedSummary.risks[0]}
-              </Text>
+              <MarkdownContent
+                className="markdown-muted markdown-small"
+                content={parsedSummary.risks[0] ?? ""}
+              />
             ) : (
               <List size="sm" spacing={4}>
                 {parsedSummary.risks.map((risk) => (
-                  <List.Item key={risk}>{risk}</List.Item>
+                  <List.Item key={risk}>
+                    <MarkdownContent content={risk} />
+                  </List.Item>
                 ))}
               </List>
             )}
@@ -830,9 +845,12 @@ export function SessionActivityFeed({
                 <Badge color={activity.tone} variant="light" mt={2}>
                   {activity.label}
                 </Badge>
-                <Text size="sm" style={{ flex: 1 }}>
-                  {activity.detail}
-                </Text>
+                <div style={{ flex: 1 }}>
+                  <MarkdownContent
+                    className="markdown-small"
+                    content={activity.detail}
+                  />
+                </div>
               </Group>
             ))}
           </Stack>
