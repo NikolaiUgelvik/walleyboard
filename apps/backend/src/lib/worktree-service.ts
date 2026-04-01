@@ -328,6 +328,47 @@ function isMergeInProgress(repoPath: string): boolean {
   );
 }
 
+function gitRefExists(repoPath: string, ref: string): boolean {
+  try {
+    runGit(repoPath, ["show-ref", "--verify", "--quiet", ref]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type RemoteTrackingRef = {
+  refName: string;
+  remoteName: string;
+  branchName: string;
+};
+
+function resolveRemoteTrackingRef(
+  repoPath: string,
+  refName: string,
+): RemoteTrackingRef | null {
+  if (!gitRefExists(repoPath, `refs/remotes/${refName}`)) {
+    return null;
+  }
+
+  const refSegments = refName.split("/");
+  const remoteName = refSegments[0];
+  const branchSegments = refSegments.slice(1);
+  if (!remoteName || branchSegments.length === 0) {
+    return null;
+  }
+
+  return {
+    refName,
+    remoteName,
+    branchName: branchSegments.join("/"),
+  };
+}
+
+function localBranchExists(repoPath: string, branchName: string): boolean {
+  return gitRefExists(repoPath, `refs/heads/${branchName}`);
+}
+
 function resolveBranchUpstream(
   repoPath: string,
   branchName: string,
@@ -344,23 +385,107 @@ function resolveBranchUpstream(
   }
 }
 
-function refreshTargetBranch(
-  repository: RepositoryConfig,
+function fetchRemoteTrackingRef(
+  repoPath: string,
+  remoteTrackingRef: RemoteTrackingRef,
+): void {
+  runGit(repoPath, [
+    "fetch",
+    "--quiet",
+    remoteTrackingRef.remoteName,
+    `refs/heads/${remoteTrackingRef.branchName}:refs/remotes/${remoteTrackingRef.refName}`,
+  ]);
+}
+
+function resolveMergeBackBranch(
+  repoPath: string,
   targetBranch: string,
-): string[] {
-  const upstream = resolveBranchUpstream(repository.path, targetBranch);
-  if (!upstream) {
-    return [
-      `No upstream is configured for ${targetBranch}; using the current local branch head.`,
-    ];
+): string {
+  if (localBranchExists(repoPath, targetBranch)) {
+    return targetBranch;
   }
 
-  runGit(repository.path, ["pull", "--ff-only"]);
-  const refreshedHead = runGit(repository.path, ["rev-parse", "HEAD"]);
-  return [
-    `Refreshed ${targetBranch} from ${upstream}`,
-    `Target branch head after refresh: ${refreshedHead}`,
-  ];
+  const remoteTrackingRef = resolveRemoteTrackingRef(repoPath, targetBranch);
+  if (
+    remoteTrackingRef &&
+    localBranchExists(repoPath, remoteTrackingRef.branchName)
+  ) {
+    return remoteTrackingRef.branchName;
+  }
+
+  throw new Error(
+    `Configured target branch ${targetBranch} cannot be merged back because no local branch is available for the final fast-forward merge.`,
+  );
+}
+
+type RefreshedTargetBranch = {
+  logs: string[];
+  syncRef: string;
+  mergeBackBranch: string;
+};
+
+function refreshTargetBranch(
+  worktreePath: string,
+  repository: RepositoryConfig,
+  targetBranch: string,
+): RefreshedTargetBranch {
+  const mergeBackBranch = resolveMergeBackBranch(repository.path, targetBranch);
+  const remoteTrackingTarget = resolveRemoteTrackingRef(
+    repository.path,
+    targetBranch,
+  );
+  if (remoteTrackingTarget) {
+    fetchRemoteTrackingRef(worktreePath, remoteTrackingTarget);
+    const refreshedHead = runGit(worktreePath, ["rev-parse", targetBranch]);
+    return {
+      logs: [
+        `Refreshed ${targetBranch} from ${targetBranch}`,
+        `Target branch sync ref after refresh: ${refreshedHead}`,
+      ],
+      syncRef: targetBranch,
+      mergeBackBranch,
+    };
+  }
+
+  const upstream = resolveBranchUpstream(worktreePath, targetBranch);
+  if (!upstream) {
+    const refreshedHead = runGit(worktreePath, ["rev-parse", targetBranch]);
+    return {
+      logs: [
+        `No upstream is configured for ${targetBranch}; using the current local branch head.`,
+        `Target branch sync ref after refresh: ${refreshedHead}`,
+      ],
+      syncRef: targetBranch,
+      mergeBackBranch,
+    };
+  }
+
+  const upstreamRemoteTrackingRef = resolveRemoteTrackingRef(
+    repository.path,
+    upstream,
+  );
+  if (!upstreamRemoteTrackingRef) {
+    const refreshedHead = runGit(worktreePath, ["rev-parse", upstream]);
+    return {
+      logs: [
+        `Using upstream ${upstream} for ${targetBranch} without a remote refresh.`,
+        `Target branch sync ref after refresh: ${refreshedHead}`,
+      ],
+      syncRef: upstream,
+      mergeBackBranch,
+    };
+  }
+
+  fetchRemoteTrackingRef(worktreePath, upstreamRemoteTrackingRef);
+  const refreshedHead = runGit(worktreePath, ["rev-parse", upstream]);
+  return {
+    logs: [
+      `Refreshed ${targetBranch} from ${upstream}`,
+      `Target branch sync ref after refresh: ${refreshedHead}`,
+    ],
+    syncRef: upstream,
+    mergeBackBranch,
+  };
 }
 
 function isFastForwardFailure(error: unknown): boolean {
@@ -376,19 +501,24 @@ function isFastForwardFailure(error: unknown): boolean {
 async function attemptRebaseWithRecovery(
   worktreePath: string,
   workingBranch: string,
+  syncRef: string,
   targetBranch: string,
   resolveConflicts: MergeReviewedBranchOptions["resolveConflicts"] | undefined,
-): Promise<string[]> {
+  conflictRecoveryAlreadyUsed: boolean,
+): Promise<{ logs: string[]; usedConflictResolution: boolean }> {
   const logs: string[] = [];
 
   try {
-    runGit(worktreePath, ["rebase", targetBranch]);
-    logs.push(`Rebased ${workingBranch} onto ${targetBranch}`);
-    return logs;
+    runGit(worktreePath, ["rebase", syncRef]);
+    logs.push(`Rebased ${workingBranch} onto ${syncRef}`);
+    return {
+      logs,
+      usedConflictResolution: false,
+    };
   } catch (error) {
     const conflictedFiles = findConflictedFiles(worktreePath);
     const conflictStage = isMergeInProgress(worktreePath) ? "merge" : "rebase";
-    if (conflictedFiles.length === 0 || !resolveConflicts) {
+    if (conflictedFiles.length === 0) {
       throw error;
     }
 
@@ -397,6 +527,24 @@ async function attemptRebaseWithRecovery(
         conflictedFiles,
       )}`,
     );
+
+    if (!resolveConflicts) {
+      throw new AutomaticMergeRecoveryError(
+        conflictRecoveryAlreadyUsed
+          ? "Direct merge hit additional conflicts after the automatic recovery attempt."
+          : "Direct merge hit conflicts in the ticket worktree.",
+        {
+          logs,
+          note: conflictRecoveryAlreadyUsed
+            ? `Additional ${conflictStage} conflicts remain in ${formatFileList(
+                conflictedFiles,
+              )} after the automatic recovery attempt. Continue from the existing worktree and branch.`
+            : `Direct merge hit ${conflictStage} conflicts in ${formatFileList(
+                conflictedFiles,
+              )}. Continue from the existing worktree and branch.`,
+        },
+      );
+    }
 
     const resolution = await resolveConflicts({
       worktreePath,
@@ -460,7 +608,10 @@ async function attemptRebaseWithRecovery(
     logs.push(
       `Resolved ${conflictStage} conflicts automatically and completed the git operation`,
     );
-    return logs;
+    return {
+      logs,
+      usedConflictResolution: true,
+    };
   }
 }
 
@@ -473,20 +624,6 @@ export async function mergeReviewedBranch(
 ): Promise<{ logs: string[]; targetHead: string }> {
   if (!existsSync(worktreePath)) {
     throw new Error(`Worktree path does not exist: ${worktreePath}`);
-  }
-
-  const repoBranch = repoCurrentBranch(repository);
-  if (repoBranch !== targetBranch) {
-    throw new Error(
-      `Repository checkout must be on ${targetBranch} before direct merge. Current branch: ${repoBranch}`,
-    );
-  }
-
-  const repoStatus = gitStatusPorcelain(repository.path);
-  if (repoStatus.length > 0) {
-    throw new Error(
-      "Repository checkout has uncommitted changes. Clean it before merging.",
-    );
   }
 
   const worktreeBranch = runGit(worktreePath, [
@@ -507,24 +644,67 @@ export async function mergeReviewedBranch(
     );
   }
 
-  const logs = [`Repository checkout verified on ${targetBranch}`];
+  const logs = [`Ticket worktree verified on ${workingBranch}`];
   const maxMergeAttempts = 2;
+  let conflictRecoveryUsed = false;
 
   for (let attempt = 1; attempt <= maxMergeAttempts; attempt += 1) {
-    logs.push(...refreshTargetBranch(repository, targetBranch));
-    logs.push(
-      ...(await attemptRebaseWithRecovery(
+    const refreshedTarget = refreshTargetBranch(
+      worktreePath,
+      repository,
+      targetBranch,
+    );
+    logs.push(...refreshedTarget.logs);
+
+    let rebaseResult: {
+      logs: string[];
+      usedConflictResolution: boolean;
+    };
+    try {
+      rebaseResult = await attemptRebaseWithRecovery(
         worktreePath,
         workingBranch,
+        refreshedTarget.syncRef,
         targetBranch,
-        options.resolveConflicts,
-      )),
-    );
+        conflictRecoveryUsed ? undefined : options.resolveConflicts,
+        conflictRecoveryUsed,
+      );
+    } catch (error) {
+      if (error instanceof AutomaticMergeRecoveryError) {
+        throw new AutomaticMergeRecoveryError(error.message, {
+          logs: [...logs, ...error.logs],
+          note: error.note,
+        });
+      }
+
+      throw error;
+    }
+    logs.push(...rebaseResult.logs);
+    if (rebaseResult.usedConflictResolution) {
+      conflictRecoveryUsed = true;
+    }
+
+    const repoStatus = gitStatusPorcelain(repository.path);
+    if (repoStatus.length > 0) {
+      throw new Error(
+        "Repository checkout has uncommitted changes. Clean it before merging.",
+      );
+    }
+
+    const repoBranch = repoCurrentBranch(repository);
+    if (repoBranch !== refreshedTarget.mergeBackBranch) {
+      runGit(repository.path, ["checkout", refreshedTarget.mergeBackBranch]);
+      logs.push(
+        `Checked out ${refreshedTarget.mergeBackBranch} in ${repository.path} for the final fast-forward merge`,
+      );
+    }
 
     try {
       runGit(repository.path, ["merge", "--ff-only", workingBranch]);
       const targetHead = runGit(repository.path, ["rev-parse", "HEAD"]);
-      logs.push(`Fast-forward merged ${workingBranch} into ${targetBranch}`);
+      logs.push(
+        `Fast-forward merged ${workingBranch} into ${refreshedTarget.mergeBackBranch}`,
+      );
       logs.push(`Target branch head is now ${targetHead}`);
       return {
         logs,
@@ -533,7 +713,7 @@ export async function mergeReviewedBranch(
     } catch (error) {
       if (isFastForwardFailure(error) && attempt < maxMergeAttempts) {
         logs.push(
-          `${targetBranch} advanced during direct merge. Refreshing and retrying the rebase/merge flow.`,
+          `${refreshedTarget.mergeBackBranch} advanced during direct merge. Refreshing the ticket worktree and retrying the merge flow.`,
         );
         continue;
       }
@@ -543,7 +723,7 @@ export async function mergeReviewedBranch(
           "Automatic merge recovery could not keep up with target-branch updates.",
           {
             logs,
-            note: `Automatic merge recovery could not complete because ${targetBranch} kept advancing during the direct-merge retry.`,
+            note: `Automatic merge recovery could not complete because ${refreshedTarget.mergeBackBranch} kept advancing during the direct-merge retry.`,
           },
         );
       }

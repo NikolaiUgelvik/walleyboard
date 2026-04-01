@@ -137,6 +137,104 @@ test("mergeReviewedBranch refreshes the target branch before rebasing and mergin
   }
 });
 
+test("mergeReviewedBranch refreshes a remote target ref inside the ticket worktree before merging back", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "orchestrator-merge-remote-target-"),
+  );
+
+  try {
+    const remotePath = join(tempDir, "remote.git");
+    const repoPath = join(tempDir, "repo");
+    const worktreePath = join(tempDir, "ticket-worktree");
+    const updaterPath = join(tempDir, "updater");
+
+    execFileSync("git", ["init", "--bare", remotePath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    execFileSync("git", ["clone", remotePath, repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+    runGit(repoPath, ["push", "-u", "origin", "main"]);
+    execFileSync(
+      "git",
+      ["--git-dir", remotePath, "symbolic-ref", "HEAD", "refs/heads/main"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "ticket-branch",
+      worktreePath,
+      "main",
+    ]);
+    configureGitIdentity(worktreePath);
+    writeFileSync(join(worktreePath, "ticket.txt"), "ticket work\n", "utf8");
+    runGit(worktreePath, ["add", "ticket.txt"]);
+    runGit(worktreePath, ["commit", "-m", "ticket change"]);
+
+    runGit(repoPath, ["checkout", "-b", "sandbox"]);
+
+    execFileSync("git", ["clone", remotePath, updaterPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(updaterPath);
+    writeFileSync(
+      join(updaterPath, "upstream.txt"),
+      "upstream change\n",
+      "utf8",
+    );
+    runGit(updaterPath, ["add", "upstream.txt"]);
+    runGit(updaterPath, ["commit", "-m", "upstream change"]);
+    runGit(updaterPath, ["push", "origin", "main"]);
+
+    const result = await mergeReviewedBranch(
+      createRepositoryConfig(repoPath),
+      worktreePath,
+      "ticket-branch",
+      "origin/main",
+    );
+
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes("Refreshed origin/main from origin/main"),
+      ),
+    );
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes(`Checked out main in ${repoPath}`),
+      ),
+    );
+    assert.equal(
+      runGit(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]),
+      "main",
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "upstream.txt"), "utf8"),
+      "upstream change\n",
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "ticket.txt"), "utf8"),
+      "ticket work\n",
+    );
+    assert.equal(
+      runGit(repoPath, ["log", "--format=%s", "-1"]),
+      "ticket change",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("mergeReviewedBranch uses the conflict resolver and completes the rebase before merging", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-conflict-"));
 
@@ -211,6 +309,96 @@ test("mergeReviewedBranch uses the conflict resolver and completes the rebase be
       runGit(repoPath, ["log", "--format=%s", "-1"]),
       "ticket change",
     );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("mergeReviewedBranch invokes the conflict resolver only once across retry attempts", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-retry-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    const worktreePath = join(tempDir, "ticket-worktree");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "story.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "story.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "ticket-branch",
+      worktreePath,
+      "main",
+    ]);
+    configureGitIdentity(worktreePath);
+    writeFileSync(join(worktreePath, "story.txt"), "ticket change\n", "utf8");
+    runGit(worktreePath, ["add", "story.txt"]);
+    runGit(worktreePath, ["commit", "-m", "ticket change"]);
+
+    writeFileSync(join(repoPath, "story.txt"), "main change\n", "utf8");
+    runGit(repoPath, ["add", "story.txt"]);
+    runGit(repoPath, ["commit", "-m", "main change"]);
+
+    let resolverCalls = 0;
+
+    await assert.rejects(
+      mergeReviewedBranch(
+        createRepositoryConfig(repoPath),
+        worktreePath,
+        "ticket-branch",
+        "main",
+        {
+          resolveConflicts: () => {
+            resolverCalls += 1;
+            assert.equal(resolverCalls, 1);
+            writeFileSync(
+              join(worktreePath, "story.txt"),
+              "main change\nticket change\n",
+              "utf8",
+            );
+            runGit(worktreePath, ["add", "story.txt"]);
+            runGit(
+              worktreePath,
+              ["-c", "core.editor=true", "rebase", "--continue"],
+              { GIT_EDITOR: "true" },
+            );
+
+            writeFileSync(
+              join(repoPath, "story.txt"),
+              "main rewrite\n",
+              "utf8",
+            );
+            runGit(repoPath, ["add", "story.txt"]);
+            runGit(repoPath, ["commit", "-m", "main rewrite"]);
+
+            return {
+              resolved: true,
+              logs: ["AI-assisted conflict resolution completed."],
+            };
+          },
+        },
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof AutomaticMergeRecoveryError);
+        assert.ok(error.note.includes("existing worktree and branch"));
+        assert.ok(
+          error.logs.some((line) =>
+            line.includes("Refreshing the ticket worktree and retrying"),
+          ),
+        );
+        return true;
+      },
+    );
+
+    assert.equal(resolverCalls, 1);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
