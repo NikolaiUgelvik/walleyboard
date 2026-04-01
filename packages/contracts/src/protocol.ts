@@ -34,6 +34,13 @@ export const createDraftInputSchema = z.object({
   description: z.string().min(1)
 });
 
+export const updateDraftInputSchema = z.object({
+  title_draft: z.string().min(1).optional(),
+  description_draft: z.string().min(1).optional(),
+  proposed_ticket_type: ticketTypeSchema.nullable().optional(),
+  proposed_acceptance_criteria: z.array(z.string().min(1)).optional()
+});
+
 export const refineDraftInputSchema = z.object({
   instruction: z.string().min(1).optional()
 });
@@ -112,6 +119,10 @@ export const ticketsResponseSchema = z.object({
   tickets: z.array(ticketFrontmatterSchema)
 });
 
+export const draftEventsResponseSchema = z.object({
+  events: z.array(structuredEventSchema)
+});
+
 export const ticketResponseSchema = z.object({
   ticket: ticketFrontmatterSchema
 });
@@ -187,6 +198,7 @@ export const pullRequestUpdatedEventPayloadSchema = pullRequestRefSchema;
 
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
+export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;
 export type RefineDraftInput = z.infer<typeof refineDraftInputSchema>;
 export type ConfirmDraftInput = z.infer<typeof confirmDraftInputSchema>;
 export type StartTicketInput = z.infer<typeof startTicketInputSchema>;
@@ -196,6 +208,7 @@ export type RequestChangesInput = z.infer<typeof requestChangesInputSchema>;
 export type CheckpointResponseInput = z.infer<typeof checkpointResponseInputSchema>;
 export type SessionInput = z.infer<typeof sessionInputSchema>;
 export type CommandAck = z.infer<typeof commandAckSchema>;
+export type DraftEventsResponse = z.infer<typeof draftEventsResponseSchema>;
 export type ProtocolEvent = z.infer<typeof protocolEventSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventEntityType = z.infer<typeof eventEntityTypeSchema>;

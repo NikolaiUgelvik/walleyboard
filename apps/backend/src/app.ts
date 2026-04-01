@@ -32,7 +32,7 @@ export async function createApp() {
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
-    reply.header("access-control-allow-methods", "GET,POST,OPTIONS");
+    reply.header("access-control-allow-methods", "GET,POST,PATCH,OPTIONS");
     reply.header("access-control-allow-headers", "content-type");
 
     if (request.method === "OPTIONS") {
@@ -43,7 +43,7 @@ export async function createApp() {
   await app.register(websocket);
   await app.register(healthRoutes);
   await app.register(projectRoutes, { eventHub, store });
-  await app.register(draftRoutes, { eventHub, store });
+  await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, { eventHub, store, executionRuntime });
   await app.register(sessionRoutes, { eventHub, store, executionRuntime });
   await app.register(websocketRoutes, { eventHub });

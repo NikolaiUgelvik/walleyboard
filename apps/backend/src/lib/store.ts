@@ -12,6 +12,7 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
   TicketType,
+  UpdateDraftInput,
   ValidationResult
 } from "@orchestrator/contracts";
 
@@ -22,6 +23,11 @@ export type ConfirmDraftInput = {
   ticket_type: TicketType;
   acceptance_criteria: string[];
   target_branch: string;
+};
+
+export type UpdateDraftRecordInput = UpdateDraftInput & {
+  split_proposal_summary?: string | null;
+  wizard_status?: DraftTicketState["wizard_status"];
 };
 
 export type PreparedExecutionRuntime = {
@@ -91,8 +97,15 @@ export interface Store {
   listProjectTickets(projectId: string): TicketFrontmatter[];
   createDraft(input: CreateDraftInput): DraftTicketState;
   getDraft(draftId: string): DraftTicketState | undefined;
+  updateDraft(draftId: string, input: UpdateDraftRecordInput): DraftTicketState;
   deleteDraft(draftId: string): DraftTicketState | undefined;
   refineDraft(draftId: string, instruction?: string): DraftTicketState;
+  getDraftEvents(draftId: string): StructuredEvent[];
+  recordDraftEvent(
+    draftId: string,
+    eventType: string,
+    payload: Record<string, unknown>
+  ): StructuredEvent;
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
   getTicket(ticketId: number): TicketFrontmatter | undefined;
   getReviewPackage(ticketId: number): ReviewPackage | undefined;

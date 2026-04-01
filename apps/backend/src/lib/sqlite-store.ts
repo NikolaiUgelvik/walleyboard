@@ -28,7 +28,8 @@ import type {
   StopTicketResult,
   StartupRecoveryResult,
   StartTicketResult,
-  Store
+  Store,
+  UpdateDraftRecordInput
 } from "./store.js";
 
 type JsonValue = Record<string, unknown> | unknown[] | string | number | boolean | null;
@@ -712,12 +713,71 @@ export class SqliteStore implements Store {
     return row ? mapDraft(row) : undefined;
   }
 
+  updateDraft(draftId: string, input: UpdateDraftRecordInput): DraftTicketState {
+    const draft = this.getDraft(draftId);
+    if (!draft) {
+      throw new Error("Draft not found");
+    }
+
+    const title = normalizeTitle(input.title_draft ?? draft.title_draft);
+    const description = normalizeDescription(
+      input.description_draft ?? draft.description_draft
+    );
+    const proposedTicketType =
+      input.proposed_ticket_type === undefined
+        ? draft.proposed_ticket_type
+        : input.proposed_ticket_type;
+    const proposedAcceptanceCriteria =
+      input.proposed_acceptance_criteria === undefined
+        ? draft.proposed_acceptance_criteria
+        : input.proposed_acceptance_criteria
+            .map((criterion) => normalizeDescription(criterion))
+            .filter((criterion) => criterion.length > 0);
+    const splitProposalSummary =
+      input.split_proposal_summary === undefined
+        ? draft.split_proposal_summary
+        : input.split_proposal_summary;
+    const wizardStatus = input.wizard_status ?? draft.wizard_status;
+    const timestamp = nowIso();
+
+    this.#db
+      .prepare(
+        `
+          UPDATE draft_ticket_states
+          SET title_draft = ?, description_draft = ?, proposed_ticket_type = ?,
+              proposed_acceptance_criteria = ?, wizard_status = ?, split_proposal_summary = ?,
+              updated_at = ?
+          WHERE id = ?
+        `
+      )
+      .run(
+        title,
+        description,
+        proposedTicketType,
+        stringifyJson(proposedAcceptanceCriteria),
+        wizardStatus,
+        splitProposalSummary,
+        timestamp,
+        draftId
+      );
+
+    return this.getDraft(draftId)!;
+  }
+
   deleteDraft(draftId: string): DraftTicketState | undefined {
     const draft = this.getDraft(draftId);
     if (!draft) {
       return undefined;
     }
 
+    this.#db
+      .prepare(
+        `
+          DELETE FROM structured_events
+          WHERE entity_type = 'draft' AND entity_id = ?
+        `
+      )
+      .run(draftId);
     this.#db.prepare("DELETE FROM draft_ticket_states WHERE id = ?").run(draftId);
     return draft;
   }
@@ -1502,6 +1562,27 @@ export class SqliteStore implements Store {
       .prepare("SELECT line FROM session_logs WHERE session_id = ? ORDER BY id ASC")
       .all(sessionId) as Array<{ line: string }>;
     return rows.map((row) => row.line);
+  }
+
+  getDraftEvents(draftId: string): StructuredEvent[] {
+    const rows = this.#db
+      .prepare(
+        `
+          SELECT * FROM structured_events
+          WHERE entity_type = 'draft' AND entity_id = ?
+          ORDER BY occurred_at DESC
+        `
+      )
+      .all(draftId) as Record<string, unknown>[];
+    return rows.map(mapStructuredEvent);
+  }
+
+  recordDraftEvent(
+    draftId: string,
+    eventType: string,
+    payload: Record<string, unknown>
+  ): StructuredEvent {
+    return this.#recordStructuredEvent("draft", draftId, eventType, payload);
   }
 
   getTicketEvents(ticketId: number): StructuredEvent[] {

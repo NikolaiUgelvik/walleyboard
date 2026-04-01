@@ -9,6 +9,7 @@ import {
   Loader,
   Menu,
   Modal,
+  Select,
   SegmentedControl,
   SimpleGrid,
   Stack,
@@ -26,6 +27,7 @@ import {
   type Project,
   type RepositoryConfig,
   type ReviewPackage,
+  type StructuredEvent,
   type TicketFrontmatter
 } from "@orchestrator/contracts";
 import {
@@ -110,6 +112,10 @@ type TicketsResponse = {
   tickets: TicketFrontmatter[];
 };
 
+type DraftEventsResponse = {
+  events: StructuredEvent[];
+};
+
 type SessionResponse = {
   session: ExecutionSession;
 };
@@ -130,6 +136,17 @@ type ActionItem = {
   message: string;
   sessionId: string;
   actionLabel: string;
+};
+
+type DraftEventOperation = "refine" | "questions";
+type DraftEventStatus = "started" | "completed" | "failed";
+type DraftQuestionsResult = {
+  verdict: string;
+  summary: string;
+  assumptions: string[];
+  open_questions: string[];
+  risks: string[];
+  suggested_draft_edits: string[];
 };
 
 type InspectorState =
@@ -164,7 +181,12 @@ function deriveWorkingBranchPreview(ticket: TicketFrontmatter): string {
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`);
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`);
+  } catch {
+    throw new Error("Backend unavailable. Restart the backend and try again.");
+  }
 
   if (!response.ok) {
     let message = `Request failed: ${response.status}`;
@@ -185,13 +207,48 @@ async function fetchJson<T>(path: string): Promise<T> {
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+  } catch {
+    throw new Error("Backend unavailable. Restart the backend and try again.");
+  }
+
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+
+    try {
+      const payload = (await response.json()) as { error?: string; message?: string };
+      message = payload.error ?? payload.message ?? message;
+    } catch {
+      // Keep the default message when the response is not JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+  } catch {
+    throw new Error("Backend unavailable. Restart the backend and try again.");
+  }
 
   if (!response.ok) {
     let message = `Request failed: ${response.status}`;
@@ -263,6 +320,85 @@ function sessionStatusColor(status: ExecutionSession["status"]): string {
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function parseDraftEventMeta(event: StructuredEvent): {
+  operation: DraftEventOperation;
+  status: DraftEventStatus;
+  summary: string;
+  error: string | null;
+  result: Record<string, unknown> | null;
+} | null {
+  const [entity, operation, status] = event.event_type.split(".");
+  if (
+    entity !== "draft" ||
+    (operation !== "refine" && operation !== "questions") ||
+    (status !== "started" && status !== "completed" && status !== "failed")
+  ) {
+    return null;
+  }
+
+  const result = isRecord(event.payload.result) ? event.payload.result : null;
+  return {
+    operation,
+    status,
+    summary:
+      typeof event.payload.summary === "string"
+        ? event.payload.summary
+        : status === "started"
+          ? "Codex run started."
+          : status === "failed"
+            ? "Codex run failed."
+            : "Codex run completed.",
+    error: typeof event.payload.error === "string" ? event.payload.error : null,
+    result
+  };
+}
+
+function parseDraftQuestionsResult(value: unknown): DraftQuestionsResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (typeof value.verdict !== "string" || typeof value.summary !== "string") {
+    return null;
+  }
+
+  return {
+    verdict: value.verdict,
+    summary: value.summary,
+    assumptions: parseStringList(value.assumptions),
+    open_questions: parseStringList(value.open_questions),
+    risks: parseStringList(value.risks),
+    suggested_draft_edits: parseStringList(value.suggested_draft_edits)
+  };
 }
 
 function draftMatchesSearch(draft: DraftTicketState, needle: string): boolean {
@@ -339,6 +475,11 @@ export function App() {
   const [validationCommandsText, setValidationCommandsText] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
+  const [draftEditorSourceId, setDraftEditorSourceId] = useState<string | null>(null);
+  const [draftEditorTitle, setDraftEditorTitle] = useState("");
+  const [draftEditorDescription, setDraftEditorDescription] = useState("");
+  const [draftEditorTicketType, setDraftEditorTicketType] = useState<string | null>(null);
+  const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] = useState("");
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
@@ -378,6 +519,13 @@ export function App() {
     queryFn: () => fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
     enabled: selectedProjectId !== null,
     refetchInterval: selectedProjectId === null ? false : 2_000
+  });
+
+  const draftEventsQuery = useQuery({
+    queryKey: ["drafts", selectedDraftId, "events"],
+    queryFn: () => fetchJson<DraftEventsResponse>(`/drafts/${selectedDraftId}/events`),
+    enabled: selectedDraftId !== null,
+    retry: false
   });
 
   const sessionSummaries = useQueries({
@@ -585,6 +733,24 @@ export function App() {
         return;
       }
 
+      if (event.event_type === "structured_event.created") {
+        const structuredEvent = event.payload.structured_event as StructuredEvent | undefined;
+        if (!structuredEvent || structuredEvent.entity_type !== "draft") {
+          return;
+        }
+
+        queryClient.setQueryData<DraftEventsResponse>(
+          ["drafts", structuredEvent.entity_id, "events"],
+          (previous) => ({
+            events: [
+              structuredEvent,
+              ...(previous?.events ?? []).filter((item) => item.id !== structuredEvent.id)
+            ]
+          })
+        );
+        return;
+      }
+
       if (event.event_type === "review_package.generated") {
         const reviewPackage = event.payload.review_package as ReviewPackage | undefined;
         if (!reviewPackage) {
@@ -681,32 +847,69 @@ export function App() {
     }
   });
 
+  const saveDraftMutation = useMutation({
+    mutationFn: (input: {
+      draftId: string;
+      titleDraft: string;
+      descriptionDraft: string;
+      proposedTicketType: string | null;
+      proposedAcceptanceCriteria: string[];
+    }) =>
+      patchJson<CommandAck>(`/drafts/${input.draftId}`, {
+        title_draft: input.titleDraft,
+        description_draft: input.descriptionDraft,
+        proposed_ticket_type: input.proposedTicketType,
+        proposed_acceptance_criteria: input.proposedAcceptanceCriteria
+      }),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["drafts", variables.draftId, "events"]
+        })
+      ]);
+    }
+  });
+
   const refineDraftMutation = useMutation({
     mutationFn: (draftId: string) => postJson<CommandAck>(`/drafts/${draftId}/refine`, {}),
-    onSuccess: async () => {
-      if (selectedProjectId) {
-        await queryClient.invalidateQueries({
-          queryKey: ["projects", selectedProjectId, "drafts"]
-        });
-      }
+    onSuccess: async (_, draftId) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["drafts", draftId, "events"]
+      });
+    }
+  });
+
+  const questionDraftMutation = useMutation({
+    mutationFn: (draftId: string) => postJson<CommandAck>(`/drafts/${draftId}/questions`, {}),
+    onSuccess: async (_, draftId) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["drafts", draftId, "events"]
+      });
     }
   });
 
   const confirmDraftMutation = useMutation({
     mutationFn: (input: {
-      draft: DraftTicketState;
+      draftId: string;
+      title: string;
+      description: string;
+      ticketType: string | null;
+      acceptanceCriteria: string[];
       repository: RepositoryConfig;
       project: Project;
     }) =>
-      postJson<CommandAck>(`/drafts/${input.draft.id}/confirm`, {
-        title: input.draft.title_draft,
-        description: input.draft.description_draft,
+      postJson<CommandAck>(`/drafts/${input.draftId}/confirm`, {
+        title: input.title,
+        description: input.description,
         repo_id: input.repository.id,
-        ticket_type: input.draft.proposed_ticket_type ?? "feature",
+        ticket_type: input.ticketType ?? "feature",
         acceptance_criteria:
-          input.draft.proposed_acceptance_criteria.length > 0
-            ? input.draft.proposed_acceptance_criteria
-            : [`Implement ${input.draft.title_draft}.`],
+          input.acceptanceCriteria.length > 0
+            ? input.acceptanceCriteria
+            : [`Implement ${input.title}.`],
         target_branch:
           input.repository.target_branch ??
           input.project.default_target_branch ??
@@ -973,6 +1176,34 @@ export function App() {
       : repositories.find(
           (item) => item.id === (selectedDraft.confirmed_repo_id ?? selectedDraft.proposed_repo_id)
         ) ?? selectedRepository;
+  const draftEditorAcceptanceCriteriaLines = draftEditorAcceptanceCriteria
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const draftFormDirty =
+    selectedDraft !== null &&
+    (
+      draftEditorTitle !== selectedDraft.title_draft ||
+      draftEditorDescription !== selectedDraft.description_draft ||
+      draftEditorTicketType !== selectedDraft.proposed_ticket_type ||
+      !arraysEqual(
+        draftEditorAcceptanceCriteriaLines,
+        selectedDraft.proposed_acceptance_criteria
+      )
+    );
+  const draftEvents = draftEventsQuery.data?.events ?? [];
+  const latestDraftEventMeta =
+    draftEvents.length > 0 ? parseDraftEventMeta(draftEvents[0]) : null;
+  const draftAnalysisActive =
+    latestDraftEventMeta?.status === "started" &&
+    (latestDraftEventMeta.operation === "refine" ||
+      latestDraftEventMeta.operation === "questions");
+  const latestQuestionsEvent = draftEvents.find(
+    (event) => event.event_type === "draft.questions.completed"
+  );
+  const latestQuestionsResult = latestQuestionsEvent
+    ? parseDraftQuestionsResult(latestQuestionsEvent.payload.result)
+    : null;
   const tickets = ticketsQuery.data?.tickets ?? [];
   const session = sessionQuery.data?.session ?? null;
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
@@ -1069,6 +1300,27 @@ export function App() {
   const activeSessionCount = tickets.filter((ticket) => ticket.status === "in_progress").length;
   const reviewCount = tickets.filter((ticket) => ticket.status === "review").length;
 
+  useEffect(() => {
+    if (!selectedDraft) {
+      setDraftEditorSourceId(null);
+      setDraftEditorTitle("");
+      setDraftEditorDescription("");
+      setDraftEditorTicketType(null);
+      setDraftEditorAcceptanceCriteria("");
+      return;
+    }
+
+    if (draftEditorSourceId !== selectedDraft.id || !draftFormDirty) {
+      setDraftEditorSourceId(selectedDraft.id);
+      setDraftEditorTitle(selectedDraft.title_draft);
+      setDraftEditorDescription(selectedDraft.description_draft);
+      setDraftEditorTicketType(selectedDraft.proposed_ticket_type);
+      setDraftEditorAcceptanceCriteria(
+        selectedDraft.proposed_acceptance_criteria.join("\n")
+      );
+    }
+  }, [draftEditorSourceId, draftFormDirty, selectedDraft]);
+
   const deleteTicket = (ticket: TicketFrontmatter): void => {
     const confirmed = window.confirm(
       `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`
@@ -1150,9 +1402,14 @@ export function App() {
                   {projectsQuery.error.message}
                 </Text>
               ) : projectsQuery.data.projects.length === 0 ? (
-                <Text size="sm" c="dimmed">
-                  No projects yet. Create the first one below.
-                </Text>
+                <Stack gap="sm">
+                  <Text size="sm" c="dimmed">
+                    No projects yet. Create the first one below.
+                  </Text>
+                  <Button variant="light" onClick={() => setProjectModalOpen(true)}>
+                    Create Project
+                  </Button>
+                </Stack>
               ) : (
                 <Stack gap="xs">
                   {projectsQuery.data.projects.map((project) => (
@@ -1623,7 +1880,7 @@ export function App() {
               {inspectorState.kind === "draft" && selectedDraft ? (
               <SectionCard
                 title="Draft inspector"
-                description="Refine, promote, or delete the selected draft from the right-hand panel instead of from the board card."
+                description="Edit the draft directly, then use Codex to refine it or check feasibility."
               >
                 <Stack gap="md">
                   <Group justify="space-between" align="flex-start">
@@ -1631,14 +1888,17 @@ export function App() {
                       <Text className="rail-kicker">Draft</Text>
                       <Text fw={700}>{selectedDraft.title_draft}</Text>
                     </Stack>
-                    <Badge variant="light" color="gray">
-                      {selectedDraft.wizard_status.replace(/_/g, " ")}
-                    </Badge>
+                    <Group gap="xs">
+                      {draftAnalysisActive ? (
+                        <Badge variant="light" color="blue">
+                          Codex running
+                        </Badge>
+                      ) : null}
+                      <Badge variant="light" color="gray">
+                        {selectedDraft.wizard_status.replace(/_/g, " ")}
+                      </Badge>
+                    </Group>
                   </Group>
-
-                  <Text size="sm" c="dimmed">
-                    {selectedDraft.description_draft}
-                  </Text>
 
                   <Box className="detail-meta-grid">
                     <Box className="detail-meta-card">
@@ -1655,26 +1915,65 @@ export function App() {
                     </Box>
                   </Box>
 
-                  {selectedDraft.proposed_acceptance_criteria.length > 0 ? (
-                    <List size="sm" spacing={4}>
-                      {selectedDraft.proposed_acceptance_criteria.map((criterion) => (
-                        <List.Item key={criterion}>{criterion}</List.Item>
-                      ))}
-                    </List>
-                  ) : (
-                    <Text size="sm" c="dimmed">
-                      Run refinement to generate acceptance criteria before promoting the draft.
-                    </Text>
-                  )}
+                  <TextInput
+                    label="Title"
+                    value={draftEditorTitle}
+                    onChange={(event) => setDraftEditorTitle(event.currentTarget.value)}
+                  />
+                  <Textarea
+                    label="Description"
+                    minRows={4}
+                    value={draftEditorDescription}
+                    onChange={(event) => setDraftEditorDescription(event.currentTarget.value)}
+                  />
+                  <Select
+                    label="Ticket type"
+                    data={[
+                      { value: "feature", label: "Feature" },
+                      { value: "bugfix", label: "Bugfix" },
+                      { value: "chore", label: "Chore" },
+                      { value: "research", label: "Research" }
+                    ]}
+                    clearable
+                    value={draftEditorTicketType}
+                    onChange={setDraftEditorTicketType}
+                  />
+                  <Textarea
+                    label="Acceptance criteria"
+                    description="One acceptance criterion per line."
+                    minRows={5}
+                    value={draftEditorAcceptanceCriteria}
+                    onChange={(event) =>
+                      setDraftEditorAcceptanceCriteria(event.currentTarget.value)
+                    }
+                  />
 
+                  {draftFormDirty ? (
+                    <Text size="sm" c="dimmed">
+                      Save changes before refining, asking questions, or creating a ready ticket.
+                    </Text>
+                  ) : null}
+
+                  {saveDraftMutation.isError &&
+                  saveDraftMutation.variables?.draftId === selectedDraft.id ? (
+                    <Text size="sm" c="red">
+                      {saveDraftMutation.error.message}
+                    </Text>
+                  ) : null}
                   {refineDraftMutation.isError &&
                   refineDraftMutation.variables === selectedDraft.id ? (
                     <Text size="sm" c="red">
                       {refineDraftMutation.error.message}
                     </Text>
                   ) : null}
+                  {questionDraftMutation.isError &&
+                  questionDraftMutation.variables === selectedDraft.id ? (
+                    <Text size="sm" c="red">
+                      {questionDraftMutation.error.message}
+                    </Text>
+                  ) : null}
                   {confirmDraftMutation.isError &&
-                  confirmDraftMutation.variables?.draft.id === selectedDraft.id ? (
+                  confirmDraftMutation.variables?.draftId === selectedDraft.id ? (
                     <Text size="sm" c="red">
                       {confirmDraftMutation.error.message}
                     </Text>
@@ -1686,7 +1985,7 @@ export function App() {
                     </Text>
                   ) : null}
 
-                  <Group justify="space-between">
+                  <Group justify="space-between" align="flex-start">
                     <Button
                       color="red"
                       variant="subtle"
@@ -1698,29 +1997,64 @@ export function App() {
                     >
                       Delete Draft
                     </Button>
-                    <Group gap="xs">
+                    <Group gap="xs" justify="flex-end">
                       <Button
                         variant="light"
+                        disabled={!draftFormDirty || draftAnalysisActive}
+                        loading={
+                          saveDraftMutation.isPending &&
+                          saveDraftMutation.variables?.draftId === selectedDraft.id
+                        }
+                        onClick={() =>
+                          saveDraftMutation.mutate({
+                            draftId: selectedDraft.id,
+                            titleDraft: draftEditorTitle,
+                            descriptionDraft: draftEditorDescription,
+                            proposedTicketType: draftEditorTicketType,
+                            proposedAcceptanceCriteria: draftEditorAcceptanceCriteriaLines
+                          })
+                        }
+                      >
+                        Save Changes
+                      </Button>
+                      <Button
+                        variant="light"
+                        disabled={draftFormDirty || draftAnalysisActive || !selectedDraftRepository}
                         loading={
                           refineDraftMutation.isPending &&
                           refineDraftMutation.variables === selectedDraft.id
                         }
                         onClick={() => refineDraftMutation.mutate(selectedDraft.id)}
                       >
-                        {selectedDraft.proposed_acceptance_criteria.length > 0
-                          ? "Refine Again"
-                          : "Run Refinement"}
+                        Refine
                       </Button>
                       <Button
-                        disabled={!selectedDraftRepository}
+                        variant="light"
+                        disabled={draftFormDirty || draftAnalysisActive || !selectedDraftRepository}
+                        loading={
+                          questionDraftMutation.isPending &&
+                          questionDraftMutation.variables === selectedDraft.id
+                        }
+                        onClick={() => questionDraftMutation.mutate(selectedDraft.id)}
+                      >
+                        Questions?
+                      </Button>
+                      <Button
+                        disabled={
+                          !selectedDraftRepository || draftFormDirty || saveDraftMutation.isPending
+                        }
                         loading={
                           confirmDraftMutation.isPending &&
-                          confirmDraftMutation.variables?.draft.id === selectedDraft.id
+                          confirmDraftMutation.variables?.draftId === selectedDraft.id
                         }
                         onClick={() =>
                           selectedDraftRepository &&
                           confirmDraftMutation.mutate({
-                            draft: selectedDraft,
+                            draftId: selectedDraft.id,
+                            title: draftEditorTitle,
+                            description: draftEditorDescription,
+                            ticketType: draftEditorTicketType,
+                            acceptanceCriteria: draftEditorAcceptanceCriteriaLines,
                             repository: selectedDraftRepository,
                             project: selectedProject!
                           })
@@ -1730,6 +2064,100 @@ export function App() {
                       </Button>
                     </Group>
                   </Group>
+
+                  {latestQuestionsResult ? (
+                    <Box className="detail-placeholder">
+                      <Stack gap="xs">
+                        <Group justify="space-between" align="center">
+                          <Text fw={700}>Feasibility</Text>
+                          <Badge variant="light" color="blue">
+                            {latestQuestionsResult.verdict}
+                          </Badge>
+                        </Group>
+                        <Text size="sm" c="dimmed">
+                          {latestQuestionsResult.summary}
+                        </Text>
+                        {latestQuestionsResult.assumptions.length > 0 ? (
+                          <List size="sm" spacing={4}>
+                            {latestQuestionsResult.assumptions.map((item) => (
+                              <List.Item key={`assumption-${item}`}>{item}</List.Item>
+                            ))}
+                          </List>
+                        ) : null}
+                        {latestQuestionsResult.open_questions.length > 0 ? (
+                          <List size="sm" spacing={4}>
+                            {latestQuestionsResult.open_questions.map((item) => (
+                              <List.Item key={`question-${item}`}>{item}</List.Item>
+                            ))}
+                          </List>
+                        ) : null}
+                        {latestQuestionsResult.risks.length > 0 ? (
+                          <List size="sm" spacing={4}>
+                            {latestQuestionsResult.risks.map((item) => (
+                              <List.Item key={`risk-${item}`}>{item}</List.Item>
+                            ))}
+                          </List>
+                        ) : null}
+                        {latestQuestionsResult.suggested_draft_edits.length > 0 ? (
+                          <List size="sm" spacing={4}>
+                            {latestQuestionsResult.suggested_draft_edits.map((item) => (
+                              <List.Item key={`edit-${item}`}>{item}</List.Item>
+                            ))}
+                          </List>
+                        ) : null}
+                      </Stack>
+                    </Box>
+                  ) : null}
+
+                  <Stack gap="xs">
+                    <Text fw={700}>History</Text>
+                    {draftEventsQuery.isPending ? (
+                      <Loader size="sm" />
+                    ) : draftEventsQuery.isError ? (
+                      <Text size="sm" c="red">
+                        {draftEventsQuery.error.message}
+                      </Text>
+                    ) : draftEvents.length === 0 ? (
+                      <Text size="sm" c="dimmed">
+                        No refinement or feasibility runs yet.
+                      </Text>
+                    ) : (
+                      draftEvents.map((event) => {
+                        const meta = parseDraftEventMeta(event);
+                        if (!meta) {
+                          return null;
+                        }
+
+                        return (
+                          <Box key={event.id} className="detail-meta-card">
+                            <details>
+                              <summary>
+                                {meta.operation === "refine" ? "Refine" : "Questions"} •{" "}
+                                {meta.status} • {formatTimestamp(event.occurred_at)} •{" "}
+                                {meta.summary}
+                              </summary>
+                              <Stack gap="xs" mt="sm">
+                                {meta.error ? (
+                                  <Text size="sm" c="red">
+                                    {meta.error}
+                                  </Text>
+                                ) : null}
+                                {meta.result ? (
+                                  <Box
+                                    component="pre"
+                                    className="detail-placeholder"
+                                    style={{ margin: 0, whiteSpace: "pre-wrap" }}
+                                  >
+                                    {JSON.stringify(meta.result, null, 2)}
+                                  </Box>
+                                ) : null}
+                              </Stack>
+                            </details>
+                          </Box>
+                        );
+                      })
+                    )}
+                  </Stack>
                 </Stack>
               </SectionCard>
               ) : null}

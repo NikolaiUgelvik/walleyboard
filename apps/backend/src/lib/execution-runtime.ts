@@ -1,17 +1,26 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync, spawn } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcessWithoutNullStreams
+} from "node:child_process";
 import readline from "node:readline";
 import { spawn as spawnPty, type IPty } from "node-pty";
+import { nanoid } from "nanoid";
+import { z } from "zod";
 
 import type {
+  DraftTicketState,
   ExecutionSession,
   Project,
   RepositoryConfig,
+  StructuredEvent,
   TicketFrontmatter,
   ValidationCommand,
   ValidationResult
 } from "@orchestrator/contracts";
+import { ticketTypeSchema } from "@orchestrator/contracts";
 
 import { makeProtocolEvent, type EventHub } from "./event-hub.js";
 import type { Store } from "./store.js";
@@ -30,6 +39,15 @@ type StartExecutionInput = {
   additionalInstruction?: string;
 };
 
+type DraftAnalysisInput = {
+  draft: DraftTicketState;
+  project: Project;
+  repository: RepositoryConfig;
+  instruction?: string;
+};
+
+type DraftAnalysisMode = "refine" | "questions";
+
 type ManualTerminalStartInput = {
   sessionId: string;
   worktreePath: string;
@@ -37,6 +55,26 @@ type ManualTerminalStartInput = {
 };
 
 type ForwardedInputTarget = "agent" | "terminal";
+
+const draftRefinementResultSchema = z.object({
+  title_draft: z.string().min(1),
+  description_draft: z.string().min(1),
+  proposed_ticket_type: ticketTypeSchema,
+  proposed_acceptance_criteria: z.array(z.string().min(1)),
+  split_proposal_summary: z.string().nullable().optional()
+});
+
+const draftFeasibilityResultSchema = z.object({
+  verdict: z.string().min(1),
+  summary: z.string().min(1),
+  assumptions: z.array(z.string().min(1)).default([]),
+  open_questions: z.array(z.string().min(1)).default([]),
+  risks: z.array(z.string().min(1)).default([]),
+  suggested_draft_edits: z.array(z.string().min(1)).default([])
+});
+
+type DraftRefinementResult = z.infer<typeof draftRefinementResultSchema>;
+type DraftFeasibilityResult = z.infer<typeof draftFeasibilityResultSchema>;
 
 function truncate(value: string, maxLength = 600): string {
   if (value.length <= maxLength) {
@@ -95,6 +133,17 @@ function buildOutputSummaryPath(project: Project, ticketId: number, sessionId: s
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
 
+function buildDraftAnalysisOutputPath(
+  project: Project,
+  draftId: string,
+  runId: string,
+  mode: DraftAnalysisMode
+): string {
+  const analysisDir = join(process.cwd(), ".local", "draft-analyses", project.slug);
+  ensureDirectory(analysisDir);
+  return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
+}
+
 function buildCodexPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
@@ -140,6 +189,121 @@ function buildCodexPrompt(
   }
 
   return sections.join("\n");
+}
+
+function buildDraftRefinementPrompt(
+  draft: DraftTicketState,
+  repository: RepositoryConfig,
+  instruction?: string
+): string {
+  const sections = [
+    `Review the draft ticket inside repository ${repository.name}.`,
+    "Read repository context as needed, but do not modify any files.",
+    "Return JSON only with no markdown fences or commentary.",
+    "",
+    "Current draft:",
+    `title_draft: ${draft.title_draft}`,
+    `description_draft: ${draft.description_draft}`,
+    `proposed_ticket_type: ${draft.proposed_ticket_type ?? "feature"}`,
+    "proposed_acceptance_criteria:",
+    ...(draft.proposed_acceptance_criteria.length > 0
+      ? draft.proposed_acceptance_criteria.map((criterion) => `- ${criterion}`)
+      : ["- None yet"]),
+    "",
+    "Return strict JSON with this shape:",
+    '{"title_draft":"string","description_draft":"string","proposed_ticket_type":"feature|bugfix|chore|research","proposed_acceptance_criteria":["string"],"split_proposal_summary":"string|null"}',
+    "",
+    "Requirements:",
+    "- Keep the draft focused and implementable as a single MVP ticket.",
+    "- Make acceptance criteria concrete, testable, and concise.",
+    "- Prefer the smallest forward-moving scope that still delivers value."
+  ];
+
+  if (instruction && instruction.trim().length > 0) {
+    sections.push("", `Additional instruction: ${instruction.trim()}`);
+  }
+
+  return sections.join("\n");
+}
+
+function buildDraftQuestionsPrompt(
+  draft: DraftTicketState,
+  repository: RepositoryConfig,
+  instruction?: string
+): string {
+  const sections = [
+    `Assess feasibility for the draft ticket inside repository ${repository.name}.`,
+    "Read repository context as needed, but do not modify any files.",
+    "Return JSON only with no markdown fences or commentary.",
+    "",
+    "Draft under review:",
+    `title_draft: ${draft.title_draft}`,
+    `description_draft: ${draft.description_draft}`,
+    `proposed_ticket_type: ${draft.proposed_ticket_type ?? "feature"}`,
+    "proposed_acceptance_criteria:",
+    ...(draft.proposed_acceptance_criteria.length > 0
+      ? draft.proposed_acceptance_criteria.map((criterion) => `- ${criterion}`)
+      : ["- None yet"]),
+    "",
+    "Return strict JSON with this shape:",
+    '{"verdict":"string","summary":"string","assumptions":["string"],"open_questions":["string"],"risks":["string"],"suggested_draft_edits":["string"]}',
+    "",
+    "Requirements:",
+    "- Focus on whether the draft is feasible and correctly scoped for this repository.",
+    "- Call out missing information, risky assumptions, and likely blockers.",
+    "- Keep suggested edits concrete and short."
+  ];
+
+  if (instruction && instruction.trim().length > 0) {
+    sections.push("", `Additional instruction: ${instruction.trim()}`);
+  }
+
+  return sections.join("\n");
+}
+
+function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
+  const trimmed = rawOutput.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Codex returned no JSON output.");
+  }
+
+  const candidates = [trimmed];
+  if (trimmed.startsWith("```")) {
+    candidates.push(trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim());
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return schema.parse(JSON.parse(candidate));
+    } catch {
+      // Try the next candidate shape.
+    }
+  }
+
+  throw new Error("Codex did not return valid JSON output.");
+}
+
+function summarizeDraftRefinement(result: DraftRefinementResult): string {
+  if (result.split_proposal_summary && result.split_proposal_summary.trim().length > 0) {
+    return truncate(result.split_proposal_summary.trim(), 240);
+  }
+
+  return `Updated draft proposal with ${result.proposed_acceptance_criteria.length} acceptance criteria.`;
+}
+
+function summarizeDraftQuestions(result: DraftFeasibilityResult): string {
+  return truncate(result.summary, 240);
+}
+
+function formatDraftAnalysisExitReason(
+  exitCode: number | null,
+  signal: NodeJS.Signals | null,
+  rawOutput: string
+): string {
+  const summary = rawOutput.trim().length > 0 ? ` Final output: ${truncate(rawOutput.trim(), 240)}` : "";
+  return `Codex exited with ${exitCode === null ? "unknown code" : `code ${exitCode}`}${
+    signal ? ` and signal ${signal}` : ""
+  }.${summary}`;
 }
 
 function summarizeCodexJsonLine(line: string): string {
@@ -202,6 +366,7 @@ export class ExecutionRuntime {
   readonly #eventHub: EventHub;
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();
+  readonly #activeDraftRuns = new Map<string, ChildProcessWithoutNullStreams>();
   readonly #manualTerminals = new Map<
     string,
     {
@@ -245,8 +410,42 @@ export class ExecutionRuntime {
     return this.#activeSessions.has(sessionId);
   }
 
+  hasActiveDraftRun(draftId: string): boolean {
+    return this.#activeDraftRuns.has(draftId);
+  }
+
   hasManualTerminal(sessionId: string): boolean {
     return this.#manualTerminals.has(sessionId);
+  }
+
+  runDraftRefinement({
+    draft,
+    project,
+    repository,
+    instruction
+  }: DraftAnalysisInput): void {
+    this.#startDraftAnalysis({
+      mode: "refine",
+      draft,
+      project,
+      repository,
+      instruction
+    });
+  }
+
+  runDraftFeasibility({
+    draft,
+    project,
+    repository,
+    instruction
+  }: DraftAnalysisInput): void {
+    this.#startDraftAnalysis({
+      mode: "questions",
+      draft,
+      project,
+      repository,
+      instruction
+    });
   }
 
   startManualTerminal({
@@ -356,7 +555,165 @@ export class ExecutionRuntime {
     const attemptId = this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
     agentSession.write(`${normalizedBody}\r`);
     this.#log(sessionId, attemptId, `[agent input] ${normalizedBody}`);
-    return "agent";
+      return "agent";
+  }
+
+  #startDraftAnalysis({
+    mode,
+    draft,
+    project,
+    repository,
+    instruction
+  }: DraftAnalysisInput & { mode: DraftAnalysisMode }): void {
+    if (this.#activeDraftRuns.has(draft.id)) {
+      throw new Error("Draft analysis already running");
+    }
+
+    const runId = nanoid();
+    const startedEvent = this.#store.recordDraftEvent(draft.id, `draft.${mode}.started`, {
+      run_id: runId,
+      operation: mode,
+      status: "started",
+      repository_id: repository.id,
+      repository_name: repository.name,
+      instruction: instruction?.trim() ?? null,
+      summary:
+        mode === "refine"
+          ? `Codex is refining this draft in ${repository.name}.`
+          : `Codex is checking draft feasibility in ${repository.name}.`
+    });
+    this.#emitStructuredEvent(startedEvent);
+
+    const prompt =
+      mode === "refine"
+        ? buildDraftRefinementPrompt(draft, repository, instruction)
+        : buildDraftQuestionsPrompt(draft, repository, instruction);
+    const outputPath = buildDraftAnalysisOutputPath(project, draft.id, runId, mode);
+    const child = spawn(
+      "codex",
+      ["exec", "--json", "--output-last-message", outputPath, prompt],
+      {
+        cwd: repository.path,
+        env: buildProcessEnv()
+      }
+    );
+
+    this.#activeDraftRuns.set(draft.id, child);
+
+    let finalized = false;
+    const capturedOutput: string[] = [];
+    const captureLine = (line: string) => {
+      const normalized = line.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      capturedOutput.push(truncate(normalized, 400));
+      if (capturedOutput.length > 40) {
+        capturedOutput.shift();
+      }
+    };
+
+    streamLines(child.stdout, (line) => {
+      captureLine(summarizeCodexJsonLine(line));
+    });
+    streamLines(child.stderr, (line) => {
+      captureLine(`[stderr] ${line}`);
+    });
+
+    const failRun = (reason: string): void => {
+      if (finalized) {
+        return;
+      }
+
+      finalized = true;
+      this.#activeDraftRuns.delete(draft.id);
+      const failedEvent = this.#store.recordDraftEvent(draft.id, `draft.${mode}.failed`, {
+        run_id: runId,
+        operation: mode,
+        status: "failed",
+        repository_id: repository.id,
+        repository_name: repository.name,
+        summary: reason,
+        error: reason,
+        captured_output: capturedOutput
+      });
+      this.#emitStructuredEvent(failedEvent);
+    };
+
+    child.once("error", (error) => {
+      const message =
+        error instanceof Error ? error.message : "Codex failed to start";
+      failRun(`Codex failed to start: ${message}`);
+    });
+
+    child.once("close", (exitCode, signal) => {
+      if (finalized) {
+        return;
+      }
+
+      const rawOutput = existsSync(outputPath) ? readFileSync(outputPath, "utf8").trim() : "";
+
+      if (exitCode !== 0) {
+        failRun(formatDraftAnalysisExitReason(exitCode, signal, rawOutput));
+        return;
+      }
+
+      try {
+        if (mode === "refine") {
+          const result = parseCodexJsonResult(rawOutput, draftRefinementResultSchema);
+          const updatedDraft = this.#store.updateDraft(draft.id, {
+            title_draft: result.title_draft,
+            description_draft: result.description_draft,
+            proposed_ticket_type: result.proposed_ticket_type,
+            proposed_acceptance_criteria: result.proposed_acceptance_criteria,
+            split_proposal_summary: result.split_proposal_summary ?? null,
+            wizard_status: "awaiting_confirmation"
+          });
+
+          finalized = true;
+          this.#activeDraftRuns.delete(draft.id);
+          const completedEvent = this.#store.recordDraftEvent(
+            draft.id,
+            "draft.refine.completed",
+            {
+              run_id: runId,
+              operation: mode,
+              status: "completed",
+              repository_id: repository.id,
+              repository_name: repository.name,
+              summary: summarizeDraftRefinement(result),
+              result
+            }
+          );
+          this.#emitStructuredEvent(completedEvent);
+          this.#emitDraftUpdated(updatedDraft);
+          return;
+        }
+
+        const result = parseCodexJsonResult(rawOutput, draftFeasibilityResultSchema);
+        finalized = true;
+        this.#activeDraftRuns.delete(draft.id);
+        const completedEvent = this.#store.recordDraftEvent(
+          draft.id,
+          "draft.questions.completed",
+          {
+            run_id: runId,
+            operation: mode,
+            status: "completed",
+            repository_id: repository.id,
+            repository_name: repository.name,
+            summary: summarizeDraftQuestions(result),
+            result
+          }
+        );
+        this.#emitStructuredEvent(completedEvent);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to process Codex output";
+        failRun(message);
+      }
+    });
   }
 
   startExecution({
@@ -606,6 +963,30 @@ export class ExecutionRuntime {
     this.#eventHub.publish(
       makeProtocolEvent("session.updated", "session", session.id, {
         session
+      })
+    );
+  }
+
+  #emitDraftUpdated(draft: DraftTicketState | undefined): void {
+    if (!draft) {
+      return;
+    }
+
+    this.#eventHub.publish(
+      makeProtocolEvent("draft.updated", "draft", draft.id, {
+        draft
+      })
+    );
+  }
+
+  #emitStructuredEvent(event: StructuredEvent | undefined): void {
+    if (!event) {
+      return;
+    }
+
+    this.#eventHub.publish(
+      makeProtocolEvent("structured_event.created", event.entity_type, event.entity_id, {
+        structured_event: event
       })
     );
   }
