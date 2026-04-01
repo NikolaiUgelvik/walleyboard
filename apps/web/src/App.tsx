@@ -18,6 +18,7 @@ import {
   type CommandAck,
   type DraftTicketState,
   type ExecutionSession,
+  type ProtocolEvent,
   type Project,
   type RepositoryConfig,
   type ReviewPackage,
@@ -35,6 +36,7 @@ import { SectionCard } from "./components/SectionCard.js";
 import { SessionTerminal } from "./components/SessionTerminal.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
+const websocketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
 const boardColumns = [
   "draft",
   "ready",
@@ -155,6 +157,15 @@ function humanizeTicketStatus(status: TicketFrontmatter["status"]): string {
   }
 }
 
+function upsertById<T extends { id: string | number }>(items: T[], nextItem: T): T[] {
+  const existingIndex = items.findIndex((item) => item.id === nextItem.id);
+  if (existingIndex === -1) {
+    return [nextItem, ...items];
+  }
+
+  return items.map((item, index) => (index === existingIndex ? nextItem : item));
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -242,6 +253,129 @@ export function App() {
       setSelectedSessionId(inferredSessionId);
     }
   }, [inferredSessionId, selectedSessionId, ticketsQuery.data?.tickets]);
+
+  useEffect(() => {
+    const socket = new WebSocket(websocketUrl);
+
+    socket.onmessage = (messageEvent) => {
+      const event = JSON.parse(messageEvent.data) as ProtocolEvent;
+
+      if (event.event_type === "draft.updated") {
+        const draft = event.payload.draft as DraftTicketState | undefined;
+        if (!draft) {
+          return;
+        }
+
+        queryClient.setQueryData<DraftsResponse>(
+          ["projects", draft.project_id, "drafts"],
+          (previous) => ({
+            drafts: upsertById(previous?.drafts ?? [], draft)
+          })
+        );
+        return;
+      }
+
+      if (event.event_type === "draft.ready") {
+        const draftId = event.payload.draft_id as string | undefined;
+        if (!draftId || selectedProjectId === null) {
+          return;
+        }
+
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        });
+        return;
+      }
+
+      if (event.event_type === "ticket.updated") {
+        const ticket = event.payload.ticket as TicketFrontmatter | undefined;
+        if (!ticket) {
+          return;
+        }
+
+        queryClient.setQueryData<TicketsResponse>(
+          ["projects", ticket.project, "tickets"],
+          (previous) => ({
+            tickets: upsertById(previous?.tickets ?? [], ticket)
+          })
+        );
+        if (ticket.session_id) {
+          queryClient.invalidateQueries({
+            queryKey: ["sessions", ticket.session_id]
+          });
+        }
+        return;
+      }
+
+      if (event.event_type === "session.updated") {
+        const session = event.payload.session as ExecutionSession | undefined;
+        if (!session) {
+          return;
+        }
+
+        queryClient.setQueryData<SessionResponse>(["sessions", session.id], {
+          session
+        });
+        return;
+      }
+
+      if (event.event_type === "session.output") {
+        const sessionId = event.payload.session_id as string | undefined;
+        const sequence = event.payload.sequence as number | undefined;
+        const chunk = event.payload.chunk as string | undefined;
+
+        if (!sessionId || sequence === undefined || chunk === undefined) {
+          return;
+        }
+
+        queryClient.setQueryData<SessionLogsResponse>(
+          ["sessions", sessionId, "logs"],
+          (previous) => {
+            const logs = previous?.logs ?? [];
+            if (logs.length === sequence) {
+              return {
+                session_id: sessionId,
+                logs: [...logs, chunk]
+              };
+            }
+
+            if (logs.length <= sequence) {
+              return {
+                session_id: sessionId,
+                logs
+              };
+            }
+
+            const nextLogs = [...logs];
+            nextLogs[sequence] = chunk;
+            return {
+              session_id: sessionId,
+              logs: nextLogs
+            };
+          }
+        );
+        return;
+      }
+
+      if (event.event_type === "review_package.generated") {
+        const reviewPackage = event.payload.review_package as ReviewPackage | undefined;
+        if (!reviewPackage) {
+          return;
+        }
+
+        queryClient.setQueryData<ReviewPackageResponse>(
+          ["tickets", reviewPackage.ticket_id, "review-package"],
+          {
+            review_package: reviewPackage
+          }
+        );
+      }
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [queryClient, selectedProjectId]);
 
   const sessionQuery = useQuery({
     queryKey: ["sessions", selectedSessionId],
@@ -619,6 +753,7 @@ export function App() {
                 <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
                 <List.Item>Read-only terminal rendering for session output</List.Item>
                 <List.Item>Conservative restart recovery that preserves interrupted sessions</List.Item>
+                <List.Item>WebSocket-driven updates for the board, session, and review cache</List.Item>
                 <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
               </List>
           </SectionCard>

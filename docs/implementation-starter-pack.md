@@ -106,6 +106,10 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - The execution session view now includes:
   - a read-only xterm terminal surface
   - PTY-backed Codex process output instead of plain child-process pipes
+- The frontend now uses websocket events to:
+  - append live session output into the cached terminal log
+  - refresh session and ticket state without waiting for the polling interval
+  - hydrate generated review packages into the current cache
 - Backend startup now recovers any active session by:
   - marking the session `interrupted`
   - marking the active attempt `interrupted`

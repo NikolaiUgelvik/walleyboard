@@ -29,6 +29,7 @@ This repository contains the implementation starter pack for the AI orchestrator
   - visible in-app action cards for review-ready and waiting sessions
   - a read-only xterm session terminal backed by a PTY-based Codex runtime
   - conservative backend-startup recovery that marks active sessions interrupted
+  - websocket-driven cache updates for session output, review packages, and board state
   - direct merge from `review` into the target branch with local worktree and branch cleanup
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
