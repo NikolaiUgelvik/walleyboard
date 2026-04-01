@@ -23,6 +23,7 @@ import type {
 } from "../../../../packages/contracts/src/index.js";
 import { ticketTypeSchema } from "../../../../packages/contracts/src/index.js";
 
+import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import type { Store } from "./store.js";
 import { nowIso } from "./time.js";
@@ -469,6 +470,7 @@ function buildDraftRefinementPrompt(
     "Requirements:",
     "- Correct grammar, wording, clarity, and readability.",
     "- Preserve the original intent and overall scope unless the wording is clearly contradictory or confusing.",
+    "- Keep any existing draft artifact Markdown image references as Markdown images in the description; do not remove them or convert them to plain links.",
     "- Use relevant repository context, especially Markdown documentation, to infer domain terms, existing workflows, and user intent.",
     "- Keep the existing ticket type unless the draft text makes it obviously incorrect.",
     "- Make acceptance criteria concrete, testable, and concise without expanding scope.",
@@ -1266,12 +1268,23 @@ export class ExecutionRuntime {
             rawOutput,
             draftRefinementResultSchema,
           );
+          const refinedDescription = preserveDraftArtifactImages({
+            projectId: project.id,
+            artifactScopeId: draft.artifact_scope_id,
+            originalDescription: draft.description_draft,
+            refinedDescription: result.description_draft,
+          });
+          const finalResult: DraftRefinementResult = {
+            ...result,
+            description_draft: refinedDescription,
+          };
           const updatedDraft = this.#store.updateDraft(draft.id, {
-            title_draft: result.title_draft,
-            description_draft: result.description_draft,
-            proposed_ticket_type: result.proposed_ticket_type,
-            proposed_acceptance_criteria: result.proposed_acceptance_criteria,
-            split_proposal_summary: result.split_proposal_summary ?? null,
+            title_draft: finalResult.title_draft,
+            description_draft: finalResult.description_draft,
+            proposed_ticket_type: finalResult.proposed_ticket_type,
+            proposed_acceptance_criteria:
+              finalResult.proposed_acceptance_criteria,
+            split_proposal_summary: finalResult.split_proposal_summary ?? null,
             wizard_status: "awaiting_confirmation",
           });
 
@@ -1286,10 +1299,10 @@ export class ExecutionRuntime {
               status: "completed",
               repository_id: repository.id,
               repository_name: repository.name,
-              summary: summarizeDraftRefinement(result),
+              summary: summarizeDraftRefinement(finalResult),
               before_draft: beforeDraft ?? null,
               after_draft: updatedDraft,
-              result,
+              result: finalResult,
             },
           );
           this.#emitStructuredEvent(completedEvent);

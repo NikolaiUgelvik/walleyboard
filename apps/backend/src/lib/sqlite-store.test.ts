@@ -367,6 +367,8 @@ test("markdown content is preserved across draft, ticket, and session note flows
       "",
       "- Keep **bold** formatting",
       '- Preserve [links](https://example.com "docs") literally in storage',
+      "",
+      "![Pasted screenshot](/projects/project-1/draft-artifacts/artifact-scope-markdown/example.png)",
     ].join("\n");
     const draftCriteria = [
       "**First** acceptance criterion",
@@ -456,6 +458,12 @@ test("markdown content is preserved across draft, ticket, and session note flows
     assert.equal(
       store.getSessionLogs(started.session.id).at(-4),
       `Resume instruction recorded:\n${resumeInstruction}`,
+    );
+
+    const reopenedStore = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    assert.equal(
+      reopenedStore.getTicket(ticket.id)?.description,
+      draftDescription,
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
