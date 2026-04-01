@@ -2284,9 +2284,6 @@ export function App() {
                         onClick={() => setSelectedProjectId(project.id)}
                       >
                         <span>{project.name}</span>
-                        <Code style={{ marginInlineStart: 8 }}>
-                          {project.default_target_branch ?? "main"}
-                        </Code>
                       </Button>
                       <ActionIcon
                         aria-label={`Project options for ${project.name}`}
@@ -2363,7 +2360,7 @@ export function App() {
                   </Title>
                   <Text size="sm" c="dimmed" maw={820}>
                     {selectedProject
-                      ? `${selectedRepository?.name ?? "Repository pending"} • ${selectedRepository?.target_branch ?? selectedProject.default_target_branch ?? "main"} • ${selectedRepository?.validation_profile.length ?? 0} validation command(s)`
+                      ? `${selectedRepository?.name ?? "Repository pending"} • ${selectedRepository?.validation_profile.length ?? 0} validation command(s)`
                       : "Choose a project from the left rail to bring its drafts, tickets, and sessions into the board."}
                   </Text>
                 </Stack>
