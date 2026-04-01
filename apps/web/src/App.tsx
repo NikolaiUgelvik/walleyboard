@@ -45,6 +45,7 @@ import { MarkdownContent } from "./components/MarkdownContent.js";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
+import { apiBaseUrl } from "./lib/api-base-url.js";
 import {
   type PendingDraftEditorSync,
   emptyDraftEditorFields,
@@ -52,7 +53,6 @@ import {
 } from "./lib/draft-editor-sync.js";
 import { getBoardTicketDescriptionPreview } from "./lib/ticket-description-preview.js";
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
 const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
 const boardColumns = [
   "draft",

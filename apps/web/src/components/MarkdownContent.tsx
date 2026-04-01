@@ -1,6 +1,8 @@
 import React, { Fragment } from "react";
 import type { ReactNode } from "react";
 
+import { resolveProjectArtifactHref } from "../lib/api-base-url.js";
+
 type MarkdownContentProps = {
   content: string;
   inline?: boolean;
@@ -251,12 +253,13 @@ function renderInlineSegments(content: string, keyPrefix: string): ReactNode[] {
       if (!safeSrc) {
         nodes.push(match[0]);
       } else {
+        const resolvedSrc = resolveProjectArtifactHref(safeSrc);
         nodes.push(
           <img
             key={key}
             alt={groups.imageText ?? ""}
             loading="lazy"
-            src={safeSrc}
+            src={resolvedSrc}
           />,
         );
       }
@@ -265,12 +268,13 @@ function renderInlineSegments(content: string, keyPrefix: string): ReactNode[] {
       if (!safeHref) {
         nodes.push(match[0]);
       } else {
+        const resolvedHref = resolveProjectArtifactHref(safeHref);
         nodes.push(
           <a
             key={key}
-            href={safeHref}
-            rel={isExternalHref(safeHref) ? "noreferrer" : undefined}
-            target={isExternalHref(safeHref) ? "_blank" : undefined}
+            href={resolvedHref}
+            rel={isExternalHref(resolvedHref) ? "noreferrer" : undefined}
+            target={isExternalHref(resolvedHref) ? "_blank" : undefined}
           >
             {renderInline(groups.linkText, `${key}-link`)}
           </a>,

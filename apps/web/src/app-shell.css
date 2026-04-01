@@ -310,12 +310,15 @@
 
 .markdown-content img {
   display: block;
-  max-width: 100%;
+  max-width: min(100%, 20rem);
+  max-height: 12rem;
+  width: auto;
   height: auto;
   margin: 0.75rem 0 0;
   border: 1px solid var(--orchestrator-border);
   border-radius: 12px;
   background: var(--orchestrator-panel-soft);
+  object-fit: contain;
 }
 
 .markdown-content--inline {

@@ -62,6 +62,22 @@ test("renders markdown images with safe src values", () => {
 
   assert.match(
     html,
-    /<img alt="Clipboard image" loading="lazy" src="\/projects\/project-1\/draft-artifacts\/scope-1\/example\.png"\/>/,
+    /<img alt="Clipboard image" loading="lazy" src="http:\/\/127\.0\.0\.1:4000\/projects\/project-1\/draft-artifacts\/scope-1\/example\.png"\/>/,
+  );
+});
+
+test("resolves project artifact links against the backend origin", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownContent
+      inline
+      content={
+        "[Artifact](/projects/project-1/draft-artifacts/scope-1/example.png)"
+      }
+    />,
+  );
+
+  assert.match(
+    html,
+    /<a href="http:\/\/127\.0\.0\.1:4000\/projects\/project-1\/draft-artifacts\/scope-1\/example\.png" rel="noreferrer" target="_blank">Artifact<\/a>/,
   );
 });
