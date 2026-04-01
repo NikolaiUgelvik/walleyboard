@@ -8,6 +8,7 @@ import type {
   DraftTicketState,
   ExecutionAttempt,
   ExecutionSession,
+  ExecutionSessionStatus,
   Project,
   RepositoryConfig,
   RequestedChangeNote,
@@ -18,7 +19,11 @@ import type {
 import { nanoid } from "nanoid";
 
 import { nowIso } from "./time.js";
-import type { ConfirmDraftInput, Store } from "./store.js";
+import type {
+  ConfirmDraftInput,
+  StartTicketResult,
+  Store
+} from "./store.js";
 
 type JsonValue = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -82,6 +87,10 @@ function deriveAcceptanceCriteria(
 
   criteria.add("Keep the user-facing workflow coherent and testable.");
   return Array.from(criteria);
+}
+
+function deriveWorkingBranch(ticketId: number, title: string): string {
+  return `codex/ticket-${ticketId}-${slugify(title).slice(0, 24)}`;
 }
 
 function mapProject(row: Record<string, unknown>): Project {
@@ -359,11 +368,65 @@ export class SqliteStore implements Store {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS session_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        line TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_repositories_project_id ON repositories(project_id);
       CREATE INDEX IF NOT EXISTS idx_drafts_project_id ON draft_ticket_states(project_id);
       CREATE INDEX IF NOT EXISTS idx_tickets_project_id ON tickets(project_id);
       CREATE INDEX IF NOT EXISTS idx_events_entity ON structured_events(entity_type, entity_id, occurred_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_session_logs_session_id ON session_logs(session_id, id ASC);
     `);
+  }
+
+  #recordStructuredEvent(
+    entityType: StructuredEvent["entity_type"],
+    entityId: string,
+    eventType: string,
+    payload: Record<string, unknown>
+  ): StructuredEvent {
+    const event: StructuredEvent = {
+      id: nanoid(),
+      occurred_at: nowIso(),
+      entity_type: entityType,
+      entity_id: entityId,
+      event_type: eventType,
+      payload
+    };
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO structured_events (
+            id, occurred_at, entity_type, entity_id, event_type, payload
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(
+        event.id,
+        event.occurred_at,
+        event.entity_type,
+        event.entity_id,
+        event.event_type,
+        stringifyJson(event.payload)
+      );
+
+    return event;
+  }
+
+  #appendSessionLog(sessionId: string, line: string): void {
+    this.#db
+      .prepare(
+        `
+          INSERT INTO session_logs (session_id, line, created_at)
+          VALUES (?, ?, ?)
+        `
+      )
+      .run(sessionId, line, nowIso());
   }
 
   listProjects(): Project[] {
@@ -599,6 +662,169 @@ export class SqliteStore implements Store {
     return row ? mapReviewPackage(row) : undefined;
   }
 
+  startTicket(ticketId: number, planningEnabled: boolean): StartTicketResult {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+    if (ticket.status !== "ready") {
+      throw new Error("Only ready tickets can be started");
+    }
+    if (ticket.session_id) {
+      throw new Error("Ticket already has an execution session");
+    }
+
+    const activeSessionCount = this.#db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM execution_sessions
+          WHERE status IN ('queued', 'running', 'paused_checkpoint', 'paused_user_control', 'awaiting_input')
+        `
+      )
+      .get() as { count: number };
+    if (Number(activeSessionCount.count) > 0) {
+      throw new Error("Only one active execution session is supported in the current MVP slice");
+    }
+
+    const sessionId = nanoid();
+    const attemptId = nanoid();
+    const timestamp = nowIso();
+    const workingBranch = deriveWorkingBranch(ticket.id, ticket.title);
+    const summary =
+      "Execution session created. The real Codex runner and worktree lifecycle are still pending, so this session is parked in a waiting state.";
+
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET status = ?, session_id = ?, working_branch = ?, updated_at = ?
+          WHERE id = ?
+        `
+      )
+      .run("in_progress", sessionId, workingBranch, timestamp, ticketId);
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO execution_sessions (
+            id, ticket_id, project_id, repo_id, status, planning_enabled, current_attempt_id,
+            latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
+            started_at, completed_at, last_heartbeat_at, last_summary
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(
+        sessionId,
+        ticket.id,
+        ticket.project,
+        ticket.repo,
+        "awaiting_input",
+        planningEnabled ? 1 : 0,
+        attemptId,
+        null,
+        null,
+        null,
+        timestamp,
+        null,
+        timestamp,
+        summary
+      );
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO execution_attempts (
+            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(attemptId, sessionId, 1, "running", null, timestamp, null, null);
+
+    const logs = [
+      `Session created for ticket #${ticket.id}: ${ticket.title}`,
+      `Working branch reserved: ${workingBranch}`,
+      `Planning mode: ${planningEnabled ? "enabled" : "disabled"}`,
+      "Execution runtime is not wired yet in this build.",
+      "Session is waiting for input so the UI, persistence, and transport layers can be exercised."
+    ];
+
+    for (const line of logs) {
+      this.#appendSessionLog(sessionId, line);
+    }
+
+    this.#recordStructuredEvent("ticket", String(ticket.id), "ticket.started", {
+      ticket_id: ticket.id,
+      session_id: sessionId,
+      working_branch: workingBranch
+    });
+    this.#recordStructuredEvent("session", sessionId, "session.started", {
+      ticket_id: ticket.id,
+      attempt_id: attemptId,
+      planning_enabled: planningEnabled
+    });
+
+    return {
+      ticket: this.getTicket(ticket.id)!,
+      session: this.getSession(sessionId)!,
+      attempt: this.listSessionAttempts(sessionId)[0]!,
+      logs
+    };
+  }
+
+  addSessionInput(sessionId: string, body: string): ExecutionSession {
+    const session = this.getSession(sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
+    const timestamp = nowIso();
+    const summary =
+      "User input was recorded. The runtime is still not connected, so the session remains parked in the waiting state.";
+
+    this.#appendSessionLog(sessionId, `User input recorded: ${body.trim()}`);
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET last_heartbeat_at = ?, last_summary = ?, status = ?
+          WHERE id = ?
+        `
+      )
+      .run(timestamp, summary, "awaiting_input", sessionId);
+
+    this.#recordStructuredEvent("session", sessionId, "session.input_recorded", {
+      body,
+      received_at: timestamp
+    });
+
+    return this.getSession(sessionId)!;
+  }
+
+  updateSessionStatus(
+    sessionId: string,
+    status: ExecutionSessionStatus,
+    lastSummary?: string | null
+  ): ExecutionSession | undefined {
+    const existingSession = this.getSession(sessionId);
+    if (!existingSession) {
+      return undefined;
+    }
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET status = ?, last_heartbeat_at = ?, last_summary = ?
+          WHERE id = ?
+        `
+      )
+      .run(status, nowIso(), lastSummary ?? existingSession.last_summary, sessionId);
+
+    return this.getSession(sessionId);
+  }
+
   listSessionAttempts(sessionId: string): ExecutionAttempt[] {
     const rows = this.#db
       .prepare(
@@ -615,8 +841,11 @@ export class SqliteStore implements Store {
     return row ? mapExecutionSession(row) : undefined;
   }
 
-  getSessionLogs(_sessionId: string): string[] {
-    return [];
+  getSessionLogs(sessionId: string): string[] {
+    const rows = this.#db
+      .prepare("SELECT line FROM session_logs WHERE session_id = ? ORDER BY id ASC")
+      .all(sessionId) as Array<{ line: string }>;
+    return rows.map((row) => row.line);
   }
 
   getTicketEvents(ticketId: number): StructuredEvent[] {
@@ -637,33 +866,7 @@ export class SqliteStore implements Store {
     eventType: string,
     payload: Record<string, unknown>
   ): StructuredEvent {
-    const event: StructuredEvent = {
-      id: nanoid(),
-      occurred_at: nowIso(),
-      entity_type: "ticket",
-      entity_id: String(ticketId),
-      event_type: eventType,
-      payload
-    };
-
-    this.#db
-      .prepare(
-        `
-          INSERT INTO structured_events (
-            id, occurred_at, entity_type, entity_id, event_type, payload
-          ) VALUES (?, ?, ?, ?, ?, ?)
-        `
-      )
-      .run(
-        event.id,
-        event.occurred_at,
-        event.entity_type,
-        event.entity_id,
-        event.event_type,
-        stringifyJson(event.payload)
-      );
-
-    return event;
+    return this.#recordStructuredEvent("ticket", String(ticketId), eventType, payload);
   }
 
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined {

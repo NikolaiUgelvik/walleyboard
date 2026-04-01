@@ -16,6 +16,7 @@ import {
 import {
   type CommandAck,
   type DraftTicketState,
+  type ExecutionSession,
   type Project,
   type RepositoryConfig,
   type TicketFrontmatter
@@ -54,6 +55,15 @@ type DraftsResponse = {
 
 type TicketsResponse = {
   tickets: TicketFrontmatter[];
+};
+
+type SessionResponse = {
+  session: ExecutionSession;
+};
+
+type SessionLogsResponse = {
+  session_id: string;
+  logs: string[];
 };
 
 function slugify(value: string): string {
@@ -132,6 +142,8 @@ export function App() {
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [sessionInput, setSessionInput] = useState("");
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -164,6 +176,9 @@ export function App() {
     enabled: selectedProjectId !== null
   });
 
+  const inferredSessionId =
+    ticketsQuery.data?.tickets.find((ticket) => ticket.session_id)?.session_id ?? null;
+
   useEffect(() => {
     const firstProjectId = projectsQuery.data?.projects[0]?.id ?? null;
     if (selectedProjectId === null) {
@@ -178,6 +193,32 @@ export function App() {
       setSelectedProjectId(firstProjectId);
     }
   }, [projectsQuery.data?.projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedSessionId === null) {
+      setSelectedSessionId(inferredSessionId);
+      return;
+    }
+
+    const stillExists =
+      ticketsQuery.data?.tickets.some((ticket) => ticket.session_id === selectedSessionId) ??
+      false;
+    if (!stillExists) {
+      setSelectedSessionId(inferredSessionId);
+    }
+  }, [inferredSessionId, selectedSessionId, ticketsQuery.data?.tickets]);
+
+  const sessionQuery = useQuery({
+    queryKey: ["sessions", selectedSessionId],
+    queryFn: () => fetchJson<SessionResponse>(`/sessions/${selectedSessionId}`),
+    enabled: selectedSessionId !== null
+  });
+
+  const sessionLogsQuery = useQuery({
+    queryKey: ["sessions", selectedSessionId, "logs"],
+    queryFn: () => fetchJson<SessionLogsResponse>(`/sessions/${selectedSessionId}/logs`),
+    enabled: selectedSessionId !== null
+  });
 
   const createProjectMutation = useMutation({
     mutationFn: (input: {
@@ -270,11 +311,61 @@ export function App() {
     }
   });
 
+  const startTicketMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<CommandAck>(`/tickets/${ticketId}/start`, {
+        planning_enabled: false
+      }),
+    onSuccess: async (ack) => {
+      if (!selectedProjectId) {
+        return;
+      }
+
+      setSelectedSessionId(ack.resource_refs.session_id ?? null);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", ack.resource_refs.session_id]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", ack.resource_refs.session_id, "logs"]
+        })
+      ]);
+    }
+  });
+
+  const sessionInputMutation = useMutation({
+    mutationFn: (input: { sessionId: string; body: string }) =>
+      postJson<CommandAck>(`/sessions/${input.sessionId}/input`, {
+        body: input.body
+      }),
+    onSuccess: async (_, variables) => {
+      setSessionInput("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", variables.sessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", variables.sessionId, "logs"]
+        })
+      ]);
+    }
+  });
+
   const selectedProject =
     projectsQuery.data?.projects.find((project) => project.id === selectedProjectId) ?? null;
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const drafts = draftsQuery.data?.drafts ?? [];
   const tickets = ticketsQuery.data?.tickets ?? [];
+  const session = sessionQuery.data?.session ?? null;
+  const sessionLogs = sessionLogsQuery.data?.logs ?? [];
+  const selectedSessionTicket =
+    tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
 
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
@@ -342,6 +433,7 @@ export function App() {
               <List.Item>Persisted draft ticket creation</List.Item>
               <List.Item>Refinement pass that generates acceptance criteria</List.Item>
               <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
+              <List.Item>Startable execution sessions with persisted waiting-state logs</List.Item>
             </List>
           </SectionCard>
         </SimpleGrid>
@@ -614,8 +706,114 @@ export function App() {
             </SimpleGrid>
 
             <SectionCard
+              title="Execution Session"
+              description="Starting a ready ticket now creates a persisted execution session and waiting-state log, even though the real Codex runner is still pending."
+            >
+              {selectedSessionId === null ? (
+                <Text size="sm" c="dimmed">
+                  Start a ready ticket to create the first execution session for this project.
+                </Text>
+              ) : sessionQuery.isPending || sessionLogsQuery.isPending ? (
+                <Loader size="sm" />
+              ) : sessionQuery.isError ? (
+                <Text size="sm" c="red">
+                  {sessionQuery.error.message}
+                </Text>
+              ) : session ? (
+                <Stack gap="md">
+                  <SimpleGrid cols={{ base: 1, md: 4 }} spacing="md">
+                    <Stack gap={4}>
+                      <Text fw={600}>Session</Text>
+                      <Code>{session.id}</Code>
+                    </Stack>
+                    <Stack gap={4}>
+                      <Text fw={600}>Ticket</Text>
+                      <Text>
+                        {selectedSessionTicket
+                          ? `#${selectedSessionTicket.id} ${selectedSessionTicket.title}`
+                          : `#${session.ticket_id}`}
+                      </Text>
+                    </Stack>
+                    <Stack gap={4}>
+                      <Text fw={600}>Status</Text>
+                      <Badge variant="light">{session.status}</Badge>
+                    </Stack>
+                    <Stack gap={4}>
+                      <Text fw={600}>Working branch</Text>
+                      <Code>{selectedSessionTicket?.working_branch ?? "pending"}</Code>
+                    </Stack>
+                  </SimpleGrid>
+
+                  <Text size="sm" c="dimmed">
+                    {session.last_summary ??
+                      "No session summary is available yet."}
+                  </Text>
+
+                  <Stack gap={4}>
+                    <Text fw={600}>Session Log</Text>
+                    {sessionLogs.length === 0 ? (
+                      <Text size="sm" c="dimmed">
+                        No log lines yet.
+                      </Text>
+                    ) : (
+                      sessionLogs.map((line, index) => (
+                        <Code key={`${session.id}-log-${index}`} block>
+                          {line}
+                        </Code>
+                      ))
+                    )}
+                  </Stack>
+
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!selectedSessionId) {
+                        return;
+                      }
+
+                      sessionInputMutation.mutate({
+                        sessionId: selectedSessionId,
+                        body: sessionInput
+                      });
+                    }}
+                  >
+                    <Stack gap="sm">
+                      <Textarea
+                        id="session-input"
+                        name="sessionInput"
+                        label="Session input"
+                        placeholder="Add the next instruction or clarification for the waiting session."
+                        value={sessionInput}
+                        onChange={(event) => setSessionInput(event.currentTarget.value)}
+                        minRows={3}
+                      />
+                      {sessionInputMutation.isError ? (
+                        <Text size="sm" c="red">
+                          {sessionInputMutation.error.message}
+                        </Text>
+                      ) : null}
+                      <Group justify="flex-end">
+                        <Button
+                          type="submit"
+                          loading={sessionInputMutation.isPending}
+                          disabled={sessionInput.trim().length === 0}
+                        >
+                          Record Input
+                        </Button>
+                      </Group>
+                    </Stack>
+                  </form>
+                </Stack>
+              ) : (
+                <Text size="sm" c="dimmed">
+                  Session details are not available yet.
+                </Text>
+              )}
+            </SectionCard>
+
+            <SectionCard
               title="Board"
-              description="Tickets now persist and appear in their real status columns. Execution and review automation are the next implementation step."
+              description="Tickets now persist, move into in-progress execution sessions, and expose their current state on the board."
             >
               {ticketsQuery.isPending ? (
                 <Loader size="sm" />
@@ -662,12 +860,44 @@ export function App() {
                             title={`#${ticket.id} ${ticket.title}`}
                             description={`Type: ${ticket.ticket_type} | Target branch: ${ticket.target_branch}`}
                           >
-                            <Group justify="space-between">
+                            <Group justify="space-between" align="center">
                               <Badge variant="light">{ticket.status}</Badge>
                               <Text size="sm" c="dimmed">
                                 Session: {ticket.session_id ?? "not started"}
                               </Text>
                             </Group>
+                            <Text size="sm" c="dimmed">
+                              Branch: {ticket.working_branch ?? "not created yet"}
+                            </Text>
+                            {column === "ready" ? (
+                              <>
+                                {startTicketMutation.isError ? (
+                                  <Text size="sm" c="red">
+                                    {startTicketMutation.error.message}
+                                  </Text>
+                                ) : null}
+                                <Group justify="flex-end">
+                                  <Button
+                                    loading={
+                                      startTicketMutation.isPending &&
+                                      startTicketMutation.variables === ticket.id
+                                    }
+                                    onClick={() => startTicketMutation.mutate(ticket.id)}
+                                  >
+                                    Start Ticket
+                                  </Button>
+                                </Group>
+                              </>
+                            ) : ticket.session_id ? (
+                              <Group justify="flex-end">
+                                <Button
+                                  variant="light"
+                                  onClick={() => setSelectedSessionId(ticket.session_id)}
+                                >
+                                  View Session
+                                </Button>
+                              </Group>
+                            ) : null}
                           </SectionCard>
                         ))
                       )}

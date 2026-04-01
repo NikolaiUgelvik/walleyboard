@@ -5,7 +5,8 @@ import {
   sessionInputSchema
 } from "@orchestrator/contracts";
 
-import type { EventHub } from "../lib/event-hub.js";
+import { makeCommandAck } from "../lib/command-ack.js";
+import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
 import { parseBody, sendNotImplemented } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 
@@ -16,7 +17,7 @@ type SessionRouteOptions = {
 
 export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
   app,
-  { store }
+  { eventHub, store }
 ) => {
   app.get<{ Params: { sessionId: string } }>("/sessions/:sessionId", async (request, reply) => {
     const session = store.getSession(request.params.sessionId);
@@ -73,11 +74,36 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        `Checkpoint response route is scaffolded, but agent checkpoint handling is not implemented yet. approved=${input.approved ?? false}`,
-        { session_id: request.params.sessionId }
-      );
+      try {
+        const session = store.addSessionInput(
+          request.params.sessionId,
+          `Checkpoint response (approved=${input.approved ?? false}): ${input.body}`
+        );
+
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", session.id, {
+            session
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.output", "session", session.id, {
+            session_id: session.id,
+            chunk: `Checkpoint response recorded: ${input.body}`,
+            sequence: store.getSessionLogs(session.id).length - 1
+          })
+        );
+
+        reply.send(
+          makeCommandAck(true, "Checkpoint response recorded", {
+            session_id: session.id
+          })
+        );
+      } catch (error) {
+        reply.code(404).send({
+          error:
+            error instanceof Error ? error.message : "Unable to record checkpoint response"
+        });
+      }
     }
   );
 
@@ -89,11 +115,33 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        `Session input route is scaffolded, but agent input handling is not implemented yet. body_length=${input.body.length}`,
-        { session_id: request.params.sessionId }
-      );
+      try {
+        const session = store.addSessionInput(request.params.sessionId, input.body);
+
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", session.id, {
+            session
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.output", "session", session.id, {
+            session_id: session.id,
+            chunk: `User input recorded: ${input.body}`,
+            sequence: store.getSessionLogs(session.id).length - 1
+          })
+        );
+
+        reply.send(
+          makeCommandAck(true, "Session input recorded", {
+            session_id: session.id
+          })
+        );
+      } catch (error) {
+        reply.code(404).send({
+          error:
+            error instanceof Error ? error.message : "Unable to record session input"
+        });
+      }
     }
   );
 };

@@ -7,7 +7,7 @@ import {
 } from "@orchestrator/contracts";
 
 import { makeCommandAck } from "../lib/command-ack.js";
-import type { EventHub } from "../lib/event-hub.js";
+import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
 import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 
@@ -18,7 +18,7 @@ type TicketRouteOptions = {
 
 export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   app,
-  { store }
+  { eventHub, store }
 ) => {
   app.get<{ Params: { ticketId: string } }>("/tickets/:ticketId", async (request, reply) => {
     const ticketId = parsePositiveInt(request.params.ticketId);
@@ -84,11 +84,51 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        `Execution start scaffolding is in place, but the Codex adapter is not implemented yet. planning_enabled=${input.planning_enabled}`,
-        { ticket_id: ticketId }
-      );
+      try {
+        const { ticket, session, logs } = store.startTicket(
+          ticketId,
+          input.planning_enabled
+        );
+
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
+            ticket
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", session.id, {
+            session
+          })
+        );
+        logs.forEach((logLine, index) => {
+          eventHub.publish(
+            makeProtocolEvent("session.output", "session", session.id, {
+              session_id: session.id,
+              sequence: index,
+              chunk: logLine
+            })
+          );
+        });
+        eventHub.publish(
+          makeProtocolEvent("session.input_requested", "session", session.id, {
+            session_id: session.id,
+            reason:
+              "Execution runtime is not wired yet, so the session is parked in a waiting state."
+          })
+        );
+
+        reply.send(
+          makeCommandAck(true, "Ticket moved to in progress and execution session created", {
+            ticket_id: ticket.id,
+            session_id: session.id
+          })
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to start ticket"
+        });
+      }
     }
   );
 

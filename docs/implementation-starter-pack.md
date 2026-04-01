@@ -11,7 +11,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - `lib/event-hub`
   - fan-out of backend events to WebSocket subscribers
 - `lib/sqlite-store`
-  - current local persistence layer for projects, repositories, drafts, tickets, and ticket events
+  - current local persistence layer for projects, repositories, drafts, tickets, sessions, attempts, logs, and ticket/session events
   - should later be split into narrower repository/service modules as execution complexity grows
 
 ## Shared Package Boundaries
@@ -25,11 +25,11 @@ This document turns the PRD into the first concrete module boundaries for the MV
 
 ## First Implementation Milestones
 
-1. Expand project configuration beyond the initial single-repository setup.
-2. Implement the Codex adapter boundary.
-3. Implement worktree lifecycle and sandbox lifecycle services.
-4. Add real review-package generation and diff loading.
-5. Add execution-session persistence, PTY orchestration, and waiting-state UX.
+1. Implement the Codex adapter boundary.
+2. Implement worktree lifecycle and sandbox lifecycle services.
+3. Replace the waiting-state execution placeholder with a real PTY-backed agent runtime.
+4. Add validation execution and real review-package generation.
+5. Add direct merge flow and cleanup.
 
 ## Starter Endpoints
 
@@ -73,3 +73,18 @@ This document turns the PRD into the first concrete module boundaries for the MV
 - `review_package.generated`
 - `structured_event.created`
 - `command.rejected`
+
+## Current Implementation Status
+
+- Project setup is real and persisted in SQLite.
+- Draft creation, refinement, and promotion to `ready` tickets are real and persisted.
+- Starting a `ready` ticket now creates:
+  - a persisted execution session
+  - a first execution attempt record
+  - waiting-state session logs
+  - an `in_progress` ticket transition on the board
+- Session input is recorded and appended to session logs.
+- The execution session is still a waiting-state placeholder:
+  - no worktree is created yet
+  - no Codex process is launched yet
+  - no terminal stream is attached yet

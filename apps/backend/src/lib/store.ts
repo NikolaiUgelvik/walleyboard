@@ -3,6 +3,7 @@ import type {
   CreateProjectInput,
   DraftTicketState,
   ExecutionAttempt,
+  ExecutionSessionStatus,
   ExecutionSession,
   Project,
   RepositoryConfig,
@@ -22,6 +23,13 @@ export type ConfirmDraftInput = {
   target_branch: string;
 };
 
+export type StartTicketResult = {
+  ticket: TicketFrontmatter;
+  session: ExecutionSession;
+  attempt: ExecutionAttempt;
+  logs: string[];
+};
+
 export interface Store {
   listProjects(): Project[];
   getProject(projectId: string): Project | undefined;
@@ -38,6 +46,13 @@ export interface Store {
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
   getTicket(ticketId: number): TicketFrontmatter | undefined;
   getReviewPackage(ticketId: number): ReviewPackage | undefined;
+  startTicket(ticketId: number, planningEnabled: boolean): StartTicketResult;
+  addSessionInput(sessionId: string, body: string): ExecutionSession;
+  updateSessionStatus(
+    sessionId: string,
+    status: ExecutionSessionStatus,
+    lastSummary?: string | null
+  ): ExecutionSession | undefined;
   listSessionAttempts(sessionId: string): ExecutionAttempt[];
   getSession(sessionId: string): ExecutionSession | undefined;
   getSessionLogs(sessionId: string): string[];

@@ -16,7 +16,11 @@ This repository contains the implementation starter pack for the AI orchestrator
 - shared contract package for models, commands, and events
 - initial SQLite schema matching the PRD
 - backend skeleton with route modules, SQLite-backed local persistence, and a WebSocket event hub
-- frontend shell that talks to the backend and supports project setup plus draft-to-ready ticket flow
+- frontend shell that talks to the backend and supports:
+  - project setup
+  - draft-to-ready ticket flow
+  - starting a ready ticket into a persisted execution session
+  - waiting-state session input and log display
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
 ## What It Does Not Do Yet
@@ -27,7 +31,8 @@ This repository contains the implementation starter pack for the AI orchestrator
 - execute validation commands
 - render live terminal output
 - generate real review packages
-- start or resume real execution sessions
+- start real Codex-backed execution inside a worktree
+- resume real execution sessions after interruption
 
 Those remain the next implementation milestones.
 
@@ -42,4 +47,4 @@ Those remain the next implementation milestones.
 
 - Implement the Codex adapter.
 - Add worktree creation and sandbox orchestration.
-- Replace placeholder command handlers with real execution flows.
+- Replace the waiting-state execution placeholder with real terminal-backed agent execution.

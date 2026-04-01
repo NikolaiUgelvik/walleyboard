@@ -113,3 +113,10 @@ export const requestedChangeNotesTable = sqliteTable("requested_change_notes", {
   body: text("body").notNull(),
   createdAt: text("created_at").notNull()
 });
+
+export const sessionLogsTable = sqliteTable("session_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull(),
+  line: text("line").notNull(),
+  createdAt: text("created_at").notNull()
+});
