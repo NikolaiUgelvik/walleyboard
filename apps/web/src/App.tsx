@@ -32,6 +32,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { SectionCard } from "./components/SectionCard.js";
+import { SessionTerminal } from "./components/SessionTerminal.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
 const boardColumns = [
@@ -567,8 +568,9 @@ export function App() {
             Codex exec run in its prepared worktree and moves successful runs into
             local review. Review approval can now merge the branch back into the target
             branch and clean up local artifacts. Review feedback and failed runs can now
-            relaunch the same logical session as a new attempt. Terminal control is still
-            the next major milestone.
+            relaunch the same logical session as a new attempt. Session output now renders
+            inside a terminal-style view while full keyboard handoff remains the next major
+            milestone.
           </Text>
         </Stack>
 
@@ -614,6 +616,7 @@ export function App() {
                 <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
                 <List.Item>Request changes and resume flows that reuse the same session</List.Item>
                 <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
+                <List.Item>Read-only terminal rendering for session output</List.Item>
                 <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
               </List>
           </SectionCard>
@@ -1048,18 +1051,8 @@ export function App() {
                   ) : null}
 
                   <Stack gap={4}>
-                    <Text fw={600}>Session Log</Text>
-                    {sessionLogs.length === 0 ? (
-                      <Text size="sm" c="dimmed">
-                        No log lines yet.
-                      </Text>
-                    ) : (
-                      sessionLogs.map((line, index) => (
-                        <Code key={`${session.id}-log-${index}`} block>
-                          {line}
-                        </Code>
-                      ))
-                    )}
+                    <Text fw={600}>Session Terminal</Text>
+                    <SessionTerminal logs={sessionLogs} sessionId={session.id} />
                   </Stack>
 
                   {selectedSessionTicket &&

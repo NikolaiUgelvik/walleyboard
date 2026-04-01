@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import readline from "node:readline";
+import { spawn as spawnPty, type IPty } from "node-pty";
 
 import type {
   ExecutionSession,
@@ -39,6 +40,14 @@ function truncate(value: string, maxLength = 600): string {
 
 function ensureDirectory(path: string): void {
   mkdirSync(path, { recursive: true });
+}
+
+function buildProcessEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => {
+      return typeof entry[1] === "string";
+    })
+  );
 }
 
 function runGit(repoPath: string, args: string[]): string {
@@ -174,7 +183,7 @@ function resolveValidationWorkingDirectory(
 export class ExecutionRuntime {
   readonly #eventHub: EventHub;
   readonly #store: Store;
-  readonly #activeSessions = new Map<string, ReturnType<typeof spawn>>();
+  readonly #activeSessions = new Map<string, IPty>();
 
   constructor({ eventHub, store }: ExecutionRuntimeOptions) {
     this.#eventHub = eventHub;
@@ -222,11 +231,28 @@ export class ExecutionRuntime {
       prompt
     ];
 
-    const child = spawn("codex", args, {
-      cwd: session.worktree_path,
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    const ptyEnv = buildProcessEnv();
+    let child: IPty;
+
+    try {
+      child = spawnPty("codex", args, {
+        cwd: session.worktree_path,
+        env: ptyEnv,
+        cols: 120,
+        rows: 32,
+        name: "xterm-256color"
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Codex PTY failed to start";
+      this.#finishFailure({
+        ticket,
+        sessionId: session.id,
+        attemptId,
+        reason: `Codex failed to start: ${message}`
+      });
+      return;
+    }
 
     this.#activeSessions.set(session.id, child);
     this.#store.updateExecutionAttempt(attemptId, {
@@ -255,29 +281,30 @@ export class ExecutionRuntime {
       );
     }
 
-    streamLines(child.stdout, (line) => {
-      this.#log(session.id, attemptId, summarizeCodexJsonLine(line));
+    let pendingBuffer = "";
+
+    child.onData((chunk) => {
+      pendingBuffer += chunk.replace(/\r\n/g, "\n");
+
+      while (pendingBuffer.includes("\n")) {
+        const newlineIndex = pendingBuffer.indexOf("\n");
+        const line = pendingBuffer.slice(0, newlineIndex);
+        pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
+        this.#log(session.id, attemptId, summarizeCodexJsonLine(line));
+      }
     });
 
-    streamLines(child.stderr, (line) => {
-      this.#log(session.id, attemptId, `[codex stderr] ${truncate(line)}`);
-    });
+    child.onExit(async ({ exitCode, signal }) => {
+      if (pendingBuffer.trim().length > 0) {
+        this.#log(session.id, attemptId, summarizeCodexJsonLine(pendingBuffer));
+        pendingBuffer = "";
+      }
 
-    child.once("error", (error) => {
-      this.#finishFailure({
-        ticket,
-        sessionId: session.id,
-        attemptId,
-        reason: `Codex failed to start: ${error.message}`
-      });
-    });
-
-    child.once("close", async (code, signal) => {
       const finalSummary = existsSync(outputSummaryPath)
         ? readFileSync(outputSummaryPath, "utf8").trim()
         : null;
 
-      if (code === 0) {
+      if (exitCode === 0) {
         this.#finishSuccess({
           project,
           repository,
@@ -297,7 +324,7 @@ export class ExecutionRuntime {
         ticket,
         sessionId: session.id,
         attemptId,
-        reason: `Codex exited with ${code === null ? "unknown code" : `code ${code}`}${
+        reason: `Codex exited with ${exitCode === undefined ? "unknown code" : `code ${exitCode}`}${
           signal ? ` and signal ${signal}` : ""
         }.${finalSummary ? ` Final summary: ${finalSummary}` : ""}`
       });
