@@ -1703,10 +1703,6 @@ export function App() {
   const visibleTickets = tickets.filter((ticket) =>
     ticketMatchesSearch(ticket, searchNeedle),
   );
-  const visibleBoardColumns: (typeof boardColumns)[number][] =
-    drafts.length > 0
-      ? [...boardColumns]
-      : boardColumns.filter((column) => column !== "draft");
 
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
@@ -2294,7 +2290,7 @@ export function App() {
 
             <Box className="workbench-toolbar">
               <Box className="toolbar-group">
-                {visibleBoardColumns.map((column) => {
+                {boardColumns.map((column) => {
                   const count =
                     column === "draft"
                       ? visibleDrafts.length
@@ -2368,7 +2364,7 @@ export function App() {
             ) : (
               <Box className="board-scroller">
                 <Box className="board-grid">
-                  {visibleBoardColumns.map((column) => {
+                  {boardColumns.map((column) => {
                     const meta = boardColumnMeta[column];
                     const columnCount =
                       column === "draft"
