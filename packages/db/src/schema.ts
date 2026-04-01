@@ -13,7 +13,7 @@ export const projectsTable = sqliteTable("projects", {
   ticketWorkReasoningEffort: text("ticket_work_reasoning_effort"),
   maxConcurrentSessions: integer("max_concurrent_sessions")
     .notNull()
-    .default(1),
+    .default(4),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

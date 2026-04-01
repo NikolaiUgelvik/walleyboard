@@ -42,6 +42,15 @@ type JsonValue =
   | boolean
   | null;
 
+const activeExecutionSessionStatuses = [
+  "queued",
+  "running",
+  "paused_checkpoint",
+  "paused_user_control",
+  "awaiting_input",
+] as const;
+const defaultMaxConcurrentSessions = 4;
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -363,7 +372,7 @@ export class SqliteStore implements Store {
         draft_analysis_reasoning_effort TEXT,
         ticket_work_model TEXT,
         ticket_work_reasoning_effort TEXT,
-        max_concurrent_sessions INTEGER NOT NULL DEFAULT 1,
+        max_concurrent_sessions INTEGER NOT NULL DEFAULT 4,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -504,6 +513,7 @@ export class SqliteStore implements Store {
     this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
     this.#ensureColumn("projects", "post_worktree_command", "TEXT");
+    this.#backfillProjectConcurrencyDefaults();
     this.#backfillTicketContext();
   }
 
@@ -642,17 +652,37 @@ export class SqliteStore implements Store {
       .run(sessionId, line, nowIso());
   }
 
-  #countOtherActiveSessions(sessionId: string): number {
+  #backfillProjectConcurrencyDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET max_concurrent_sessions = ?
+          WHERE max_concurrent_sessions = 1
+        `,
+      )
+      .run(defaultMaxConcurrentSessions);
+  }
+
+  #countActiveSessionsForProject(
+    projectId: string,
+    excludedSessionId?: string,
+  ): number {
     const row = this.#db
       .prepare(
         `
           SELECT COUNT(*) AS count
           FROM execution_sessions
-          WHERE id != ?
-            AND status IN ('queued', 'running', 'paused_checkpoint', 'paused_user_control', 'awaiting_input')
+          WHERE project_id = ?
+            ${excludedSessionId ? "AND id != ?" : ""}
+            AND status IN (${activeExecutionSessionStatuses.map(() => "?").join(", ")})
         `,
       )
-      .get(sessionId) as { count: number };
+      .get(
+        projectId,
+        ...(excludedSessionId ? [excludedSessionId] : []),
+        ...activeExecutionSessionStatuses,
+      ) as { count: number };
 
     return Number(row.count);
   }
@@ -729,7 +759,7 @@ export class SqliteStore implements Store {
         null,
         null,
         null,
-        1,
+        defaultMaxConcurrentSessions,
         timestamp,
         timestamp,
       );
@@ -1155,18 +1185,16 @@ export class SqliteStore implements Store {
       throw new Error("Ticket already has an execution session");
     }
 
-    const activeSessionCount = this.#db
-      .prepare(
-        `
-          SELECT COUNT(*) AS count
-          FROM execution_sessions
-          WHERE status IN ('queued', 'running', 'paused_checkpoint', 'paused_user_control', 'awaiting_input')
-        `,
-      )
-      .get() as { count: number };
-    if (Number(activeSessionCount.count) > 0) {
+    const project = this.getProject(ticket.project);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+    if (
+      this.#countActiveSessionsForProject(ticket.project) >=
+      project.max_concurrent_sessions
+    ) {
       throw new Error(
-        "Only one active execution session is supported in the current MVP slice",
+        `Project has reached its active execution limit of ${project.max_concurrent_sessions} sessions`,
       );
     }
 
@@ -1383,9 +1411,16 @@ export class SqliteStore implements Store {
     if (!session.worktree_path) {
       throw new Error("Execution session has no prepared worktree");
     }
-    if (this.#countOtherActiveSessions(session.id) > 0) {
+    const project = this.getProject(ticket.project);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+    if (
+      this.#countActiveSessionsForProject(ticket.project, session.id) >=
+      project.max_concurrent_sessions
+    ) {
       throw new Error(
-        "Only one active execution session is supported in the current MVP slice",
+        `Project has reached its active execution limit of ${project.max_concurrent_sessions} sessions`,
       );
     }
 
@@ -1554,9 +1589,16 @@ export class SqliteStore implements Store {
         `Session cannot be resumed from status ${session.status}`,
       );
     }
-    if (this.#countOtherActiveSessions(session.id) > 0) {
+    const project = this.getProject(ticket.project);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+    if (
+      this.#countActiveSessionsForProject(ticket.project, session.id) >=
+      project.max_concurrent_sessions
+    ) {
       throw new Error(
-        "Only one active execution session is supported in the current MVP slice",
+        `Project has reached its active execution limit of ${project.max_concurrent_sessions} sessions`,
       );
     }
 
