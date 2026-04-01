@@ -10,13 +10,16 @@ import {
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 
 type SessionTerminalPanelProps = {
+  canTakeOver: boolean;
   session: ExecutionSession;
   logs: string[];
   command: string;
   onCommandChange: (value: string) => void;
   onSendCommand: () => void;
+  onTakeOver: () => void;
   onRestoreAgent: () => void;
   sendLoading: boolean;
+  takeOverLoading: boolean;
   restoreLoading: boolean;
   error?: string | null;
 };
@@ -47,13 +50,16 @@ function extractTerminalTranscript(logs: string[]): string {
 }
 
 export function SessionTerminalPanel({
+  canTakeOver,
   session,
   logs,
   command,
   onCommandChange,
   onSendCommand,
+  onTakeOver,
   onRestoreAgent,
   sendLoading,
+  takeOverLoading,
   restoreLoading,
   error,
 }: SessionTerminalPanelProps) {
@@ -66,10 +72,11 @@ export function SessionTerminalPanel({
         <Text fw={600}>Project Terminal</Text>
         <Text size="sm" c="dimmed">
           This is the raw terminal view for direct commands in the ticket
-          worktree. It stays separate from the interpreted Codex activity feed.
+          worktree. When attached, commands run with the worktree root as the
+          current working directory.
         </Text>
         <Text size="sm" c="dimmed">
-          Worktree: <Code>{session.worktree_path ?? "pending"}</Code>
+          Working directory: <Code>{session.worktree_path ?? "pending"}</Code>
         </Text>
       </Stack>
 
@@ -133,10 +140,21 @@ export function SessionTerminalPanel({
           </Group>
         </form>
       ) : (
-        <Text size="sm" c="dimmed">
-          Use `Take Over Terminal` from the session controls when you want to
-          run direct commands in this worktree.
-        </Text>
+        <Group justify="space-between" align="center">
+          <Text size="sm" c="dimmed">
+            {canTakeOver
+              ? "Attach the project shell to run direct commands from this worktree root."
+              : "Manual terminal takeover is only available while the ticket is in progress."}
+          </Text>
+          <Button
+            variant="light"
+            loading={takeOverLoading}
+            disabled={!canTakeOver}
+            onClick={onTakeOver}
+          >
+            Take Over Terminal
+          </Button>
+        </Group>
       )}
     </Stack>
   );

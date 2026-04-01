@@ -13,6 +13,7 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Tabs,
   Text,
   TextInput,
   Textarea,
@@ -37,6 +38,8 @@ import type {
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
+  TicketWorkspaceDiff,
+  TicketWorkspacePreview,
   UploadDraftArtifactResponse,
 } from "../../../packages/contracts/src/index.js";
 
@@ -45,6 +48,8 @@ import { MarkdownContent } from "./components/MarkdownContent.js";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
+import { TicketWorkspaceDiffPanel } from "./components/TicketWorkspaceDiffPanel.js";
+import { TicketWorkspacePreviewPanel } from "./components/TicketWorkspacePreviewPanel.js";
 import { apiBaseUrl } from "./lib/api-base-url.js";
 import {
   type PendingDraftEditorSync,
@@ -191,6 +196,14 @@ type SessionLogsResponse = {
   logs: string[];
 };
 
+type TicketWorkspaceDiffResponse = {
+  workspace_diff: TicketWorkspaceDiff;
+};
+
+type TicketWorkspacePreviewResponse = {
+  preview: TicketWorkspacePreview;
+};
+
 type ReviewPackageResponse = {
   review_package: ReviewPackage;
 };
@@ -219,6 +232,8 @@ type ArchiveActionFeedback = {
   tone: "green" | "red";
   message: string;
 };
+type DiffLayout = "split" | "stacked";
+type TicketWorkspaceTab = "diff" | "terminal" | "preview" | "activity";
 
 type InspectorState =
   | { kind: "hidden" }
@@ -249,6 +264,17 @@ function deriveRepositoryName(path: string, fallback: string): string {
 
 function deriveWorkingBranchPreview(ticket: TicketFrontmatter): string {
   return `codex/ticket-${ticket.id}-${slugify(ticket.title).slice(0, 24)}`;
+}
+
+const diffLayoutStorageKey = "orchestrator.ticket-workspace.diff-layout";
+
+function readDiffLayoutPreference(): DiffLayout {
+  if (typeof window === "undefined") {
+    return "split";
+  }
+
+  const storedValue = window.localStorage.getItem(diffLayoutStorageKey);
+  return storedValue === "stacked" ? "stacked" : "split";
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -1015,6 +1041,10 @@ export function App() {
   const [planFeedbackBody, setPlanFeedbackBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
+  const [ticketWorkspaceTab, setTicketWorkspaceTab] =
+    useState<TicketWorkspaceTab>("diff");
+  const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] =
+    useState<DiffLayout>(() => readDiffLayoutPreference());
   const [boardSearch, setBoardSearch] = useState("");
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
@@ -1200,6 +1230,23 @@ export function App() {
   ]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      diffLayoutStorageKey,
+      ticketWorkspaceDiffLayout,
+    );
+  }, [ticketWorkspaceDiffLayout]);
+
+  useEffect(() => {
+    if (selectedSessionId !== null) {
+      setTicketWorkspaceTab("diff");
+    }
+  }, [selectedSessionId]);
+
+  useEffect(() => {
     const socket = new WebSocket(websocketUrl);
 
     socket.onmessage = (messageEvent) => {
@@ -1282,6 +1329,27 @@ export function App() {
         return;
       }
 
+      if (event.event_type === "ticket.workspace.updated") {
+        const ticketId = event.payload.ticket_id as number | undefined;
+        const kind = event.payload.kind as "diff" | "preview" | undefined;
+        if (ticketId === undefined) {
+          return;
+        }
+
+        if (!kind || kind === "diff") {
+          queryClient.invalidateQueries({
+            queryKey: ["tickets", ticketId, "workspace", "diff"],
+          });
+        }
+
+        if (!kind || kind === "preview") {
+          queryClient.invalidateQueries({
+            queryKey: ["tickets", ticketId, "workspace", "preview"],
+          });
+        }
+        return;
+      }
+
       if (event.event_type === "ticket.deleted") {
         const ticketId = event.payload.ticket_id as number | undefined;
         const projectId = event.payload.project_id as string | undefined;
@@ -1319,6 +1387,12 @@ export function App() {
             setInspectorState({ kind: "hidden" });
           }
         }
+        queryClient.removeQueries({
+          queryKey: ["tickets", ticketId, "workspace", "diff"],
+        });
+        queryClient.removeQueries({
+          queryKey: ["tickets", ticketId, "workspace", "preview"],
+        });
         return;
       }
 
@@ -1490,6 +1564,30 @@ export function App() {
     enabled:
       selectedSessionTicketId !== null &&
       selectedSessionTicketStatus === "review",
+  });
+
+  const ticketWorkspaceDiffQuery = useQuery({
+    queryKey: ["tickets", selectedSessionTicketId, "workspace", "diff"],
+    queryFn: () =>
+      fetchJson<TicketWorkspaceDiffResponse>(
+        `/tickets/${selectedSessionTicketId}/workspace/diff`,
+      ),
+    enabled:
+      selectedSessionTicketId !== null &&
+      sessionQuery.data?.session.worktree_path != null,
+    retry: false,
+  });
+
+  const ticketWorkspacePreviewQuery = useQuery({
+    queryKey: ["tickets", selectedSessionTicketId, "workspace", "preview"],
+    queryFn: () =>
+      fetchJson<TicketWorkspacePreviewResponse>(
+        `/tickets/${selectedSessionTicketId}/workspace/preview`,
+      ),
+    enabled:
+      selectedSessionTicketId !== null &&
+      sessionQuery.data?.session.worktree_path != null,
+    retry: false,
   });
 
   const createProjectMutation = useMutation({
@@ -2049,6 +2147,20 @@ export function App() {
     },
   });
 
+  const startTicketWorkspacePreviewMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<TicketWorkspacePreviewResponse>(
+        `/tickets/${ticketId}/workspace/preview`,
+        {},
+      ),
+    onSuccess: (response, ticketId) => {
+      queryClient.setQueryData<TicketWorkspacePreviewResponse>(
+        ["tickets", ticketId, "workspace", "preview"],
+        response,
+      );
+    },
+  });
+
   const mergeTicketMutation = useMutation({
     mutationFn: (ticketId: number) =>
       postJson<CommandAck>(`/tickets/${ticketId}/merge`, {}),
@@ -2238,12 +2350,43 @@ export function App() {
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
+  const ticketWorkspaceDiff =
+    ticketWorkspaceDiffQuery.data?.workspace_diff ?? null;
+  const ticketWorkspacePreview =
+    ticketWorkspacePreviewQuery.data?.preview ?? null;
   const sessionById = new Map(
     sessionSummaries
       .map((query) => query.data?.session)
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
   );
+
+  useEffect(() => {
+    if (
+      ticketWorkspaceTab !== "preview" ||
+      !selectedSessionTicket ||
+      !session?.worktree_path ||
+      startTicketWorkspacePreviewMutation.isPending
+    ) {
+      return;
+    }
+
+    if (
+      ticketWorkspacePreview?.state === "ready" ||
+      ticketWorkspacePreview?.state === "starting" ||
+      ticketWorkspacePreview?.state === "failed"
+    ) {
+      return;
+    }
+
+    startTicketWorkspacePreviewMutation.mutate(selectedSessionTicket.id);
+  }, [
+    selectedSessionTicket,
+    session?.worktree_path,
+    startTicketWorkspacePreviewMutation,
+    ticketWorkspacePreview?.state,
+    ticketWorkspaceTab,
+  ]);
 
   const searchNeedle = normalizeText(boardSearch);
   const visibleDrafts = drafts.filter((draft) =>
@@ -3933,8 +4076,8 @@ export function App() {
 
               {inspectorState.kind === "session" ? (
                 <SectionCard
-                  title="Session inspector"
-                  description="Execution detail, review actions, and manual terminal control all live here."
+                  title="Ticket workspace"
+                  description="Diff, terminal, preview, and session activity live together here."
                 >
                   {selectedSessionId === null ? (
                     <Text size="sm" c="dimmed">
@@ -4055,24 +4198,6 @@ export function App() {
                         <Group justify="space-between">
                           <Group gap="xs">
                             {selectedSessionTicket.status === "in_progress" &&
-                            session.worktree_path &&
-                            session.status !== "paused_user_control" ? (
-                              <Button
-                                variant="light"
-                                size="xs"
-                                loading={
-                                  terminalTakeoverMutation.isPending &&
-                                  terminalTakeoverMutation.variables ===
-                                    session.id
-                                }
-                                onClick={() =>
-                                  terminalTakeoverMutation.mutate(session.id)
-                                }
-                              >
-                                Take Over Terminal
-                              </Button>
-                            ) : null}
-                            {selectedSessionTicket.status === "in_progress" &&
                             selectedSessionTicketSession &&
                             isStoppableSessionStatus(
                               selectedSessionTicketSession.status,
@@ -4117,314 +4242,410 @@ export function App() {
                           {stopTicketMutation.error.message}
                         </Text>
                       ) : null}
-                      {terminalTakeoverMutation.isError ? (
-                        <Text size="sm" c="red">
-                          {terminalTakeoverMutation.error.message}
-                        </Text>
-                      ) : null}
                       {deleteTicketMutation.isError ? (
                         <Text size="sm" c="red">
                           {deleteTicketMutation.error.message}
                         </Text>
                       ) : null}
-                      {planFeedbackMutation.isError ? (
-                        <Text size="sm" c="red">
-                          {planFeedbackMutation.error.message}
-                        </Text>
-                      ) : null}
 
-                      {session.plan_summary ? (
-                        <Stack gap={4}>
-                          <Text fw={700}>
-                            {session.plan_status === "awaiting_feedback"
-                              ? "Plan awaiting feedback"
-                              : "Latest plan"}
-                          </Text>
-                          <MarkdownContent
-                            className="markdown-muted markdown-small"
-                            content={session.plan_summary}
+                      <Tabs
+                        className="ticket-workspace-tabs"
+                        value={ticketWorkspaceTab}
+                        onChange={(value) =>
+                          setTicketWorkspaceTab(value as TicketWorkspaceTab)
+                        }
+                      >
+                        <Tabs.List grow>
+                          <Tabs.Tab value="diff">Diff</Tabs.Tab>
+                          <Tabs.Tab value="terminal">Terminal</Tabs.Tab>
+                          <Tabs.Tab value="preview">Preview</Tabs.Tab>
+                          <Tabs.Tab value="activity">Activity</Tabs.Tab>
+                        </Tabs.List>
+
+                        <Tabs.Panel
+                          className="ticket-workspace-tab-panel"
+                          value="diff"
+                        >
+                          <TicketWorkspaceDiffPanel
+                            diff={ticketWorkspaceDiff}
+                            error={
+                              ticketWorkspaceDiffQuery.isError
+                                ? ticketWorkspaceDiffQuery.error.message
+                                : null
+                            }
+                            isLoading={ticketWorkspaceDiffQuery.isPending}
+                            layout={ticketWorkspaceDiffLayout}
+                            onLayoutChange={setTicketWorkspaceDiffLayout}
                           />
-                        </Stack>
-                      ) : null}
+                        </Tabs.Panel>
 
-                      {selectedSessionTicket?.status === "review" ? (
-                        reviewPackageQuery.isPending ? (
-                          <Loader size="sm" />
-                        ) : reviewPackage ? (
-                          <Stack gap="sm">
-                            <Text fw={700}>Review package</Text>
-                            <Text size="sm" c="dimmed">
-                              Diff artifact:{" "}
-                              <Code>{reviewPackage.diff_ref}</Code>
-                            </Text>
-                            <MarkdownContent
-                              className="markdown-muted markdown-small"
-                              content={reviewPackage.change_summary}
+                        <Tabs.Panel
+                          className="ticket-workspace-tab-panel"
+                          value="terminal"
+                        >
+                          {session.worktree_path ? (
+                            <SessionTerminalPanel
+                              canTakeOver={
+                                selectedSessionTicket?.status ===
+                                  "in_progress" &&
+                                session.status !== "paused_user_control"
+                              }
+                              session={session}
+                              logs={sessionLogs}
+                              command={terminalCommand}
+                              onCommandChange={setTerminalCommand}
+                              onSendCommand={() => {
+                                if (!selectedSessionId) {
+                                  return;
+                                }
+
+                                terminalInputMutation.mutate({
+                                  sessionId: selectedSessionId,
+                                  body: terminalCommand,
+                                });
+                              }}
+                              onTakeOver={() =>
+                                terminalTakeoverMutation.mutate(session.id)
+                              }
+                              onRestoreAgent={() =>
+                                terminalRestoreMutation.mutate(session.id)
+                              }
+                              sendLoading={terminalInputMutation.isPending}
+                              takeOverLoading={
+                                terminalTakeoverMutation.isPending &&
+                                terminalTakeoverMutation.variables ===
+                                  session.id
+                              }
+                              restoreLoading={terminalRestoreMutation.isPending}
+                              error={
+                                terminalInputMutation.isError
+                                  ? terminalInputMutation.error.message
+                                  : terminalTakeoverMutation.isError
+                                    ? terminalTakeoverMutation.error.message
+                                    : terminalRestoreMutation.isError
+                                      ? terminalRestoreMutation.error.message
+                                      : null
+                              }
                             />
+                          ) : (
                             <Text size="sm" c="dimmed">
-                              Validation results:{" "}
-                              {reviewPackage.validation_results.length}
+                              The ticket worktree is still being prepared.
                             </Text>
-                            {reviewPackage.validation_results.length > 0 ? (
-                              <List size="sm" spacing={4}>
-                                {reviewPackage.validation_results.map(
-                                  (result) => (
-                                    <List.Item key={result.command_id}>
-                                      {result.label}: {result.status}
-                                    </List.Item>
-                                  ),
-                                )}
-                              </List>
+                          )}
+                        </Tabs.Panel>
+
+                        <Tabs.Panel
+                          className="ticket-workspace-tab-panel"
+                          value="preview"
+                        >
+                          <TicketWorkspacePreviewPanel
+                            error={
+                              ticketWorkspacePreviewQuery.isError
+                                ? ticketWorkspacePreviewQuery.error.message
+                                : startTicketWorkspacePreviewMutation.isError
+                                  ? startTicketWorkspacePreviewMutation.error
+                                      .message
+                                  : null
+                            }
+                            isLoading={ticketWorkspacePreviewQuery.isPending}
+                            isStarting={
+                              startTicketWorkspacePreviewMutation.isPending
+                            }
+                            onStart={() => {
+                              if (!selectedSessionTicket) {
+                                return;
+                              }
+
+                              startTicketWorkspacePreviewMutation.mutate(
+                                selectedSessionTicket.id,
+                              );
+                            }}
+                            preview={ticketWorkspacePreview}
+                            worktreePath={session.worktree_path}
+                          />
+                        </Tabs.Panel>
+
+                        <Tabs.Panel
+                          className="ticket-workspace-tab-panel"
+                          value="activity"
+                        >
+                          <Stack gap="md">
+                            {planFeedbackMutation.isError ? (
+                              <Text size="sm" c="red">
+                                {planFeedbackMutation.error.message}
+                              </Text>
                             ) : null}
-                            {reviewPackage.remaining_risks.length > 0 ? (
-                              <Stack gap={2}>
-                                <Text
-                                  size="xs"
-                                  c="dimmed"
-                                  tt="uppercase"
-                                  fw={700}
-                                >
-                                  Remaining Risks
+
+                            {session.plan_summary ? (
+                              <Stack gap={4}>
+                                <Text fw={700}>
+                                  {session.plan_status === "awaiting_feedback"
+                                    ? "Plan awaiting feedback"
+                                    : "Latest plan"}
                                 </Text>
-                                <MarkdownListItems
-                                  items={reviewPackage.remaining_risks}
+                                <MarkdownContent
+                                  className="markdown-muted markdown-small"
+                                  content={session.plan_summary}
                                 />
                               </Stack>
                             ) : null}
-                            {mergeTicketMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {mergeTicketMutation.error.message}
-                              </Text>
+
+                            {selectedSessionTicket?.status === "review" ? (
+                              reviewPackageQuery.isPending ? (
+                                <Loader size="sm" />
+                              ) : reviewPackage ? (
+                                <Stack gap="sm">
+                                  <Text fw={700}>Review package</Text>
+                                  <Text size="sm" c="dimmed">
+                                    Diff artifact:{" "}
+                                    <Code>{reviewPackage.diff_ref}</Code>
+                                  </Text>
+                                  <MarkdownContent
+                                    className="markdown-muted markdown-small"
+                                    content={reviewPackage.change_summary}
+                                  />
+                                  <Text size="sm" c="dimmed">
+                                    Validation results:{" "}
+                                    {reviewPackage.validation_results.length}
+                                  </Text>
+                                  {reviewPackage.validation_results.length >
+                                  0 ? (
+                                    <List size="sm" spacing={4}>
+                                      {reviewPackage.validation_results.map(
+                                        (result) => (
+                                          <List.Item key={result.command_id}>
+                                            {result.label}: {result.status}
+                                          </List.Item>
+                                        ),
+                                      )}
+                                    </List>
+                                  ) : null}
+                                  {reviewPackage.remaining_risks.length > 0 ? (
+                                    <Stack gap={2}>
+                                      <Text
+                                        size="xs"
+                                        c="dimmed"
+                                        tt="uppercase"
+                                        fw={700}
+                                      >
+                                        Remaining Risks
+                                      </Text>
+                                      <MarkdownListItems
+                                        items={reviewPackage.remaining_risks}
+                                      />
+                                    </Stack>
+                                  ) : null}
+                                  {mergeTicketMutation.isError ? (
+                                    <Text size="sm" c="red">
+                                      {mergeTicketMutation.error.message}
+                                    </Text>
+                                  ) : null}
+                                  {requestChangesMutation.isError ? (
+                                    <Text size="sm" c="red">
+                                      {requestChangesMutation.error.message}
+                                    </Text>
+                                  ) : null}
+                                  <Textarea
+                                    label="Requested changes"
+                                    placeholder="Ask Codex to adjust the current review before you approve it."
+                                    value={requestedChangesBody}
+                                    onChange={(event) =>
+                                      setRequestedChangesBody(
+                                        event.currentTarget.value,
+                                      )
+                                    }
+                                    minRows={3}
+                                  />
+                                  <Group justify="space-between">
+                                    <Button
+                                      variant="light"
+                                      loading={
+                                        requestChangesMutation.isPending &&
+                                        requestChangesMutation.variables
+                                          ?.ticketId ===
+                                          selectedSessionTicket.id
+                                      }
+                                      disabled={
+                                        requestedChangesBody.trim().length === 0
+                                      }
+                                      onClick={() =>
+                                        requestChangesMutation.mutate({
+                                          ticketId: selectedSessionTicket.id,
+                                          body: requestedChangesBody,
+                                        })
+                                      }
+                                    >
+                                      Request Changes
+                                    </Button>
+                                    <Button
+                                      loading={
+                                        mergeTicketMutation.isPending &&
+                                        mergeTicketMutation.variables ===
+                                          selectedSessionTicket.id
+                                      }
+                                      onClick={() =>
+                                        mergeTicketMutation.mutate(
+                                          selectedSessionTicket.id,
+                                        )
+                                      }
+                                    >
+                                      Merge to{" "}
+                                      {selectedSessionTicket.target_branch}
+                                    </Button>
+                                  </Group>
+                                </Stack>
+                              ) : null
                             ) : null}
-                            {requestChangesMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {requestChangesMutation.error.message}
-                              </Text>
-                            ) : null}
-                            <Textarea
-                              label="Requested changes"
-                              placeholder="Ask Codex to adjust the current review before you approve it."
-                              value={requestedChangesBody}
-                              onChange={(event) =>
-                                setRequestedChangesBody(
-                                  event.currentTarget.value,
-                                )
-                              }
-                              minRows={3}
+
+                            <SessionActivityFeed
+                              logs={sessionLogs}
+                              session={session}
                             />
-                            <Group justify="space-between">
-                              <Button
-                                variant="light"
-                                loading={
-                                  requestChangesMutation.isPending &&
-                                  requestChangesMutation.variables?.ticketId ===
-                                    selectedSessionTicket.id
-                                }
-                                disabled={
-                                  requestedChangesBody.trim().length === 0
-                                }
-                                onClick={() =>
-                                  requestChangesMutation.mutate({
-                                    ticketId: selectedSessionTicket.id,
-                                    body: requestedChangesBody,
-                                  })
-                                }
-                              >
-                                Request Changes
-                              </Button>
-                              <Button
-                                loading={
-                                  mergeTicketMutation.isPending &&
-                                  mergeTicketMutation.variables ===
-                                    selectedSessionTicket.id
-                                }
-                                onClick={() =>
-                                  mergeTicketMutation.mutate(
-                                    selectedSessionTicket.id,
-                                  )
-                                }
-                              >
-                                Merge to {selectedSessionTicket.target_branch}
-                              </Button>
-                            </Group>
-                          </Stack>
-                        ) : null
-                      ) : null}
 
-                      <SessionActivityFeed
-                        logs={sessionLogs}
-                        session={session}
-                      />
-
-                      {session.worktree_path ? (
-                        <SessionTerminalPanel
-                          session={session}
-                          logs={sessionLogs}
-                          command={terminalCommand}
-                          onCommandChange={setTerminalCommand}
-                          onSendCommand={() => {
-                            if (!selectedSessionId) {
-                              return;
-                            }
-
-                            terminalInputMutation.mutate({
-                              sessionId: selectedSessionId,
-                              body: terminalCommand,
-                            });
-                          }}
-                          onRestoreAgent={() =>
-                            terminalRestoreMutation.mutate(session.id)
-                          }
-                          sendLoading={terminalInputMutation.isPending}
-                          restoreLoading={terminalRestoreMutation.isPending}
-                          error={
-                            terminalInputMutation.isError
-                              ? terminalInputMutation.error.message
-                              : terminalRestoreMutation.isError
-                                ? terminalRestoreMutation.error.message
-                                : null
-                          }
-                        />
-                      ) : null}
-
-                      {selectedSessionTicket &&
-                      session.plan_status === "awaiting_feedback" ? (
-                        <form
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            if (!selectedSessionId) {
-                              return;
-                            }
-
-                            planFeedbackMutation.mutate({
-                              sessionId: selectedSessionId,
-                              approved: true,
-                              body:
-                                planFeedbackBody.trim().length > 0
-                                  ? planFeedbackBody
-                                  : "Plan approved. Continue with implementation.",
-                            });
-                          }}
-                        >
-                          <Stack gap="sm">
-                            <Textarea
-                              id="plan-feedback"
-                              name="planFeedback"
-                              label="Plan feedback"
-                              placeholder="Add optional implementation guidance, or describe what should change in the plan."
-                              value={planFeedbackBody}
-                              onChange={(event) =>
-                                setPlanFeedbackBody(event.currentTarget.value)
-                              }
-                              minRows={3}
-                            />
-                            <Group justify="space-between">
-                              <Button
-                                variant="light"
-                                type="button"
-                                disabled={planFeedbackBody.trim().length === 0}
-                                loading={
-                                  planFeedbackMutation.isPending &&
-                                  planFeedbackMutation.variables?.approved ===
-                                    false
-                                }
-                                onClick={() => {
+                            {selectedSessionTicket &&
+                            session.plan_status === "awaiting_feedback" ? (
+                              <form
+                                onSubmit={(event) => {
+                                  event.preventDefault();
                                   if (!selectedSessionId) {
                                     return;
                                   }
 
                                   planFeedbackMutation.mutate({
                                     sessionId: selectedSessionId,
-                                    approved: false,
-                                    body: planFeedbackBody,
-                                  });
-                                }}
-                              >
-                                Request Plan Changes
-                              </Button>
-                              <Button
-                                type="submit"
-                                loading={
-                                  planFeedbackMutation.isPending &&
-                                  planFeedbackMutation.variables?.approved ===
-                                    true
-                                }
-                              >
-                                Confirm Plan and Start
-                              </Button>
-                            </Group>
-                          </Stack>
-                        </form>
-                      ) : selectedSessionTicket &&
-                        [
-                          "awaiting_input",
-                          "failed",
-                          "interrupted",
-                          "paused_checkpoint",
-                        ].includes(session.status) ? (
-                        <form
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            resumeTicketMutation.mutate({
-                              ticketId: selectedSessionTicket.id,
-                              reason: resumeReason,
-                            });
-                          }}
-                        >
-                          <Stack gap="sm">
-                            <Textarea
-                              id="resume-reason"
-                              name="resumeReason"
-                              label="Resume guidance"
-                              placeholder="Optional. Clarify what Codex should address on the next attempt."
-                              value={resumeReason}
-                              onChange={(event) =>
-                                setResumeReason(event.currentTarget.value)
-                              }
-                              minRows={3}
-                            />
-                            {resumeTicketMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {resumeTicketMutation.error.message}
-                              </Text>
-                            ) : null}
-                            <Group justify="space-between">
-                              <Button
-                                variant="subtle"
-                                type="button"
-                                onClick={() => {
-                                  if (!selectedSessionId) {
-                                    return;
-                                  }
-
-                                  sessionInputMutation.mutate({
-                                    sessionId: selectedSessionId,
+                                    approved: true,
                                     body:
-                                      resumeReason ||
-                                      "Resume requested from the session view.",
+                                      planFeedbackBody.trim().length > 0
+                                        ? planFeedbackBody
+                                        : "Plan approved. Continue with implementation.",
                                   });
                                 }}
-                                loading={sessionInputMutation.isPending}
                               >
-                                Record Note Only
-                              </Button>
-                              <Button
-                                type="submit"
-                                loading={resumeTicketMutation.isPending}
+                                <Stack gap="sm">
+                                  <Textarea
+                                    id="plan-feedback"
+                                    name="planFeedback"
+                                    label="Plan feedback"
+                                    placeholder="Add optional implementation guidance, or describe what should change in the plan."
+                                    value={planFeedbackBody}
+                                    onChange={(event) =>
+                                      setPlanFeedbackBody(
+                                        event.currentTarget.value,
+                                      )
+                                    }
+                                    minRows={3}
+                                  />
+                                  <Group justify="space-between">
+                                    <Button
+                                      variant="light"
+                                      type="button"
+                                      disabled={
+                                        planFeedbackBody.trim().length === 0
+                                      }
+                                      loading={
+                                        planFeedbackMutation.isPending &&
+                                        planFeedbackMutation.variables
+                                          ?.approved === false
+                                      }
+                                      onClick={() => {
+                                        if (!selectedSessionId) {
+                                          return;
+                                        }
+
+                                        planFeedbackMutation.mutate({
+                                          sessionId: selectedSessionId,
+                                          approved: false,
+                                          body: planFeedbackBody,
+                                        });
+                                      }}
+                                    >
+                                      Request Plan Changes
+                                    </Button>
+                                    <Button
+                                      type="submit"
+                                      loading={
+                                        planFeedbackMutation.isPending &&
+                                        planFeedbackMutation.variables
+                                          ?.approved === true
+                                      }
+                                    >
+                                      Confirm Plan and Start
+                                    </Button>
+                                  </Group>
+                                </Stack>
+                              </form>
+                            ) : selectedSessionTicket &&
+                              [
+                                "awaiting_input",
+                                "failed",
+                                "interrupted",
+                                "paused_checkpoint",
+                              ].includes(session.status) ? (
+                              <form
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  resumeTicketMutation.mutate({
+                                    ticketId: selectedSessionTicket.id,
+                                    reason: resumeReason,
+                                  });
+                                }}
                               >
-                                Resume Execution
-                              </Button>
-                            </Group>
+                                <Stack gap="sm">
+                                  <Textarea
+                                    id="resume-reason"
+                                    name="resumeReason"
+                                    label="Resume guidance"
+                                    placeholder="Optional. Clarify what Codex should address on the next attempt."
+                                    value={resumeReason}
+                                    onChange={(event) =>
+                                      setResumeReason(event.currentTarget.value)
+                                    }
+                                    minRows={3}
+                                  />
+                                  {resumeTicketMutation.isError ? (
+                                    <Text size="sm" c="red">
+                                      {resumeTicketMutation.error.message}
+                                    </Text>
+                                  ) : null}
+                                  <Group justify="space-between">
+                                    <Button
+                                      variant="subtle"
+                                      type="button"
+                                      onClick={() => {
+                                        if (!selectedSessionId) {
+                                          return;
+                                        }
+
+                                        sessionInputMutation.mutate({
+                                          sessionId: selectedSessionId,
+                                          body:
+                                            resumeReason ||
+                                            "Resume requested from the session view.",
+                                        });
+                                      }}
+                                      loading={sessionInputMutation.isPending}
+                                    >
+                                      Record Note Only
+                                    </Button>
+                                    <Button
+                                      type="submit"
+                                      loading={resumeTicketMutation.isPending}
+                                    >
+                                      Resume Execution
+                                    </Button>
+                                  </Group>
+                                </Stack>
+                              </form>
+                            ) : (
+                              <Text size="sm" c="dimmed">
+                                Use this tab when a session is waiting on you,
+                                or move to Terminal when direct work inside the
+                                ticket worktree is faster than more prompting.
+                              </Text>
+                            )}
                           </Stack>
-                        </form>
-                      ) : (
-                        <Text size="sm" c="dimmed">
-                          Use this panel when a session is waiting on you, or
-                          take over the project terminal above when direct
-                          control inside the worktree is faster than more
-                          prompting.
-                        </Text>
-                      )}
+                        </Tabs.Panel>
+                      </Tabs>
                     </Stack>
                   ) : (
                     <Text size="sm" c="dimmed">

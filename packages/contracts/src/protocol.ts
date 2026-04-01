@@ -161,6 +161,39 @@ export const ticketEventsResponseSchema = z.object({
   events: z.array(structuredEventSchema),
 });
 
+export const ticketWorkspaceDiffSchema = z.object({
+  ticket_id: z.number().int().positive(),
+  target_branch: z.string().min(1),
+  working_branch: z.string().min(1),
+  worktree_path: absolutePathSchema,
+  patch: z.string(),
+  generated_at: timestampSchema,
+});
+
+export const ticketWorkspaceDiffResponseSchema = z.object({
+  workspace_diff: ticketWorkspaceDiffSchema,
+});
+
+export const ticketWorkspacePreviewStateSchema = z.enum([
+  "idle",
+  "starting",
+  "ready",
+  "failed",
+]);
+
+export const ticketWorkspacePreviewSchema = z.object({
+  ticket_id: z.number().int().positive(),
+  state: ticketWorkspacePreviewStateSchema,
+  preview_url: z.string().url().nullable(),
+  backend_url: z.string().url().nullable(),
+  started_at: timestampSchema.nullable(),
+  error: z.string().nullable(),
+});
+
+export const ticketWorkspacePreviewResponseSchema = z.object({
+  preview: ticketWorkspacePreviewSchema,
+});
+
 export const sessionResponseSchema = z.object({
   session: executionSessionSchema,
 });
@@ -176,6 +209,7 @@ export const sessionLogsResponseSchema = z.object({
 
 export const eventTypeSchema = z.enum([
   "ticket.updated",
+  "ticket.workspace.updated",
   "ticket.archived",
   "ticket.deleted",
   "draft.updated",
@@ -248,3 +282,16 @@ export type DraftEventsResponse = z.infer<typeof draftEventsResponseSchema>;
 export type ProtocolEvent = z.infer<typeof protocolEventSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventEntityType = z.infer<typeof eventEntityTypeSchema>;
+export type TicketWorkspaceDiff = z.infer<typeof ticketWorkspaceDiffSchema>;
+export type TicketWorkspaceDiffResponse = z.infer<
+  typeof ticketWorkspaceDiffResponseSchema
+>;
+export type TicketWorkspacePreviewState = z.infer<
+  typeof ticketWorkspacePreviewStateSchema
+>;
+export type TicketWorkspacePreview = z.infer<
+  typeof ticketWorkspacePreviewSchema
+>;
+export type TicketWorkspacePreviewResponse = z.infer<
+  typeof ticketWorkspacePreviewResponseSchema
+>;

@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
+import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -12,6 +13,9 @@ import { ticketRoutes } from "./routes/tickets.js";
 import { websocketRoutes } from "./routes/ws.js";
 
 export async function createApp() {
+  const host = process.env.HOST ?? "127.0.0.1";
+  const port = Number.parseInt(process.env.PORT ?? "4000", 10);
+  const apiHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const app = Fastify({
     logger: true,
   });
@@ -19,6 +23,10 @@ export async function createApp() {
   const eventHub = new EventHub();
   const store = new SqliteStore();
   const executionRuntime = new ExecutionRuntime({ eventHub, store });
+  const ticketWorkspaceService = new TicketWorkspaceService({
+    apiBaseUrl: `http://${apiHost}:${port}`,
+    eventHub,
+  });
   const recovery = store.recoverInterruptedSessions();
 
   if (recovery.sessions.length > 0) {
@@ -44,7 +52,12 @@ export async function createApp() {
   await app.register(healthRoutes);
   await app.register(projectRoutes, { store, executionRuntime });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
-  await app.register(ticketRoutes, { eventHub, store, executionRuntime });
+  await app.register(ticketRoutes, {
+    eventHub,
+    store,
+    executionRuntime,
+    ticketWorkspaceService,
+  });
   await app.register(sessionRoutes, { eventHub, store, executionRuntime });
   await app.register(websocketRoutes, { eventHub });
 

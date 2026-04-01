@@ -17,6 +17,7 @@ import {
 } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
 import { removeTicketArtifacts } from "../lib/ticket-artifacts.js";
+import type { TicketWorkspaceService } from "../lib/ticket-workspace-service.js";
 import {
   AutomaticMergeRecoveryError,
   mergeReviewedBranch,
@@ -30,11 +31,12 @@ type TicketRouteOptions = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
   store: Store;
+  ticketWorkspaceService: TicketWorkspaceService;
 };
 
 export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
   app,
-  { eventHub, executionRuntime, store },
+  { eventHub, executionRuntime, store, ticketWorkspaceService },
 ) => {
   const appendSessionOutput = (
     sessionId: string,
@@ -102,6 +104,103 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       return {
         events: store.getTicketEvents(ticketId),
       };
+    },
+  );
+
+  app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/workspace/diff",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+      if (!ticket.session_id || !ticket.working_branch) {
+        reply.code(409).send({ error: "Ticket has no prepared workspace yet" });
+        return;
+      }
+
+      const session = store.getSession(ticket.session_id);
+      if (!session?.worktree_path) {
+        reply.code(409).send({ error: "Session has no prepared worktree" });
+        return;
+      }
+
+      return {
+        workspace_diff: ticketWorkspaceService.getDiff({
+          targetBranch: ticket.target_branch,
+          ticketId: ticket.id,
+          workingBranch: ticket.working_branch,
+          worktreePath: session.worktree_path,
+        }),
+      };
+    },
+  );
+
+  app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/workspace/preview",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+
+      return {
+        preview: ticketWorkspaceService.getPreview(ticket.id),
+      };
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/workspace/preview",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+      if (!ticket.session_id) {
+        reply.code(409).send({ error: "Ticket has no prepared workspace yet" });
+        return;
+      }
+
+      const session = store.getSession(ticket.session_id);
+      if (!session?.worktree_path) {
+        reply.code(409).send({ error: "Session has no prepared worktree" });
+        return;
+      }
+
+      try {
+        const preview = await ticketWorkspaceService.ensurePreview({
+          ticketId: ticket.id,
+          worktreePath: session.worktree_path,
+        });
+        reply.send({ preview });
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to start preview",
+        });
+      }
     },
   );
 
@@ -493,6 +592,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         }
       }
 
+      await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+
       if (repository && session?.worktree_path) {
         try {
           const worktreeRemoval = removePreparedWorktree(
@@ -551,6 +652,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       if (project) {
         executionRuntime.startQueuedSessions(project.id);
       }
+      await ticketWorkspaceService.disposeTicket(ticketId);
 
       eventHub.publish(
         makeProtocolEvent("ticket.deleted", "ticket", String(ticketId), {
@@ -746,6 +848,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       }
 
       try {
+        await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+
         const mergeResult = await mergeReviewedBranch(
           repository,
           session.worktree_path,
@@ -847,6 +951,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
             session: mergedSession,
           }),
         );
+        await ticketWorkspaceService.disposeTicket(ticketId);
 
         reply.send(
           makeCommandAck(true, "Ticket merged into the target branch", {

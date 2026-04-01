@@ -395,6 +395,38 @@
   padding: 10px;
 }
 
+.ticket-workspace-tabs {
+  min-width: 0;
+}
+
+.ticket-workspace-tab-panel {
+  padding-top: 14px;
+}
+
+.ticket-workspace-diff-empty,
+.ticket-workspace-preview-shell {
+  background: var(--orchestrator-panel-soft);
+  border: 1px solid var(--orchestrator-border);
+  border-radius: 16px;
+  min-height: 320px;
+  padding: 16px;
+}
+
+.ticket-workspace-diff-file {
+  background: var(--orchestrator-panel-soft);
+  border: 1px solid var(--orchestrator-border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ticket-workspace-preview-frame {
+  width: 100%;
+  min-height: 680px;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+}
+
 .inline-code {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 12px;
