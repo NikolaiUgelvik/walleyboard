@@ -2069,13 +2069,6 @@ export function App() {
   };
 
   const archiveTicket = (ticket: TicketFrontmatter): void => {
-    const confirmed = window.confirm(
-      `Archive ticket #${ticket.id}? This keeps its data in storage and removes it from active ticket views.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
     archiveTicketMutation.mutate({
       ticketId: ticket.id,
       sessionId: ticket.session_id,
