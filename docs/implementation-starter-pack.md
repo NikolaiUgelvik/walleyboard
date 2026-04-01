@@ -10,9 +10,9 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - delegate all state changes to services or stores
 - `lib/event-hub`
   - fan-out of backend events to WebSocket subscribers
-- `lib/memory-store`
-  - temporary starter implementation for CRUD-style flows
-  - must be replaced by SQLite-backed repositories
+- `lib/sqlite-store`
+  - current local persistence layer for projects, repositories, drafts, tickets, and ticket events
+  - should later be split into narrower repository/service modules as execution complexity grows
 
 ## Shared Package Boundaries
 
@@ -25,11 +25,11 @@ This document turns the PRD into the first concrete module boundaries for the MV
 
 ## First Implementation Milestones
 
-1. Replace the in-memory store with a SQLite repository layer.
-2. Add project configuration persistence and CRUD routes.
-3. Implement the Codex adapter boundary.
-4. Implement worktree lifecycle and sandbox lifecycle services.
-5. Add real review-package generation and diff loading.
+1. Expand project configuration beyond the initial single-repository setup.
+2. Implement the Codex adapter boundary.
+3. Implement worktree lifecycle and sandbox lifecycle services.
+4. Add real review-package generation and diff loading.
+5. Add execution-session persistence, PTY orchestration, and waiting-state UX.
 
 ## Starter Endpoints
 

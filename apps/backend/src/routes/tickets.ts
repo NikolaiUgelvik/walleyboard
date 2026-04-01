@@ -9,11 +9,11 @@ import {
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { EventHub } from "../lib/event-hub.js";
 import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
-import { MemoryStore } from "../lib/memory-store.js";
+import type { Store } from "../lib/store.js";
 
 type TicketRouteOptions = {
   eventHub: EventHub;
-  store: MemoryStore;
+  store: Store;
 };
 
 export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (

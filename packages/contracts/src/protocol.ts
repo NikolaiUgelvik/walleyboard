@@ -18,7 +18,7 @@ import {
 
 export const createProjectInputSchema = z.object({
   name: z.string().min(1),
-  slug: z.string().min(1),
+  slug: z.string().min(1).optional(),
   default_target_branch: z.string().min(1).nullable().optional(),
   repository: z.object({
     name: z.string().min(1),

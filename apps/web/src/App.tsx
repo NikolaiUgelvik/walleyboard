@@ -1,5 +1,6 @@
 import {
   Badge,
+  Button,
   Code,
   Container,
   Group,
@@ -7,25 +8,31 @@ import {
   Loader,
   SimpleGrid,
   Stack,
-  Table,
   Text,
+  TextInput,
+  Textarea,
   Title
 } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
+import {
+  type CommandAck,
+  type DraftTicketState,
+  type Project,
+  type RepositoryConfig,
+  type TicketFrontmatter
+} from "@orchestrator/contracts";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { SectionCard } from "./components/SectionCard.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
-
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`);
-
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
+const boardColumns = [
+  "draft",
+  "ready",
+  "in_progress",
+  "review",
+  "done"
+] satisfies TicketFrontmatter["status"][];
 
 type HealthResponse = {
   ok: true;
@@ -33,18 +40,99 @@ type HealthResponse = {
   timestamp: string;
 };
 
-type Project = {
-  id: string;
-  name: string;
-  slug: string;
-  default_target_branch: string | null;
-};
-
 type ProjectsResponse = {
   projects: Project[];
 };
 
+type RepositoriesResponse = {
+  repositories: RepositoryConfig[];
+};
+
+type DraftsResponse = {
+  drafts: DraftTicketState[];
+};
+
+type TicketsResponse = {
+  tickets: TicketFrontmatter[];
+};
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+function deriveRepositoryName(path: string, fallback: string): string {
+  const segments = path.split("/").filter(Boolean);
+  return segments.at(-1) ?? (slugify(fallback) || "repo");
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`);
+
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) {
+        message = body.error;
+      }
+    } catch {
+      // Keep the default message when the response is not JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+
+    try {
+      const payload = (await response.json()) as { error?: string; message?: string };
+      message = payload.error ?? payload.message ?? message;
+    } catch {
+      // Keep the default message when the response is not JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+function humanizeTicketStatus(status: TicketFrontmatter["status"]): string {
+  switch (status) {
+    case "in_progress":
+      return "In Progress";
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1);
+  }
+}
+
 export function App() {
+  const queryClient = useQueryClient();
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("");
+  const [repositoryPath, setRepositoryPath] = useState("");
+  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftDescription, setDraftDescription] = useState("");
+
   const healthQuery = useQuery({
     queryKey: ["health"],
     queryFn: () => fetchJson<HealthResponse>("/health"),
@@ -57,27 +145,171 @@ export function App() {
     retry: false
   });
 
+  const repositoriesQuery = useQuery({
+    queryKey: ["projects", selectedProjectId, "repositories"],
+    queryFn: () =>
+      fetchJson<RepositoriesResponse>(`/projects/${selectedProjectId}/repositories`),
+    enabled: selectedProjectId !== null
+  });
+
+  const draftsQuery = useQuery({
+    queryKey: ["projects", selectedProjectId, "drafts"],
+    queryFn: () => fetchJson<DraftsResponse>(`/projects/${selectedProjectId}/drafts`),
+    enabled: selectedProjectId !== null
+  });
+
+  const ticketsQuery = useQuery({
+    queryKey: ["projects", selectedProjectId, "tickets"],
+    queryFn: () => fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
+    enabled: selectedProjectId !== null
+  });
+
+  useEffect(() => {
+    const firstProjectId = projectsQuery.data?.projects[0]?.id ?? null;
+    if (selectedProjectId === null) {
+      setSelectedProjectId(firstProjectId);
+      return;
+    }
+
+    const stillExists = projectsQuery.data?.projects.some(
+      (project) => project.id === selectedProjectId
+    );
+    if (!stillExists) {
+      setSelectedProjectId(firstProjectId);
+    }
+  }, [projectsQuery.data?.projects, selectedProjectId]);
+
+  const createProjectMutation = useMutation({
+    mutationFn: (input: {
+      name: string;
+      repositoryPath: string;
+      defaultTargetBranch: string;
+    }) =>
+      postJson<CommandAck>("/projects", {
+        name: input.name,
+        slug: slugify(input.name),
+        default_target_branch: input.defaultTargetBranch,
+        repository: {
+          name: deriveRepositoryName(input.repositoryPath, input.name),
+          path: input.repositoryPath,
+          target_branch: input.defaultTargetBranch
+        }
+      }),
+    onSuccess: async (ack) => {
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      const nextProjectId = ack.resource_refs.project_id ?? null;
+      setSelectedProjectId(nextProjectId);
+      setProjectName("");
+      setRepositoryPath("");
+      setDefaultBranch("main");
+    }
+  });
+
+  const createDraftMutation = useMutation({
+    mutationFn: (input: { projectId: string; title: string; description: string }) =>
+      postJson<CommandAck>("/drafts", {
+        project_id: input.projectId,
+        title: input.title,
+        description: input.description
+      }),
+    onSuccess: async () => {
+      if (selectedProjectId) {
+        await queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        });
+      }
+      setDraftTitle("");
+      setDraftDescription("");
+    }
+  });
+
+  const refineDraftMutation = useMutation({
+    mutationFn: (draftId: string) => postJson<CommandAck>(`/drafts/${draftId}/refine`, {}),
+    onSuccess: async () => {
+      if (selectedProjectId) {
+        await queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        });
+      }
+    }
+  });
+
+  const confirmDraftMutation = useMutation({
+    mutationFn: (input: {
+      draft: DraftTicketState;
+      repository: RepositoryConfig;
+      project: Project;
+    }) =>
+      postJson<CommandAck>(`/drafts/${input.draft.id}/confirm`, {
+        title: input.draft.title_draft,
+        description: input.draft.description_draft,
+        repo_id: input.repository.id,
+        ticket_type: input.draft.proposed_ticket_type ?? "feature",
+        acceptance_criteria:
+          input.draft.proposed_acceptance_criteria.length > 0
+            ? input.draft.proposed_acceptance_criteria
+            : [`Implement ${input.draft.title_draft}.`],
+        target_branch:
+          input.repository.target_branch ??
+          input.project.default_target_branch ??
+          "main"
+      }),
+    onSuccess: async () => {
+      if (!selectedProjectId) {
+        return;
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "drafts"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        })
+      ]);
+    }
+  });
+
+  const selectedProject =
+    projectsQuery.data?.projects.find((project) => project.id === selectedProjectId) ?? null;
+  const repositories = repositoriesQuery.data?.repositories ?? [];
+  const drafts = draftsQuery.data?.drafts ?? [];
+  const tickets = ticketsQuery.data?.tickets ?? [];
+
+  const groupedTickets = {
+    draft: [] as TicketFrontmatter[],
+    ready: [] as TicketFrontmatter[],
+    in_progress: [] as TicketFrontmatter[],
+    review: [] as TicketFrontmatter[],
+    done: [] as TicketFrontmatter[]
+  };
+
+  for (const ticket of tickets) {
+    groupedTickets[ticket.status].push(ticket);
+  }
+
   return (
     <Container size="xl" py="xl">
       <Stack gap="xl">
         <Stack gap="xs">
           <Group justify="space-between" align="center">
-            <Title order={1}>Orchestrator Starter Pack</Title>
+            <Title order={1}>Orchestrator MVP Workbench</Title>
             <Badge color={healthQuery.data?.ok ? "green" : "gray"} variant="light">
               {healthQuery.data?.ok ? "Backend reachable" : "Backend pending"}
             </Badge>
           </Group>
-          <Text c="dimmed" maw={820}>
-            This starter pack turns the PRD into a real workspace: shared contracts,
-            database schema, backend route boundaries, and a frontend shell that can
-            grow into the MVP.
+          <Text c="dimmed" maw={900}>
+            This build now covers the first usable local workflow: configure a project,
+            create a draft ticket, refine it into an execution-ready shape, and place
+            the resulting ticket on the board. Codex execution, terminal control, and
+            review/merge automation are still the next milestones.
           </Text>
         </Stack>
 
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
           <SectionCard
             title="Backend Status"
-            description="The local backend exposes the first scaffolded routes and event transport."
+            description="The local backend is the authority for projects, drafts, tickets, and future session orchestration."
           >
             {healthQuery.isPending ? (
               <Loader size="sm" />
@@ -96,115 +328,356 @@ export function App() {
                 <List.Item>
                   API base URL: <Code>{apiBaseUrl}</Code>
                 </List.Item>
+                <List.Item>Persistence: local SQLite-backed store</List.Item>
               </List>
             )}
           </SectionCard>
 
           <SectionCard
-            title="Next Milestones"
-            description="These are the first implementation steps after the scaffold."
+            title="Current Slice"
+            description="This is the thin vertical slice that is working now."
           >
             <List spacing="xs" size="sm">
-              <List.Item>Replace the in-memory store with SQLite repositories.</List.Item>
-              <List.Item>Implement the Codex adapter boundary and worktree lifecycle.</List.Item>
-              <List.Item>Add the terminal, validation runner, and review package flow.</List.Item>
-              <List.Item>Wire real session and event streaming into the UI.</List.Item>
+              <List.Item>Manual project setup with one repository and target branch</List.Item>
+              <List.Item>Persisted draft ticket creation</List.Item>
+              <List.Item>Refinement pass that generates acceptance criteria</List.Item>
+              <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
             </List>
           </SectionCard>
         </SimpleGrid>
 
-        <SectionCard
-          title="Workspace Modules"
-          description="The repo is split so the web app, backend, contracts, and database schema can evolve independently."
-        >
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Path</Table.Th>
-                <Table.Th>Responsibility</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              <Table.Tr>
-                <Table.Td>
-                  <Code>apps/backend</Code>
-                </Table.Td>
-                <Table.Td>Transport, route scaffolding, event hub, starter store</Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>
-                  <Code>apps/web</Code>
-                </Table.Td>
-                <Table.Td>Frontend shell, dashboard, and future board/review UI</Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>
-                  <Code>packages/contracts</Code>
-                </Table.Td>
-                <Table.Td>Shared schemas for models, commands, and events</Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>
-                  <Code>packages/db</Code>
-                </Table.Td>
-                <Table.Td>Initial Drizzle schema aligned with the PRD data model</Table.Td>
-              </Table.Tr>
-            </Table.Tbody>
-          </Table>
-        </SectionCard>
-
-        <SectionCard
-          title="Projects"
-          description="Project configuration is still only lightly scaffolded, but the API boundary already exists."
-        >
-          {projectsQuery.isPending ? (
-            <Loader size="sm" />
-          ) : projectsQuery.isError ? (
-            <Text c="red" size="sm">
-              {projectsQuery.error.message}
-            </Text>
-          ) : projectsQuery.data.projects.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No projects are configured yet. The starter backend exposes <Code>POST /projects</Code>
-              , but a full project configuration UI is still the next build step.
-            </Text>
-          ) : (
-            <Stack gap="xs">
-              {projectsQuery.data.projects.map((project) => (
-                <Group key={project.id} justify="space-between">
-                  <div>
-                    <Text fw={600}>{project.name}</Text>
-                    <Text size="sm" c="dimmed">
-                      <Code>{project.slug}</Code>
-                    </Text>
-                  </div>
-                  <Badge variant="light">
-                    {project.default_target_branch ?? "no default branch"}
-                  </Badge>
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+          <SectionCard
+            title="Create Project"
+            description="Projects anchor repositories, drafts, and tickets. The MVP still assumes one repository per ticket."
+          >
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                createProjectMutation.mutate({
+                  name: projectName,
+                  repositoryPath,
+                  defaultTargetBranch: defaultBranch
+                });
+              }}
+            >
+              <Stack gap="sm">
+                <TextInput
+                  id="project-name"
+                  name="projectName"
+                  label="Project name"
+                  placeholder="receipt-designer"
+                  value={projectName}
+                  onChange={(event) => setProjectName(event.currentTarget.value)}
+                  required
+                />
+                <TextInput
+                  id="repository-path"
+                  name="repositoryPath"
+                  label="Repository path"
+                  placeholder="/home/nikolai/git/receipt-designer"
+                  value={repositoryPath}
+                  onChange={(event) => setRepositoryPath(event.currentTarget.value)}
+                  required
+                />
+                <TextInput
+                  id="default-target-branch"
+                  name="defaultTargetBranch"
+                  label="Default target branch"
+                  placeholder="main"
+                  value={defaultBranch}
+                  onChange={(event) => setDefaultBranch(event.currentTarget.value)}
+                  required
+                />
+                {createProjectMutation.isError ? (
+                  <Text size="sm" c="red">
+                    {createProjectMutation.error.message}
+                  </Text>
+                ) : null}
+                <Group justify="space-between" align="center">
+                  <Text size="sm" c="dimmed">
+                    Slug preview: <Code>{slugify(projectName || "project-name")}</Code>
+                  </Text>
+                  <Button type="submit" loading={createProjectMutation.isPending}>
+                    Add Project
+                  </Button>
                 </Group>
-              ))}
-            </Stack>
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title="Starter Board"
-          description="The visual board is still placeholder-only, but the column model matches the MVP PRD."
-        >
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
-            {["Draft", "Ready", "In Progress", "Review"].map((column) => (
-              <Stack key={column} gap="xs">
-                <Group justify="space-between">
-                  <Text fw={600}>{column}</Text>
-                  <Badge variant="outline">0</Badge>
-                </Group>
-                <Text size="sm" c="dimmed">
-                  Placeholder column for the next UI milestone.
-                </Text>
               </Stack>
-            ))}
-          </SimpleGrid>
-        </SectionCard>
+            </form>
+          </SectionCard>
+
+          <SectionCard
+            title="Projects"
+            description="Select a project to work on its drafts and tickets."
+          >
+            {projectsQuery.isPending ? (
+              <Loader size="sm" />
+            ) : projectsQuery.isError ? (
+              <Text c="red" size="sm">
+                {projectsQuery.error.message}
+              </Text>
+            ) : projectsQuery.data.projects.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                No projects are configured yet.
+              </Text>
+            ) : (
+              <Stack gap="sm">
+                {projectsQuery.data.projects.map((project) => (
+                  <Button
+                    key={project.id}
+                    variant={selectedProjectId === project.id ? "filled" : "light"}
+                    justify="space-between"
+                    onClick={() => setSelectedProjectId(project.id)}
+                  >
+                    <span>{project.name}</span>
+                    <Code>{project.default_target_branch ?? "no branch"}</Code>
+                  </Button>
+                ))}
+              </Stack>
+            )}
+          </SectionCard>
+        </SimpleGrid>
+
+        {selectedProject ? (
+          <>
+            <SectionCard
+              title="Selected Project"
+              description="This is the current execution context for drafts and tickets."
+            >
+              <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+                <Stack gap={4}>
+                  <Text fw={600}>Project</Text>
+                  <Text>{selectedProject.name}</Text>
+                  <Text c="dimmed" size="sm">
+                    <Code>{selectedProject.slug}</Code>
+                  </Text>
+                </Stack>
+                <Stack gap={4}>
+                  <Text fw={600}>Repository</Text>
+                  <Text>{repositories[0]?.name ?? "Loading repository..."}</Text>
+                  <Text c="dimmed" size="sm">
+                    <Code>{repositories[0]?.path ?? "No repository configured"}</Code>
+                  </Text>
+                </Stack>
+                <Stack gap={4}>
+                  <Text fw={600}>Target branch</Text>
+                  <Text>{repositories[0]?.target_branch ?? selectedProject.default_target_branch}</Text>
+                  <Text c="dimmed" size="sm">
+                    One running session globally is still the intended MVP ceiling.
+                  </Text>
+                </Stack>
+              </SimpleGrid>
+            </SectionCard>
+
+            <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+              <SectionCard
+                title="Create Draft Ticket"
+                description="Start with the title and user-facing intent, then refine before execution."
+              >
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    createDraftMutation.mutate({
+                      projectId: selectedProject.id,
+                      title: draftTitle,
+                      description: draftDescription
+                    });
+                  }}
+                >
+                  <Stack gap="sm">
+                    <TextInput
+                      id="draft-title"
+                      name="draftTitle"
+                      label="Title"
+                      placeholder="Add saved preset layouts"
+                      value={draftTitle}
+                      onChange={(event) => setDraftTitle(event.currentTarget.value)}
+                      required
+                    />
+                    <Textarea
+                      id="draft-description"
+                      name="draftDescription"
+                      label="Description"
+                      placeholder="Users should be able to save and reuse receipt layout presets."
+                      value={draftDescription}
+                      onChange={(event) => setDraftDescription(event.currentTarget.value)}
+                      minRows={5}
+                      required
+                    />
+                    {createDraftMutation.isError ? (
+                      <Text size="sm" c="red">
+                        {createDraftMutation.error.message}
+                      </Text>
+                    ) : null}
+                    <Group justify="flex-end">
+                      <Button type="submit" loading={createDraftMutation.isPending}>
+                        Save Draft
+                      </Button>
+                    </Group>
+                  </Stack>
+                </form>
+              </SectionCard>
+
+              <SectionCard
+                title="Draft Refinement"
+                description="Refinement turns a raw draft into a ticket with clearer wording and acceptance criteria."
+              >
+                {draftsQuery.isPending ? (
+                  <Loader size="sm" />
+                ) : draftsQuery.isError ? (
+                  <Text c="red" size="sm">
+                    {draftsQuery.error.message}
+                  </Text>
+                ) : drafts.length === 0 ? (
+                  <Text size="sm" c="dimmed">
+                    No open drafts for this project yet.
+                  </Text>
+                ) : (
+                  <Stack gap="md">
+                    {drafts.map((draft) => {
+                      const repository =
+                        repositories.find(
+                          (item) =>
+                            item.id === (draft.confirmed_repo_id ?? draft.proposed_repo_id)
+                        ) ?? repositories[0];
+
+                      return (
+                        <Stack key={draft.id} gap="xs">
+                          <Group justify="space-between" align="center">
+                            <Text fw={600}>{draft.title_draft}</Text>
+                            <Badge variant="light">{draft.wizard_status}</Badge>
+                          </Group>
+                          <Text size="sm" c="dimmed">
+                            {draft.description_draft}
+                          </Text>
+                          <Text size="sm">
+                            Repository: <Code>{repository?.name ?? "unassigned"}</Code>
+                          </Text>
+                          {draft.proposed_acceptance_criteria.length > 0 ? (
+                            <List size="sm" spacing={4}>
+                              {draft.proposed_acceptance_criteria.map((criterion) => (
+                                <List.Item key={criterion}>{criterion}</List.Item>
+                              ))}
+                            </List>
+                          ) : (
+                            <Text size="sm" c="dimmed">
+                              Run refinement to generate acceptance criteria and readiness guidance.
+                            </Text>
+                          )}
+                          {refineDraftMutation.isError ? (
+                            <Text size="sm" c="red">
+                              {refineDraftMutation.error.message}
+                            </Text>
+                          ) : null}
+                          {confirmDraftMutation.isError ? (
+                            <Text size="sm" c="red">
+                              {confirmDraftMutation.error.message}
+                            </Text>
+                          ) : null}
+                          <Group justify="flex-end">
+                            <Button
+                              variant="light"
+                              loading={
+                                refineDraftMutation.isPending &&
+                                refineDraftMutation.variables === draft.id
+                              }
+                              onClick={() => refineDraftMutation.mutate(draft.id)}
+                            >
+                              {draft.proposed_acceptance_criteria.length > 0
+                                ? "Refine Again"
+                                : "Run Refinement"}
+                            </Button>
+                            <Button
+                              disabled={!repository}
+                              loading={
+                                confirmDraftMutation.isPending &&
+                                confirmDraftMutation.variables?.draft.id === draft.id
+                              }
+                              onClick={() =>
+                                repository &&
+                                confirmDraftMutation.mutate({
+                                  draft,
+                                  repository,
+                                  project: selectedProject
+                                })
+                              }
+                            >
+                              Create Ready Ticket
+                            </Button>
+                          </Group>
+                        </Stack>
+                      );
+                    })}
+                  </Stack>
+                )}
+              </SectionCard>
+            </SimpleGrid>
+
+            <SectionCard
+              title="Board"
+              description="Tickets now persist and appear in their real status columns. Execution and review automation are the next implementation step."
+            >
+              {ticketsQuery.isPending ? (
+                <Loader size="sm" />
+              ) : ticketsQuery.isError ? (
+                <Text c="red" size="sm">
+                  {ticketsQuery.error.message}
+                </Text>
+              ) : (
+                <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">
+                  {boardColumns.map((column) => (
+                    <Stack key={column} gap="sm">
+                      <Group justify="space-between">
+                        <Text fw={600}>{humanizeTicketStatus(column)}</Text>
+                        <Badge variant="outline">
+                          {column === "draft" ? drafts.length : groupedTickets[column].length}
+                        </Badge>
+                      </Group>
+                      {column === "draft" ? (
+                        drafts.length === 0 ? (
+                          <Text size="sm" c="dimmed">
+                            No drafts here yet.
+                          </Text>
+                        ) : (
+                          drafts.map((draft) => (
+                            <SectionCard
+                              key={`draft-${draft.id}`}
+                              title={draft.title_draft}
+                              description={`Wizard status: ${draft.wizard_status}`}
+                            >
+                              <Text size="sm" c="dimmed">
+                                {draft.description_draft}
+                              </Text>
+                            </SectionCard>
+                          ))
+                        )
+                      ) : groupedTickets[column].length === 0 ? (
+                        <Text size="sm" c="dimmed">
+                          No tickets here yet.
+                        </Text>
+                      ) : (
+                        groupedTickets[column].map((ticket) => (
+                          <SectionCard
+                            key={`${column}-${ticket.id}`}
+                            title={`#${ticket.id} ${ticket.title}`}
+                            description={`Type: ${ticket.ticket_type} | Target branch: ${ticket.target_branch}`}
+                          >
+                            <Group justify="space-between">
+                              <Badge variant="light">{ticket.status}</Badge>
+                              <Text size="sm" c="dimmed">
+                                Session: {ticket.session_id ?? "not started"}
+                              </Text>
+                            </Group>
+                          </SectionCard>
+                        ))
+                      )}
+                    </Stack>
+                  ))}
+                </SimpleGrid>
+              )}
+            </SectionCard>
+          </>
+        ) : null}
       </Stack>
     </Container>
   );

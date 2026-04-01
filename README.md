@@ -15,8 +15,8 @@ This repository contains the implementation starter pack for the AI orchestrator
 - npm workspaces for app and package separation
 - shared contract package for models, commands, and events
 - initial SQLite schema matching the PRD
-- backend skeleton with route modules, in-memory starter store, and WebSocket event hub
-- frontend shell that talks to the backend and visualizes the starter structure
+- backend skeleton with route modules, SQLite-backed local persistence, and a WebSocket event hub
+- frontend shell that talks to the backend and supports project setup plus draft-to-ready ticket flow
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
 ## What It Does Not Do Yet
@@ -27,6 +27,7 @@ This repository contains the implementation starter pack for the AI orchestrator
 - execute validation commands
 - render live terminal output
 - generate real review packages
+- start or resume real execution sessions
 
 Those remain the next implementation milestones.
 
@@ -39,7 +40,6 @@ Those remain the next implementation milestones.
 
 ## Next Steps
 
-- Wire the backend routes to SQLite instead of the in-memory starter store.
 - Implement the Codex adapter.
 - Add worktree creation and sandbox orchestration.
 - Replace placeholder command handlers with real execution flows.

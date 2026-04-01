@@ -9,11 +9,11 @@ import {
 import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import { parseBody } from "../lib/http.js";
-import { MemoryStore } from "../lib/memory-store.js";
+import type { Store } from "../lib/store.js";
 
 type DraftRouteOptions = {
   eventHub: EventHub;
-  store: MemoryStore;
+  store: Store;
 };
 
 export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (

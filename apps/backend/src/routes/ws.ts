@@ -10,11 +10,11 @@ export const websocketRoutes: FastifyPluginAsync<WebSocketRouteOptions> = async 
   app,
   { eventHub }
 ) => {
-  app.get("/ws", { websocket: true }, (connection) => {
+  app.get("/ws", { websocket: true }, (socket) => {
     const unsubscribe = eventHub.subscribe((event) => {
-      connection.socket.send(JSON.stringify(event));
+      socket.send(JSON.stringify(event));
     });
 
-    connection.socket.once("close", unsubscribe);
+    socket.once("close", unsubscribe);
   });
 };

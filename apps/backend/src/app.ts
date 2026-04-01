@@ -2,7 +2,7 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 
 import { EventHub } from "./lib/event-hub.js";
-import { MemoryStore } from "./lib/memory-store.js";
+import { SqliteStore } from "./lib/sqlite-store.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -16,7 +16,17 @@ export async function createApp() {
   });
 
   const eventHub = new EventHub();
-  const store = new MemoryStore();
+  const store = new SqliteStore();
+
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    reply.header("access-control-allow-methods", "GET,POST,OPTIONS");
+    reply.header("access-control-allow-headers", "content-type");
+
+    if (request.method === "OPTIONS") {
+      reply.code(204).send();
+    }
+  });
 
   await app.register(websocket);
   await app.register(healthRoutes);

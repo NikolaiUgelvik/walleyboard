@@ -7,11 +7,11 @@ import {
 
 import type { EventHub } from "../lib/event-hub.js";
 import { parseBody, sendNotImplemented } from "../lib/http.js";
-import { MemoryStore } from "../lib/memory-store.js";
+import type { Store } from "../lib/store.js";
 
 type SessionRouteOptions = {
   eventHub: EventHub;
-  store: MemoryStore;
+  store: Store;
 };
 
 export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (

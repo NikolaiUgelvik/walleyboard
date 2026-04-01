@@ -3,13 +3,13 @@ import type { FastifyPluginAsync } from "fastify";
 import { createProjectInputSchema } from "@orchestrator/contracts";
 
 import { makeCommandAck } from "../lib/command-ack.js";
+import type { Store } from "../lib/store.js";
 import { parseBody } from "../lib/http.js";
 import type { EventHub } from "../lib/event-hub.js";
-import { MemoryStore } from "../lib/memory-store.js";
 
 type ProjectRouteOptions = {
   eventHub: EventHub;
-  store: MemoryStore;
+  store: Store;
 };
 
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
@@ -61,13 +61,20 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       return;
     }
 
-    const { project, repository } = store.createProject(input);
+    try {
+      const { project, repository } = store.createProject(input);
 
-    reply.code(201).send(
-      makeCommandAck(true, "Project created", {
-        project_id: project.id,
-        repo_id: repository.id
-      })
-    );
+      reply.code(201).send(
+        makeCommandAck(true, "Project created", {
+          project_id: project.id,
+          repo_id: repository.id
+        })
+      );
+    } catch (error) {
+      reply.code(409).send({
+        error:
+          error instanceof Error ? error.message : "Unable to create project"
+      });
+    }
   });
 };
