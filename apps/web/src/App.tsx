@@ -1823,6 +1823,71 @@ export function App() {
     },
   });
 
+  const archiveDoneTicketsMutation = useMutation({
+    mutationFn: async (input: {
+      projectId: string;
+      tickets: TicketFrontmatter[];
+    }) => {
+      await Promise.all(
+        input.tickets.map((ticket) =>
+          postJson<CommandAck>(`/tickets/${ticket.id}/archive`, {}),
+        ),
+      );
+
+      return {
+        archivedTicketIds: input.tickets.map((ticket) => ticket.id),
+        archivedSessionIds: input.tickets.flatMap((ticket) =>
+          ticket.session_id ? [ticket.session_id] : [],
+        ),
+      };
+    },
+    onMutate: () => {
+      setArchiveActionFeedback(null);
+    },
+    onSuccess: async (result, variables) => {
+      const archivedIdSet = new Set(result.archivedTicketIds);
+      const archivedCount = result.archivedTicketIds.length;
+      setArchiveActionFeedback({
+        tone: "green",
+        message:
+          archivedCount === 1
+            ? "1 ticket archived."
+            : `${archivedCount} tickets archived.`,
+      });
+
+      if (
+        selectedSessionId &&
+        result.archivedSessionIds.includes(selectedSessionId)
+      ) {
+        setInspectorState({ kind: "hidden" });
+      }
+
+      queryClient.setQueryData<TicketsResponse>(
+        ["projects", variables.projectId, "tickets"],
+        (previous) => ({
+          tickets: (previous?.tickets ?? []).filter(
+            (ticket) => !archivedIdSet.has(ticket.id),
+          ),
+        }),
+      );
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", variables.projectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", variables.projectId, "tickets", "archived"],
+        }),
+      ]);
+    },
+    onError: (error) => {
+      setArchiveActionFeedback({
+        tone: "red",
+        message: error.message,
+      });
+    },
+  });
+
   const restoreTicketMutation = useMutation({
     mutationFn: (input: { ticketId: number; projectId: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/restore`, {}),
@@ -2149,6 +2214,8 @@ export function App() {
   for (const ticket of visibleTickets) {
     groupedTickets[ticket.status].push(ticket);
   }
+
+  const doneColumnTickets = groupedTickets.done;
 
   const actionItems: ActionItem[] = tickets.flatMap((ticket): ActionItem[] => {
     const sessionForTicket =
@@ -2557,6 +2624,17 @@ export function App() {
       ticketId: ticket.id,
       projectId: ticket.project,
       sessionId: ticket.session_id,
+    });
+  };
+
+  const archiveDoneTickets = (tickets: TicketFrontmatter[]): void => {
+    if (selectedProjectId === null || tickets.length === 0) {
+      return;
+    }
+
+    archiveDoneTicketsMutation.mutate({
+      projectId: selectedProjectId,
+      tickets,
     });
   };
 
@@ -3007,6 +3085,36 @@ export function App() {
                               >
                                 New
                               </Button>
+                            ) : null}
+                            {column === "done" ? (
+                              <Menu withinPortal position="bottom-end">
+                                <Menu.Target>
+                                  <ActionIcon
+                                    aria-label="Done column actions"
+                                    color="gray"
+                                    variant="subtle"
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    ...
+                                  </ActionIcon>
+                                </Menu.Target>
+                                <Menu.Dropdown
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <Menu.Item
+                                    disabled={
+                                      doneColumnTickets.length === 0 ||
+                                      archiveDoneTicketsMutation.isPending
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      archiveDoneTickets(doneColumnTickets);
+                                    }}
+                                  >
+                                    Archive all
+                                  </Menu.Item>
+                                </Menu.Dropdown>
+                              </Menu>
                             ) : null}
                           </Group>
                         </Box>
