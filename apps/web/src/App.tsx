@@ -49,6 +49,7 @@ import {
   emptyDraftEditorFields,
   resolveDraftEditorSync,
 } from "./lib/draft-editor-sync.js";
+import { getBoardTicketDescriptionPreview } from "./lib/ticket-description-preview.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
 const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
@@ -2797,7 +2798,9 @@ export function App() {
                                     </Group>
                                     <MarkdownContent
                                       className="markdown-muted markdown-small"
-                                      content={ticket.description}
+                                      content={getBoardTicketDescriptionPreview(
+                                        ticket.description,
+                                      )}
                                     />
 
                                     {showDeleteError ? (
