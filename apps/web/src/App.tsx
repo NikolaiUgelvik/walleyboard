@@ -3315,16 +3315,30 @@ export function App() {
                           <Group gap="xs">
                             <Badge variant="outline">{columnCount}</Badge>
                             {column === "draft" ? (
-                              <Button
-                                variant="subtle"
-                                size="xs"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openNewDraft();
-                                }}
-                              >
-                                New
-                              </Button>
+                              <Menu withinPortal position="bottom-end">
+                                <Menu.Target>
+                                  <ActionIcon
+                                    aria-label="Draft column actions"
+                                    color="gray"
+                                    variant="subtle"
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    ...
+                                  </ActionIcon>
+                                </Menu.Target>
+                                <Menu.Dropdown
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <Menu.Item
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openNewDraft();
+                                    }}
+                                  >
+                                    New
+                                  </Menu.Item>
+                                </Menu.Dropdown>
+                              </Menu>
                             ) : null}
                             {column === "done" ? (
                               <Menu withinPortal position="bottom-end">
