@@ -1836,7 +1836,23 @@ export function App() {
         proposedAcceptanceCriteria: draftEditorAcceptanceCriteriaLines,
       });
 
-      return ack.resource_refs.draft_id ?? null;
+      const draftId = ack.resource_refs.draft_id ?? null;
+      if (action === "refine" && draftId) {
+        const createdDraft = queryClient
+          .getQueryData<DraftsResponse>([
+            "projects",
+            selectedProject.id,
+            "drafts",
+          ])
+          ?.drafts.find((draft) => draft.id === draftId);
+        if (createdDraft) {
+          setPendingDraftEditorSync(
+            capturePendingDraftEditorSync(createdDraft),
+          );
+        }
+      }
+
+      return draftId;
     } catch {
       return null;
     } finally {
