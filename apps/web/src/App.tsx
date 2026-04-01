@@ -383,6 +383,26 @@ export function App() {
     }
   });
 
+  const mergeTicketMutation = useMutation({
+    mutationFn: (ticketId: number) => postJson<CommandAck>(`/tickets/${ticketId}/merge`, {}),
+    onSuccess: async (_, ticketId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-package"]
+        })
+      ]);
+    }
+  });
+
   const selectedProject =
     projectsQuery.data?.projects.find((project) => project.id === selectedProjectId) ?? null;
   const repositories = repositoriesQuery.data?.repositories ?? [];
@@ -421,8 +441,9 @@ export function App() {
             create a draft ticket, refine it into an execution-ready shape, and place
             the resulting ticket on the board. Starting a ticket now launches a real
             Codex exec run in its prepared worktree and moves successful runs into
-            local review. Terminal control, validation, and merge automation are still
-            the next milestones.
+            local review. Review approval can now merge the branch back into the target
+            branch and clean up local artifacts. Terminal control and mid-run handoff are
+            still the next milestones.
           </Text>
         </Stack>
 
@@ -466,6 +487,7 @@ export function App() {
                 <List.Item>Real Codex exec runs with streaming session logs</List.Item>
                 <List.Item>Configurable validation commands that gate review handoff</List.Item>
                 <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
+                <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
               </List>
           </SectionCard>
         </SimpleGrid>
@@ -827,6 +849,22 @@ export function App() {
                             ))}
                           </List>
                         ) : null}
+                        {mergeTicketMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {mergeTicketMutation.error.message}
+                          </Text>
+                        ) : null}
+                        <Group justify="flex-end">
+                          <Button
+                            loading={
+                              mergeTicketMutation.isPending &&
+                              mergeTicketMutation.variables === selectedSessionTicket.id
+                            }
+                            onClick={() => mergeTicketMutation.mutate(selectedSessionTicket.id)}
+                          >
+                            Merge to {selectedSessionTicket.target_branch}
+                          </Button>
+                        </Group>
                       </Stack>
                     ) : null
                   ) : null}
@@ -980,6 +1018,31 @@ export function App() {
                                     onClick={() => startTicketMutation.mutate(ticket.id)}
                                   >
                                     Start Ticket
+                                  </Button>
+                                </Group>
+                              </>
+                            ) : column === "review" ? (
+                              <>
+                                {mergeTicketMutation.isError ? (
+                                  <Text size="sm" c="red">
+                                    {mergeTicketMutation.error.message}
+                                  </Text>
+                                ) : null}
+                                <Group justify="space-between">
+                                  <Button
+                                    variant="light"
+                                    onClick={() => ticket.session_id && setSelectedSessionId(ticket.session_id)}
+                                  >
+                                    View Review
+                                  </Button>
+                                  <Button
+                                    loading={
+                                      mergeTicketMutation.isPending &&
+                                      mergeTicketMutation.variables === ticket.id
+                                    }
+                                    onClick={() => mergeTicketMutation.mutate(ticket.id)}
+                                  >
+                                    Merge
                                   </Button>
                                 </Group>
                               </>

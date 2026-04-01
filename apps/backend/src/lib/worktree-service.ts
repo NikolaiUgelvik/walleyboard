@@ -125,6 +125,72 @@ export function removeLocalBranch(
   runGit(repository.path, ["branch", "-D", branchName]);
 }
 
+function gitStatusPorcelain(repoPath: string): string {
+  return runGit(repoPath, ["status", "--short"]);
+}
+
+export function mergeReviewedBranch(
+  repository: RepositoryConfig,
+  worktreePath: string,
+  workingBranch: string,
+  targetBranch: string
+): { logs: string[]; targetHead: string } {
+  if (!existsSync(worktreePath)) {
+    throw new Error(`Worktree path does not exist: ${worktreePath}`);
+  }
+
+  const repoBranch = repoCurrentBranch(repository);
+  if (repoBranch !== targetBranch) {
+    throw new Error(
+      `Repository checkout must be on ${targetBranch} before direct merge. Current branch: ${repoBranch}`
+    );
+  }
+
+  const repoStatus = gitStatusPorcelain(repository.path);
+  if (repoStatus.length > 0) {
+    throw new Error("Repository checkout has uncommitted changes. Clean it before merging.");
+  }
+
+  const worktreeBranch = runGit(worktreePath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (worktreeBranch !== workingBranch) {
+    throw new Error(
+      `Ticket worktree is on ${worktreeBranch}, but ${workingBranch} was expected.`
+    );
+  }
+
+  const worktreeStatus = gitStatusPorcelain(worktreePath);
+  if (worktreeStatus.length > 0) {
+    throw new Error("Ticket worktree has uncommitted changes. Commit or discard them first.");
+  }
+
+  try {
+    runGit(worktreePath, ["rebase", targetBranch]);
+  } catch (error) {
+    try {
+      runGit(worktreePath, ["rebase", "--abort"]);
+    } catch {
+      // Preserve the original failure for the caller.
+    }
+
+    throw error;
+  }
+
+  runGit(repository.path, ["merge", "--ff-only", workingBranch]);
+
+  const targetHead = runGit(repository.path, ["rev-parse", "HEAD"]);
+  const logs = [
+    `Repository checkout verified on ${targetBranch}`,
+    `Rebased ${workingBranch} onto ${targetBranch}`,
+    `Fast-forward merged ${workingBranch} into ${targetBranch}`,
+    `Target branch head is now ${targetHead}`
+  ];
+
+  return {
+    logs,
+    targetHead
+  };
+}
+
 export function repoCurrentHead(repository: RepositoryConfig): string {
   return runGit(repository.path, ["rev-parse", "HEAD"]);
 }

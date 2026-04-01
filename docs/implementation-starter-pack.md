@@ -29,7 +29,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 2. Replace the log-only execution view with a real PTY-backed terminal runtime.
 3. Add request-changes and resume flows on top of the persisted execution session.
 4. Add richer validation configuration and override handling.
-5. Add direct merge flow and cleanup.
+5. Add in-app notifications for sessions that need user input or approval.
 
 ## Starter Endpoints
 
@@ -90,6 +90,11 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - a local review package record
   - a persisted diff artifact on disk
   - a transition from `in_progress` to `review`
+- Review approval now supports:
+  - direct fast-forward merge into the target branch
+  - local worktree cleanup
+  - local working branch deletion
+  - a transition from `review` to `done`
 - Session input is still only stored for future use:
   - live checkpoint handoff is not implemented yet
   - no PTY-backed terminal stream is attached yet

@@ -11,7 +11,12 @@ import { makeProtocolEvent, type EventHub } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody, parsePositiveInt, sendNotImplemented } from "../lib/http.js";
 import type { Store } from "../lib/store.js";
-import { prepareWorktree } from "../lib/worktree-service.js";
+import {
+  mergeReviewedBranch,
+  prepareWorktree,
+  removeLocalBranch,
+  removePreparedWorktree
+} from "../lib/worktree-service.js";
 
 type TicketRouteOptions = {
   eventHub: EventHub;
@@ -223,11 +228,130 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        "Direct merge route is scaffolded, but git orchestration is not implemented yet.",
-        { ticket_id: ticketId }
-      );
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+      if (ticket.status !== "review") {
+        reply.code(409).send({ error: "Only review tickets can be merged" });
+        return;
+      }
+      if (!ticket.session_id || !ticket.working_branch) {
+        reply.code(409).send({ error: "Ticket is missing merge metadata" });
+        return;
+      }
+
+      const session = store.getSession(ticket.session_id);
+      if (!session) {
+        reply.code(404).send({ error: "Session not found" });
+        return;
+      }
+      if (!session.worktree_path) {
+        reply.code(409).send({ error: "Session has no prepared worktree" });
+        return;
+      }
+
+      const repository = store.getRepository(ticket.repo);
+      if (!repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      const reviewPackage = store.getReviewPackage(ticketId);
+      if (!reviewPackage) {
+        reply.code(409).send({ error: "Review package is required before merge" });
+        return;
+      }
+
+      try {
+        const mergeResult = mergeReviewedBranch(
+          repository,
+          session.worktree_path,
+          ticket.working_branch,
+          ticket.target_branch
+        );
+
+        const logLines = [...mergeResult.logs];
+        const cleanupWarnings: string[] = [];
+
+        try {
+          removePreparedWorktree(repository, session.worktree_path);
+          logLines.push(`Removed worktree ${session.worktree_path}`);
+        } catch (error) {
+          cleanupWarnings.push(
+            error instanceof Error ? error.message : "Unable to remove worktree"
+          );
+        }
+
+        try {
+          removeLocalBranch(repository, ticket.working_branch);
+          logLines.push(`Deleted local branch ${ticket.working_branch}`);
+        } catch (error) {
+          cleanupWarnings.push(
+            error instanceof Error ? error.message : "Unable to delete local branch"
+          );
+        }
+
+        const mergedTicket = store.updateTicketStatus(ticketId, "done");
+        const summary =
+          cleanupWarnings.length === 0
+            ? `Merged ${ticket.working_branch} into ${ticket.target_branch} and cleaned up local artifacts.`
+            : `Merged ${ticket.working_branch} into ${ticket.target_branch}, but cleanup needs attention: ${cleanupWarnings.join(
+                " | "
+              )}`;
+        const mergedSession = store.updateSessionStatus(ticket.session_id, "completed", summary);
+
+        store.recordTicketEvent(ticketId, "ticket.merged", {
+          ticket_id: ticketId,
+          target_branch: ticket.target_branch,
+          target_head: mergeResult.targetHead,
+          cleanup_warnings: cleanupWarnings
+        });
+
+        for (const line of [...logLines, ...cleanupWarnings.map((warning) => `Cleanup warning: ${warning}`)]) {
+          const sequence = store.appendSessionLog(ticket.session_id, line);
+          eventHub.publish(
+            makeProtocolEvent("session.output", "session", ticket.session_id, {
+              session_id: ticket.session_id,
+              attempt_id: session.current_attempt_id,
+              sequence,
+              chunk: line
+            })
+          );
+        }
+
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
+            ticket: mergedTicket
+          })
+        );
+        eventHub.publish(
+          makeProtocolEvent("session.updated", "session", ticket.session_id, {
+            session: mergedSession
+          })
+        );
+
+        reply.send(
+          makeCommandAck(true, "Ticket merged into the target branch", {
+            ticket_id: ticketId,
+            session_id: ticket.session_id
+          })
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to merge ticket";
+        const sequence = store.appendSessionLog(ticket.session_id, `[merge blocked] ${message}`);
+        eventHub.publish(
+          makeProtocolEvent("session.output", "session", ticket.session_id, {
+            session_id: ticket.session_id,
+            attempt_id: session.current_attempt_id,
+            sequence,
+            chunk: `[merge blocked] ${message}`
+          })
+        );
+        reply.code(409).send({ error: message });
+      }
     }
   );
 
