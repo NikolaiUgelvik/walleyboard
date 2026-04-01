@@ -25,7 +25,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { type ClipboardEvent, useEffect, useState } from "react";
 import type {
   CommandAck,
   DraftTicketState,
@@ -42,7 +42,6 @@ import type {
 
 import "./app-shell.css";
 import { MarkdownContent } from "./components/MarkdownContent.js";
-import { MonacoMarkdownEditor } from "./components/MonacoMarkdownEditor.js";
 import { SectionCard } from "./components/SectionCard.js";
 import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "./components/SessionTerminalPanel.js";
@@ -2231,6 +2230,41 @@ export function App() {
     }
   };
 
+  const handleDraftDescriptionTextareaPaste = (
+    event: ClipboardEvent<HTMLTextAreaElement>,
+  ): void => {
+    const imageItem = Array.from(event.clipboardData.items).find((item) =>
+      item.type.startsWith("image/"),
+    );
+    if (!imageItem) {
+      return;
+    }
+
+    const file = imageItem.getAsFile();
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    const target = event.currentTarget;
+    void (async () => {
+      const result = await handleDraftDescriptionPaste(file, {
+        start: target.selectionStart,
+        end: target.selectionEnd,
+      });
+      if (!result) {
+        return;
+      }
+
+      setDraftEditorDescription(result.value);
+      window.requestAnimationFrame(() => {
+        target.selectionStart = result.cursorOffset;
+        target.selectionEnd = result.cursorOffset;
+        target.focus();
+      });
+    })();
+  };
+
   useEffect(() => {
     if (inspectorState.kind === "new_draft") {
       return;
@@ -2537,15 +2571,18 @@ export function App() {
         onChange={(event) => setDraftEditorTitle(event.currentTarget.value)}
         required
       />
-      <MonacoMarkdownEditor
+      <Textarea
         id="draft-description"
         label="Description"
         description="Markdown is stored literally. Paste a screenshot from the clipboard to insert a hosted image reference."
         placeholder="Users should be able to save and reuse receipt layout presets."
         value={draftEditorDescription}
-        onChange={setDraftEditorDescription}
-        onImagePaste={handleDraftDescriptionPaste}
-        minHeight={224}
+        onChange={(event) =>
+          setDraftEditorDescription(event.currentTarget.value)
+        }
+        onPaste={handleDraftDescriptionTextareaPaste}
+        autosize
+        minRows={10}
         required
       />
       {uploadDraftArtifactMutation.isPending ? (
@@ -2580,13 +2617,16 @@ export function App() {
           }
         }}
       />
-      <MonacoMarkdownEditor
+      <Textarea
         id="draft-acceptance-criteria"
         label="Acceptance criteria"
         description="One Markdown acceptance criterion per line."
         value={draftEditorAcceptanceCriteria}
-        onChange={setDraftEditorAcceptanceCriteria}
-        minHeight={224}
+        onChange={(event) =>
+          setDraftEditorAcceptanceCriteria(event.currentTarget.value)
+        }
+        autosize
+        minRows={10}
       />
     </>
   );

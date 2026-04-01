@@ -392,30 +392,6 @@
   padding: 10px;
 }
 
-.monaco-markdown-editor {
-  position: relative;
-  min-height: 208px;
-  border: 1px solid var(--orchestrator-border);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--orchestrator-panel);
-}
-
-.monaco-markdown-editor__surface {
-  min-height: inherit;
-}
-
-.monaco-markdown-editor__loading {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: rgba(255, 255, 255, 0.7);
-}
-
-:root[data-mantine-color-scheme="dark"] .monaco-markdown-editor__loading {
-  background: rgba(16, 21, 27, 0.72);
-}
-
 .inline-code {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 12px;
