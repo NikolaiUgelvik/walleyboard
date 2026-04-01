@@ -26,7 +26,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 ## First Implementation Milestones
 
 1. Implement sandbox lifecycle services around the prepared Codex runtime.
-2. Add explicit terminal takeover and agent-restore flow on top of the PTY runtime.
+2. Add a separate project terminal for manual commands without exposing the raw Codex transcript as the primary session view.
 3. Add richer validation configuration and override handling.
 4. Layer Bubblewrap policy onto the live runtime and validation commands.
 5. Decide whether interrupted sessions should stay manual or auto-resume after restart.
@@ -113,10 +113,10 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - failed sessions
   - sessions waiting for user input or approval
 - The execution session view now includes:
-  - a read-only xterm terminal surface
-  - PTY-backed Codex process output instead of plain child-process pipes
+  - an interpreted activity feed for Codex and system updates
+  - PTY-backed Codex process execution behind the scenes instead of plain child-process pipes
 - The frontend now uses websocket events to:
-  - append live session output into the cached terminal log
+  - append live session output into the cached session activity source
   - refresh session and ticket state without waiting for the polling interval
   - hydrate generated review packages into the current cache
 - Backend startup now recovers any active session by:
@@ -125,4 +125,4 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - preserving the existing worktree and working branch for manual resume
 - Session input is still only stored for future use:
   - live checkpoint handoff is not implemented yet
-  - terminal ownership handoff is not implemented yet
+  - a separate manual project terminal is not implemented yet

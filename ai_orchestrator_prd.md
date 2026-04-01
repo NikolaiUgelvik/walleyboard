@@ -3,7 +3,7 @@
 ## 1. Overview
 Build a local-first single-page application for orchestrating AI-assisted software work across multiple repositories, Codex CLI instances, and git worktrees. The application should provide a Kanban-style workflow for drafting, refining, planning, executing, reviewing, and completing engineering tickets from one interface.
 
-The product is a power-user tool for engineers who want to manage multiple AI-assisted tasks in parallel without losing visibility into terminal activity, git state, or pull request status.
+The product is a power-user tool for engineers who want to manage multiple AI-assisted tasks in parallel without losing visibility into agent progress, git state, or pull request status.
 
 ## 2. Problem Statement
 Engineering teams working across multiple repositories and worktrees need a centralized way to:
@@ -11,7 +11,7 @@ Engineering teams working across multiple repositories and worktrees need a cent
 - Refine tickets with AI assistance before execution starts
 - Launch and monitor Codex CLI sessions tied to specific tickets
 - Control whether execution starts directly or begins in model planning mode
-- Inspect and, when needed, take over the live terminal for an active session
+- Understand what Codex is doing through interpreted progress updates and open a manual project terminal when direct CLI work is needed
 
 Today this workflow is fragmented across issue trackers, local notes, terminals, worktrees, and ad hoc scripts. That fragmentation makes it difficult to manage parallel AI-assisted execution safely and predictably.
 
@@ -23,7 +23,7 @@ Today this workflow is fragmented across issue trackers, local notes, terminals,
 - Support two execution start modes:
   - Start working immediately
   - Start with the model's planning flag enabled
-- Provide embedded terminal visibility and interaction using xterm.js
+- Present interpreted execution progress and required user actions instead of making raw CLI transcripts the primary monitoring surface
 - Manage multiple tickets and associated CLI sessions across many repos and worktrees from one interface
 
 ## 4. Non-Goals
@@ -154,7 +154,7 @@ Suggested execution session statuses:
 - Resuming an interrupted session should launch a new Codex process in the same worktree and branch using persisted context that includes:
   - The current ticket contents
   - The current git state
-  - The latest relevant transcript summary
+  - The latest relevant session summary or transcript excerpt
   - Any requested-changes note
   - Any failure summary or interruption reason
 - Session history should preserve each process attempt as part of one logical execution session.
@@ -304,19 +304,22 @@ Before execution begins, the user should see an approval summary that includes:
 - Before a ticket can move to `Review`, the execution session must have produced committed changes on the ticket's working branch unless the task is explicitly no-code.
 - If the execution session is interrupted because the backend restarts or the PTY process is lost, the ticket should remain in `In Progress` while the session moves to `interrupted`.
 
-### 7.5 Terminal Integration
-- The application must embed xterm.js for terminal interaction.
-- The terminal must be fully interactive.
-- Users must be able to:
-  - View live CLI output
-  - Interact directly with the CLI
-  - Observe Codex GUI behavior if available
+### 7.5 Session Activity and Manual Terminal Access
+- The default ticket or session view must present interpreted agent activity rather than a raw Codex terminal transcript.
+- The primary monitoring surface should emphasize:
+  - Current session status
+  - The latest high-signal agent updates
+  - Validation progress
+  - Review readiness
+  - Required user input or approval
+- Full raw logs may still be persisted for debugging, but they must not be the default UI for following Codex progress.
+- If the product exposes a terminal, it should be framed as a separate manual project terminal for user-initiated commands rather than the primary place to watch Codex work.
 
-#### Terminal Ownership
-- The terminal must have explicit ownership semantics.
-- If the user takes over terminal input, the execution session must pause and enter `paused_user_control`.
-- The user must be able to return control to the agent explicitly.
+#### Manual Terminal Ownership
+- A manual terminal, if present, must be clearly distinct from the interpreted Codex activity view.
+- If the product later allows the user to take over the same live PTY used by the agent, ownership semantics must remain explicit.
 - The system must never allow simultaneous user and agent writes to stdin.
+- If a shared PTY handoff mode is introduced later, the execution session must pause and enter `paused_user_control` until the user explicitly returns control.
 
 ### 7.6 Review Stage and Git Operations
 - The application must provide UI controls for:
@@ -434,8 +437,8 @@ When a ticket becomes `Done`, the system should:
   - The most recent relevant logs
 - After a failure, the user should be able to:
   - Resume the same execution session when possible
-  - Re-enter the terminal manually
-  - Move the ticket back to `Ready` without deleting its artifacts
+  - Open a separate manual project terminal if the product exposes one later
+  - Keep the ticket in `In Progress` while resuming from the preserved worktree and branch
 
 ### 7.12 Concurrency Limits and Queueing
 - Maximum concurrent active execution sessions should be configurable.
@@ -1204,7 +1207,7 @@ The recommended v1 stack is:
 - Frontend app: React
 - Frontend tooling: Vite
 - UI component library: Mantine
-- Terminal UI: xterm.js
+- Optional manual terminal UI: xterm.js
 - Interactive terminal backend: `node-pty`
 - Non-interactive process execution: Node.js `child_process`
 - Local database: SQLite
@@ -1274,8 +1277,8 @@ Utilities:
 - TypeScript end-to-end keeps domain types shared across board state, ticket parsing, session state, and backend orchestration logic.
 - Node.js is the best fit for managing local processes, PTYs, filesystem state, git operations, `gh`, and sandbox launches from one runtime.
 - React plus Mantine fits a dense board-first power-user UI with drawers, panels, forms, badges, tables, and status-heavy workflows.
-- xterm.js should be used only for terminal rendering and interaction in the UI.
-- `node-pty` should back all interactive Codex CLI sessions so the application gets real PTY behavior rather than a plain pipe-based subprocess.
+- xterm.js is an optional fit for a future manual project terminal, but the main session view should still prefer interpreted agent activity over raw transcripts.
+- `node-pty` should back all interactive Codex CLI sessions and any future manual terminal so the application gets real PTY behavior rather than a plain pipe-based subprocess.
 - `child_process` should handle simpler non-interactive commands such as status checks, git metadata reads, or hook execution when PTY behavior is not required.
 - SQLite is the right default for local-first indexed state such as projects, ticket metadata, session metadata, queue state, and structured events.
 - Markdown plus YAML frontmatter preserves human-readable tickets while still giving the application stable machine-readable fields.
@@ -1304,7 +1307,7 @@ Utilities:
 ## 9. UX Direction
 - Board-first layout
 - Ticket detail drawer for creation and refinement
-- Ticket detail panel or split view for logs, structured events, diffs, and terminal interaction
+- Ticket detail panel or split view for interpreted activity, structured events, diffs, and metadata
 - Clear distinction between:
   - Ticket refinement
   - Queued execution
@@ -1366,7 +1369,7 @@ The MVP should prove one reliable end-to-end workflow:
   - repository confirmation
 - One logical execution session per ticket
 - At most one actively running execution session globally
-- Interactive terminal view using xterm.js
+- Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
 - Repo-configured validation commands
 - Review package generation with:
@@ -1409,17 +1412,17 @@ The MVP should prove one reliable end-to-end workflow:
 2. Project and repository configuration
 3. Draft ticket drawer and persisted refinement flow
 4. Worktree creation plus Codex execution adapter
-5. Terminal view and session state updates
+5. Interpreted session activity view and session state updates
 6. Validation runner and review package generation
 7. Direct merge flow and cleanup
 
 ## 12. Open Questions
-- What should the ticket detail layout prioritize first: terminal, structured events, diff view, or metadata?
+- What should the ticket detail layout prioritize first: interpreted activity, structured events, diff view, or metadata?
 - Should project configuration later support repo descriptions, test commands, environment variables, or secrets references?
 
 ## 13. Suggested Next Expansion Areas
 The next iteration should define:
-- Terminal control and checkpoint UX
+- Separate manual terminal UX and checkpoint UX
 - Review screen UX for diffs, summaries, and approval actions
 - Persistence model and local database design
 - Safety controls and approval checkpoints

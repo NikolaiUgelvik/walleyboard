@@ -33,7 +33,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { SectionCard } from "./components/SectionCard.js";
-import { SessionTerminal } from "./components/SessionTerminal.js";
+import { SessionActivityFeed } from "./components/SessionActivityFeed.js";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
 const websocketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws";
@@ -796,10 +796,10 @@ export function App() {
             branch and clean up local artifacts. Review feedback and failed runs can now
             relaunch the same logical session as a new attempt. In-progress tickets can now
             be stopped without losing their branch or worktree, and tickets can be deleted
-            with cleanup of orchestrator-managed local artifacts. Session output now renders
-            inside a terminal-style view, and backend restarts now recover active sessions
-            into an explicit interrupted state. Full keyboard handoff remains the next major
-            milestone.
+            with cleanup of orchestrator-managed local artifacts. The session panel now
+            summarizes Codex activity instead of exposing the raw transcript, and backend
+            restarts now recover active sessions into an explicit interrupted state. A
+            separate project terminal remains a future milestone.
           </Text>
         </Stack>
 
@@ -847,7 +847,7 @@ export function App() {
                 <List.Item>Stop action that preserves the current worktree and branch for resume</List.Item>
                 <List.Item>Delete action that removes ticket metadata and local orchestrator artifacts</List.Item>
                 <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
-                <List.Item>Read-only terminal rendering for session output</List.Item>
+                <List.Item>Interpreted session activity feed instead of raw Codex transcript output</List.Item>
                 <List.Item>Conservative restart recovery that preserves interrupted sessions</List.Item>
                 <List.Item>WebSocket-driven updates for the board, session, and review cache</List.Item>
                 <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
@@ -1167,7 +1167,7 @@ export function App() {
 
             <SectionCard
               title="Execution Session"
-              description="Starting a ready ticket now prepares a git worktree, launches Codex exec, and streams backend-captured session logs while the run is active."
+              description="Starting a ready ticket now prepares a git worktree, launches Codex exec, and turns backend session output into progress updates and required actions."
             >
               {selectedSessionId === null ? (
                 <Text size="sm" c="dimmed">
@@ -1207,11 +1207,6 @@ export function App() {
                       <Code>{session.worktree_path ?? "pending"}</Code>
                     </Stack>
                   </SimpleGrid>
-
-                  <Text size="sm" c="dimmed">
-                    {session.last_summary ??
-                      "No session summary is available yet."}
-                  </Text>
 
                   {selectedSessionTicket ? (
                     <Group justify="space-between">
@@ -1343,10 +1338,7 @@ export function App() {
                     ) : null
                   ) : null}
 
-                  <Stack gap={4}>
-                    <Text fw={600}>Session Terminal</Text>
-                    <SessionTerminal logs={sessionLogs} sessionId={session.id} />
-                  </Stack>
+                  <SessionActivityFeed logs={sessionLogs} session={session} />
 
                   {selectedSessionTicket &&
                   ["awaiting_input", "failed", "interrupted", "paused_checkpoint", "paused_user_control"].includes(
@@ -1406,7 +1398,7 @@ export function App() {
                   ) : (
                     <Text size="sm" c="dimmed">
                       Direct mid-run input is not wired yet for Codex exec sessions. The
-                      log and summary above reflect the current run state.
+                      activity feed and summary above reflect the current run state.
                     </Text>
                   )}
                 </Stack>

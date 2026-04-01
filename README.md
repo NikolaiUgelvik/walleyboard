@@ -29,7 +29,7 @@ This repository contains the implementation starter pack for the AI orchestrator
   - stopping an in-progress ticket while preserving the worktree and working branch for resume
   - deleting a ticket with cleanup of its session metadata and local orchestrator artifacts
   - visible in-app action cards for review-ready and waiting sessions
-  - a read-only xterm session terminal backed by a PTY-based Codex runtime
+  - an interpreted session activity feed instead of a raw Codex transcript view
   - conservative backend-startup recovery that marks active sessions interrupted
   - websocket-driven cache updates for session output, review packages, and board state
   - direct merge from `review` into the target branch with local worktree and branch cleanup
@@ -38,7 +38,7 @@ This repository contains the implementation starter pack for the AI orchestrator
 ## What It Does Not Do Yet
 
 - manage Bubblewrap sandboxes
-- hand terminal input over to a running session
+- provide a separate interactive project terminal for manual commands
 - restore live execution automatically after an application restart
 - support checkpoint or mid-run input handoff for running Codex exec sessions
 
@@ -54,5 +54,5 @@ Those remain the next implementation milestones.
 ## Next Steps
 
 - Add sandbox orchestration around the live Codex runtime.
-- Add explicit terminal takeover and agent-restore flow on top of the PTY runtime.
+- Add a separate project terminal that is distinct from the interpreted Codex activity view.
 - Decide whether interrupted sessions should auto-resume or stay manual after restart.
