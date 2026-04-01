@@ -19,6 +19,16 @@ export async function createApp() {
   const eventHub = new EventHub();
   const store = new SqliteStore();
   const executionRuntime = new ExecutionRuntime({ eventHub, store });
+  const recovery = store.recoverInterruptedSessions();
+
+  if (recovery.sessions.length > 0) {
+    app.log.warn(
+      {
+        sessionIds: recovery.sessions.map((session) => session.id)
+      },
+      "Recovered active sessions as interrupted during backend startup"
+    );
+  }
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");

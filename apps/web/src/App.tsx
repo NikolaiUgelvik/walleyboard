@@ -569,7 +569,8 @@ export function App() {
             local review. Review approval can now merge the branch back into the target
             branch and clean up local artifacts. Review feedback and failed runs can now
             relaunch the same logical session as a new attempt. Session output now renders
-            inside a terminal-style view while full keyboard handoff remains the next major
+            inside a terminal-style view, and backend restarts now recover active sessions
+            into an explicit interrupted state. Full keyboard handoff remains the next major
             milestone.
           </Text>
         </Stack>
@@ -617,6 +618,7 @@ export function App() {
                 <List.Item>Request changes and resume flows that reuse the same session</List.Item>
                 <List.Item>Visible in-app action cards for review-ready and waiting sessions</List.Item>
                 <List.Item>Read-only terminal rendering for session output</List.Item>
+                <List.Item>Conservative restart recovery that preserves interrupted sessions</List.Item>
                 <List.Item>Direct merge from review into the target branch with cleanup</List.Item>
               </List>
           </SectionCard>

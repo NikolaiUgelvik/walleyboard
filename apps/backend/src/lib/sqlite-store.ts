@@ -25,6 +25,7 @@ import type {
   CreateReviewPackageInput,
   PreparedExecutionRuntime,
   RestartTicketResult,
+  StartupRecoveryResult,
   StartTicketResult,
   Store
 } from "./store.js";
@@ -1304,6 +1305,68 @@ export class SqliteStore implements Store {
     });
 
     return this.getReviewPackage(input.ticket_id)!;
+  }
+
+  recoverInterruptedSessions(): StartupRecoveryResult {
+    const rows = this.#db
+      .prepare(
+        `
+          SELECT *
+          FROM execution_sessions
+          WHERE status IN ('queued', 'running', 'paused_checkpoint', 'paused_user_control', 'awaiting_input')
+          ORDER BY started_at ASC, id ASC
+        `
+      )
+      .all() as Record<string, unknown>[];
+
+    const interruptedSessions: ExecutionSession[] = [];
+
+    for (const row of rows) {
+      const session = mapExecutionSession(row);
+      const timestamp = nowIso();
+      const summary =
+        "The backend restarted while this session was active. The session was marked interrupted and can be resumed on the existing worktree.";
+
+      this.#db
+        .prepare(
+          `
+            UPDATE execution_sessions
+            SET status = ?,
+                last_heartbeat_at = ?,
+                last_summary = ?
+            WHERE id = ?
+          `
+        )
+        .run("interrupted", timestamp, summary, session.id);
+
+      if (session.current_attempt_id) {
+        this.updateExecutionAttempt(session.current_attempt_id, {
+          status: "interrupted",
+          end_reason: "backend_restart"
+        });
+      }
+
+      this.#appendSessionLog(
+        session.id,
+        "Session was marked interrupted after backend startup recovery."
+      );
+
+      this.#recordStructuredEvent("session", session.id, "session.interrupted", {
+        ticket_id: session.ticket_id,
+        reason: "backend_restart"
+      });
+      this.#recordStructuredEvent("ticket", String(session.ticket_id), "ticket.interrupted", {
+        ticket_id: session.ticket_id,
+        session_id: session.id,
+        reason: "backend_restart"
+      });
+
+      interruptedSessions.push(this.getSession(session.id)!);
+    }
+
+    return {
+      sessions: interruptedSessions
+    };
   }
 
   updateTicketStatus(

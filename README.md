@@ -28,6 +28,7 @@ This repository contains the implementation starter pack for the AI orchestrator
   - request-changes and resume flows that create new attempts on the same session/worktree
   - visible in-app action cards for review-ready and waiting sessions
   - a read-only xterm session terminal backed by a PTY-based Codex runtime
+  - conservative backend-startup recovery that marks active sessions interrupted
   - direct merge from `review` into the target branch with local worktree and branch cleanup
 - root tooling configuration for TypeScript, Biome, and Drizzle
 
@@ -35,7 +36,7 @@ This repository contains the implementation starter pack for the AI orchestrator
 
 - manage Bubblewrap sandboxes
 - hand terminal input over to a running session
-- restore live execution after an application restart
+- restore live execution automatically after an application restart
 - support checkpoint or mid-run input handoff for running Codex exec sessions
 
 Those remain the next implementation milestones.
@@ -51,4 +52,4 @@ Those remain the next implementation milestones.
 
 - Add sandbox orchestration around the live Codex runtime.
 - Add explicit terminal takeover and agent-restore flow on top of the PTY runtime.
-- Restore interrupted sessions conservatively after backend restart.
+- Decide whether interrupted sessions should auto-resume or stay manual after restart.

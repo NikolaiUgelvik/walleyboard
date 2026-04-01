@@ -67,6 +67,10 @@ export type CompleteSessionInput = {
   latest_review_package_id?: string | null;
 };
 
+export type StartupRecoveryResult = {
+  sessions: ExecutionSession[];
+};
+
 export interface Store {
   listProjects(): Project[];
   getProject(projectId: string): Project | undefined;
@@ -104,6 +108,7 @@ export interface Store {
     input: UpdateExecutionAttemptInput
   ): ExecutionAttempt | undefined;
   createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
+  recoverInterruptedSessions(): StartupRecoveryResult;
   updateTicketStatus(
     ticketId: number,
     status: TicketFrontmatter["status"]
