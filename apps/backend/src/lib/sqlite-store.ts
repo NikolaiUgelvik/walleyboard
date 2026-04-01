@@ -590,7 +590,17 @@ export class SqliteStore implements Store {
         input.repository.target_branch ?? defaultTargetBranch,
         null,
         null,
-        stringifyJson([]),
+        stringifyJson(
+          (input.repository.validation_commands ?? []).map((command, index) => ({
+            id: nanoid(),
+            label: `Validation ${index + 1}`,
+            command: command.trim(),
+            working_directory: input.repository.path,
+            timeout_ms: 300_000,
+            required_for_review: true,
+            shell: true
+          }))
+        ),
         stringifyJson([]),
         timestamp,
         timestamp

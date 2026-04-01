@@ -23,7 +23,8 @@ export const createProjectInputSchema = z.object({
   repository: z.object({
     name: z.string().min(1),
     path: absolutePathSchema,
-    target_branch: z.string().min(1).nullable().optional()
+    target_branch: z.string().min(1).nullable().optional(),
+    validation_commands: z.array(z.string().min(1)).optional()
   })
 });
 

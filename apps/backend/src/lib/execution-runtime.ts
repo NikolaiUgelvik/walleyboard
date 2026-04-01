@@ -3,10 +3,18 @@ import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import readline from "node:readline";
 
-import type { ExecutionSession, Project, RepositoryConfig, TicketFrontmatter } from "@orchestrator/contracts";
+import type {
+  ExecutionSession,
+  Project,
+  RepositoryConfig,
+  TicketFrontmatter,
+  ValidationCommand,
+  ValidationResult
+} from "@orchestrator/contracts";
 
 import { makeProtocolEvent, type EventHub } from "./event-hub.js";
 import type { Store } from "./store.js";
+import { nowIso } from "./time.js";
 
 type ExecutionRuntimeOptions = {
   eventHub: EventHub;
@@ -45,6 +53,22 @@ function writeReviewDiff(project: Project, ticketId: number, diff: string): stri
   const diffPath = join(reviewDir, `ticket-${ticketId}.patch`);
   writeFileSync(diffPath, diff, "utf8");
   return diffPath;
+}
+
+function buildValidationLogPath(
+  project: Project,
+  ticketId: number,
+  validationId: string
+): string {
+  const validationDir = join(
+    process.cwd(),
+    ".local",
+    "validation-logs",
+    project.slug,
+    `ticket-${ticketId}`
+  );
+  ensureDirectory(validationDir);
+  return join(validationDir, `${validationId}.log`);
 }
 
 function buildOutputSummaryPath(project: Project, ticketId: number, sessionId: string): string {
@@ -117,6 +141,22 @@ function streamLines(
   lineReader.on("line", onLine);
 }
 
+function resolveValidationWorkingDirectory(
+  command: ValidationCommand,
+  repository: RepositoryConfig,
+  worktreePath: string
+): string {
+  if (command.working_directory === repository.path) {
+    return worktreePath;
+  }
+
+  if (command.working_directory.startsWith(`${repository.path}/`)) {
+    return command.working_directory.replace(repository.path, worktreePath);
+  }
+
+  return worktreePath;
+}
+
 export class ExecutionRuntime {
   readonly #eventHub: EventHub;
   readonly #store: Store;
@@ -187,7 +227,7 @@ export class ExecutionRuntime {
       });
     });
 
-    child.once("close", (code, signal) => {
+    child.once("close", async (code, signal) => {
       const finalSummary = existsSync(outputSummaryPath)
         ? readFileSync(outputSummaryPath, "utf8").trim()
         : null;
@@ -255,7 +295,7 @@ export class ExecutionRuntime {
     );
   }
 
-  #finishSuccess(input: {
+  async #finishSuccess(input: {
     project: Project;
     repository: RepositoryConfig;
     ticketId: number;
@@ -263,7 +303,7 @@ export class ExecutionRuntime {
     attemptId: string;
     targetBranch: string;
     summary: string;
-  }): void {
+  }): Promise<void> {
     this.#activeSessions.delete(input.sessionId);
     this.#store.updateExecutionAttempt(input.attemptId, {
       status: "completed",
@@ -303,14 +343,35 @@ export class ExecutionRuntime {
       return;
     }
 
+    const { results: validationResults, blockingFailure, remainingRisks } =
+      await this.#runValidationProfile({
+        project: input.project,
+        repository: input.repository,
+        ticketId: input.ticketId,
+        sessionId: input.sessionId,
+        attemptId: input.attemptId,
+        worktreePath
+      });
+
+    if (blockingFailure) {
+      const summary = "Codex finished, but one or more required validation commands failed.";
+      const failedSession = this.#store.completeSession(input.sessionId, {
+        status: "failed",
+        last_summary: summary
+      });
+      this.#log(input.sessionId, input.attemptId, summary);
+      this.#emitSessionUpdated(failedSession);
+      return;
+    }
+
     const reviewPackage = this.#store.createReviewPackage({
       ticket_id: input.ticketId,
       session_id: input.sessionId,
       diff_ref: diffRef,
       commit_refs: commitRefs,
       change_summary: input.summary,
-      validation_results: [],
-      remaining_risks: ["Validation runner is not implemented yet in this build."]
+      validation_results: validationResults,
+      remaining_risks: remainingRisks
     });
 
     const ticket = this.#store.updateTicketStatus(input.ticketId, "review");
@@ -329,6 +390,137 @@ export class ExecutionRuntime {
     );
     this.#emitTicketUpdated(ticket);
     this.#emitSessionUpdated(completedSession);
+  }
+
+  async #runValidationProfile(input: {
+    project: Project;
+    repository: RepositoryConfig;
+    ticketId: number;
+    sessionId: string;
+    attemptId: string;
+    worktreePath: string;
+  }): Promise<{
+    results: ValidationResult[];
+    blockingFailure: boolean;
+    remainingRisks: string[];
+  }> {
+    if (input.repository.validation_profile.length === 0) {
+      return {
+        results: [],
+        blockingFailure: false,
+        remainingRisks: ["No validation commands are configured for this repository."]
+      };
+    }
+
+    const results: ValidationResult[] = [];
+    let blockingFailure = false;
+    const remainingRisks: string[] = [];
+
+    for (const command of input.repository.validation_profile) {
+      this.#log(
+        input.sessionId,
+        input.attemptId,
+        `Running validation: ${command.label} (${command.command})`
+      );
+      const startedAt = nowIso();
+      const workingDirectory = resolveValidationWorkingDirectory(
+        command,
+        input.repository,
+        input.worktreePath
+      );
+      const logLines: string[] = [];
+      const child = spawn(command.command, {
+        cwd: workingDirectory,
+        env: process.env,
+        shell: command.shell,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+
+      const result = await new Promise<ValidationResult>((resolve) => {
+        let timedOut = false;
+        const timeout = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGTERM");
+        }, command.timeout_ms);
+
+        streamLines(child.stdout, (line) => {
+          logLines.push(line);
+          this.#log(input.sessionId, input.attemptId, `[validation ${command.label}] ${line}`);
+        });
+
+        streamLines(child.stderr, (line) => {
+          logLines.push(line);
+          this.#log(
+            input.sessionId,
+            input.attemptId,
+            `[validation ${command.label} stderr] ${line}`
+          );
+        });
+
+        child.once("error", (error) => {
+          clearTimeout(timeout);
+          const endedAt = nowIso();
+          const logRef = buildValidationLogPath(input.project, input.ticketId, command.id);
+          writeFileSync(logRef, logLines.join("\n"), "utf8");
+          resolve({
+            command_id: command.id,
+            label: command.label,
+            status: "failed",
+            started_at: startedAt,
+            ended_at: endedAt,
+            exit_code: null,
+            failure_overridden: false,
+            summary: `Validation failed to start: ${error.message}`,
+            log_ref: logRef
+          });
+        });
+
+        child.once("close", (code) => {
+          clearTimeout(timeout);
+          const endedAt = nowIso();
+          const logRef = buildValidationLogPath(input.project, input.ticketId, command.id);
+          writeFileSync(logRef, logLines.join("\n"), "utf8");
+          resolve({
+            command_id: command.id,
+            label: command.label,
+            status: code === 0 && !timedOut ? "passed" : "failed",
+            started_at: startedAt,
+            ended_at: endedAt,
+            exit_code: code === null ? null : code,
+            failure_overridden: false,
+            summary:
+              code === 0 && !timedOut
+                ? `${command.label} passed.`
+                : timedOut
+                  ? `${command.label} timed out after ${command.timeout_ms}ms.`
+                  : `${command.label} failed with exit code ${code === null ? "unknown" : code}.`,
+            log_ref: logRef
+          });
+        });
+      });
+
+      results.push(result);
+      this.#eventHub.publish(
+        makeProtocolEvent("validation.updated", "session", input.sessionId, {
+          session_id: input.sessionId,
+          result
+        })
+      );
+
+      if (result.status === "failed") {
+        if (command.required_for_review) {
+          blockingFailure = true;
+        } else {
+          remainingRisks.push(`${command.label} failed during validation.`);
+        }
+      }
+    }
+
+    return {
+      results,
+      blockingFailure,
+      remainingRisks
+    };
   }
 
   #finishFailure(input: {

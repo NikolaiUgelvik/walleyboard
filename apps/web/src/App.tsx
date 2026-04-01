@@ -19,6 +19,7 @@ import {
   type ExecutionSession,
   type Project,
   type RepositoryConfig,
+  type ReviewPackage,
   type TicketFrontmatter
 } from "@orchestrator/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -64,6 +65,10 @@ type SessionResponse = {
 type SessionLogsResponse = {
   session_id: string;
   logs: string[];
+};
+
+type ReviewPackageResponse = {
+  review_package: ReviewPackage;
 };
 
 function slugify(value: string): string {
@@ -140,6 +145,7 @@ export function App() {
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
+  const [validationCommandsText, setValidationCommandsText] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -223,11 +229,26 @@ export function App() {
     refetchInterval: selectedSessionId === null ? false : 2_000
   });
 
+  const selectedSessionTicketId =
+    ticketsQuery.data?.tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
+    null;
+  const selectedSessionTicketStatus =
+    ticketsQuery.data?.tickets.find((ticket) => ticket.session_id === selectedSessionId)
+      ?.status ?? null;
+
+  const reviewPackageQuery = useQuery({
+    queryKey: ["tickets", selectedSessionTicketId, "review-package"],
+    queryFn: () =>
+      fetchJson<ReviewPackageResponse>(`/tickets/${selectedSessionTicketId}/review-package`),
+    enabled: selectedSessionTicketId !== null && selectedSessionTicketStatus === "review"
+  });
+
   const createProjectMutation = useMutation({
     mutationFn: (input: {
       name: string;
       repositoryPath: string;
       defaultTargetBranch: string;
+      validationCommands: string[];
     }) =>
       postJson<CommandAck>("/projects", {
         name: input.name,
@@ -236,7 +257,8 @@ export function App() {
         repository: {
           name: deriveRepositoryName(input.repositoryPath, input.name),
           path: input.repositoryPath,
-          target_branch: input.defaultTargetBranch
+          target_branch: input.defaultTargetBranch,
+          validation_commands: input.validationCommands
         }
       }),
     onSuccess: async (ack) => {
@@ -246,6 +268,7 @@ export function App() {
       setProjectName("");
       setRepositoryPath("");
       setDefaultBranch("main");
+      setValidationCommandsText("");
     }
   });
 
@@ -369,6 +392,7 @@ export function App() {
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
+  const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
 
   const groupedTickets = {
     draft: [] as TicketFrontmatter[],
@@ -433,15 +457,16 @@ export function App() {
             title="Current Slice"
             description="This is the thin vertical slice that is working now."
           >
-            <List spacing="xs" size="sm">
-              <List.Item>Manual project setup with one repository and target branch</List.Item>
-              <List.Item>Persisted draft ticket creation</List.Item>
-              <List.Item>Refinement pass that generates acceptance criteria</List.Item>
-              <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
-              <List.Item>Prepared git worktrees per started ticket</List.Item>
-              <List.Item>Real Codex exec runs with streaming session logs</List.Item>
-              <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
-            </List>
+              <List spacing="xs" size="sm">
+                <List.Item>Manual project setup with one repository and target branch</List.Item>
+                <List.Item>Persisted draft ticket creation</List.Item>
+                <List.Item>Refinement pass that generates acceptance criteria</List.Item>
+                <List.Item>Promotion of a draft into a ready ticket on the board</List.Item>
+                <List.Item>Prepared git worktrees per started ticket</List.Item>
+                <List.Item>Real Codex exec runs with streaming session logs</List.Item>
+                <List.Item>Configurable validation commands that gate review handoff</List.Item>
+                <List.Item>Automatic transition into local review with a generated diff artifact</List.Item>
+              </List>
           </SectionCard>
         </SimpleGrid>
 
@@ -456,7 +481,11 @@ export function App() {
                 createProjectMutation.mutate({
                   name: projectName,
                   repositoryPath,
-                  defaultTargetBranch: defaultBranch
+                  defaultTargetBranch: defaultBranch,
+                  validationCommands: validationCommandsText
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean)
                 });
               }}
             >
@@ -487,6 +516,16 @@ export function App() {
                   value={defaultBranch}
                   onChange={(event) => setDefaultBranch(event.currentTarget.value)}
                   required
+                />
+                <Textarea
+                  id="validation-commands"
+                  name="validationCommands"
+                  label="Validation commands"
+                  placeholder={"npm run test\nnpm run lint"}
+                  description="Optional. One shell command per line. Required commands block review if they fail."
+                  value={validationCommandsText}
+                  onChange={(event) => setValidationCommandsText(event.currentTarget.value)}
+                  minRows={3}
                 />
                 {createProjectMutation.isError ? (
                   <Text size="sm" c="red">
@@ -563,6 +602,13 @@ export function App() {
                   <Text>{repositories[0]?.target_branch ?? selectedProject.default_target_branch}</Text>
                   <Text c="dimmed" size="sm">
                     One running session globally is still the intended MVP ceiling.
+                  </Text>
+                </Stack>
+                <Stack gap={4}>
+                  <Text fw={600}>Validation</Text>
+                  <Text>{repositories[0]?.validation_profile.length ?? 0} configured command(s)</Text>
+                  <Text c="dimmed" size="sm">
+                    Validation runs after Codex finishes and before review handoff.
                   </Text>
                 </Stack>
               </SimpleGrid>
@@ -759,6 +805,31 @@ export function App() {
                     {session.last_summary ??
                       "No session summary is available yet."}
                   </Text>
+
+                  {selectedSessionTicket?.status === "review" ? (
+                    reviewPackageQuery.isPending ? (
+                      <Loader size="sm" />
+                    ) : reviewPackage ? (
+                      <Stack gap={4}>
+                        <Text fw={600}>Review Package</Text>
+                        <Text size="sm" c="dimmed">
+                          Diff artifact: <Code>{reviewPackage.diff_ref}</Code>
+                        </Text>
+                        <Text size="sm" c="dimmed">
+                          Validation results: {reviewPackage.validation_results.length}
+                        </Text>
+                        {reviewPackage.validation_results.length > 0 ? (
+                          <List size="sm" spacing={4}>
+                            {reviewPackage.validation_results.map((result) => (
+                              <List.Item key={result.command_id}>
+                                {result.label}: {result.status}
+                              </List.Item>
+                            ))}
+                          </List>
+                        ) : null}
+                      </Stack>
+                    ) : null
+                  ) : null}
 
                   <Stack gap={4}>
                     <Text fw={600}>Session Log</Text>

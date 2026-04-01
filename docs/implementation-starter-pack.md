@@ -26,9 +26,9 @@ This document turns the PRD into the first concrete module boundaries for the MV
 ## First Implementation Milestones
 
 1. Implement sandbox lifecycle services around the prepared Codex runtime.
-2. Add validation execution before review handoff.
-3. Replace the log-only execution view with a real PTY-backed terminal runtime.
-4. Add request-changes and resume flows on top of the persisted execution session.
+2. Replace the log-only execution view with a real PTY-backed terminal runtime.
+3. Add request-changes and resume flows on top of the persisted execution session.
+4. Add richer validation configuration and override handling.
 5. Add direct merge flow and cleanup.
 
 ## Starter Endpoints
@@ -77,6 +77,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
 ## Current Implementation Status
 
 - Project setup is real and persisted in SQLite.
+- Repository validation commands can be configured during project setup.
 - Draft creation, refinement, and promotion to `ready` tickets are real and persisted.
 - Starting a `ready` ticket now creates:
   - a persisted execution session
@@ -85,6 +86,7 @@ This document turns the PRD into the first concrete module boundaries for the MV
   - a real `codex exec` run with persisted logs
   - an `in_progress` ticket transition on the board
 - Successful execution now creates:
+  - validation results captured before review handoff
   - a local review package record
   - a persisted diff artifact on disk
   - a transition from `in_progress` to `review`
