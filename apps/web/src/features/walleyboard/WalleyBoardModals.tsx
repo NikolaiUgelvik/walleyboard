@@ -134,7 +134,7 @@ export function WalleyBoardModals({
                   data={agentAdapterOptions}
                   value={controller.projectOptionsAgentAdapter}
                   onChange={(value) => {
-                    if (value !== "codex") {
+                    if (value !== "codex" && value !== "claude-code") {
                       return;
                     }
 

@@ -45,6 +45,8 @@ function sessionAgentLabel(session: ExecutionSession): string {
   switch (session.agent_adapter) {
     case "codex":
       return "Codex";
+    case "claude-code":
+      return "Claude Code";
     default:
       return "Agent";
   }
