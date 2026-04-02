@@ -58,6 +58,7 @@ import {
   emptyDraftEditorFields,
   resolveDraftEditorSync,
 } from "./lib/draft-editor-sync.js";
+import { hasNewInboxItems } from "./lib/inbox-alert.js";
 import { deriveInboxItems } from "./lib/inbox-items.js";
 import { getBoardTicketDescriptionPreview } from "./lib/ticket-description-preview.js";
 
@@ -1122,6 +1123,8 @@ export function App() {
   const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] =
     useState<DiffLayout>(() => readDiffLayoutPreference());
   const [boardSearch, setBoardSearch] = useState("");
+  const inboxAlertAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previousInboxItemKeysRef = useRef<string[] | null>(null);
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
@@ -1396,6 +1399,21 @@ export function App() {
       ticketWorkspaceDiffLayout,
     );
   }, [ticketWorkspaceDiffLayout]);
+
+  useEffect(() => {
+    if (typeof Audio === "undefined") {
+      return;
+    }
+
+    const audio = new Audio("/alert.mp3");
+    audio.preload = "auto";
+    inboxAlertAudioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      inboxAlertAudioRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedSessionId !== null) {
@@ -2691,6 +2709,31 @@ export function App() {
     tickets: globalTickets,
     sessionsById: globalSessionById,
   });
+  const actionItemKeys = actionItems.map((item) => item.key);
+  const inboxQueriesSettled =
+    projectsQuery.data !== undefined &&
+    globalTicketsQueries.every((query) => !query.isPending) &&
+    globalSessionSummaries.every((query) => !query.isPending);
+
+  useEffect(() => {
+    if (!inboxQueriesSettled) {
+      return;
+    }
+
+    const previousInboxItemKeys = previousInboxItemKeysRef.current;
+    previousInboxItemKeysRef.current = actionItemKeys;
+    if (!hasNewInboxItems(previousInboxItemKeys, actionItemKeys)) {
+      return;
+    }
+
+    const audio = inboxAlertAudioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
+  }, [actionItemKeys, inboxQueriesSettled]);
 
   const selectedSessionTicketSession = selectedSessionTicket?.session_id
     ? (sessionById.get(selectedSessionTicket.session_id) ?? session)
