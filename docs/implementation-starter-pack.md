@@ -61,7 +61,7 @@ Not yet implemented:
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session/worktree. `create-pr` and `reconcile` remain scaffolded only.
 - Tickets expose card-level `Diff`, `Terminal`, `Preview`, and `Activity` actions. The inspector keeps a single clickable activity summary row instead of workspace tabs.
 - `Diff`, `Terminal`, and `Preview` require a prepared worktree, while `Activity` stays available whenever a ticket still has a session, even after worktree cleanup.
-- The ticket-card `Terminal` action opens a plain xterm.js shell at the worktree root, without take-over or restore-agent controls on that modal surface, and it stays unavailable while the agent still owns the worktree.
+- The ticket-card `Terminal` action opens a plain xterm.js shell at the worktree root, without take-over or restore-agent controls on that modal surface, and it stays unavailable only while a live agent process still owns the worktree.
 - The `Preview` action starts the ticket dev server when needed, opens a browser tab, and flips to a stop control while that dev server stays running.
 - Completed tickets can be archived out of the active board and restored later.
 - Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup.

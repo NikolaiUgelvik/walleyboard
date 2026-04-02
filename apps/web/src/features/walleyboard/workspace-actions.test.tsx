@@ -218,6 +218,27 @@ test("ticket workspace terminal action stays disabled while the agent owns the w
   assert.equal((terminalAction.props as { disabled?: boolean }).disabled, true);
 });
 
+for (const status of ["queued", "awaiting_input"] as const) {
+  test(`ticket workspace terminal action stays available for ${status} sessions`, () => {
+    const { controller, ticket } = createController({
+      session: { status, worktree_path: "/tmp/worktree-9" },
+    });
+
+    const tree = TicketWorkspaceActions({ controller, ticket });
+    const terminalAction = findElementByProp(
+      tree,
+      "aria-label",
+      "Open worktree terminal",
+    );
+
+    assert.ok(terminalAction);
+    assert.equal(
+      (terminalAction.props as { disabled?: boolean }).disabled,
+      false,
+    );
+  });
+}
+
 test("ticket workspace activity action opens the activity modal from the card", () => {
   const { controller, openCalls, ticket } = createController();
 

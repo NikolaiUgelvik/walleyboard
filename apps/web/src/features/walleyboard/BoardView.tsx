@@ -43,13 +43,6 @@ import {
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
-const terminalBlockedSessionStatuses = [
-  "queued",
-  "running",
-  "paused_checkpoint",
-  "awaiting_input",
-] satisfies ExecutionSession["status"][];
-
 function TicketMenu({
   controller,
   project,
@@ -191,11 +184,7 @@ export function TicketWorkspaceActions({
   const previewError =
     controller.previewActionErrorByTicketId[ticket.id] ?? preview?.error;
   const hasPreparedWorktree = ticketSession?.worktree_path != null;
-  const terminalBlockedBySession =
-    ticketSession != null &&
-    terminalBlockedSessionStatuses.includes(
-      ticketSession.status as (typeof terminalBlockedSessionStatuses)[number],
-    );
+  const terminalBlockedBySession = ticketSession?.status === "running";
   const diffDisabled = !hasPreparedWorktree;
   const terminalDisabled = !hasPreparedWorktree || terminalBlockedBySession;
   const previewDisabled = !hasPreparedWorktree || previewBusy;

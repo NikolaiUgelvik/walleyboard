@@ -245,6 +245,60 @@ test("workspace terminal reports a clear error when the agent still owns the wor
   }
 });
 
+for (const status of ["queued", "awaiting_input"] as const) {
+  test(`workspace terminal stays available for ${status} sessions without an active runtime`, async () => {
+    const tempDir = mkdtempSync(
+      join(tmpdir(), `walleyboard-terminal-${status}-`),
+    );
+    const sessionId = `session-${status}`;
+    const ticketId = status === "queued" ? 21 : 22;
+    const app = await createApp({
+      store: {
+        getSession(requestedSessionId: string) {
+          return requestedSessionId === sessionId
+            ? {
+                id: sessionId,
+                status,
+                worktree_path: tempDir,
+              }
+            : null;
+        },
+        getTicket(requestedTicketId: number) {
+          return requestedTicketId === ticketId
+            ? { id: ticketId, session_id: sessionId }
+            : null;
+        },
+      } as never,
+    });
+
+    let socket: WebSocketClient | null = null;
+    try {
+      const address = await app.listen({ host: "127.0.0.1", port: 0 });
+      socket = await openSocket(
+        `${address.replace(/^http/, "ws")}/tickets/${ticketId}/workspace/terminal`,
+      );
+      socket.send(
+        JSON.stringify({
+          type: "terminal.input",
+          data: "exit\r",
+        }),
+      );
+
+      const message = await waitForSocketMessage(
+        socket,
+        (candidate) => candidate.type === "terminal.exit",
+      );
+
+      assert.equal(message.type, "terminal.exit");
+      assert.equal(message.exit_code, 0);
+    } finally {
+      socket?.close();
+      await app.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("workspace terminal publishes shell exit messages for worktree sessions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-"));
   const app = await createApp({

@@ -325,7 +325,7 @@ Before execution begins, the user should see an approval summary that includes:
 - The inspector workspace area should collapse to a single high-signal activity summary row that opens the same interpreted activity stream.
 - Diff, terminal, and preview actions should require a prepared worktree, while the activity action should remain available whenever session history still exists.
 - The preview action should start the ticket dev server when needed, open the preview in a new browser tab, and switch to a stop control while that dev server remains active.
-- The ticket-card terminal action should open a plain worktree shell without take-over or restore-agent controls on that surface, and it should remain unavailable while the agent still owns the worktree.
+- The ticket-card terminal action should open a plain worktree shell without take-over or restore-agent controls on that surface, and it should remain unavailable only while a live agent process still owns the worktree.
 - The primary monitoring surface should emphasize:
   - Current session status
   - The latest high-signal agent updates
@@ -1281,7 +1281,7 @@ The MVP should prove one reliable end-to-end workflow:
 - In-app waiting-state notifications when the session needs user input or approval
 - Card-level diff, terminal, preview, and activity actions, with diff/terminal/activity opening in large modal workspaces
 - Activity access retained from the card and inspector even after worktree cleanup
-- Plain xterm.js worktree terminal access without agent takeover controls on that surface, gated off while the agent still owns the worktree
+- Plain xterm.js worktree terminal access without agent takeover controls on that surface, gated off only while a live agent process still owns the worktree
 - Repo-configured validation commands
 - Review package generation with:
   - diff
