@@ -222,6 +222,7 @@ export function mapProject(row: Record<string, unknown>): Project {
           ? "claude-code"
           : "codex",
     execution_backend: row.execution_backend === "docker" ? "docker" : "host",
+    automatic_agent_review: Number(row.automatic_agent_review) === 1,
     default_review_action: normalizeReviewAction(
       row.default_review_action as ReviewAction | null | undefined,
     ),
@@ -556,6 +557,7 @@ export class SqliteStoreContext {
         name TEXT NOT NULL,
         agent_adapter TEXT NOT NULL DEFAULT 'codex',
         execution_backend TEXT NOT NULL DEFAULT 'host',
+        automatic_agent_review INTEGER NOT NULL DEFAULT 0,
         default_review_action TEXT NOT NULL DEFAULT 'direct_merge',
         default_target_branch TEXT,
         pre_worktree_command TEXT,
@@ -762,10 +764,16 @@ export class SqliteStoreContext {
       "default_review_action",
       "TEXT NOT NULL DEFAULT 'direct_merge'",
     );
+    this.#ensureColumn(
+      "projects",
+      "automatic_agent_review",
+      "INTEGER NOT NULL DEFAULT 0",
+    );
     this.#backfillArtifactScopes();
     this.#backfillAgentAdapterDefaults();
     this.#backfillProjectConcurrencyDefaults();
     this.#backfillProjectExecutionBackendDefaults();
+    this.#backfillProjectAutomaticAgentReviewDefaults();
     this.#backfillProjectReviewActionDefaults();
     this.#backfillTicketContext();
   }
@@ -899,6 +907,18 @@ export class SqliteStoreContext {
           UPDATE projects
           SET execution_backend = 'host'
           WHERE execution_backend IS NULL OR execution_backend = ''
+        `,
+      )
+      .run();
+  }
+
+  #backfillProjectAutomaticAgentReviewDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET automatic_agent_review = 0
+          WHERE automatic_agent_review IS NULL
         `,
       )
       .run();

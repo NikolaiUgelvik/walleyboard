@@ -69,11 +69,11 @@ export class ProjectRepository {
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, agent_adapter, execution_backend, default_target_branch, pre_worktree_command,
+            id, slug, name, agent_adapter, execution_backend, automatic_agent_review, default_target_branch, pre_worktree_command,
             post_worktree_command, default_review_action, draft_analysis_model,
             draft_analysis_reasoning_effort, ticket_work_model,
             ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -82,6 +82,7 @@ export class ProjectRepository {
         input.name.trim(),
         "codex",
         "host",
+        0,
         defaultTargetBranch,
         null,
         null,
@@ -166,6 +167,10 @@ export class ProjectRepository {
       input.execution_backend === undefined
         ? project.execution_backend
         : input.execution_backend;
+    const automaticAgentReview =
+      input.automatic_agent_review === undefined
+        ? project.automatic_agent_review
+        : input.automatic_agent_review;
     const preWorktreeCommand =
       input.pre_worktree_command === undefined
         ? project.pre_worktree_command
@@ -209,6 +214,7 @@ export class ProjectRepository {
           UPDATE projects
           SET agent_adapter = ?,
               execution_backend = ?,
+              automatic_agent_review = ?,
               default_review_action = ?,
               pre_worktree_command = ?,
               post_worktree_command = ?,
@@ -223,6 +229,7 @@ export class ProjectRepository {
       .run(
         agentAdapter,
         executionBackend,
+        automaticAgentReview ? 1 : 0,
         defaultReviewAction,
         preWorktreeCommand,
         postWorktreeCommand,

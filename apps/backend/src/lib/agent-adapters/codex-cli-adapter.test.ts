@@ -18,6 +18,7 @@ function createProject(): Project {
     name: "spacegame",
     agent_adapter: "codex",
     execution_backend: "docker",
+    automatic_agent_review: false,
     default_review_action: "direct_merge",
     default_target_branch: "origin/main",
     pre_worktree_command: null,

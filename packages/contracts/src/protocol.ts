@@ -36,6 +36,7 @@ export const createProjectInputSchema = z.object({
 export const updateProjectInputSchema = z.object({
   agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),
+  automatic_agent_review: z.boolean().optional(),
   default_review_action: reviewActionSchema.optional(),
   pre_worktree_command: z.string().min(1).nullable().optional(),
   post_worktree_command: z.string().min(1).nullable().optional(),

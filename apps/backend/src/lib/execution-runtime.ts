@@ -1421,10 +1421,10 @@ export class ExecutionRuntime {
           this.#store,
           input.sessionId,
           input.attemptId,
-          `[pull request sync warning] ${
+          `[review follow-up warning] ${
             error instanceof Error
               ? error.message
-              : "Unable to sync the linked pull request"
+              : "Unable to complete review follow-up actions"
           }`,
         );
       }

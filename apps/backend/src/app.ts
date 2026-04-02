@@ -11,6 +11,7 @@ import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
+import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import { draftRoutes } from "./routes/drafts.js";
@@ -57,7 +58,10 @@ export async function createApp() {
     ticketWorkspaceService,
   });
   executionRuntime.setReviewReadyHandler((input) =>
-    githubPullRequestService.handleReviewReady(input),
+    runReviewFollowUp(input, {
+      agentReviewService,
+      githubPullRequestService,
+    }),
   );
   githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();

@@ -92,6 +92,10 @@ export function useWalleyBoardController() {
   const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
     useState<ExecutionBackend>("host");
   const [
+    projectOptionsAutomaticAgentReview,
+    setProjectOptionsAutomaticAgentReview,
+  ] = useState(false);
+  const [
     projectOptionsDefaultReviewAction,
     setProjectOptionsDefaultReviewAction,
   ] = useState<ReviewAction>("direct_merge");
@@ -641,6 +645,8 @@ export function useWalleyBoardController() {
     (projectOptionsAgentAdapter !== projectOptionsProject.agent_adapter ||
       projectOptionsExecutionBackend !==
         projectOptionsProject.execution_backend ||
+      projectOptionsAutomaticAgentReview !==
+        projectOptionsProject.automatic_agent_review ||
       projectOptionsDefaultReviewAction !==
         projectOptionsProject.default_review_action ||
       projectOptionsPreWorktreeCommandValue !==
@@ -1031,6 +1037,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(null);
     setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
+    setProjectOptionsAutomaticAgentReview(false);
     setProjectOptionsDefaultReviewAction("direct_merge");
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
@@ -1050,6 +1057,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(project.id);
     setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
+    setProjectOptionsAutomaticAgentReview(project.automatic_agent_review);
     setProjectOptionsDefaultReviewAction(project.default_review_action);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
@@ -1154,6 +1162,7 @@ export function useWalleyBoardController() {
         projectOptionsAgentAdapter === "claude-code"
           ? "host"
           : projectOptionsExecutionBackend,
+      automaticAgentReview: projectOptionsAutomaticAgentReview,
       defaultReviewAction: projectOptionsDefaultReviewAction,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
@@ -1366,6 +1375,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchChoices,
     projectOptionsBranchesByRepositoryId,
     projectOptionsBranchesQuery,
+    projectOptionsAutomaticAgentReview,
     projectOptionsDefaultReviewAction,
     projectOptionsDirty,
     projectOptionsAgentAdapter,
@@ -1438,6 +1448,7 @@ export function useWalleyBoardController() {
     setProjectModalOpen,
     setProjectName,
     setProjectOptionsAgentAdapter,
+    setProjectOptionsAutomaticAgentReview,
     setProjectOptionsDefaultReviewAction,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,

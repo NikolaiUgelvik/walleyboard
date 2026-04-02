@@ -549,6 +549,7 @@ export async function saveProjectOptionsRequest(
   body: {
     agent_adapter: AgentAdapter;
     execution_backend: ExecutionBackend;
+    automatic_agent_review: boolean;
     default_review_action: ReviewAction;
     pre_worktree_command: string | null;
     post_worktree_command: string | null;

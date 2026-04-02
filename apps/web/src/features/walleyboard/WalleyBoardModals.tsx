@@ -8,6 +8,7 @@ import {
   SegmentedControl,
   Select,
   Stack,
+  Switch,
   Text,
   Textarea,
   TextInput,
@@ -224,6 +225,21 @@ export function WalleyBoardModals({
                     check failed.
                   </Text>
                 ) : null}
+              </Stack>
+
+              <Stack gap="sm">
+                <Switch
+                  label="Automatic agent review"
+                  description="Automatically start the existing agent review flow when a ticket enters In review."
+                  checked={controller.projectOptionsAutomaticAgentReview}
+                  onChange={(event) => {
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsAutomaticAgentReview(
+                      event.currentTarget.checked,
+                    );
+                  }}
+                />
               </Stack>
 
               <Stack gap="sm">

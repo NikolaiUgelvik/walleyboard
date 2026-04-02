@@ -64,6 +64,7 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
 
     assert.equal(project.max_concurrent_sessions, 4);
     assert.equal(project.agent_adapter, "codex");
+    assert.equal(project.automatic_agent_review, false);
 
     const firstTicket = createReadyTicket(store, project.id, repository.id, 1);
     const secondTicket = createReadyTicket(store, project.id, repository.id, 2);
@@ -214,6 +215,40 @@ test("updateProject persists repository target branch changes", () => {
     assert.equal(
       reloadedStore.getRepository(repository.id)?.target_branch,
       "release/1.0",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("updateProject persists automatic agent review changes", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-auto-review-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Automatic Review Options",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(store.getProject(project.id)?.automatic_agent_review, false);
+
+    store.updateProject(project.id, {
+      automatic_agent_review: true,
+    });
+
+    assert.equal(store.getProject(project.id)?.automatic_agent_review, true);
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reloadedStore.getProject(project.id)?.automatic_agent_review,
+      true,
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

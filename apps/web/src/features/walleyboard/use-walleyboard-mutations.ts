@@ -119,6 +119,7 @@ export function useWalleyBoardMutations({
       agentAdapter: AgentAdapter;
       projectId: string;
       executionBackend: ExecutionBackend;
+      automaticAgentReview: boolean;
       defaultReviewAction: ReviewAction;
       preWorktreeCommand: string | null;
       postWorktreeCommand: string | null;
@@ -134,6 +135,7 @@ export function useWalleyBoardMutations({
       saveProjectOptionsRequest(input.projectId, {
         agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
+        automatic_agent_review: input.automaticAgentReview,
         default_review_action: input.defaultReviewAction,
         pre_worktree_command: input.preWorktreeCommand,
         post_worktree_command: input.postWorktreeCommand,
