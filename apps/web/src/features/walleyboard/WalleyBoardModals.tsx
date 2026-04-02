@@ -51,7 +51,6 @@ export function WorkspaceModalContent({
   controller: WorkspaceModalContentController;
 }) {
   const workspaceDiffPanelState = resolveWorkspaceDiffPanelState({
-    sessionQuery: controller.sessionQuery,
     ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,
   });
 
@@ -107,7 +106,7 @@ export function WalleyBoardModals({
   const projectOptionsProject = controller.projectOptionsProject;
   const workspaceModalTitle =
     controller.workspaceModal === "diff"
-      ? "Worktree diff"
+      ? "Ticket diff"
       : controller.workspaceModal === "terminal"
         ? "Worktree terminal"
         : controller.workspaceModal === "activity"
@@ -182,23 +181,34 @@ export function WalleyBoardModals({
                       </Text>
                       <MarkdownContent content={ticket.title} inline />
                     </Box>
-                    <Button
-                      size="xs"
-                      variant="light"
-                      loading={
-                        controller.restoreTicketMutation.isPending &&
-                        controller.restoreTicketMutation.variables?.ticketId ===
-                          ticket.id
-                      }
-                      onClick={() =>
-                        controller.restoreTicketMutation.mutate({
-                          ticketId: ticket.id,
-                          projectId: ticket.project,
-                        })
-                      }
-                    >
-                      Restore
-                    </Button>
+                    <Group gap="xs" wrap="nowrap">
+                      <Button
+                        size="xs"
+                        variant="default"
+                        onClick={() =>
+                          controller.openArchivedTicketDiff(ticket)
+                        }
+                      >
+                        Diff
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        loading={
+                          controller.restoreTicketMutation.isPending &&
+                          controller.restoreTicketMutation.variables
+                            ?.ticketId === ticket.id
+                        }
+                        onClick={() =>
+                          controller.restoreTicketMutation.mutate({
+                            ticketId: ticket.id,
+                            projectId: ticket.project,
+                          })
+                        }
+                      >
+                        Restore
+                      </Button>
+                    </Group>
                   </Group>
                 </Box>
               ))}

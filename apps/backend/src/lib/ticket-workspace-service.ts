@@ -267,9 +267,11 @@ export class TicketWorkspaceService {
 
     return {
       ticket_id: input.ticketId,
+      source: "live_worktree",
       target_branch: input.targetBranch,
       working_branch: input.workingBranch,
       worktree_path: input.worktreePath,
+      artifact_path: null,
       patch: [trackedPatch, untrackedPatch].filter(Boolean).join("\n\n"),
       generated_at: nowIso(),
     };

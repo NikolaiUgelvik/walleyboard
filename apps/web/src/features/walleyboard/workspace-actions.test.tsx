@@ -185,18 +185,22 @@ test("ticket workspace actions switch preview labels and surface preview errors"
   assert.match(collectText(tree), /Browser blocked the preview tab\./);
 });
 
-test("ticket workspace actions keep activity available after worktree cleanup", () => {
+test("ticket workspace actions keep diff and activity available after worktree cleanup", () => {
   const { controller, ticket } = createController({
     selectedTicket: createTicket({ status: "done" }),
     session: { status: "completed", worktree_path: null },
   });
 
   const tree = TicketWorkspaceActions({ controller, ticket });
-  for (const label of [
+  const diffAction = findElementByProp(
+    tree,
+    "aria-label",
     "Open worktree diff",
-    "Open worktree terminal",
-    "Preview",
-  ]) {
+  );
+  assert.ok(diffAction);
+  assert.equal((diffAction.props as { disabled?: boolean }).disabled, false);
+
+  for (const label of ["Open worktree terminal", "Preview"]) {
     const action = findElementByProp(tree, "aria-label", label);
     assert.ok(action);
     assert.equal((action.props as { disabled?: boolean }).disabled, true);
@@ -302,22 +306,20 @@ test("ticket workspace summary row opens the activity stream from the inspector"
   assert.equal(opened, true);
 });
 
-test("workspace diff modal surfaces session load failures instead of the empty diff state", () => {
+test("workspace diff modal surfaces diff load failures instead of the empty diff state", () => {
   const state = resolveWorkspaceDiffPanelState({
-    sessionQuery: {
-      error: new Error("Session details could not be loaded."),
-      isError: true,
-      isPending: false,
-    },
     ticketWorkspaceDiffQuery: {
-      error: null,
-      isError: false,
+      error: new Error("Stored review diff artifact is no longer available."),
+      isError: true,
       isPending: false,
     },
   });
 
   assert.equal(state.isLoading, false);
-  assert.equal(state.error, "Session details could not be loaded.");
+  assert.equal(
+    state.error,
+    "Stored review diff artifact is no longer available.",
+  );
 });
 
 test("ticket workspace summary row supports keyboard activation", () => {

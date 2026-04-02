@@ -211,9 +211,11 @@ export const ticketEventsResponseSchema = z.object({
 
 export const ticketWorkspaceDiffSchema = z.object({
   ticket_id: z.number().int().positive(),
+  source: z.enum(["live_worktree", "review_artifact"]),
   target_branch: z.string().min(1),
-  working_branch: z.string().min(1),
-  worktree_path: absolutePathSchema,
+  working_branch: z.string().min(1).nullable(),
+  worktree_path: absolutePathSchema.nullable(),
+  artifact_path: absolutePathSchema.nullable(),
   patch: z.string(),
   generated_at: timestampSchema,
 });

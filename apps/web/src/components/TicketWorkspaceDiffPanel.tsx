@@ -26,8 +26,38 @@ type TicketWorkspaceDiffPanelProps = {
   onLayoutChange: (value: DiffLayout) => void;
 };
 
+type DiffFileSummary = {
+  additions: number;
+  deletions: number;
+  tone: "blue" | "green" | "orange" | "red";
+  label: string;
+};
+
 function getFileKey(file: FileDiffMetadata, index: number): string {
   return `${file.prevName ?? ""}:${file.name}:${index}`;
+}
+
+function summarizeFile(file: FileDiffMetadata): DiffFileSummary {
+  const counts = file.hunks.reduce(
+    (summary, hunk) => ({
+      additions: summary.additions + hunk.additionLines,
+      deletions: summary.deletions + hunk.deletionLines,
+    }),
+    { additions: 0, deletions: 0 },
+  );
+
+  switch (file.type) {
+    case "new":
+      return { ...counts, label: "Added", tone: "green" };
+    case "deleted":
+      return { ...counts, label: "Deleted", tone: "red" };
+    case "rename-pure":
+      return { ...counts, label: "Renamed", tone: "blue" };
+    case "rename-changed":
+      return { ...counts, label: "Renamed + edited", tone: "orange" };
+    default:
+      return { ...counts, label: "Edited", tone: "blue" };
+  }
 }
 
 export function TicketWorkspaceDiffPanel({
@@ -63,6 +93,22 @@ export function TicketWorkspaceDiffPanel({
     }
   }, [diff]);
 
+  const diffStats = useMemo(
+    () =>
+      parsedDiff.files.reduce(
+        (summary, file) => {
+          const counts = summarizeFile(file);
+          return {
+            additions: summary.additions + counts.additions,
+            deletions: summary.deletions + counts.deletions,
+            files: summary.files + 1,
+          };
+        },
+        { additions: 0, deletions: 0, files: 0 },
+      ),
+    [parsedDiff.files],
+  );
+
   useEffect(() => {
     if (parsedDiff.error) {
       return;
@@ -80,6 +126,7 @@ export function TicketWorkspaceDiffPanel({
 
       const instance = new FileDiff({
         diffStyle: layout === "split" ? "split" : "unified",
+        disableFileHeader: true,
         hunkSeparators: "metadata",
         lineDiffType: "word",
         overflow: "scroll",
@@ -100,21 +147,36 @@ export function TicketWorkspaceDiffPanel({
     };
   }, [colorScheme, layout, parsedDiff]);
 
+  const sourceLabel =
+    diff === null
+      ? "Ticket diff"
+      : diff.source === "review_artifact"
+        ? "Stored review diff"
+        : "Live worktree";
+  const sourceDescription =
+    diff === null
+      ? "Loading the selected ticket diff."
+      : diff.source === "review_artifact"
+        ? "Showing the persisted review artifact captured before cleanup. Archived and restored tickets reuse this stored patch."
+        : "Changes refresh automatically as files change in the ticket worktree.";
+
   return (
     <Stack gap="sm">
       <Group justify="space-between" align="flex-start">
         <Stack gap={4}>
           <Group gap="xs">
+            <Badge variant="light" color="gray">
+              {sourceLabel}
+            </Badge>
             <Badge variant="light" color="blue">
               Base {diff?.target_branch ?? "target"}
             </Badge>
             <Badge variant="light" color="orange">
-              Worktree {diff?.working_branch ?? "branch"}
+              Branch {diff?.working_branch ?? "review artifact"}
             </Badge>
           </Group>
           <Text size="sm" c="dimmed">
-            Changes refresh automatically as files change in the ticket
-            worktree.
+            {sourceDescription}
           </Text>
         </Stack>
         <SegmentedControl
@@ -126,6 +188,20 @@ export function TicketWorkspaceDiffPanel({
           ]}
         />
       </Group>
+
+      {diff && parsedDiff.files.length > 0 ? (
+        <Group gap="xs">
+          <Badge variant="outline" color="gray">
+            {diffStats.files} {diffStats.files === 1 ? "file" : "files"}
+          </Badge>
+          <Badge variant="outline" color="green">
+            +{diffStats.additions}
+          </Badge>
+          <Badge variant="outline" color="red">
+            -{diffStats.deletions}
+          </Badge>
+        </Group>
+      ) : null}
 
       {isLoading ? (
         <Group justify="center" className="ticket-workspace-diff-empty">
@@ -147,17 +223,53 @@ export function TicketWorkspaceDiffPanel({
         <Box className="ticket-workspace-diff-empty">
           <Text size="sm" c="dimmed">
             No differences between {diff?.target_branch ?? "the target branch"}{" "}
-            and the ticket worktree.
+            and the selected ticket diff.
           </Text>
         </Box>
       ) : (
         <Stack gap="md">
           {parsedDiff.files.map((file, index) => {
             const key = getFileKey(file, index);
+            const summary = summarizeFile(file);
 
             return (
               <Box key={key} className="ticket-workspace-diff-file">
+                <Group
+                  justify="space-between"
+                  align="flex-start"
+                  className="ticket-workspace-diff-file-header"
+                >
+                  <Stack gap={2}>
+                    <Group gap="xs">
+                      <Badge size="xs" variant="light" color={summary.tone}>
+                        {summary.label}
+                      </Badge>
+                      <Text
+                        size="sm"
+                        fw={600}
+                        className="ticket-workspace-diff-file-path"
+                      >
+                        {file.prevName
+                          ? `${file.prevName} -> ${file.name}`
+                          : file.name}
+                      </Text>
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      {file.lang ? `${file.lang} syntax` : "Detected syntax"}{" "}
+                      with line numbers and inline highlights.
+                    </Text>
+                  </Stack>
+                  <Group gap={6}>
+                    <Badge size="xs" variant="outline" color="green">
+                      +{summary.additions}
+                    </Badge>
+                    <Badge size="xs" variant="outline" color="red">
+                      -{summary.deletions}
+                    </Badge>
+                  </Group>
+                </Group>
                 <div
+                  className="ticket-workspace-diff-renderer"
                   ref={(node) => {
                     containerRefs.current[key] = node;
                   }}

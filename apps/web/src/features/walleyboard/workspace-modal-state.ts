@@ -1,9 +1,6 @@
+import type { WorkspaceModalKind } from "./shared.js";
+
 export function resolveWorkspaceDiffPanelState(input: {
-  sessionQuery: {
-    error: { message: string } | null;
-    isError: boolean;
-    isPending: boolean;
-  };
   ticketWorkspaceDiffQuery: {
     error: { message: string } | null;
     isError: boolean;
@@ -11,16 +8,27 @@ export function resolveWorkspaceDiffPanelState(input: {
   };
 }) {
   return {
-    error: input.sessionQuery.isError
-      ? (input.sessionQuery.error?.message ??
-        "Unable to load the current session")
-      : input.ticketWorkspaceDiffQuery.isError
-        ? (input.ticketWorkspaceDiffQuery.error?.message ??
-          "Unable to load the current diff")
-        : null,
-    isLoading:
-      !input.sessionQuery.isError &&
-      (input.sessionQuery.isPending ||
-        input.ticketWorkspaceDiffQuery.isPending),
+    error: input.ticketWorkspaceDiffQuery.isError
+      ? (input.ticketWorkspaceDiffQuery.error?.message ??
+        "Unable to load the current diff")
+      : null,
+    isLoading: input.ticketWorkspaceDiffQuery.isPending,
   };
+}
+
+export function shouldKeepWorkspaceModalOpen(
+  inspectorKind: "draft" | "hidden" | "new_draft" | "session",
+  workspaceModal: WorkspaceModalKind | null,
+): boolean {
+  return inspectorKind === "session" || workspaceModal === "diff";
+}
+
+export function resolveSelectedWorkspaceTicketId(input: {
+  workspaceModal: WorkspaceModalKind | null;
+  workspaceTicketId: number | null;
+  selectedSessionTicketId: number | null;
+}): number | null {
+  return input.workspaceModal === "diff"
+    ? (input.workspaceTicketId ?? input.selectedSessionTicketId)
+    : input.selectedSessionTicketId;
 }

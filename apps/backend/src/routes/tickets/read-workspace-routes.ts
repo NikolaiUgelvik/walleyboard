@@ -1,5 +1,12 @@
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import type { FastifyInstance } from "fastify";
 
+import type {
+  ReviewPackage,
+  TicketFrontmatter,
+  TicketWorkspaceDiff,
+} from "../../../../../packages/contracts/src/index.js";
 import { parsePositiveInt } from "../../lib/http.js";
 import {
   commandRouteRateLimit,
@@ -44,6 +51,30 @@ function isTerminalResizeMessage(
     Number.isFinite(record.rows) &&
     record.rows > 0
   );
+}
+
+function readPersistedWorkspaceDiff(
+  ticket: TicketFrontmatter,
+  reviewPackage: ReviewPackage,
+): TicketWorkspaceDiff {
+  if (!isAbsolute(reviewPackage.diff_ref)) {
+    throw new Error("Stored review diff artifact path is invalid");
+  }
+
+  if (!existsSync(reviewPackage.diff_ref)) {
+    throw new Error("Stored review diff artifact is no longer available");
+  }
+
+  return {
+    ticket_id: ticket.id,
+    source: "review_artifact" as const,
+    target_branch: ticket.target_branch,
+    working_branch: ticket.working_branch,
+    worktree_path: null,
+    artifact_path: reviewPackage.diff_ref,
+    patch: readFileSync(reviewPackage.diff_ref, "utf8"),
+    generated_at: reviewPackage.created_at,
+  };
 }
 
 export function registerTicketReadWorkspaceRoutes(
@@ -137,25 +168,39 @@ export function registerTicketReadWorkspaceRoutes(
         reply.code(404).send({ error: "Ticket not found" });
         return;
       }
-      if (!ticket.session_id || !ticket.working_branch) {
-        reply.code(409).send({ error: "Ticket has no prepared workspace yet" });
+
+      if (ticket.session_id && ticket.working_branch) {
+        const session = store.getSession(ticket.session_id);
+        if (session?.worktree_path) {
+          return {
+            workspace_diff: ticketWorkspaceService.getDiff({
+              targetBranch: ticket.target_branch,
+              ticketId: ticket.id,
+              workingBranch: ticket.working_branch,
+              worktreePath: session.worktree_path,
+            }),
+          };
+        }
+      }
+
+      const reviewPackage = store.getReviewPackage(ticketId);
+      if (!reviewPackage) {
+        reply.code(409).send({ error: "Ticket has no diff available yet" });
         return;
       }
 
-      const session = store.getSession(ticket.session_id);
-      if (!session?.worktree_path) {
-        reply.code(409).send({ error: "Session has no prepared worktree" });
-        return;
+      try {
+        return {
+          workspace_diff: readPersistedWorkspaceDiff(ticket, reviewPackage),
+        };
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to load the stored review diff",
+        });
       }
-
-      return {
-        workspace_diff: ticketWorkspaceService.getDiff({
-          targetBranch: ticket.target_branch,
-          ticketId: ticket.id,
-          workingBranch: ticket.working_branch,
-          worktreePath: session.worktree_path,
-        }),
-      };
     },
   );
 

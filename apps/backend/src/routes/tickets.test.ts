@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -329,6 +330,151 @@ test("merge route clears the persisted worktree path after cleanup", async () =>
       readFileSync(join(repoPath, "ticket.txt"), "utf8"),
       "ticket work\n",
     );
+
+    await app.close();
+  } finally {
+    restoreWalleyBoardHome();
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("done tickets keep their stored diff through archive and restore", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-diff-"));
+  const previousCwd = process.cwd();
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
+  const restoreWalleyBoardHome = setWalleyBoardHome(walleyBoardHome);
+
+  try {
+    process.chdir(tempDir);
+
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Route Archive Diff Project",
+      repository: {
+        name: "repo",
+        path: tempDir,
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    const started = store.startTicket(ticket.id, false, {
+      logs: [],
+      workingBranch: "ticket-archive-diff",
+      worktreePath: join(tempDir, "ticket-worktree"),
+    });
+    const diffPath = join(
+      walleyBoardHome,
+      "review-packages",
+      project.slug,
+      `ticket-${ticket.id}.patch`,
+    );
+    const patch = [
+      "diff --git a/src/app.ts b/src/app.ts",
+      "index 1111111..2222222 100644",
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -1 +1 @@",
+      '-console.log("before");',
+      '+console.log("after");',
+    ].join("\n");
+
+    mkdirSync(join(walleyBoardHome, "review-packages", project.slug), {
+      recursive: true,
+    });
+    writeFileSync(diffPath, patch, "utf8");
+    store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: diffPath,
+      commit_refs: ["abc123"],
+      change_summary: "Ready to archive",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateSessionWorktreePath(started.session.id, null);
+    store.updateSessionStatus(
+      started.session.id,
+      "completed",
+      "Review package ready.",
+    );
+    store.updateTicketStatus(ticket.id, "done");
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: {
+        hasActiveExecution() {
+          return false;
+        },
+      } as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          throw new Error("Not used in this test");
+        },
+        async reconcileTicket() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      ticketWorkspaceService: {
+        async disposeTicket() {},
+        getDiff() {
+          throw new Error("Stored diff fallback should be used in this test");
+        },
+        async stopPreviewAndWait() {},
+      } as never,
+    });
+
+    const assertStoredDiff = async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: `/tickets/${ticket.id}/workspace/diff`,
+      });
+
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json().workspace_diff, {
+        artifact_path: diffPath,
+        generated_at: store.getReviewPackage(ticket.id)?.created_at,
+        patch,
+        source: "review_artifact",
+        target_branch: "main",
+        ticket_id: ticket.id,
+        working_branch: "ticket-archive-diff",
+        worktree_path: null,
+      });
+      assert.equal(readFileSync(diffPath, "utf8"), patch);
+    };
+
+    await assertStoredDiff();
+
+    const archiveResponse = await app.inject({
+      method: "POST",
+      url: `/tickets/${ticket.id}/archive`,
+      payload: {},
+    });
+    assert.equal(archiveResponse.statusCode, 200);
+    assert.equal(store.listProjectTickets(project.id).length, 0);
+    assert.equal(
+      store.listProjectTickets(project.id, { archivedOnly: true }).length,
+      1,
+    );
+    await assertStoredDiff();
+
+    const restoreResponse = await app.inject({
+      method: "POST",
+      url: `/tickets/${ticket.id}/restore`,
+      payload: {},
+    });
+    assert.equal(restoreResponse.statusCode, 200);
+    assert.equal(store.listProjectTickets(project.id).length, 1);
+    await assertStoredDiff();
 
     await app.close();
   } finally {

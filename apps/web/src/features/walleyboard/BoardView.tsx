@@ -189,7 +189,9 @@ export function TicketWorkspaceActions({
       ? false
       : (controller.agentControlsWorktreeBySessionId.get(ticket.session_id) ??
         true);
-  const diffDisabled = !hasPreparedWorktree;
+  const diffDisabled =
+    ticket.session_id === null ||
+    (!hasPreparedWorktree && ticket.status !== "done");
   const terminalDisabled =
     !hasPreparedWorktree || ticketSessionAgentControlsWorktree;
   const previewDisabled = !hasPreparedWorktree || previewBusy;
