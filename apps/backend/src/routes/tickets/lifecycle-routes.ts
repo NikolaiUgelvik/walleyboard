@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
 import { parsePositiveInt } from "../../lib/http.js";
+import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import { removeTicketArtifacts } from "../../lib/ticket-artifacts.js";
 import {
   removeLocalBranch,
@@ -21,7 +22,6 @@ export function registerTicketLifecycleRoutes(
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/archive",
-    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -66,7 +66,6 @@ export function registerTicketLifecycleRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/restore",
-    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -109,7 +108,7 @@ export function registerTicketLifecycleRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/delete",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {

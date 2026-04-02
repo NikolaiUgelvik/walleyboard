@@ -8,6 +8,10 @@ import {
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
+import {
+  commandRouteRateLimit,
+  repositoryRouteRateLimit,
+} from "../lib/rate-limit.js";
 import type { Store } from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
 import {
@@ -92,7 +96,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/repository-branches",
-    { preHandler: app.rateLimit() },
+    { preHandler: repositoryRouteRateLimit(app) },
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {
@@ -195,7 +199,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/delete",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {

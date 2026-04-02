@@ -9,6 +9,7 @@ import {
   parsePositiveInt,
   sendNotImplemented,
 } from "../../lib/http.js";
+import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
   AutomaticMergeRecoveryError,
   mergeReviewedBranch,
@@ -29,7 +30,7 @@ export function registerTicketReviewRoutes(
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/request-changes",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -125,7 +126,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/create-pr",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -145,7 +146,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/merge",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -362,7 +363,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/reconcile",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {

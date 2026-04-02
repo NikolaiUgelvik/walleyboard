@@ -10,6 +10,7 @@ import {
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
+import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
   prepareWorktree,
   resetPreparedWorktreeImmediately,
@@ -29,7 +30,7 @@ export function registerTicketExecutionRoutes(
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/start",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -126,7 +127,7 @@ export function registerTicketExecutionRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/stop",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -204,7 +205,7 @@ export function registerTicketExecutionRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/resume",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -306,7 +307,7 @@ export function registerTicketExecutionRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/restart",
-    { preHandler: app.rateLimit() },
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
