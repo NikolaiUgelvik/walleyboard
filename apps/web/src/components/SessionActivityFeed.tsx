@@ -800,6 +800,25 @@ function parseExecutionSummary(summary: string): ParsedExecutionSummary {
   };
 }
 
+export function summarizeSessionActivity(
+  session: ExecutionSession,
+  logs: string[],
+): string {
+  const parsedSummary = parseExecutionSummary(
+    session.last_summary ?? fallbackSummary(session),
+  );
+  if (parsedSummary.overview.length > 0) {
+    return parsedSummary.overview;
+  }
+
+  const latestActivity = [...logs]
+    .reverse()
+    .map((line, index) => interpretSessionLog(line, index, session))
+    .find((activity): activity is SessionActivity => activity !== null);
+
+  return latestActivity?.detail ?? fallbackSummary(session);
+}
+
 export function SessionActivityFeed({
   logs,
   session,

@@ -13,7 +13,7 @@ Engineering teams working across multiple repositories and worktrees need a cent
 - Refine tickets with AI assistance before execution starts
 - Launch and monitor Codex CLI sessions tied to specific tickets
 - Control whether execution starts directly or begins in model planning mode
-- Understand what Codex is doing through interpreted progress updates and open a manual project terminal when direct CLI work is needed
+- Understand what Codex is doing through interpreted progress updates and open a worktree terminal when direct CLI work is needed
 
 Today this workflow is fragmented across issue trackers, local notes, terminals, worktrees, and ad hoc scripts. That fragmentation makes it difficult to manage parallel AI-assisted execution safely and predictably.
 
@@ -321,6 +321,9 @@ Before execution begins, the user should see an approval summary that includes:
 
 ### 7.5 Session Activity and Manual Terminal Access
 - The default ticket or session view must present interpreted agent activity rather than a raw Codex terminal transcript.
+- Ticket cards should expose compact action icons for diff, terminal, preview, and full interpreted activity.
+- The inspector workspace area should collapse to a single high-signal activity summary row that opens the same interpreted activity stream.
+- The preview action should start the ticket dev server when needed, open the preview in a new browser tab, and switch to a stop control while that dev server remains active.
 - The primary monitoring surface should emphasize:
   - Current session status
   - The latest high-signal agent updates
@@ -328,7 +331,7 @@ Before execution begins, the user should see an approval summary that includes:
   - Review readiness
   - Required user input or approval
 - Full raw logs may still be persisted for debugging, but they must not be the default UI for following Codex progress.
-- If the product exposes a terminal, it should be framed as a separate manual project terminal for user-initiated commands rather than the primary place to watch Codex work.
+- If the product exposes a terminal, it should be framed as a separate plain worktree terminal for user-initiated commands rather than the primary place to watch Codex work.
 
 #### Manual Terminal Ownership
 - A manual terminal, if present, must be clearly distinct from the interpreted Codex activity view.
@@ -1274,7 +1277,8 @@ The MVP should prove one reliable end-to-end workflow:
 - Host or Docker-backed ticket execution selected per project
 - Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
-- Manual terminal takeover with explicit restore-agent handoff
+- Card-level diff, terminal, preview, and activity actions, with diff/terminal/activity opening in large modal workspaces
+- Plain xterm.js worktree terminal access without agent takeover controls on that surface
 - Repo-configured validation commands
 - Review package generation with:
   - diff

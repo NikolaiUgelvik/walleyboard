@@ -410,6 +410,33 @@ body {
   padding: 10px;
 }
 
+.ticket-workspace-action-group {
+  align-self: flex-start;
+}
+
+.ticket-workspace-summary-row {
+  width: 100%;
+  text-align: left;
+  background: var(--walleyboard-panel-soft);
+  border: 1px solid var(--walleyboard-border);
+  border-radius: 14px;
+  padding: 12px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.ticket-workspace-summary-row:hover {
+  border-color: rgba(210, 110, 25, 0.28);
+  box-shadow: 0 0 0 1px rgba(210, 110, 25, 0.12);
+}
+
+.ticket-workspace-modal-body {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
 .ticket-workspace-tabs {
   min-width: 0;
 }
@@ -432,6 +459,21 @@ body {
   border: 1px solid var(--walleyboard-border);
   border-radius: 16px;
   overflow: hidden;
+}
+
+.ticket-workspace-terminal-shell {
+  background: #10151b;
+  border: 1px solid var(--walleyboard-border);
+  border-radius: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.ticket-workspace-terminal-screen,
+.ticket-workspace-terminal-screen .xterm {
+  height: 100%;
 }
 
 .ticket-workspace-preview-frame {

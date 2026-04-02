@@ -39,7 +39,7 @@ Implemented now:
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session and worktree
 - Codex-managed execution modes through `codex exec`, with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
-- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request changes and resume, allows manual terminal takeover with restore-agent handoff, and merges directly from `review` into the target branch with cleanup
+- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request changes and resume, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row, and merges directly from `review` into the target branch with cleanup
 - ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
 - conservative restart recovery that marks active sessions `interrupted` instead of auto-restoring live execution
 
@@ -55,6 +55,8 @@ Not yet implemented:
 - The draft-to-ready flow is `edit draft -> Refine or Questions -> optional Revert Refine -> Create Ready`
 - Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session and worktree
+- Ticket cards with prepared worktrees expose a compact action group for `Diff`, `Terminal`, `Preview`, and `Activity`; the inspector keeps a single activity summary row that opens the same interpreted stream
+- The `Preview` action starts the ticket dev server when needed, opens a browser tab, and switches to a stop control while that dev server is running
 - Completed tickets can be archived out of the active board and restored later
 - Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup
 

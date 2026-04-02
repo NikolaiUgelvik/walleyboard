@@ -693,6 +693,20 @@ export function useWalleyBoardMutations({
     },
   });
 
+  const stopTicketWorkspacePreviewMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<TicketWorkspacePreviewResponse>(
+        `/tickets/${ticketId}/workspace/preview/stop`,
+        {},
+      ),
+    onSuccess: (response, ticketId) => {
+      queryClient.setQueryData<TicketWorkspacePreviewResponse>(
+        ["tickets", ticketId, "workspace", "preview"],
+        response,
+      );
+    },
+  });
+
   const mergeTicketMutation = useMutation({
     mutationFn: (ticketId: number) =>
       postJson<CommandAck>(`/tickets/${ticketId}/merge`, {}),
@@ -906,6 +920,7 @@ export function useWalleyBoardMutations({
     startAgentReviewMutation,
     startTicketMutation,
     startTicketWorkspacePreviewMutation,
+    stopTicketWorkspacePreviewMutation,
     stopTicketMutation,
     terminalInputMutation,
     terminalRestoreMutation,

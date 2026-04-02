@@ -62,12 +62,13 @@ import {
   type SessionResponse,
   type TicketsResponse,
   type TicketWorkspaceDiffResponse,
-  type TicketWorkspacePreviewResponse,
   ticketMatchesSearch,
+  type WorkspaceModalKind,
   writeLastOpenProjectId,
 } from "./shared.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
+import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
 
 export function useWalleyBoardController() {
@@ -161,9 +162,8 @@ export function useWalleyBoardController() {
   const [planFeedbackBody, setPlanFeedbackBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
-  const [ticketWorkspaceTab, setTicketWorkspaceTab] = useState<
-    "diff" | "terminal" | "preview" | "activity"
-  >("diff");
+  const [workspaceModal, setWorkspaceModal] =
+    useState<WorkspaceModalKind | null>(null);
   const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] = useState<
     "split" | "stacked"
   >(() => readDiffLayoutPreference());
@@ -448,11 +448,6 @@ export function useWalleyBoardController() {
     );
   }, [ticketWorkspaceDiffLayout]);
 
-  useEffect(() => {
-    if (selectedSessionId !== null) {
-      setTicketWorkspaceTab("diff");
-    }
-  }, [selectedSessionId]);
   useProtocolEventSync({
     queryClient,
     selectedDraftId,
@@ -460,6 +455,12 @@ export function useWalleyBoardController() {
     selectedSessionId,
     setInspectorState,
   });
+
+  useEffect(() => {
+    if (inspectorState.kind !== "session") {
+      setWorkspaceModal(null);
+    }
+  }, [inspectorState.kind]);
 
   const sessionQuery = useQuery({
     queryKey: ["sessions", selectedSessionId],
@@ -476,14 +477,13 @@ export function useWalleyBoardController() {
     refetchInterval: selectedSessionId === null ? false : 2_000,
   });
 
+  const tickets = ticketsQuery.data?.tickets ?? [];
   const selectedSessionTicketId =
-    ticketsQuery.data?.tickets.find(
-      (ticket) => ticket.session_id === selectedSessionId,
-    )?.id ?? null;
+    tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
+    null;
   const selectedSessionTicketStatus =
-    ticketsQuery.data?.tickets.find(
-      (ticket) => ticket.session_id === selectedSessionId,
-    )?.status ?? null;
+    tickets.find((ticket) => ticket.session_id === selectedSessionId)?.status ??
+    null;
   const projectOptionsProject =
     projectsQuery.data?.projects.find(
       (project) => project.id === projectOptionsProjectId,
@@ -529,19 +529,6 @@ export function useWalleyBoardController() {
     retry: false,
   });
 
-  const ticketWorkspacePreviewQuery = useQuery({
-    queryKey: ["tickets", selectedSessionTicketId, "workspace", "preview"],
-    queryFn: () =>
-      fetchJson<TicketWorkspacePreviewResponse>(
-        `/tickets/${selectedSessionTicketId}/workspace/preview`,
-      ),
-    enabled:
-      selectedSessionTicketId !== null &&
-      sessionQuery.data?.session.worktree_path != null,
-    retry: false,
-  });
-
-  const tickets = ticketsQuery.data?.tickets ?? [];
   const globalSessionById = new Map(
     globalSessionSummaries
       .map((query) => query.data?.session)
@@ -588,6 +575,15 @@ export function useWalleyBoardController() {
     silenceNextInboxItemKey,
     setTerminalCommand,
     setValidationCommandsText,
+    tickets,
+  });
+  const {
+    handleTicketPreviewAction,
+    previewActionErrorByTicketId,
+    ticketWorkspacePreviewByTicketId,
+  } = useTicketWorkspacePreview({
+    startPreviewMutation: mutations.startTicketWorkspacePreviewMutation,
+    stopPreviewMutation: mutations.stopTicketWorkspacePreviewMutation,
     tickets,
   });
 
@@ -721,43 +717,12 @@ export function useWalleyBoardController() {
   const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
   const ticketWorkspaceDiff =
     ticketWorkspaceDiffQuery.data?.workspace_diff ?? null;
-  const ticketWorkspacePreview =
-    ticketWorkspacePreviewQuery.data?.preview ?? null;
   const sessionById = new Map(
     sessionSummaries
       .map((query) => query.data?.session)
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
   );
-
-  useEffect(() => {
-    if (
-      ticketWorkspaceTab !== "preview" ||
-      !selectedSessionTicket ||
-      !session?.worktree_path ||
-      mutations.startTicketWorkspacePreviewMutation.isPending
-    ) {
-      return;
-    }
-
-    if (
-      ticketWorkspacePreview?.state === "ready" ||
-      ticketWorkspacePreview?.state === "starting" ||
-      ticketWorkspacePreview?.state === "failed"
-    ) {
-      return;
-    }
-
-    mutations.startTicketWorkspacePreviewMutation.mutate(
-      selectedSessionTicket.id,
-    );
-  }, [
-    mutations.startTicketWorkspacePreviewMutation,
-    selectedSessionTicket,
-    session?.worktree_path,
-    ticketWorkspacePreview?.state,
-    ticketWorkspaceTab,
-  ]);
 
   const searchNeedle = normalizeText(boardSearch);
   const visibleDrafts = drafts.filter((draft) =>
@@ -1237,11 +1202,13 @@ export function useWalleyBoardController() {
 
   const openNewDraft = (): void => {
     initializeNewDraftEditor(selectedProjectId);
+    setWorkspaceModal(null);
     setInspectorState({ kind: "new_draft" });
     window.requestAnimationFrame(() => focusElementById("draft-title"));
   };
 
   const hideInspector = (): void => {
+    setWorkspaceModal(null);
     setInspectorState({ kind: "hidden" });
   };
 
@@ -1253,7 +1220,24 @@ export function useWalleyBoardController() {
     setInspectorState({ kind: "session", sessionId: ticket.session_id });
   };
 
+  const openTicketWorkspaceModal = (
+    ticket: TicketFrontmatter,
+    modal: WorkspaceModalKind,
+  ): void => {
+    if (!ticket.session_id) {
+      return;
+    }
+
+    openTicketSession(ticket);
+    setWorkspaceModal(modal);
+  };
+
+  const closeWorkspaceModal = (): void => {
+    setWorkspaceModal(null);
+  };
+
   const openDraft = (draftId: string): void => {
+    setWorkspaceModal(null);
     setInspectorState({ kind: "draft", draftId });
   };
 
@@ -1362,6 +1346,7 @@ export function useWalleyBoardController() {
     latestQuestionsResult,
     latestRevertableRefineEvent,
     openArchiveModal,
+    openTicketWorkspaceModal,
     openDraft,
     openNewDraft,
     openProjectOptions,
@@ -1369,6 +1354,7 @@ export function useWalleyBoardController() {
     pendingDraftEditorSync,
     pendingNewDraftAction,
     planFeedbackBody,
+    previewActionErrorByTicketId,
     projectDeleteConfirmText,
     projectModalOpen,
     projectName,
@@ -1433,6 +1419,8 @@ export function useWalleyBoardController() {
     sessionLogs,
     sessionLogsQuery,
     sessionQuery,
+    closeWorkspaceModal,
+    workspaceModal,
     setArchiveModalOpen,
     setBoardSearch,
     setDefaultBranch,
@@ -1466,16 +1454,14 @@ export function useWalleyBoardController() {
     setResumeReason,
     setTerminalCommand,
     setTicketWorkspaceDiffLayout,
-    setTicketWorkspaceTab,
     setValidationCommandsText,
     sessionSummaries,
     terminalCommand,
+    handleTicketPreviewAction,
     ticketWorkspaceDiff,
     ticketWorkspaceDiffLayout,
     ticketWorkspaceDiffQuery,
-    ticketWorkspacePreview,
-    ticketWorkspacePreviewQuery,
-    ticketWorkspaceTab,
+    ticketWorkspacePreviewByTicketId,
     tickets,
     ticketsQuery,
     validationCommandsText,

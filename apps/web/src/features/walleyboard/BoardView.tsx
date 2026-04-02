@@ -11,6 +11,13 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import {
+  IconActivityHeartbeat,
+  IconBrowser,
+  IconFileDiff,
+  IconPlayerStop,
+  IconTerminal2,
+} from "@tabler/icons-react";
 import type {
   ExecutionSession,
   TicketFrontmatter,
@@ -149,6 +156,93 @@ function TicketMenu({
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>
+  );
+}
+
+function TicketWorkspaceActions({
+  controller,
+  ticket,
+}: {
+  controller: WalleyBoardController;
+  ticket: TicketFrontmatter;
+}) {
+  const preview = controller.ticketWorkspacePreviewByTicketId.get(ticket.id);
+  const previewRunning = preview?.state === "ready";
+  const previewBusy =
+    preview?.state === "starting" ||
+    (controller.startTicketWorkspacePreviewMutation.isPending &&
+      controller.startTicketWorkspacePreviewMutation.variables === ticket.id) ||
+    (controller.stopTicketWorkspacePreviewMutation.isPending &&
+      controller.stopTicketWorkspacePreviewMutation.variables === ticket.id);
+  const previewError =
+    controller.previewActionErrorByTicketId[ticket.id] ?? preview?.error;
+  const disabled = !ticket.session_id;
+  const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
+
+  return (
+    <Stack gap={6}>
+      <ActionIcon.Group className="ticket-workspace-action-group">
+        <ActionIcon
+          aria-label="Open worktree diff"
+          disabled={disabled}
+          title="Diff"
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.openTicketWorkspaceModal(ticket, "diff");
+          }}
+        >
+          <IconFileDiff size={16} />
+        </ActionIcon>
+        <ActionIcon
+          aria-label="Open worktree terminal"
+          disabled={disabled}
+          title="Terminal"
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.openTicketWorkspaceModal(ticket, "terminal");
+          }}
+        >
+          <IconTerminal2 size={16} />
+        </ActionIcon>
+        <ActionIcon
+          aria-label={previewLabel}
+          disabled={disabled || previewBusy}
+          title={previewLabel}
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.handleTicketPreviewAction(ticket);
+          }}
+        >
+          {previewBusy ? (
+            <Loader size={14} />
+          ) : previewRunning ? (
+            <IconPlayerStop size={16} />
+          ) : (
+            <IconBrowser size={16} />
+          )}
+        </ActionIcon>
+        <ActionIcon
+          aria-label="Open activity stream"
+          disabled={disabled}
+          title="Activity"
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.openTicketWorkspaceModal(ticket, "activity");
+          }}
+        >
+          <IconActivityHeartbeat size={16} />
+        </ActionIcon>
+      </ActionIcon.Group>
+      {previewError ? (
+        <Text size="sm" c="red">
+          {previewError}
+        </Text>
+      ) : null}
+    </Stack>
   );
 }
 
@@ -608,6 +702,10 @@ export function BoardView({
                                     ) : null}
                                   </Group>
                                 ) : null}
+                                <TicketWorkspaceActions
+                                  controller={controller}
+                                  ticket={ticket}
+                                />
 
                                 {showDeleteError ? (
                                   <Text size="sm" c="red">

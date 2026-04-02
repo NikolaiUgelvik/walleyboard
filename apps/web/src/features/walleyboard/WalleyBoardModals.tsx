@@ -15,6 +15,9 @@ import {
 } from "@mantine/core";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
+import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
+import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
+import { TicketWorkspaceTerminal } from "../../components/TicketWorkspaceTerminal.js";
 import {
   agentAdapterOptions,
   buildRepositoryBranchOptions,
@@ -33,9 +36,85 @@ export function WalleyBoardModals({
   controller: WalleyBoardController;
 }) {
   const projectOptionsProject = controller.projectOptionsProject;
+  const workspaceModalTitle =
+    controller.workspaceModal === "diff"
+      ? "Worktree diff"
+      : controller.workspaceModal === "terminal"
+        ? "Worktree terminal"
+        : controller.workspaceModal === "activity"
+          ? "Activity stream"
+          : "Workspace";
 
   return (
     <>
+      <Modal
+        opened={controller.workspaceModal !== null}
+        onClose={controller.closeWorkspaceModal}
+        title={workspaceModalTitle}
+        centered
+        size="90vw"
+        styles={{
+          content: {
+            height: "90vh",
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+          },
+          body: {
+            flex: 1,
+            minHeight: 0,
+          },
+        }}
+      >
+        <Box className="ticket-workspace-modal-body">
+          {controller.workspaceModal === "diff" ? (
+            <TicketWorkspaceDiffPanel
+              diff={controller.ticketWorkspaceDiff}
+              error={
+                controller.ticketWorkspaceDiffQuery.isError
+                  ? controller.ticketWorkspaceDiffQuery.error.message
+                  : null
+              }
+              isLoading={
+                controller.sessionQuery.isPending ||
+                controller.ticketWorkspaceDiffQuery.isPending
+              }
+              layout={controller.ticketWorkspaceDiffLayout}
+              onLayoutChange={controller.setTicketWorkspaceDiffLayout}
+            />
+          ) : controller.workspaceModal === "terminal" ? (
+            controller.selectedSessionTicket ? (
+              <TicketWorkspaceTerminal
+                ticketId={controller.selectedSessionTicket.id}
+                worktreePath={controller.session?.worktree_path ?? null}
+              />
+            ) : (
+              <Text size="sm" c="dimmed">
+                The ticket worktree is still being prepared.
+              </Text>
+            )
+          ) : controller.workspaceModal === "activity" ? (
+            controller.sessionQuery.isPending ||
+            controller.sessionLogsQuery.isPending ? (
+              <Loader size="sm" />
+            ) : controller.sessionQuery.isError ? (
+              <Text size="sm" c="red">
+                {controller.sessionQuery.error.message}
+              </Text>
+            ) : controller.session ? (
+              <SessionActivityFeed
+                logs={controller.sessionLogs}
+                session={controller.session}
+              />
+            ) : (
+              <Text size="sm" c="dimmed">
+                Session details are not available yet.
+              </Text>
+            )
+          ) : null}
+        </Box>
+      </Modal>
+
       <Modal
         opened={controller.archiveModalOpen}
         onClose={controller.closeArchiveModal}

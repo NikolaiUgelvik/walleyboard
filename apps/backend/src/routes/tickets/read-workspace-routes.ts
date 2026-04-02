@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { type IPty, spawn as spawnPty } from "node-pty";
 
 import { parsePositiveInt } from "../../lib/http.js";
 import {
@@ -6,6 +7,45 @@ import {
   repositoryRouteRateLimit,
 } from "../../lib/rate-limit.js";
 import type { TicketRouteDependencies } from "./shared.js";
+
+type TerminalInputMessage = {
+  type: "terminal.input";
+  data: string;
+};
+
+type TerminalResizeMessage = {
+  type: "terminal.resize";
+  cols: number;
+  rows: number;
+};
+
+function isTerminalInputMessage(value: unknown): value is TerminalInputMessage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return record.type === "terminal.input" && typeof record.data === "string";
+}
+
+function isTerminalResizeMessage(
+  value: unknown,
+): value is TerminalResizeMessage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    record.type === "terminal.resize" &&
+    typeof record.cols === "number" &&
+    Number.isFinite(record.cols) &&
+    record.cols > 0 &&
+    typeof record.rows === "number" &&
+    Number.isFinite(record.rows) &&
+    record.rows > 0
+  );
+}
 
 export function registerTicketReadWorkspaceRoutes(
   app: FastifyInstance,
@@ -179,6 +219,158 @@ export function registerTicketReadWorkspaceRoutes(
             error instanceof Error ? error.message : "Unable to start preview",
         });
       }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/workspace/preview/stop",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+
+      ticketWorkspaceService.stopPreview(ticket.id);
+      reply.send({
+        preview: ticketWorkspaceService.getPreview(ticket.id),
+      });
+    },
+  );
+
+  app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/workspace/terminal",
+    { websocket: true },
+    (socket, request) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message: "Invalid ticket id",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message: "Ticket not found",
+          }),
+        );
+        socket.close();
+        return;
+      }
+      if (!ticket.session_id) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message: "Ticket has no prepared workspace yet",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      const session = store.getSession(ticket.session_id);
+      if (!session?.worktree_path) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message: "Session has no prepared worktree",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      let terminal: IPty;
+      try {
+        terminal = spawnPty("bash", ["--noprofile", "--norc"], {
+          cwd: session.worktree_path,
+          env: {
+            ...process.env,
+            TERM: "xterm-256color",
+          },
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        });
+      } catch (error) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Workspace terminal failed to start",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      terminal.onData((data) => {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.output",
+            data,
+          }),
+        );
+      });
+
+      terminal.onExit(({ exitCode, signal }) => {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.exit",
+            exit_code: exitCode,
+            signal,
+          }),
+        );
+        socket.close();
+      });
+
+      socket.on("message", (rawMessage: unknown) => {
+        try {
+          const message = JSON.parse(String(rawMessage)) as unknown;
+
+          if (isTerminalInputMessage(message)) {
+            if (message.data.length > 0) {
+              terminal.write(message.data);
+            }
+            return;
+          }
+
+          if (isTerminalResizeMessage(message)) {
+            terminal.resize(
+              Math.max(1, Math.floor(message.cols)),
+              Math.max(1, Math.floor(message.rows)),
+            );
+          }
+        } catch {
+          socket.send(
+            JSON.stringify({
+              type: "terminal.error",
+              message: "Unable to parse terminal message",
+            }),
+          );
+        }
+      });
+
+      socket.on("close", () => {
+        terminal.kill();
+      });
     },
   );
 }

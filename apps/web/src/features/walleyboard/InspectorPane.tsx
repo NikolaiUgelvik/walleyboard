@@ -8,19 +8,16 @@ import {
   Loader,
   Select,
   Stack,
-  Tabs,
   Text,
   Textarea,
   TextInput,
+  UnstyledButton,
 } from "@mantine/core";
 
 import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
-import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
-import { SessionTerminalPanel } from "../../components/SessionTerminalPanel.js";
-import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
-import { TicketWorkspacePreviewPanel } from "../../components/TicketWorkspacePreviewPanel.js";
+import { summarizeSessionActivity } from "../../components/SessionActivityFeed.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import {
   DraftEventResultView,
@@ -136,6 +133,10 @@ export function InspectorPane({
           (repository) => repository.id === selectedSessionTicket.repo,
         ) ?? null);
   const session = controller.session;
+  const activitySummary =
+    session === null
+      ? null
+      : summarizeSessionActivity(session, controller.sessionLogs);
 
   return (
     <Box className="walleyboard-detail">
@@ -629,805 +630,706 @@ export function InspectorPane({
         ) : null}
 
         {controller.inspectorState.kind === "session" ? (
-          <SectionCard
-            title="Ticket workspace"
-            description="Diff, terminal, preview, and session activity live together here."
-          >
-            {controller.selectedSessionId === null ? (
+          controller.selectedSessionId === null ? (
+            <SectionCard
+              title="Ticket session"
+              description="Session details are not available yet."
+            >
               <Text size="sm" c="dimmed">
                 Session details are not available yet.
               </Text>
-            ) : controller.sessionQuery.isPending ||
-              controller.sessionLogsQuery.isPending ? (
+            </SectionCard>
+          ) : controller.sessionQuery.isPending ||
+            controller.sessionLogsQuery.isPending ? (
+            <SectionCard
+              title="Ticket session"
+              description="Loading the current ticket session."
+            >
               <Loader size="sm" />
-            ) : controller.sessionQuery.isError ? (
+            </SectionCard>
+          ) : controller.sessionQuery.isError ? (
+            <SectionCard
+              title="Ticket session"
+              description="The current ticket session could not be loaded."
+            >
               <Text size="sm" c="red">
                 {controller.sessionQuery.error.message}
               </Text>
-            ) : controller.session ? (
-              <Stack gap="md">
-                <Group justify="space-between" align="flex-start">
-                  <Stack gap={4}>
-                    <Text className="rail-kicker">Execution</Text>
-                    <Box style={{ fontWeight: 700 }}>
-                      {controller.selectedSessionTicket ? (
-                        <>
-                          <Text component="span" inherit>
-                            #{controller.selectedSessionTicket.id}{" "}
-                          </Text>
-                          <MarkdownContent
-                            content={controller.selectedSessionTicket.title}
-                            inline
-                          />
-                        </>
-                      ) : (
-                        `Ticket #${controller.session.ticket_id}`
-                      )}
-                    </Box>
-                  </Stack>
-                  <Badge
-                    variant="light"
-                    color={sessionStatusColor(controller.session.status)}
-                  >
-                    {humanizeSessionStatus(controller.session.status)}
-                  </Badge>
-                </Group>
+            </SectionCard>
+          ) : controller.session ? (
+            <>
+              <SectionCard
+                title="Ticket session"
+                description="Diff, terminal, preview, and full activity moved to the ticket card actions."
+              >
+                <Stack gap="md">
+                  <Group justify="space-between" align="flex-start">
+                    <Stack gap={4}>
+                      <Text className="rail-kicker">Execution</Text>
+                      <Box style={{ fontWeight: 700 }}>
+                        {controller.selectedSessionTicket ? (
+                          <>
+                            <Text component="span" inherit>
+                              #{controller.selectedSessionTicket.id}{" "}
+                            </Text>
+                            <MarkdownContent
+                              content={controller.selectedSessionTicket.title}
+                              inline
+                            />
+                          </>
+                        ) : (
+                          `Ticket #${controller.session.ticket_id}`
+                        )}
+                      </Box>
+                    </Stack>
+                    <Badge
+                      variant="light"
+                      color={sessionStatusColor(controller.session.status)}
+                    >
+                      {humanizeSessionStatus(controller.session.status)}
+                    </Badge>
+                  </Group>
 
-                {controller.selectedSessionTicket ? (
-                  <Box className="detail-meta-grid">
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Repository
-                      </Text>
-                      <Text fw={700}>
-                        {selectedSessionRepository?.name ?? "Pending"}
-                      </Text>
-                    </Box>
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Type
-                      </Text>
-                      <Text fw={700}>
-                        {controller.selectedSessionTicket.ticket_type
-                          .charAt(0)
-                          .toUpperCase() +
-                          controller.selectedSessionTicket.ticket_type.slice(1)}
-                      </Text>
-                    </Box>
-                    <Box className="detail-meta-card">
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        Status
-                      </Text>
-                      <Badge
-                        variant="light"
-                        color={ticketStatusColor(
-                          controller.selectedSessionTicket.status,
-                        )}
-                        style={{ alignSelf: "flex-start" }}
-                      >
-                        {humanizeTicketStatus(
-                          controller.selectedSessionTicket.status,
-                        )}
-                      </Badge>
-                    </Box>
-                    {controller.selectedSessionTicket.linked_pr ? (
+                  {controller.selectedSessionTicket ? (
+                    <Box className="detail-meta-grid">
                       <Box className="detail-meta-card">
                         <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                          Pull request
+                          Repository
                         </Text>
-                        <Group gap="xs" wrap="wrap">
-                          <Badge
-                            variant="outline"
-                            color={
-                              controller.selectedSessionTicket.linked_pr
-                                .state === "merged"
-                                ? "green"
-                                : controller.selectedSessionTicket.linked_pr
-                                      .review_status === "changes_requested"
-                                  ? "red"
-                                  : controller.selectedSessionTicket.linked_pr
-                                        .review_status === "approved"
-                                    ? "green"
-                                    : "blue"
-                            }
-                          >
-                            #{controller.selectedSessionTicket.linked_pr.number}
-                          </Badge>
-                          <Text size="sm" c="dimmed">
-                            {describePullRequestStatus(
-                              controller.selectedSessionTicket.linked_pr,
-                            )}
-                          </Text>
-                          <Text
-                            component="a"
-                            href={
-                              controller.selectedSessionTicket.linked_pr.url
-                            }
-                            target="_blank"
-                            rel="noreferrer"
-                            size="sm"
-                          >
-                            Open PR
-                          </Text>
-                        </Group>
+                        <Text fw={700}>
+                          {selectedSessionRepository?.name ?? "Pending"}
+                        </Text>
                       </Box>
-                    ) : null}
-                  </Box>
-                ) : null}
-
-                {controller.selectedSessionTicket ? (
-                  <Stack gap="xs">
-                    <Text fw={700}>Ticket details</Text>
-                    <MarkdownContent
-                      className="markdown-muted markdown-small"
-                      content={controller.selectedSessionTicket.description}
-                    />
-                    {controller.selectedSessionTicket.acceptance_criteria
-                      .length > 0 ? (
-                      <Stack gap={2}>
+                      <Box className="detail-meta-card">
                         <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                          Acceptance Criteria
+                          Type
                         </Text>
-                        <MarkdownListItems
-                          items={
-                            controller.selectedSessionTicket.acceptance_criteria
-                          }
-                        />
-                      </Stack>
-                    ) : null}
-                  </Stack>
-                ) : null}
-
-                {controller.session.status === "queued" ? (
-                  <Text size="sm" c="dimmed">
-                    This ticket is in progress and waiting for one of the
-                    project's running slots to open.
-                  </Text>
-                ) : null}
-
-                {controller.selectedSessionTicket ? (
-                  <Group justify="space-between">
-                    <Group gap="xs">
-                      {controller.selectedSessionTicket.status ===
-                        "in_progress" &&
-                      controller.selectedSessionTicketSession &&
-                      isStoppableSessionStatus(
-                        controller.selectedSessionTicketSession.status,
-                      ) ? (
-                        <Button
-                          color="orange"
+                        <Text fw={700}>
+                          {controller.selectedSessionTicket.ticket_type
+                            .charAt(0)
+                            .toUpperCase() +
+                            controller.selectedSessionTicket.ticket_type.slice(
+                              1,
+                            )}
+                        </Text>
+                      </Box>
+                      <Box className="detail-meta-card">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Status
+                        </Text>
+                        <Badge
                           variant="light"
-                          size="xs"
-                          loading={
-                            controller.stopTicketMutation.isPending &&
-                            controller.stopTicketMutation.variables
-                              ?.ticketId === controller.selectedSessionTicket.id
+                          color={ticketStatusColor(
+                            controller.selectedSessionTicket.status,
+                          )}
+                          style={{ alignSelf: "flex-start" }}
+                        >
+                          {humanizeTicketStatus(
+                            controller.selectedSessionTicket.status,
+                          )}
+                        </Badge>
+                      </Box>
+                      {controller.selectedSessionTicket.linked_pr ? (
+                        <Box className="detail-meta-card">
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Pull request
+                          </Text>
+                          <Group gap="xs" wrap="wrap">
+                            <Badge
+                              variant="outline"
+                              color={
+                                controller.selectedSessionTicket.linked_pr
+                                  .state === "merged"
+                                  ? "green"
+                                  : controller.selectedSessionTicket.linked_pr
+                                        .review_status === "changes_requested"
+                                    ? "red"
+                                    : controller.selectedSessionTicket.linked_pr
+                                          .review_status === "approved"
+                                      ? "green"
+                                      : "blue"
+                              }
+                            >
+                              #
+                              {
+                                controller.selectedSessionTicket.linked_pr
+                                  .number
+                              }
+                            </Badge>
+                            <Text size="sm" c="dimmed">
+                              {describePullRequestStatus(
+                                controller.selectedSessionTicket.linked_pr,
+                              )}
+                            </Text>
+                            <Text
+                              component="a"
+                              href={
+                                controller.selectedSessionTicket.linked_pr.url
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                              size="sm"
+                            >
+                              Open PR
+                            </Text>
+                          </Group>
+                        </Box>
+                      ) : null}
+                    </Box>
+                  ) : null}
+
+                  {controller.selectedSessionTicket ? (
+                    <Stack gap="xs">
+                      <Text fw={700}>Ticket details</Text>
+                      <MarkdownContent
+                        className="markdown-muted markdown-small"
+                        content={controller.selectedSessionTicket.description}
+                      />
+                      {controller.selectedSessionTicket.acceptance_criteria
+                        .length > 0 ? (
+                        <Stack gap={2}>
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                            Acceptance Criteria
+                          </Text>
+                          <MarkdownListItems
+                            items={
+                              controller.selectedSessionTicket
+                                .acceptance_criteria
+                            }
+                          />
+                        </Stack>
+                      ) : null}
+                    </Stack>
+                  ) : null}
+
+                  {controller.session.status === "queued" ? (
+                    <Text size="sm" c="dimmed">
+                      This ticket is in progress and waiting for one of the
+                      project's running slots to open.
+                    </Text>
+                  ) : null}
+
+                  {controller.selectedSessionTicket ? (
+                    <Group justify="space-between">
+                      <Group gap="xs">
+                        {controller.selectedSessionTicket.status ===
+                          "in_progress" &&
+                        controller.selectedSessionTicketSession &&
+                        isStoppableSessionStatus(
+                          controller.selectedSessionTicketSession.status,
+                        ) ? (
+                          <Button
+                            color="orange"
+                            variant="light"
+                            size="xs"
+                            loading={
+                              controller.stopTicketMutation.isPending &&
+                              controller.stopTicketMutation.variables
+                                ?.ticketId ===
+                                controller.selectedSessionTicket.id
+                            }
+                            onClick={() => {
+                              if (!selectedSessionTicket) {
+                                return;
+                              }
+
+                              controller.stopTicketMutation.mutate({
+                                ticketId: selectedSessionTicket.id,
+                              });
+                            }}
+                          >
+                            Stop Ticket
+                          </Button>
+                        ) : null}
+                      </Group>
+                      <Button
+                        color="red"
+                        variant="subtle"
+                        size="xs"
+                        loading={
+                          controller.deleteTicketMutation.isPending &&
+                          controller.deleteTicketMutation.variables
+                            ?.ticketId === controller.selectedSessionTicket.id
+                        }
+                        onClick={() => {
+                          if (!selectedSessionTicket) {
+                            return;
                           }
-                          onClick={() => {
+
+                          controller.deleteTicket(selectedSessionTicket);
+                        }}
+                      >
+                        Delete Ticket
+                      </Button>
+                    </Group>
+                  ) : null}
+
+                  {controller.stopTicketMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {controller.stopTicketMutation.error.message}
+                    </Text>
+                  ) : null}
+                  {controller.deleteTicketMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {controller.deleteTicketMutation.error.message}
+                    </Text>
+                  ) : null}
+
+                  {controller.selectedSessionTicket ? (
+                    <Stack gap="xs">
+                      <Text fw={700}>Ticket workspace</Text>
+                      <UnstyledButton
+                        className="ticket-workspace-summary-row"
+                        onClick={() => {
+                          if (!controller.selectedSessionTicket) {
+                            return;
+                          }
+
+                          controller.openTicketWorkspaceModal(
+                            controller.selectedSessionTicket,
+                            "activity",
+                          );
+                        }}
+                      >
+                        <Group
+                          justify="space-between"
+                          align="flex-start"
+                          wrap="nowrap"
+                        >
+                          <Stack gap={4} style={{ flex: 1 }}>
+                            <Text fw={600}>Activity summary</Text>
+                            <MarkdownContent
+                              className="markdown-muted markdown-small"
+                              content={
+                                activitySummary ??
+                                "No interpreted activity is available for this session yet."
+                              }
+                            />
+                          </Stack>
+                          <Badge variant="light" color="blue">
+                            Open stream
+                          </Badge>
+                        </Group>
+                      </UnstyledButton>
+                    </Stack>
+                  ) : null}
+                </Stack>
+              </SectionCard>
+
+              <SectionCard
+                title="Session workflow"
+                description="Review, planning, and resume controls stay in the inspector."
+              >
+                <Stack gap="md">
+                  {controller.planFeedbackMutation.isError ? (
+                    <Text size="sm" c="red">
+                      {controller.planFeedbackMutation.error.message}
+                    </Text>
+                  ) : null}
+
+                  {controller.session.plan_summary ? (
+                    <Stack gap={4}>
+                      <Text fw={700}>
+                        {controller.session.plan_status === "awaiting_feedback"
+                          ? "Plan awaiting feedback"
+                          : "Latest plan"}
+                      </Text>
+                      <MarkdownContent
+                        className="markdown-muted markdown-small"
+                        content={controller.session.plan_summary}
+                      />
+                    </Stack>
+                  ) : null}
+
+                  {controller.selectedSessionTicket?.status === "review" ? (
+                    controller.reviewPackageQuery.isPending ? (
+                      <Loader size="sm" />
+                    ) : controller.reviewPackage ? (
+                      <Stack gap="sm">
+                        <Text fw={700}>Review package</Text>
+                        <Text size="sm" c="dimmed">
+                          Diff artifact:{" "}
+                          <Code>{controller.reviewPackage.diff_ref}</Code>
+                        </Text>
+                        <MarkdownContent
+                          className="markdown-muted markdown-small"
+                          content={controller.reviewPackage.change_summary}
+                        />
+                        <Text size="sm" c="dimmed">
+                          Validation results:{" "}
+                          {controller.reviewPackage.validation_results.length}
+                        </Text>
+                        {controller.reviewPackage.validation_results.length >
+                        0 ? (
+                          <List size="sm" spacing={4}>
+                            {controller.reviewPackage.validation_results.map(
+                              (result) => (
+                                <List.Item key={result.command_id}>
+                                  {result.label}: {result.status}
+                                </List.Item>
+                              ),
+                            )}
+                          </List>
+                        ) : null}
+                        {controller.reviewPackage.remaining_risks.length > 0 ? (
+                          <Stack gap={2}>
+                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                              Remaining Risks
+                            </Text>
+                            <MarkdownListItems
+                              items={controller.reviewPackage.remaining_risks}
+                            />
+                          </Stack>
+                        ) : null}
+                        <AgentReviewPanel
+                          latestReviewRun={controller.latestReviewRun}
+                          latestReviewRunPending={
+                            controller.latestReviewRunQuery.isPending
+                          }
+                          onStart={() => {
                             if (!selectedSessionTicket) {
                               return;
                             }
 
-                            controller.stopTicketMutation.mutate({
-                              ticketId: selectedSessionTicket.id,
-                            });
+                            controller.startAgentReviewMutation.mutate(
+                              selectedSessionTicket.id,
+                            );
                           }}
-                        >
-                          Stop Ticket
-                        </Button>
-                      ) : null}
-                    </Group>
-                    <Button
-                      color="red"
-                      variant="subtle"
-                      size="xs"
-                      loading={
-                        controller.deleteTicketMutation.isPending &&
-                        controller.deleteTicketMutation.variables?.ticketId ===
-                          controller.selectedSessionTicket.id
-                      }
-                      onClick={() => {
-                        if (!selectedSessionTicket) {
-                          return;
-                        }
-
-                        controller.deleteTicket(selectedSessionTicket);
-                      }}
-                    >
-                      Delete Ticket
-                    </Button>
-                  </Group>
-                ) : null}
-
-                {controller.stopTicketMutation.isError ? (
-                  <Text size="sm" c="red">
-                    {controller.stopTicketMutation.error.message}
-                  </Text>
-                ) : null}
-                {controller.deleteTicketMutation.isError ? (
-                  <Text size="sm" c="red">
-                    {controller.deleteTicketMutation.error.message}
-                  </Text>
-                ) : null}
-
-                <Tabs
-                  className="ticket-workspace-tabs"
-                  value={controller.ticketWorkspaceTab}
-                  onChange={(value) =>
-                    controller.setTicketWorkspaceTab(
-                      value as "diff" | "terminal" | "preview" | "activity",
-                    )
-                  }
-                >
-                  <Tabs.List grow>
-                    <Tabs.Tab value="diff">Diff</Tabs.Tab>
-                    <Tabs.Tab value="terminal">Terminal</Tabs.Tab>
-                    <Tabs.Tab value="preview">Preview</Tabs.Tab>
-                    <Tabs.Tab value="activity">Activity</Tabs.Tab>
-                  </Tabs.List>
-
-                  <Tabs.Panel
-                    className="ticket-workspace-tab-panel"
-                    value="diff"
-                  >
-                    <TicketWorkspaceDiffPanel
-                      diff={controller.ticketWorkspaceDiff}
-                      error={
-                        controller.ticketWorkspaceDiffQuery.isError
-                          ? controller.ticketWorkspaceDiffQuery.error.message
-                          : null
-                      }
-                      isLoading={controller.ticketWorkspaceDiffQuery.isPending}
-                      layout={controller.ticketWorkspaceDiffLayout}
-                      onLayoutChange={controller.setTicketWorkspaceDiffLayout}
-                    />
-                  </Tabs.Panel>
-
-                  <Tabs.Panel
-                    className="ticket-workspace-tab-panel"
-                    value="terminal"
-                  >
-                    {controller.session.worktree_path ? (
-                      <SessionTerminalPanel
-                        canTakeOver={
-                          controller.selectedSessionTicket?.status ===
-                            "in_progress" &&
-                          controller.session.status !== "paused_user_control"
-                        }
-                        session={controller.session}
-                        logs={controller.sessionLogs}
-                        command={controller.terminalCommand}
-                        onCommandChange={controller.setTerminalCommand}
-                        onSendCommand={() => {
-                          if (!controller.selectedSessionId) {
-                            return;
-                          }
-
-                          controller.terminalInputMutation.mutate({
-                            sessionId: controller.selectedSessionId,
-                            body: controller.terminalCommand,
-                          });
-                        }}
-                        onTakeOver={() => {
-                          if (!session) {
-                            return;
-                          }
-
-                          controller.terminalTakeoverMutation.mutate(
-                            session.id,
-                          );
-                        }}
-                        onRestoreAgent={() => {
-                          if (!session) {
-                            return;
-                          }
-
-                          controller.terminalRestoreMutation.mutate(session.id);
-                        }}
-                        sendLoading={controller.terminalInputMutation.isPending}
-                        takeOverLoading={
-                          controller.terminalTakeoverMutation.isPending &&
-                          controller.terminalTakeoverMutation.variables ===
-                            session?.id
-                        }
-                        restoreLoading={
-                          controller.terminalRestoreMutation.isPending
-                        }
-                        error={
-                          controller.terminalInputMutation.isError
-                            ? controller.terminalInputMutation.error.message
-                            : controller.terminalTakeoverMutation.isError
-                              ? controller.terminalTakeoverMutation.error
+                          startError={
+                            controller.startAgentReviewMutation.isError
+                              ? controller.startAgentReviewMutation.error
                                   .message
-                              : controller.terminalRestoreMutation.isError
-                                ? controller.terminalRestoreMutation.error
-                                    .message
-                                : null
-                        }
-                      />
-                    ) : (
-                      <Text size="sm" c="dimmed">
-                        The ticket worktree is still being prepared.
-                      </Text>
-                    )}
-                  </Tabs.Panel>
-
-                  <Tabs.Panel
-                    className="ticket-workspace-tab-panel"
-                    value="preview"
-                  >
-                    <TicketWorkspacePreviewPanel
-                      error={
-                        controller.ticketWorkspacePreviewQuery.isError
-                          ? controller.ticketWorkspacePreviewQuery.error.message
-                          : controller.startTicketWorkspacePreviewMutation
-                                .isError
-                            ? controller.startTicketWorkspacePreviewMutation
-                                .error.message
-                            : null
-                      }
-                      isLoading={
-                        controller.ticketWorkspacePreviewQuery.isPending
-                      }
-                      isStarting={
-                        controller.startTicketWorkspacePreviewMutation.isPending
-                      }
-                      onStart={() => {
-                        if (!controller.selectedSessionTicket) {
-                          return;
-                        }
-
-                        controller.startTicketWorkspacePreviewMutation.mutate(
-                          controller.selectedSessionTicket.id,
-                        );
-                      }}
-                      preview={controller.ticketWorkspacePreview}
-                      worktreePath={controller.session.worktree_path}
-                    />
-                  </Tabs.Panel>
-
-                  <Tabs.Panel
-                    className="ticket-workspace-tab-panel"
-                    value="activity"
-                  >
-                    <Stack gap="md">
-                      {controller.planFeedbackMutation.isError ? (
-                        <Text size="sm" c="red">
-                          {controller.planFeedbackMutation.error.message}
-                        </Text>
-                      ) : null}
-
-                      {controller.session.plan_summary ? (
-                        <Stack gap={4}>
-                          <Text fw={700}>
-                            {controller.session.plan_status ===
-                            "awaiting_feedback"
-                              ? "Plan awaiting feedback"
-                              : "Latest plan"}
+                              : null
+                          }
+                          startPending={
+                            controller.startAgentReviewMutation.isPending &&
+                            controller.startAgentReviewMutation.variables ===
+                              controller.selectedSessionTicket.id
+                          }
+                        />
+                        {controller.mergeTicketMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {controller.mergeTicketMutation.error.message}
                           </Text>
-                          <MarkdownContent
-                            className="markdown-muted markdown-small"
-                            content={controller.session.plan_summary}
-                          />
-                        </Stack>
-                      ) : null}
+                        ) : null}
+                        {controller.createPullRequestMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {controller.createPullRequestMutation.error.message}
+                          </Text>
+                        ) : null}
+                        {controller.requestChangesMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {controller.requestChangesMutation.error.message}
+                          </Text>
+                        ) : null}
+                        <Textarea
+                          label="Requested changes"
+                          placeholder="Ask Codex to adjust the current review before you approve it."
+                          value={controller.requestedChangesBody}
+                          onChange={(event) =>
+                            controller.setRequestedChangesBody(
+                              event.currentTarget.value,
+                            )
+                          }
+                          minRows={3}
+                        />
+                        <Group justify="space-between">
+                          <Button
+                            variant="light"
+                            loading={
+                              controller.requestChangesMutation.isPending &&
+                              controller.requestChangesMutation.variables
+                                ?.ticketId ===
+                                controller.selectedSessionTicket.id
+                            }
+                            disabled={
+                              controller.requestedChangesBody.trim().length ===
+                              0
+                            }
+                            onClick={() => {
+                              if (!selectedSessionTicket) {
+                                return;
+                              }
 
-                      {controller.selectedSessionTicket?.status === "review" ? (
-                        controller.reviewPackageQuery.isPending ? (
-                          <Loader size="sm" />
-                        ) : controller.reviewPackage ? (
-                          <Stack gap="sm">
-                            <Text fw={700}>Review package</Text>
-                            <Text size="sm" c="dimmed">
-                              Diff artifact:{" "}
-                              <Code>{controller.reviewPackage.diff_ref}</Code>
-                            </Text>
-                            <MarkdownContent
-                              className="markdown-muted markdown-small"
-                              content={controller.reviewPackage.change_summary}
-                            />
-                            <Text size="sm" c="dimmed">
-                              Validation results:{" "}
-                              {
-                                controller.reviewPackage.validation_results
-                                  .length
-                              }
-                            </Text>
-                            {controller.reviewPackage.validation_results
-                              .length > 0 ? (
-                              <List size="sm" spacing={4}>
-                                {controller.reviewPackage.validation_results.map(
-                                  (result) => (
-                                    <List.Item key={result.command_id}>
-                                      {result.label}: {result.status}
-                                    </List.Item>
-                                  ),
-                                )}
-                              </List>
-                            ) : null}
-                            {controller.reviewPackage.remaining_risks.length >
-                            0 ? (
-                              <Stack gap={2}>
-                                <Text
-                                  size="xs"
-                                  c="dimmed"
-                                  tt="uppercase"
-                                  fw={700}
-                                >
-                                  Remaining Risks
-                                </Text>
-                                <MarkdownListItems
-                                  items={
-                                    controller.reviewPackage.remaining_risks
-                                  }
-                                />
-                              </Stack>
-                            ) : null}
-                            <AgentReviewPanel
-                              latestReviewRun={controller.latestReviewRun}
-                              latestReviewRunPending={
-                                controller.latestReviewRunQuery.isPending
-                              }
-                              onStart={() => {
-                                if (!selectedSessionTicket) {
-                                  return;
-                                }
+                              controller.requestChangesMutation.mutate({
+                                ticketId: selectedSessionTicket.id,
+                                body: controller.requestedChangesBody,
+                              });
+                            }}
+                          >
+                            Request Changes
+                          </Button>
+                          {(() => {
+                            const reviewActions = resolveReviewCardActions(
+                              controller.selectedProject,
+                              controller.selectedSessionTicket,
+                            );
+                            const primaryAction = reviewActions.primary;
+                            if (!primaryAction) {
+                              return null;
+                            }
 
-                                controller.startAgentReviewMutation.mutate(
-                                  selectedSessionTicket.id,
-                                );
-                              }}
-                              startError={
-                                controller.startAgentReviewMutation.isError
-                                  ? controller.startAgentReviewMutation.error
-                                      .message
-                                  : null
-                              }
-                              startPending={
-                                controller.startAgentReviewMutation.isPending &&
-                                controller.startAgentReviewMutation
-                                  .variables ===
-                                  controller.selectedSessionTicket.id
-                              }
-                            />
-                            {controller.mergeTicketMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {controller.mergeTicketMutation.error.message}
-                              </Text>
-                            ) : null}
-                            {controller.createPullRequestMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {
-                                  controller.createPullRequestMutation.error
-                                    .message
-                                }
-                              </Text>
-                            ) : null}
-                            {controller.requestChangesMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {
-                                  controller.requestChangesMutation.error
-                                    .message
-                                }
-                              </Text>
-                            ) : null}
-                            <Textarea
-                              label="Requested changes"
-                              placeholder="Ask Codex to adjust the current review before you approve it."
-                              value={controller.requestedChangesBody}
-                              onChange={(event) =>
-                                controller.setRequestedChangesBody(
-                                  event.currentTarget.value,
-                                )
-                              }
-                              minRows={3}
-                            />
-                            <Group justify="space-between">
+                            return (
                               <Button
-                                variant="light"
-                                loading={
-                                  controller.requestChangesMutation.isPending &&
-                                  controller.requestChangesMutation.variables
-                                    ?.ticketId ===
-                                    controller.selectedSessionTicket.id
+                                variant={
+                                  primaryAction.kind === "open_pr"
+                                    ? "light"
+                                    : "filled"
                                 }
-                                disabled={
-                                  controller.requestedChangesBody.trim()
-                                    .length === 0
+                                loading={
+                                  primaryAction.kind === "merge"
+                                    ? controller.mergeTicketMutation
+                                        .isPending &&
+                                      controller.mergeTicketMutation
+                                        .variables ===
+                                        controller.selectedSessionTicket.id
+                                    : primaryAction.kind === "create_pr"
+                                      ? controller.createPullRequestMutation
+                                          .isPending &&
+                                        controller.createPullRequestMutation
+                                          .variables ===
+                                          controller.selectedSessionTicket.id
+                                      : false
                                 }
                                 onClick={() => {
                                   if (!selectedSessionTicket) {
                                     return;
                                   }
 
-                                  controller.requestChangesMutation.mutate({
-                                    ticketId: selectedSessionTicket.id,
-                                    body: controller.requestedChangesBody,
-                                  });
+                                  if (primaryAction.kind === "merge") {
+                                    controller.mergeTicketMutation.mutate(
+                                      selectedSessionTicket.id,
+                                    );
+                                    return;
+                                  }
+
+                                  if (primaryAction.kind === "create_pr") {
+                                    controller.createPullRequestMutation.mutate(
+                                      selectedSessionTicket.id,
+                                    );
+                                    return;
+                                  }
+
+                                  if (
+                                    primaryAction.kind === "open_pr" &&
+                                    hasActiveLinkedPullRequest(
+                                      selectedSessionTicket.linked_pr,
+                                    )
+                                  ) {
+                                    window.open(
+                                      selectedSessionTicket.linked_pr.url,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    );
+                                  }
                                 }}
                               >
-                                Request Changes
+                                {primaryAction.kind === "merge"
+                                  ? `Merge to ${controller.selectedSessionTicket.target_branch}`
+                                  : primaryAction.label}
                               </Button>
-                              {(() => {
-                                const reviewActions = resolveReviewCardActions(
-                                  controller.selectedProject,
-                                  controller.selectedSessionTicket,
-                                );
-                                const primaryAction = reviewActions.primary;
-                                if (!primaryAction) {
-                                  return null;
-                                }
+                            );
+                          })()}
+                        </Group>
+                      </Stack>
+                    ) : null
+                  ) : null}
 
-                                return (
-                                  <Button
-                                    variant={
-                                      primaryAction.kind === "open_pr"
-                                        ? "light"
-                                        : "filled"
-                                    }
-                                    loading={
-                                      primaryAction.kind === "merge"
-                                        ? controller.mergeTicketMutation
-                                            .isPending &&
-                                          controller.mergeTicketMutation
-                                            .variables ===
-                                            controller.selectedSessionTicket.id
-                                        : primaryAction.kind === "create_pr"
-                                          ? controller.createPullRequestMutation
-                                              .isPending &&
-                                            controller.createPullRequestMutation
-                                              .variables ===
-                                              controller.selectedSessionTicket
-                                                .id
-                                          : false
-                                    }
-                                    onClick={() => {
-                                      if (!selectedSessionTicket) {
-                                        return;
-                                      }
+                  {controller.selectedSessionTicket &&
+                  controller.session.plan_status === "awaiting_feedback" ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!controller.selectedSessionId) {
+                          return;
+                        }
 
-                                      if (primaryAction.kind === "merge") {
-                                        controller.mergeTicketMutation.mutate(
-                                          selectedSessionTicket.id,
-                                        );
-                                        return;
-                                      }
-
-                                      if (primaryAction.kind === "create_pr") {
-                                        controller.createPullRequestMutation.mutate(
-                                          selectedSessionTicket.id,
-                                        );
-                                        return;
-                                      }
-
-                                      if (
-                                        primaryAction.kind === "open_pr" &&
-                                        hasActiveLinkedPullRequest(
-                                          selectedSessionTicket.linked_pr,
-                                        )
-                                      ) {
-                                        window.open(
-                                          selectedSessionTicket.linked_pr.url,
-                                          "_blank",
-                                          "noopener,noreferrer",
-                                        );
-                                      }
-                                    }}
-                                  >
-                                    {primaryAction.kind === "merge"
-                                      ? `Merge to ${controller.selectedSessionTicket.target_branch}`
-                                      : primaryAction.label}
-                                  </Button>
-                                );
-                              })()}
-                            </Group>
-                          </Stack>
-                        ) : null
-                      ) : null}
-
-                      <SessionActivityFeed
-                        logs={controller.sessionLogs}
-                        session={controller.session}
-                      />
-
-                      {controller.selectedSessionTicket &&
-                      controller.session.plan_status === "awaiting_feedback" ? (
-                        <form
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            if (!controller.selectedSessionId) {
-                              return;
+                        controller.planFeedbackMutation.mutate({
+                          sessionId: controller.selectedSessionId,
+                          approved: true,
+                          body:
+                            controller.planFeedbackBody.trim().length > 0
+                              ? controller.planFeedbackBody
+                              : "Plan approved. Continue with implementation.",
+                        });
+                      }}
+                    >
+                      <Stack gap="sm">
+                        <Textarea
+                          id="plan-feedback"
+                          name="planFeedback"
+                          label="Plan feedback"
+                          placeholder="Add optional implementation guidance, or describe what should change in the plan."
+                          value={controller.planFeedbackBody}
+                          onChange={(event) =>
+                            controller.setPlanFeedbackBody(
+                              event.currentTarget.value,
+                            )
+                          }
+                          minRows={3}
+                        />
+                        <Group justify="space-between">
+                          <Button
+                            variant="light"
+                            type="button"
+                            disabled={
+                              controller.planFeedbackBody.trim().length === 0
                             }
-
-                            controller.planFeedbackMutation.mutate({
-                              sessionId: controller.selectedSessionId,
-                              approved: true,
-                              body:
-                                controller.planFeedbackBody.trim().length > 0
-                                  ? controller.planFeedbackBody
-                                  : "Plan approved. Continue with implementation.",
-                            });
-                          }}
-                        >
-                          <Stack gap="sm">
-                            <Textarea
-                              id="plan-feedback"
-                              name="planFeedback"
-                              label="Plan feedback"
-                              placeholder="Add optional implementation guidance, or describe what should change in the plan."
-                              value={controller.planFeedbackBody}
-                              onChange={(event) =>
-                                controller.setPlanFeedbackBody(
-                                  event.currentTarget.value,
-                                )
+                            loading={
+                              controller.planFeedbackMutation.isPending &&
+                              controller.planFeedbackMutation.variables
+                                ?.approved === false
+                            }
+                            onClick={() => {
+                              if (!controller.selectedSessionId) {
+                                return;
                               }
-                              minRows={3}
-                            />
-                            <Group justify="space-between">
+
+                              controller.planFeedbackMutation.mutate({
+                                sessionId: controller.selectedSessionId,
+                                approved: false,
+                                body: controller.planFeedbackBody,
+                              });
+                            }}
+                          >
+                            Request Plan Changes
+                          </Button>
+                          <Button
+                            type="submit"
+                            loading={
+                              controller.planFeedbackMutation.isPending &&
+                              controller.planFeedbackMutation.variables
+                                ?.approved === true
+                            }
+                          >
+                            Confirm Plan and Start
+                          </Button>
+                        </Group>
+                      </Stack>
+                    </form>
+                  ) : controller.selectedSessionTicket &&
+                    [
+                      "awaiting_input",
+                      "failed",
+                      "interrupted",
+                      "paused_checkpoint",
+                    ].includes(controller.session.status) ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!selectedSessionTicket) {
+                          return;
+                        }
+
+                        controller.resumeTicketMutation.mutate({
+                          ticketId: selectedSessionTicket.id,
+                          reason: controller.resumeReason,
+                        });
+                      }}
+                    >
+                      <Stack gap="sm">
+                        <Textarea
+                          id="next-attempt-guidance"
+                          name="nextAttemptGuidance"
+                          label="Next attempt guidance"
+                          placeholder="Optional. Clarify what Codex should address on the next attempt."
+                          value={controller.resumeReason}
+                          onChange={(event) =>
+                            controller.setResumeReason(
+                              event.currentTarget.value,
+                            )
+                          }
+                          minRows={3}
+                        />
+                        {controller.resumeTicketMutation.isError ? (
+                          <Text size="sm" c="red">
+                            {controller.resumeTicketMutation.error.message}
+                          </Text>
+                        ) : null}
+                        {controller.restartTicketMutation.isError &&
+                        controller.restartTicketMutation.variables?.ticketId ===
+                          controller.selectedSessionTicket.id ? (
+                          <Text size="sm" c="red">
+                            {controller.restartTicketMutation.error.message}
+                          </Text>
+                        ) : null}
+                        <Group justify="space-between">
+                          <Button
+                            variant="subtle"
+                            type="button"
+                            onClick={() => {
+                              if (!controller.selectedSessionId) {
+                                return;
+                              }
+
+                              controller.sessionInputMutation.mutate({
+                                sessionId: controller.selectedSessionId,
+                                body:
+                                  controller.resumeReason ||
+                                  "Resume requested from the session view.",
+                              });
+                            }}
+                            loading={controller.sessionInputMutation.isPending}
+                          >
+                            Record Note Only
+                          </Button>
+                          <Group gap="sm">
+                            {controller.session.status === "interrupted" ? (
                               <Button
+                                color="orange"
                                 variant="light"
                                 type="button"
-                                disabled={
-                                  controller.planFeedbackBody.trim().length ===
-                                  0
-                                }
                                 loading={
-                                  controller.planFeedbackMutation.isPending &&
-                                  controller.planFeedbackMutation.variables
-                                    ?.approved === false
+                                  controller.restartTicketMutation.isPending &&
+                                  controller.restartTicketMutation.variables
+                                    ?.ticketId ===
+                                    controller.selectedSessionTicket.id
                                 }
                                 onClick={() => {
-                                  if (!controller.selectedSessionId) {
+                                  if (!selectedSessionTicket) {
                                     return;
                                   }
 
-                                  controller.planFeedbackMutation.mutate({
-                                    sessionId: controller.selectedSessionId,
-                                    approved: false,
-                                    body: controller.planFeedbackBody,
-                                  });
+                                  controller.restartTicketFromScratch(
+                                    selectedSessionTicket,
+                                    controller.resumeReason,
+                                  );
                                 }}
                               >
-                                Request Plan Changes
+                                Restart from Scratch
                               </Button>
-                              <Button
-                                type="submit"
-                                loading={
-                                  controller.planFeedbackMutation.isPending &&
-                                  controller.planFeedbackMutation.variables
-                                    ?.approved === true
-                                }
-                              >
-                                Confirm Plan and Start
-                              </Button>
-                            </Group>
-                          </Stack>
-                        </form>
-                      ) : controller.selectedSessionTicket &&
-                        [
-                          "awaiting_input",
-                          "failed",
-                          "interrupted",
-                          "paused_checkpoint",
-                        ].includes(controller.session.status) ? (
-                        <form
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            if (!selectedSessionTicket) {
-                              return;
-                            }
-
-                            controller.resumeTicketMutation.mutate({
-                              ticketId: selectedSessionTicket.id,
-                              reason: controller.resumeReason,
-                            });
-                          }}
-                        >
-                          <Stack gap="sm">
-                            <Textarea
-                              id="next-attempt-guidance"
-                              name="nextAttemptGuidance"
-                              label="Next attempt guidance"
-                              placeholder="Optional. Clarify what Codex should address on the next attempt."
-                              value={controller.resumeReason}
-                              onChange={(event) =>
-                                controller.setResumeReason(
-                                  event.currentTarget.value,
-                                )
+                            ) : null}
+                            <Button
+                              type="submit"
+                              loading={
+                                controller.resumeTicketMutation.isPending
                               }
-                              minRows={3}
-                            />
-                            {controller.resumeTicketMutation.isError ? (
-                              <Text size="sm" c="red">
-                                {controller.resumeTicketMutation.error.message}
-                              </Text>
-                            ) : null}
-                            {controller.restartTicketMutation.isError &&
-                            controller.restartTicketMutation.variables
-                              ?.ticketId ===
-                              controller.selectedSessionTicket.id ? (
-                              <Text size="sm" c="red">
-                                {controller.restartTicketMutation.error.message}
-                              </Text>
-                            ) : null}
-                            <Group justify="space-between">
-                              <Button
-                                variant="subtle"
-                                type="button"
-                                onClick={() => {
-                                  if (!controller.selectedSessionId) {
-                                    return;
-                                  }
-
-                                  controller.sessionInputMutation.mutate({
-                                    sessionId: controller.selectedSessionId,
-                                    body:
-                                      controller.resumeReason ||
-                                      "Resume requested from the session view.",
-                                  });
-                                }}
-                                loading={
-                                  controller.sessionInputMutation.isPending
-                                }
-                              >
-                                Record Note Only
-                              </Button>
-                              <Group gap="sm">
-                                {controller.session.status === "interrupted" ? (
-                                  <Button
-                                    color="orange"
-                                    variant="light"
-                                    type="button"
-                                    loading={
-                                      controller.restartTicketMutation
-                                        .isPending &&
-                                      controller.restartTicketMutation.variables
-                                        ?.ticketId ===
-                                        controller.selectedSessionTicket.id
-                                    }
-                                    onClick={() => {
-                                      if (!selectedSessionTicket) {
-                                        return;
-                                      }
-
-                                      controller.restartTicketFromScratch(
-                                        selectedSessionTicket,
-                                        controller.resumeReason,
-                                      );
-                                    }}
-                                  >
-                                    Restart from Scratch
-                                  </Button>
-                                ) : null}
-                                <Button
-                                  type="submit"
-                                  loading={
-                                    controller.resumeTicketMutation.isPending
-                                  }
-                                >
-                                  Resume Execution
-                                </Button>
-                              </Group>
-                            </Group>
-                          </Stack>
-                        </form>
-                      ) : (
-                        <Text size="sm" c="dimmed">
-                          Use this tab when a session is waiting on you, or move
-                          to Terminal when direct work inside the ticket
-                          worktree is faster than more prompting.
-                        </Text>
-                      )}
-                    </Stack>
-                  </Tabs.Panel>
-                </Tabs>
-              </Stack>
-            ) : (
+                            >
+                              Resume Execution
+                            </Button>
+                          </Group>
+                        </Group>
+                      </Stack>
+                    </form>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Use the ticket card actions for diff, terminal, preview,
+                      and the full interpreted activity stream.
+                    </Text>
+                  )}
+                </Stack>
+              </SectionCard>
+            </>
+          ) : (
+            <SectionCard
+              title="Ticket session"
+              description="Session details are not available yet."
+            >
               <Text size="sm" c="dimmed">
                 Session details are not available yet.
               </Text>
-            )}
-          </SectionCard>
+            </SectionCard>
+          )
         ) : null}
       </Stack>
     </Box>

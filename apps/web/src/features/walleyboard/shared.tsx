@@ -213,7 +213,7 @@ export type ArchiveActionFeedback = {
 };
 
 export type DiffLayout = "split" | "stacked";
-export type TicketWorkspaceTab = "diff" | "terminal" | "preview" | "activity";
+export type WorkspaceModalKind = "diff" | "terminal" | "activity";
 export type ReviewCardActionKind = "merge" | "create_pr" | "open_pr";
 export type ReviewCardAction = {
   kind: ReviewCardActionKind;

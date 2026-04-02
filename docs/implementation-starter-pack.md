@@ -43,7 +43,7 @@ Implemented now:
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session/worktree
 - Codex-managed execution modes through `codex exec`, with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
-- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request-changes and resume, allows manual terminal takeover with restore-agent handoff, and merges directly from `review` into the target branch with cleanup
+- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request-changes and resume, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row, and merges directly from `review` into the target branch with cleanup
 - ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
 - conservative restart recovery that marks active sessions `interrupted` instead of auto-restoring live execution
 
@@ -59,6 +59,8 @@ Not yet implemented:
 - The draft-to-ready flow is "edit draft -> `Refine` or `Questions` -> optional `Revert Refine` -> `Create Ready`".
 - Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`.
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session/worktree. `create-pr` and `reconcile` remain scaffolded only.
+- Tickets with prepared worktrees expose card-level `Diff`, `Terminal`, `Preview`, and `Activity` actions. The inspector keeps a single clickable activity summary row instead of workspace tabs.
+- The `Preview` action starts the ticket dev server when needed, opens a browser tab, and flips to a stop control while that dev server stays running.
 - Completed tickets can be archived out of the active board and restored later.
 - Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup.
 
@@ -98,6 +100,7 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - `GET /tickets/:ticketId/events`
 - `GET /tickets/:ticketId/workspace/diff`
 - `GET /tickets/:ticketId/workspace/preview`
+- `GET /tickets/:ticketId/workspace/terminal` (WebSocket)
 - `GET /sessions/:sessionId`
 - `GET /sessions/:sessionId/attempts`
 - `GET /sessions/:sessionId/logs`
@@ -162,9 +165,9 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - Pasted screenshots become artifact-backed Markdown image references stored under a stable `artifact_scope_id`, so they survive save, reload, refine, revert, and ready-ticket promotion.
 - Starting a `ready` ticket creates a persisted session and first attempt, prepares a git worktree and working branch, and launches either immediate execution or a planning-first run.
 - Planning-first execution pauses in `paused_checkpoint` / awaiting-feedback mode, and approval or requested plan changes resume the same logical session on the prepared worktree.
-- Execution runs through real `codex exec` with PTY-backed logs, live session input forwarding, explicit stop/resume, requested-changes retries, and manual terminal takeover with restore-agent handoff.
+- Execution runs through real `codex exec` with PTY-backed logs, live session input forwarding, explicit stop/resume, requested-changes retries, and a separate plain xterm.js worktree terminal surfaced from the ticket card actions.
 - Successful execution runs validation before review handoff, generates a local review package and persisted diff artifact, surfaces review-ready and waiting action cards, and moves the ticket to `review`.
-- The session workspace view combines diff, preview, interpreted activity, and a raw project terminal transcript for the prepared worktree.
+- The session workspace UI now uses ticket-card action icons for diff, terminal, preview, and full activity. The inspector keeps only a single activity summary row that opens the same interpreted stream in a modal.
 - From `review`, local direct merge to the target branch is implemented, including worktree and local-branch cleanup plus automatic merge-conflict fallback that moves work back to `in_progress` when recovery cannot finish the merge safely.
 - Completed tickets can be archived and later restored into the active board, and interrupted sessions can be restarted from scratch after tearing down the preserved workspace.
 - Ticket deletion stops active work when needed, removes persisted ticket/session metadata, and deletes walleyboard-owned local artifacts such as worktrees, local branches, summaries, and validation directories.
