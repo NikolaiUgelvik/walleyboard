@@ -1,5 +1,5 @@
-import { useMutation } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   AgentAdapter,
@@ -8,20 +8,17 @@ import type {
   Project,
   ReasoningEffort,
   RepositoryConfig,
+  ReviewAction,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import type {
   ArchiveActionFeedback,
-  DraftsResponse,
   InspectorState,
   ProjectsResponse,
-  RepositoriesResponse,
-  ReviewPackageResponse,
-  SessionResponse,
-  TicketWorkspacePreviewResponse,
   TicketsResponse,
+  TicketWorkspacePreviewResponse,
 } from "./shared.js";
 import {
   deriveRepositoryName,
@@ -56,6 +53,7 @@ type UseWalleyBoardMutationsInput = {
   setRepositoryPath: StateSetter<string>;
   setRequestedChangesBody: StateSetter<string>;
   setResumeReason: StateSetter<string>;
+  silenceNextInboxItemKey: (key: string) => void;
   setTerminalCommand: StateSetter<string>;
   setValidationCommandsText: StateSetter<string>;
   tickets: TicketFrontmatter[];
@@ -82,6 +80,7 @@ export function useWalleyBoardMutations({
   setRepositoryPath,
   setRequestedChangesBody,
   setResumeReason,
+  silenceNextInboxItemKey,
   setTerminalCommand,
   setValidationCommandsText,
   tickets,
@@ -120,6 +119,7 @@ export function useWalleyBoardMutations({
       agentAdapter: AgentAdapter;
       projectId: string;
       executionBackend: ExecutionBackend;
+      defaultReviewAction: ReviewAction;
       preWorktreeCommand: string | null;
       postWorktreeCommand: string | null;
       draftAnalysisModel: string | null;
@@ -134,6 +134,7 @@ export function useWalleyBoardMutations({
       saveProjectOptionsRequest(input.projectId, {
         agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
+        default_review_action: input.defaultReviewAction,
         pre_worktree_command: input.preWorktreeCommand,
         post_worktree_command: input.postWorktreeCommand,
         draft_analysis_model: input.draftAnalysisModel,
@@ -372,7 +373,9 @@ export function useWalleyBoardMutations({
       postJson<CommandAck>(`/tickets/${input.ticketId}/start`, {
         planning_enabled: input.planningEnabled,
       }),
-    onSuccess: async (ack: CommandAck) => {
+    onSuccess: async (ack: CommandAck, variables) => {
+      silenceNextInboxItemKey(`session-${variables.ticketId}`);
+
       if (!selectedProjectId) {
         return;
       }
@@ -709,6 +712,27 @@ export function useWalleyBoardMutations({
     },
   });
 
+  const createPullRequestMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<CommandAck>(`/tickets/${ticketId}/create-pr`, {}),
+    onSuccess: async (_, ticketId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-package"],
+        }),
+      ]);
+    },
+  });
+
   const requestChangesMutation = useMutation({
     mutationFn: (input: { ticketId: number; body: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/request-changes`, {
@@ -841,6 +865,7 @@ export function useWalleyBoardMutations({
     confirmDraftMutation,
     createDraftMutation,
     createProjectMutation,
+    createPullRequestMutation,
     deleteDraftMutation,
     deleteProjectMutation,
     deleteTicketMutation,

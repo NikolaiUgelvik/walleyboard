@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
 
@@ -16,11 +16,36 @@ function artifactRoot(projectSlug: string): string {
   return resolveWalleyBoardPath("ticket-artifacts", projectSlug);
 }
 
+function resolveArtifactRoot(projectSlug: string): string {
+  return resolve(artifactRoot(projectSlug));
+}
+
+function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = relative(rootPath, candidatePath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+  );
+}
+
+function resolveArtifactPath(
+  projectSlug: string,
+  ...segments: string[]
+): string {
+  const rootPath = resolveArtifactRoot(projectSlug);
+  const artifactPath = resolve(rootPath, ...segments);
+  if (!isPathWithinRoot(rootPath, artifactPath)) {
+    throw new Error("Artifact path escapes project root");
+  }
+
+  return artifactPath;
+}
+
 export function ensureTicketArtifactScopeDir(
   projectSlug: string,
   artifactScopeId: string,
 ): string {
-  const path = join(artifactRoot(projectSlug), artifactScopeId);
+  const path = resolveArtifactPath(projectSlug, artifactScopeId);
   mkdirSync(path, { recursive: true });
   return path;
 }
@@ -30,7 +55,7 @@ export function buildTicketArtifactFilePath(
   artifactScopeId: string,
   filename: string,
 ): string {
-  return join(artifactRoot(projectSlug), artifactScopeId, filename);
+  return resolveArtifactPath(projectSlug, artifactScopeId, filename);
 }
 
 export function isSafeArtifactFilename(filename: string): boolean {
@@ -48,7 +73,7 @@ export function removeTicketArtifactScope(
   projectSlug: string,
   artifactScopeId: string,
 ): string | null {
-  return removePathIfPresent(join(artifactRoot(projectSlug), artifactScopeId));
+  return removePathIfPresent(resolveArtifactPath(projectSlug, artifactScopeId));
 }
 
 export function removeTicketArtifacts(

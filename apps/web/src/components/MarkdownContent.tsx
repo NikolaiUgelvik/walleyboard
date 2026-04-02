@@ -1,5 +1,5 @@
-import React, { Fragment } from "react";
 import type { ReactNode } from "react";
+import React from "react";
 
 import { resolveProjectArtifactHref } from "../lib/api-base-url.js";
 
@@ -322,9 +322,9 @@ function renderInline(content: string, keyPrefix: string): ReactNode[] {
     }
 
     nodes.push(
-      <Fragment key={`${keyPrefix}-line-${index}`}>
+      <React.Fragment key={`${keyPrefix}-line-${index}`}>
         {renderInlineSegments(line, `${keyPrefix}-line-${index}`)}
-      </Fragment>,
+      </React.Fragment>,
     );
   }
 
@@ -405,6 +405,8 @@ function renderBlocks(blocks: MarkdownBlock[], keyPrefix: string): ReactNode[] {
           </pre>
         );
     }
+
+    return null;
   });
 }
 

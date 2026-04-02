@@ -25,6 +25,7 @@ export const ticketTypeSchema = z.enum([
 export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
 export const agentAdapterSchema = z.enum(["codex", "claude-code"]);
 export const executionBackendSchema = z.enum(["host", "docker"]);
+export const reviewActionSchema = z.enum(["direct_merge", "pull_request"]);
 
 export const executionSessionStatusSchema = z.enum([
   "queued",
@@ -93,6 +94,16 @@ export const pullRequestRefSchema = z.object({
   head_branch: z.string().min(1),
   base_branch: z.string().min(1),
   state: z.enum(["open", "closed", "merged", "unknown"]),
+  review_status: z.enum([
+    "pending",
+    "approved",
+    "changes_requested",
+    "unknown",
+  ]),
+  head_sha: z.string().min(1).nullable(),
+  changes_requested_by: z.string().min(1).nullable(),
+  last_changes_requested_head_sha: z.string().min(1).nullable(),
+  last_reconciled_at: timestampSchema.nullable(),
 });
 
 export const requestedChangeNoteSchema = z.object({
@@ -130,6 +141,7 @@ export const projectSchema = z.object({
   name: z.string().min(1),
   agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
+  default_review_action: reviewActionSchema,
   default_target_branch: z.string().min(1).nullable(),
   pre_worktree_command: z.string().min(1).nullable(),
   post_worktree_command: z.string().min(1).nullable(),
@@ -256,6 +268,7 @@ export type TicketType = z.infer<typeof ticketTypeSchema>;
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
 export type AgentAdapter = z.infer<typeof agentAdapterSchema>;
 export type ExecutionBackend = z.infer<typeof executionBackendSchema>;
+export type ReviewAction = z.infer<typeof reviewActionSchema>;
 export type ExecutionPlanStatus = z.infer<typeof executionPlanStatusSchema>;
 export type ExecutionSessionStatus = z.infer<
   typeof executionSessionStatusSchema

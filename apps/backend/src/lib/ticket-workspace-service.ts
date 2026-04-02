@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { type FSWatcher, existsSync, readFileSync, watch } from "node:fs";
+import { existsSync, type FSWatcher, readFileSync, watch } from "node:fs";
 import net from "node:net";
 
 import type {

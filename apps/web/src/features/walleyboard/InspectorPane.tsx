@@ -10,8 +10,8 @@ import {
   Stack,
   Tabs,
   Text,
-  TextInput,
   Textarea,
+  TextInput,
 } from "@mantine/core";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
@@ -20,15 +20,19 @@ import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "../../components/SessionTerminalPanel.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspacePreviewPanel } from "../../components/TicketWorkspacePreviewPanel.js";
+import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import {
   DraftEventResultView,
   DraftQuestionsResultView,
-  MarkdownListItems,
+  describePullRequestStatus,
   formatTimestamp,
+  hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
+  MarkdownListItems,
   parseDraftEventMeta,
+  resolveReviewCardActions,
   sessionStatusColor,
   ticketStatusColor,
 } from "./shared.js";
@@ -312,7 +316,12 @@ export function InspectorPane({
                     </Badge>
                   ) : null}
                   <Badge variant="light" color="gray">
-                    {controller.selectedDraft.wizard_status.replace(/_/g, " ")}
+                    {formatDraftStatusLabel({
+                      isRefining: controller.isDraftRefinementActive(
+                        controller.selectedDraft.id,
+                      ),
+                      wizardStatus: controller.selectedDraft.wizard_status,
+                    })}
                   </Badge>
                 </Group>
               </Group>
@@ -700,6 +709,48 @@ export function InspectorPane({
                         )}
                       </Badge>
                     </Box>
+                    {controller.selectedSessionTicket.linked_pr ? (
+                      <Box className="detail-meta-card">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Pull request
+                        </Text>
+                        <Group gap="xs" wrap="wrap">
+                          <Badge
+                            variant="outline"
+                            color={
+                              controller.selectedSessionTicket.linked_pr
+                                .state === "merged"
+                                ? "green"
+                                : controller.selectedSessionTicket.linked_pr
+                                      .review_status === "changes_requested"
+                                  ? "red"
+                                  : controller.selectedSessionTicket.linked_pr
+                                        .review_status === "approved"
+                                    ? "green"
+                                    : "blue"
+                            }
+                          >
+                            #{controller.selectedSessionTicket.linked_pr.number}
+                          </Badge>
+                          <Text size="sm" c="dimmed">
+                            {describePullRequestStatus(
+                              controller.selectedSessionTicket.linked_pr,
+                            )}
+                          </Text>
+                          <Text
+                            component="a"
+                            href={
+                              controller.selectedSessionTicket.linked_pr.url
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            size="sm"
+                          >
+                            Open PR
+                          </Text>
+                        </Group>
+                      </Box>
+                    ) : null}
                   </Box>
                 ) : null}
 
@@ -1016,6 +1067,14 @@ export function InspectorPane({
                                 {controller.mergeTicketMutation.error.message}
                               </Text>
                             ) : null}
+                            {controller.createPullRequestMutation.isError ? (
+                              <Text size="sm" c="red">
+                                {
+                                  controller.createPullRequestMutation.error
+                                    .message
+                                }
+                              </Text>
+                            ) : null}
                             {controller.requestChangesMutation.isError ? (
                               <Text size="sm" c="red">
                                 {
@@ -1061,25 +1120,78 @@ export function InspectorPane({
                               >
                                 Request Changes
                               </Button>
-                              <Button
-                                loading={
-                                  controller.mergeTicketMutation.isPending &&
-                                  controller.mergeTicketMutation.variables ===
-                                    controller.selectedSessionTicket.id
+                              {(() => {
+                                const reviewActions = resolveReviewCardActions(
+                                  controller.selectedProject,
+                                  controller.selectedSessionTicket,
+                                );
+                                const primaryAction = reviewActions.primary;
+                                if (!primaryAction) {
+                                  return null;
                                 }
-                                onClick={() => {
-                                  if (!selectedSessionTicket) {
-                                    return;
-                                  }
 
-                                  controller.mergeTicketMutation.mutate(
-                                    selectedSessionTicket.id,
-                                  );
-                                }}
-                              >
-                                Merge to{" "}
-                                {controller.selectedSessionTicket.target_branch}
-                              </Button>
+                                return (
+                                  <Button
+                                    variant={
+                                      primaryAction.kind === "open_pr"
+                                        ? "light"
+                                        : "filled"
+                                    }
+                                    loading={
+                                      primaryAction.kind === "merge"
+                                        ? controller.mergeTicketMutation
+                                            .isPending &&
+                                          controller.mergeTicketMutation
+                                            .variables ===
+                                            controller.selectedSessionTicket.id
+                                        : primaryAction.kind === "create_pr"
+                                          ? controller.createPullRequestMutation
+                                              .isPending &&
+                                            controller.createPullRequestMutation
+                                              .variables ===
+                                              controller.selectedSessionTicket
+                                                .id
+                                          : false
+                                    }
+                                    onClick={() => {
+                                      if (!selectedSessionTicket) {
+                                        return;
+                                      }
+
+                                      if (primaryAction.kind === "merge") {
+                                        controller.mergeTicketMutation.mutate(
+                                          selectedSessionTicket.id,
+                                        );
+                                        return;
+                                      }
+
+                                      if (primaryAction.kind === "create_pr") {
+                                        controller.createPullRequestMutation.mutate(
+                                          selectedSessionTicket.id,
+                                        );
+                                        return;
+                                      }
+
+                                      if (
+                                        primaryAction.kind === "open_pr" &&
+                                        hasActiveLinkedPullRequest(
+                                          selectedSessionTicket.linked_pr,
+                                        )
+                                      ) {
+                                        window.open(
+                                          selectedSessionTicket.linked_pr.url,
+                                          "_blank",
+                                          "noopener,noreferrer",
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    {primaryAction.kind === "merge"
+                                      ? `Merge to ${controller.selectedSessionTicket.target_branch}`
+                                      : primaryAction.label}
+                                  </Button>
+                                );
+                              })()}
                             </Group>
                           </Stack>
                         ) : null

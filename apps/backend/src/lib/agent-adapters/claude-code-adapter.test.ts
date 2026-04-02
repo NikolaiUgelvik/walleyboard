@@ -12,8 +12,8 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import {
-  ClaudeCodeAdapter,
   buildDraftShellCommand,
+  ClaudeCodeAdapter,
   formatClaudeCodeExitReason,
   interpretClaudeCodeStreamJsonLine,
   parseClaudeCodeJsonResult,
@@ -32,6 +32,7 @@ function createProject(overrides?: Partial<Project>): Project {
     name: "Project",
     agent_adapter: "claude-code",
     execution_backend: "docker",
+    default_review_action: "direct_merge",
     default_target_branch: "main",
     pre_worktree_command: null,
     post_worktree_command: null,

@@ -1,17 +1,24 @@
 # WalleyBoard
 
+> [!WARNING]
+> Run it at your own peril.
+
 Pronounced `/ˈwɑːli bɔːrd/`.
 
 WalleyBoard is a vibe-coded, local-first workbench for handing the fiddly stuff to a tireless little helper while you stay planted in your chair and run the show from the board. This repo contains the current MVP plus the starter product documentation in [ai_walleyboard_prd.md](./ai_walleyboard_prd.md).
 
-Runtime state lives under `~/.walleyboard/`, so the repo checkout stays focused on code instead of accumulating local app data.
+Runtime state lives under `~/.walleyboard/`, with `walleyboard.sqlite` as the source of truth for drafts, tickets, sessions, and review metadata so the repo checkout stays focused on code instead of accumulating local app data.
+
+## Screenshot
+
+![WalleyBoard project board with inbox, project list, and ticket columns](./docs/assets/walleyboard-board.png)
 
 ## Workspace Layout
 
 - `apps/backend`: local Fastify backend, WebSocket transport, route scaffolding, and execution service boundaries
 - `apps/web`: React + Mantine frontend shell for the WalleyBoard UI
 - `packages/contracts`: shared Zod schemas and protocol contracts used by backend and frontend
-- `packages/db`: initial Drizzle + SQLite schema aligned with the PRD data model
+- `packages/db`: reference Drizzle schema for the local SQLite model; the runtime source of truth lives in `apps/backend/src/lib/sqlite-store`
 - `docs`: implementation notes that turn the PRD into module-level build guidance
 
 ## Current Structure
@@ -27,11 +34,13 @@ Implemented now:
 
 - local Fastify + React app with shared contracts, SQLite persistence, and websocket-driven board/session updates
 - board workflow with `Draft`, `Ready`, `In progress`, `In review`, and `Done`
+- project options for host or Docker-backed execution, model overrides, and pre/post-worktree commands
 - draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session and worktree
 - Codex-managed execution modes through `codex exec`, with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
 - review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request changes and resume, allows manual terminal takeover with restore-agent handoff, and merges directly from `review` into the target branch with cleanup
+- ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
 - conservative restart recovery that marks active sessions `interrupted` instead of auto-restoring live execution
 
 Not yet implemented:
@@ -46,6 +55,8 @@ Not yet implemented:
 - The draft-to-ready flow is `edit draft -> Refine or Questions -> optional Revert Refine -> Create Ready`
 - Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session and worktree
+- Completed tickets can be archived out of the active board and restored later
+- Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup
 
 ## Quick Start
 
@@ -63,7 +74,8 @@ Not yet implemented:
 
 ## Draft Markdown And Screenshots
 
-- Draft descriptions and acceptance criteria are authored and stored as Markdown, and the draft drawer previews that Markdown before refinement or promotion
+- Draft descriptions and acceptance criteria are authored as Markdown, stored in SQLite text fields, and previewed before refinement or promotion
+- Ready-ticket Markdown stays in SQLite-backed ticket records too; WalleyBoard does not create standalone ticket Markdown files on disk
 - Pasting a screenshot into the draft description stores the image under the backend's walleyboard-managed artifact path and inserts an artifact-backed Markdown image reference into the draft
 - The image reference stays attached to the same draft through save, reload, refine, revert, and promote-to-ready flows because drafts and ready tickets share a stable `artifact_scope_id`
 
@@ -72,3 +84,12 @@ Not yet implemented:
 - Add GitHub pull request creation and reconciliation when direct merge is not the right review path
 - Add richer validation configuration and override handling
 - Decide whether interrupted sessions should auto-resume or stay manual after restart
+
+## License
+
+The repository source code is available under the [MIT License](./LICENSE).
+
+`apps/web/public/alert.mp3` is a third-party audio asset, sourced from Pixabay,
+credited to `Universfield`, and excluded from the repository MIT license. See
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) and
+`apps/web/public/alert.mp3.license.txt`.

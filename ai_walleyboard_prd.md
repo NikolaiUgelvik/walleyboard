@@ -1,5 +1,7 @@
 # PRD: AI WalleyBoard Application
 
+Current-state implementation details live in `README.md` and `docs/implementation-starter-pack.md`. This PRD describes the intended product direction, with Section 11 capturing the stricter MVP slice.
+
 ## 1. Overview
 Build a local-first single-page application for orchestrating AI-assisted software work across multiple repositories, Codex CLI instances, and git worktrees. The application should provide a Kanban-style workflow for drafting, refining, planning, executing, reviewing, and completing engineering tickets from one interface.
 
@@ -50,13 +52,17 @@ Today this workflow is fragmented across issue trackers, local notes, terminals,
 - Pull request: an optional GitHub review object linked to a ticket
 
 ### 6.2 Board Workflow
-The Kanban board consists of the following columns:
+The active board surface consists of the following columns:
+- Draft: persisted draft records that are still being authored or refined and are not executable yet
 - Ready: tickets that are refined enough to execute but are not currently active
 - In Progress: tickets that are active, queued, or currently being worked on by Codex
 - Review: tickets under human review or linked to an open pull request
 - Done: completed tickets
 
+Archived done tickets are managed outside the active board and can be restored later.
+
 State transitions:
+- Promoting a `Draft` into `Ready` requires explicit confirmation of repository, ticket type, acceptance criteria, and target branch.
 - Moving a ticket into `In Progress` requires explicit user approval.
 - Moving a ticket into `In Progress` creates or resumes the ticket's execution session.
 - If the concurrency limit has been reached, the ticket still moves to `In Progress` but its execution session enters a queued status until a slot opens.
@@ -90,23 +96,25 @@ State transitions:
   - Ticket ID
 - A ticket may begin as only a title and description draft.
 - Before execution starts, the ticket refinement flow must expand that draft into an execution-ready ticket with confirmed repository scope and acceptance criteria.
-- Tickets must be stored as Markdown files with YAML frontmatter.
-- The frontmatter stores machine-readable fields.
-- The Markdown body stores human-readable context and instructions.
+- Tickets must be stored as SQLite-backed application records rather than standalone Markdown files on disk.
+- Human-authored Markdown must be preserved literally in structured ticket fields such as title, description, and acceptance criteria.
+- Machine-readable orchestration fields must live alongside those Markdown-bearing fields in the same persisted ticket record.
 - Draft titles, descriptions, and acceptance criteria should preserve Markdown literally from the first draft through ready-ticket creation.
 - Drafts and ready tickets may reference walleyboard-managed local image artifacts using Markdown image syntax.
 - Each draft and ticket must carry a stable `artifact_scope_id` so pasted screenshot references stay valid across save, reload, refine, revert, and confirm actions.
-- Ticket IDs must be incremental per project.
+- Ticket IDs must be numeric, stable after creation, and monotonic within the local store.
 - Each ticket must map to exactly one repository.
 
-Required frontmatter fields:
+Required persisted ticket fields:
 - `id`
 - `title`
+- `description`
 - `project`
 - `repo`
 - `artifact_scope_id`
 - `status`
 - `ticket_type`
+- `acceptance_criteria`
 - `working_branch`
 - `target_branch`
 - `linked_pr`
@@ -114,12 +122,10 @@ Required frontmatter fields:
 - `created_at`
 - `updated_at`
 
-Required Markdown sections:
-- Context
-- Task
-- Acceptance Criteria
-- Notes
-- Event Summary / Status
+Storage constraints:
+- The system must not materialize per-ticket Markdown files under the walleyboard home directory.
+- The system must not require generated section headings such as `Context`, `Task`, or `Notes` inside persisted ticket content.
+- Rendering-specific grouping may be derived at read time without changing the stored Markdown fields.
 
 #### Epic Handling
 - During ticket creation or refinement, the system must allow an AI-assisted drafting flow.
@@ -136,6 +142,7 @@ Required Markdown sections:
 - The ticket creation drawer may use a separate temporary refinement session.
 - A refinement session is not the same object as the primary execution session.
 - Execution sessions must be resumable across application restarts.
+- In the current MVP, resumability means preserving the logical session, worktree, and branch so the user can resume from `interrupted`; automatic live PTY reattachment remains deferred.
 - Full raw logs of execution sessions must be persisted.
 - Structured events must also be persisted.
 
@@ -152,7 +159,7 @@ Suggested execution session statuses:
 #### Execution Session Resume Semantics
 - In v1, resumable does not require the original CLI process to survive indefinitely.
 - The system should treat an execution session as a durable logical unit that may contain one or more process attempts over time.
-- On backend startup or reconnect, the system should first try to reattach to an existing PTY-backed Codex process if it is still alive.
+- The target behavior on backend startup or reconnect is to first try to reattach to an existing PTY-backed Codex process if it is still alive.
 - If the original process is no longer alive or cannot be reattached safely, the session should move to `interrupted`.
 - From `interrupted`, the user may explicitly resume the session.
 - Resuming an interrupted session should launch a new Codex process in the same worktree and branch using persisted context that includes:
@@ -168,7 +175,7 @@ To avoid ambiguity, the product should distinguish between two separate concepts
 - AI-assisted ticket refinement: an optional drafting feature used while creating or refining a ticket
 - Execution planning flag: a session launch option that starts the model in planning mode before implementation
 
-Neither concept is a separate board column or board state. The board column for non-active work is `Ready`.
+Neither concept is a separate board column or board state. The non-active work columns are `Draft` and `Ready`.
 
 ### 6.7 Ticket Lifecycle Summary
 The intended v1 happy path is:
@@ -221,7 +228,7 @@ The intended v1 happy path is:
 
 #### Draft Persistence and Ticket Split Semantics
 - A new ticket should begin as a persisted `draft` record before it becomes `Ready`.
-- Draft tickets should not appear as normal board cards until they are explicitly saved as execution-ready.
+- Draft records may appear in a dedicated `Draft` board column, but they must remain non-executable until they are explicitly confirmed as execution-ready.
 - If the user closes the drawer or the app restarts, draft progress must be recoverable.
 - Wizard progress should persist:
   - The latest draft title and description
@@ -575,20 +582,24 @@ Allowed execution session transitions:
 ### 8.2 Local Storage
 - Application state must persist locally in a dedicated application directory such as `~/.walleyboard/`.
 - Local state should include:
-  - Ticket Markdown files
-  - Session metadata
-  - Persisted raw logs
-  - Structured event logs
-  - Local database files and indexes
-  - Project and repository configuration
+  - A local SQLite database file that stores projects, repositories, drafts, tickets, sessions, structured events, review packages, requested change notes, and session logs
+  - Persisted diff artifacts, validation logs, agent summaries, and draft analysis outputs
+  - Project and repository configuration stored inside the database
+  - Walleyboard-managed image artifacts referenced from draft or ticket Markdown
   - Managed worktrees
 
 Suggested layout:
-- `~/.walleyboard/projects/<project-id>/tickets/`
-- `~/.walleyboard/projects/<project-id>/config.*`
-- `~/.walleyboard/sessions/<session-id>/`
-- `~/.walleyboard/worktrees/<project-slug>/<ticket-id>/`
-- `~/.walleyboard/state/`
+- `~/.walleyboard/walleyboard.sqlite`
+- `~/.walleyboard/ticket-artifacts/<project-slug>/<artifact-scope-id>/`
+- `~/.walleyboard/review-packages/<project-slug>/`
+- `~/.walleyboard/validation-logs/<project-slug>/ticket-<ticket-id>/`
+- `~/.walleyboard/agent-summaries/<project-slug>/`
+- `~/.walleyboard/draft-analyses/<project-slug>/`
+- `~/.walleyboard/worktrees/<project-slug>/`
+
+Storage rules:
+- Tickets and drafts must not be mirrored into standalone Markdown files on disk.
+- The SQLite database is the source of truth for ticket and draft content as well as orchestration metadata.
 
 #### Backend Runtime Components
 The local backend should be the single source of truth for ticket, session, and worktree state.
@@ -596,7 +607,7 @@ The local backend should be the single source of truth for ticket, session, and 
 Recommended backend components:
 - API server for user actions and CRUD operations
 - Realtime transport for PTY data, logs, structured events, and state updates
-- Ticket store for Markdown plus indexed metadata
+- Ticket store backed by SQLite records that preserve Markdown fields without creating per-ticket files
 - Session manager for lifecycle control and resume logic
 - PTY manager for interactive Codex processes
 - Scheduler for concurrency limits and queue release
@@ -843,10 +854,10 @@ Implementation guidance:
 - If a future runtime uses the Responses API directly, it should remain compatible with the same ticket, session, and review contracts defined in this PRD.
 
 ### 8.3 Ticket Storage
-- Tickets should remain human-readable and editable on disk.
-- YAML frontmatter should hold machine fields needed for orchestration.
-- The Markdown body should hold the narrative task description and acceptance criteria.
-- PR links and related metadata may be duplicated in both frontmatter and adjacent indexed storage for efficient lookup.
+- Tickets should remain human-readable and editable through the application while being persisted as SQLite records.
+- Markdown-bearing fields such as title, description, and acceptance criteria must remain readable without lossy transformation.
+- Machine fields needed for orchestration should live in explicit database columns or JSON fields on the same ticket record.
+- PR links and related metadata should live on the ticket record rather than being duplicated into a separate ticket file format.
 
 #### Core Persisted Models
 The following persisted models should be treated as v1 contracts.
@@ -937,13 +948,16 @@ RepositoryConfig:
 - `created_at: string`
 - `updated_at: string`
 
-Ticket frontmatter:
+Ticket record:
 - `id: number`
 - `project: string`
 - `repo: string`
+- `artifact_scope_id: string`
 - `status: "draft" | "ready" | "in_progress" | "review" | "done"`
 - `title: string`
+- `description: string`
 - `ticket_type: "feature" | "bugfix" | "chore" | "research"`
+- `acceptance_criteria: string[]`
 - `working_branch: string | null`
 - `target_branch: string`
 - `linked_pr: PullRequestRef | null`
@@ -998,7 +1012,7 @@ ReviewPackage:
 
 Notes on persisted ownership:
 - `DraftTicketState` is the persisted record used by the refinement drawer before a ticket becomes `ready`.
-- Ticket Markdown plus frontmatter is the canonical human-readable artifact once a draft becomes `ready`.
+- Ticket records in SQLite are the canonical persisted artifact once a draft becomes `ready`; no companion ticket Markdown file should be created on disk.
 - `RequestedChangeNote` records must remain available to the same logical execution session across retries and resumed attempts.
 
 ### 8.4 Planning Semantics
@@ -1060,6 +1074,7 @@ Notes on persisted ownership:
 
 ### 8.7 Codex Execution Environment
 - Each execution session must run through Codex CLI as the execution runtime.
+- The current implementation supports both `host` and `docker` execution backends selected per project.
 - Codex should provide the execution sandbox and command policy boundary for autonomous work.
 - The walleyboard should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
 - Planning-first runs should launch Codex with read-only behavior.
@@ -1101,7 +1116,7 @@ The recommended v1 stack is:
 - Interactive terminal backend: `node-pty`
 - Non-interactive process execution: Node.js `child_process`
 - Local database: SQLite
-- Ticket storage: Markdown files with YAML frontmatter on disk
+- Ticket storage: SQLite records with Markdown-preserving text fields
 - Validation and schema parsing: Zod
 - Formatting and linting: Biome
 - Git hooks: Husky
@@ -1125,10 +1140,9 @@ Forms and validation:
 - `@hookform/resolvers`
 - Use for ticket creation, ticket editing, repository configuration, and the refinement wizard
 
-Markdown and ticket file handling:
-- `gray-matter`
+Markdown rendering and authored text handling:
 - `react-markdown`
-- Use for YAML frontmatter parsing and rendering human-readable ticket bodies and summaries
+- Use for rendering human-authored draft and ticket Markdown plus related summaries
 
 Logs, events, and large lists:
 - `react-virtuoso`
@@ -1171,8 +1185,8 @@ Utilities:
 - `node-pty` should back all interactive Codex CLI sessions and any future manual terminal so the application gets real PTY behavior rather than a plain pipe-based subprocess.
 - `child_process` should handle simpler non-interactive commands such as status checks, git metadata reads, or hook execution when PTY behavior is not required.
 - SQLite is the right default for local-first indexed state such as projects, ticket metadata, session metadata, queue state, and structured events.
-- Markdown plus YAML frontmatter preserves human-readable tickets while still giving the application stable machine-readable fields.
-- Zod should validate ticket frontmatter, persisted configuration, IPC payloads, and session event payloads.
+- SQLite-backed ticket records preserve human-authored Markdown while keeping orchestration fields explicit and queryable.
+- Zod should validate ticket records, persisted configuration, IPC payloads, and session event payloads.
 - Biome keeps the JavaScript and TypeScript toolchain lean by covering formatting and linting in one tool.
 - Husky should enforce lightweight local quality gates such as formatting, linting, and fast tests before commit.
 
@@ -1209,7 +1223,7 @@ Before implementation begins, the v1 build should treat the following as frozen 
 - Ticket lifecycle states and allowed transitions
 - Execution session states and resume semantics
 - Codex adapter contract and autonomy policy
-- Ticket frontmatter schema
+- Ticket record schema
 - Repository configuration schema
 - Validation command schema
 - Review package schema
@@ -1240,6 +1254,7 @@ The MVP should prove one reliable end-to-end workflow:
 ### 11.2 Included in MVP
 - Single-user local web application with local backend
 - Manual project and repository configuration
+- Drafts visible in a dedicated `Draft` board column before promotion to `Ready`
 - One repository per ticket
 - Ticket states:
   - `draft`
@@ -1255,9 +1270,11 @@ The MVP should prove one reliable end-to-end workflow:
   - acceptance-criteria drafting
   - repository confirmation
 - One logical execution session per ticket
-- At most one actively running execution session globally
+- Per-project concurrency limits with queued follow-on starts once the active-session limit is reached
+- Host or Docker-backed ticket execution selected per project
 - Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
+- Manual terminal takeover with explicit restore-agent handoff
 - Repo-configured validation commands
 - Review package generation with:
   - diff
@@ -1267,17 +1284,17 @@ The MVP should prove one reliable end-to-end workflow:
   - remaining risks
 - Request-changes loop back to the same ticket, worktree, branch, and session
 - Explicit stop action that preserves the in-progress ticket and existing worktree for manual resume
+- Interrupted-session restart from scratch after tearing down the preserved workspace
 - Ticket deletion with best-effort cleanup of walleyboard-owned local artifacts
 - Direct merge flow with rebase-then-merge
 - Local worktree and local branch cleanup after successful merge
+- Archive and restore for completed tickets
 - Ticket Markdown plus SQLite-backed indexed state
 
 ### 11.3 Explicitly Deferred from MVP
 - Pull request creation from the app
 - GitHub polling and external PR reconciliation
 - Remote branch deletion
-- Multiple concurrent execution sessions
-- Queueing and scheduler-based delayed start
 - Automatic ticket splitting into multiple created tickets
 - Cross-repository execution from a single ticket
 - Automatic live PTY reattachment after backend restart
@@ -1290,7 +1307,7 @@ The MVP should prove one reliable end-to-end workflow:
 - If the backend restarts while a session is running, the session may conservatively move to `interrupted` and require explicit manual resume.
 - The refinement flow may present split-ticket advice, but MVP does not need to create multiple child tickets automatically.
 - Review in MVP is a local review experience and does not require GitHub PR objects.
-- The backend may reject starting a second execution session while one is already running instead of implementing queueing.
+- Queueing may remain a simple per-project FIFO flow without cross-project prioritization.
 - In-app notifications are sufficient for MVP as long as waiting states are visible and hard to miss.
 - GitHub CLI credentials are not required for the MVP path unless a later feature flag enables PR operations.
 

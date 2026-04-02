@@ -4,11 +4,8 @@ import { requestChangesInputSchema } from "../../../../../packages/contracts/src
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
-import {
-  parseBody,
-  parsePositiveInt,
-  sendNotImplemented,
-} from "../../lib/http.js";
+import { parseBody, parsePositiveInt } from "../../lib/http.js";
+import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
   AutomaticMergeRecoveryError,
   mergeReviewedBranch,
@@ -23,12 +20,14 @@ export function registerTicketReviewRoutes(
     appendSessionOutput,
     eventHub,
     executionRuntime,
+    githubPullRequestService,
     store,
     ticketWorkspaceService,
   }: TicketRouteDependencies,
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/request-changes",
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -124,6 +123,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/create-pr",
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -131,18 +131,29 @@ export function registerTicketReviewRoutes(
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        "PR creation is intentionally deferred in the strict MVP.",
-        {
-          ticket_id: ticketId,
-        },
-      );
+      try {
+        const ticket =
+          await githubPullRequestService.createPullRequest(ticketId);
+        reply.send(
+          makeCommandAck(true, "GitHub pull request created", {
+            ticket_id: ticket.id,
+            session_id: ticket.session_id ?? undefined,
+          }),
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to create pull request",
+        });
+      }
     },
   );
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/merge",
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -359,6 +370,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/reconcile",
+    { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -366,11 +378,22 @@ export function registerTicketReviewRoutes(
         return;
       }
 
-      sendNotImplemented(
-        reply,
-        "External reconciliation is scaffolded, but GitHub integration is not implemented yet.",
-        { ticket_id: ticketId },
-      );
+      try {
+        const ticket = await githubPullRequestService.reconcileTicket(ticketId);
+        reply.send(
+          makeCommandAck(true, "Linked pull request reconciled", {
+            ticket_id: ticket.id,
+            session_id: ticket.session_id ?? undefined,
+          }),
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to reconcile linked pull request",
+        });
+      }
     },
   );
 }

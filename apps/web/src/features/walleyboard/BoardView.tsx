@@ -18,14 +18,18 @@ import type {
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
+import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
 import {
-  ColorSchemeControl,
   boardColumnMeta,
   boardColumns,
+  ColorSchemeControl,
+  describePullRequestStatus,
+  hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
+  resolveReviewCardActions,
   sessionStatusColor,
   ticketStatusColor,
 } from "./shared.js";
@@ -33,21 +37,30 @@ import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
 function TicketMenu({
   controller,
+  project,
   ticket,
   ticketSession,
 }: {
   controller: WalleyBoardController;
+  project: WalleyBoardController["selectedProject"];
   ticket: TicketFrontmatter;
   ticketSession: ExecutionSession | null;
 }) {
   const canResume = ticketSession?.status === "interrupted";
   const canRestart = ticketSession?.status === "interrupted";
+  const reviewActions = resolveReviewCardActions(project, ticket);
   const isResuming =
     controller.resumeTicketMutation.isPending &&
     controller.resumeTicketMutation.variables?.ticketId === ticket.id;
   const isRestarting =
     controller.restartTicketMutation.isPending &&
     controller.restartTicketMutation.variables?.ticketId === ticket.id;
+  const isCreatingPullRequest =
+    controller.createPullRequestMutation.isPending &&
+    controller.createPullRequestMutation.variables === ticket.id;
+  const isMerging =
+    controller.mergeTicketMutation.isPending &&
+    controller.mergeTicketMutation.variables === ticket.id;
 
   return (
     <Menu withinPortal position="bottom-end">
@@ -62,6 +75,34 @@ function TicketMenu({
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown onClick={(event) => event.stopPropagation()}>
+        {reviewActions.secondary ? (
+          <Menu.Item
+            disabled={
+              reviewActions.secondary.kind === "create_pr"
+                ? isCreatingPullRequest
+                : isMerging
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              if (reviewActions.secondary?.kind === "create_pr") {
+                controller.createPullRequestMutation.mutate(ticket.id);
+                return;
+              }
+
+              if (reviewActions.secondary?.kind === "merge") {
+                controller.mergeTicketMutation.mutate(ticket.id);
+              }
+            }}
+          >
+            {reviewActions.secondary.kind === "create_pr"
+              ? isCreatingPullRequest
+                ? "Creating pull request..."
+                : reviewActions.secondary.label
+              : isMerging
+                ? "Merging..."
+                : reviewActions.secondary.label}
+          </Menu.Item>
+        ) : null}
         {canResume ? (
           <Menu.Item
             disabled={isResuming}
@@ -118,7 +159,7 @@ export function BoardView({
 }) {
   return (
     <Box className="walleyboard-main">
-      <Stack gap="md">
+      <Stack className="workbench-shell" gap="md">
         <Box className="workbench-header">
           <Group justify="space-between" align="flex-start">
             <Stack gap={6}>
@@ -369,7 +410,13 @@ export function BoardView({
                                       />
                                     </Box>
                                     <Badge variant="light" color="gray">
-                                      {draft.wizard_status.replace(/_/g, " ")}
+                                      {formatDraftStatusLabel({
+                                        isRefining:
+                                          controller.isDraftRefinementActive(
+                                            draft.id,
+                                          ),
+                                        wizardStatus: draft.wizard_status,
+                                      })}
                                     </Badge>
                                   </Group>
                                   <MarkdownContent
@@ -432,6 +479,10 @@ export function BoardView({
                             controller.mergeTicketMutation.isError &&
                             controller.mergeTicketMutation.variables ===
                               ticket.id;
+                          const showCreatePrError =
+                            controller.createPullRequestMutation.isError &&
+                            controller.createPullRequestMutation.variables ===
+                              ticket.id;
                           const showStartPlanError =
                             controller.startTicketMutation.isError &&
                             controller.startTicketMutation.variables
@@ -488,6 +539,7 @@ export function BoardView({
                                     </Badge>
                                     <TicketMenu
                                       controller={controller}
+                                      project={controller.selectedProject}
                                       ticket={ticket}
                                       ticketSession={ticketSession}
                                     />
@@ -499,6 +551,44 @@ export function BoardView({
                                     ticket.description,
                                   )}
                                 />
+                                {ticket.linked_pr ? (
+                                  <Group gap={8} wrap="wrap">
+                                    <Badge
+                                      variant="outline"
+                                      color={
+                                        ticket.linked_pr.state === "merged"
+                                          ? "green"
+                                          : ticket.linked_pr.review_status ===
+                                              "changes_requested"
+                                            ? "red"
+                                            : ticket.linked_pr.review_status ===
+                                                "approved"
+                                              ? "green"
+                                              : "blue"
+                                      }
+                                    >
+                                      PR #{ticket.linked_pr.number}
+                                    </Badge>
+                                    <Text size="xs" c="dimmed">
+                                      {describePullRequestStatus(
+                                        ticket.linked_pr,
+                                      )}
+                                    </Text>
+                                    <Text
+                                      component="a"
+                                      href={ticket.linked_pr.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      size="xs"
+                                      c="blue"
+                                      onClick={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                    >
+                                      Open PR
+                                    </Text>
+                                  </Group>
+                                ) : null}
                                 {ticketSession ? (
                                   <Group gap={8}>
                                     <Badge
@@ -567,6 +657,14 @@ export function BoardView({
                                     }
                                   </Text>
                                 ) : null}
+                                {showCreatePrError ? (
+                                  <Text size="sm" c="red">
+                                    {
+                                      controller.createPullRequestMutation.error
+                                        ?.message
+                                    }
+                                  </Text>
+                                ) : null}
                                 {showStartPlanError || showStartNowError ? (
                                   <Text size="sm" c="red">
                                     {
@@ -631,25 +729,82 @@ export function BoardView({
                                     </Group>
                                   </Group>
                                 ) : column === "review" ? (
-                                  <Group justify="flex-end" gap="xs">
-                                    <Button
-                                      size="xs"
-                                      loading={
-                                        controller.mergeTicketMutation
-                                          .isPending &&
-                                        controller.mergeTicketMutation
-                                          .variables === ticket.id
-                                      }
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        controller.mergeTicketMutation.mutate(
-                                          ticket.id,
-                                        );
-                                      }}
-                                    >
-                                      Merge
-                                    </Button>
-                                  </Group>
+                                  (() => {
+                                    const reviewActions =
+                                      resolveReviewCardActions(
+                                        controller.selectedProject,
+                                        ticket,
+                                      );
+                                    const primaryAction = reviewActions.primary;
+                                    if (!primaryAction) {
+                                      return null;
+                                    }
+
+                                    return (
+                                      <Group justify="flex-end" gap="xs">
+                                        <Button
+                                          size="xs"
+                                          variant={
+                                            primaryAction.kind === "open_pr"
+                                              ? "light"
+                                              : "filled"
+                                          }
+                                          loading={
+                                            primaryAction.kind === "merge"
+                                              ? controller.mergeTicketMutation
+                                                  .isPending &&
+                                                controller.mergeTicketMutation
+                                                  .variables === ticket.id
+                                              : primaryAction.kind ===
+                                                  "create_pr"
+                                                ? controller
+                                                    .createPullRequestMutation
+                                                    .isPending &&
+                                                  controller
+                                                    .createPullRequestMutation
+                                                    .variables === ticket.id
+                                                : false
+                                          }
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (
+                                              primaryAction.kind === "merge"
+                                            ) {
+                                              controller.mergeTicketMutation.mutate(
+                                                ticket.id,
+                                              );
+                                              return;
+                                            }
+
+                                            if (
+                                              primaryAction.kind === "create_pr"
+                                            ) {
+                                              controller.createPullRequestMutation.mutate(
+                                                ticket.id,
+                                              );
+                                              return;
+                                            }
+
+                                            if (
+                                              primaryAction.kind ===
+                                                "open_pr" &&
+                                              hasActiveLinkedPullRequest(
+                                                ticket.linked_pr,
+                                              )
+                                            ) {
+                                              window.open(
+                                                ticket.linked_pr.url,
+                                                "_blank",
+                                                "noopener,noreferrer",
+                                              );
+                                            }
+                                          }}
+                                        >
+                                          {primaryAction.label}
+                                        </Button>
+                                      </Group>
+                                    );
+                                  })()
                                 ) : ticket.session_id ? (
                                   <Group justify="flex-end" gap="xs">
                                     {canStop ? (
@@ -674,9 +829,7 @@ export function BoardView({
                                       </Button>
                                     ) : null}
                                   </Group>
-                                ) : (
-                                  <></>
-                                )}
+                                ) : null}
                               </Stack>
                             </Box>
                           );

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import Fastify from "fastify";
+import fastifyRateLimit from "fastify-rate-limit";
 
 import type { TicketFrontmatter } from "../../../../packages/contracts/src/index.js";
 
@@ -142,12 +143,22 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       async disposeTicket() {},
       async stopPreviewAndWait() {},
     };
+    const githubPullRequestService = {
+      async createPullRequest() {
+        throw new Error("Not used in this test");
+      },
+      async reconcileTicket() {
+        throw new Error("Not used in this test");
+      },
+    };
 
     const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
     await app.register(ticketRoutes, {
       eventHub: new EventHub(),
       store,
       executionRuntime: executionRuntime as never,
+      githubPullRequestService: githubPullRequestService as never,
       ticketWorkspaceService: ticketWorkspaceService as never,
     });
 

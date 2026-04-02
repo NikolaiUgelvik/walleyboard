@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { nanoid } from "nanoid";
@@ -8,9 +8,11 @@ import type {
   ExecutionAttempt,
   ExecutionSession,
   Project,
+  PullRequestRef,
   ReasoningEffort,
   RepositoryConfig,
   RequestedChangeNote,
+  ReviewAction,
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
@@ -91,6 +93,73 @@ export function normalizeOptionalCommand(
   return trimmed.length > 0 ? trimmed : null;
 }
 
+export function normalizeReviewAction(
+  value: ReviewAction | null | undefined,
+): ReviewAction {
+  return value === "pull_request" ? "pull_request" : "direct_merge";
+}
+
+export function normalizePullRequestRef(value: unknown): PullRequestRef | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (
+    record.provider !== "github" ||
+    typeof record.repo_owner !== "string" ||
+    typeof record.repo_name !== "string" ||
+    typeof record.number !== "number" ||
+    typeof record.url !== "string" ||
+    typeof record.head_branch !== "string" ||
+    typeof record.base_branch !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    provider: "github",
+    repo_owner: record.repo_owner,
+    repo_name: record.repo_name,
+    number: record.number,
+    url: record.url,
+    head_branch: record.head_branch,
+    base_branch: record.base_branch,
+    state:
+      record.state === "open" ||
+      record.state === "closed" ||
+      record.state === "merged" ||
+      record.state === "unknown"
+        ? record.state
+        : "unknown",
+    review_status:
+      record.review_status === "approved" ||
+      record.review_status === "changes_requested" ||
+      record.review_status === "unknown"
+        ? record.review_status
+        : "pending",
+    head_sha:
+      typeof record.head_sha === "string" && record.head_sha.length > 0
+        ? record.head_sha
+        : null,
+    changes_requested_by:
+      typeof record.changes_requested_by === "string" &&
+      record.changes_requested_by.length > 0
+        ? record.changes_requested_by
+        : null,
+    last_changes_requested_head_sha:
+      typeof record.last_changes_requested_head_sha === "string" &&
+      record.last_changes_requested_head_sha.length > 0
+        ? record.last_changes_requested_head_sha
+        : null,
+    last_reconciled_at:
+      typeof record.last_reconciled_at === "string" &&
+      record.last_reconciled_at.length > 0
+        ? record.last_reconciled_at
+        : null,
+  };
+}
+
 export function parseJson<T>(value: unknown, fallback: T): T {
   if (typeof value !== "string" || value.length === 0) {
     return fallback;
@@ -151,6 +220,9 @@ export function mapProject(row: Record<string, unknown>): Project {
           ? "claude-code"
           : "codex",
     execution_backend: row.execution_backend === "docker" ? "docker" : "host",
+    default_review_action: normalizeReviewAction(
+      row.default_review_action as ReviewAction | null | undefined,
+    ),
     default_target_branch:
       row.default_target_branch === null
         ? null
@@ -252,7 +324,7 @@ export function mapTicket(row: Record<string, unknown>): TicketFrontmatter {
     working_branch:
       row.working_branch === null ? null : String(row.working_branch),
     target_branch: String(row.target_branch),
-    linked_pr: parseJson(row.linked_pr, null),
+    linked_pr: normalizePullRequestRef(parseJson(row.linked_pr, null)),
     session_id: row.session_id === null ? null : String(row.session_id),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
@@ -464,6 +536,7 @@ export class SqliteStoreContext {
         name TEXT NOT NULL,
         agent_adapter TEXT NOT NULL DEFAULT 'codex',
         execution_backend TEXT NOT NULL DEFAULT 'host',
+        default_review_action TEXT NOT NULL DEFAULT 'direct_merge',
         default_target_branch TEXT,
         pre_worktree_command TEXT,
         post_worktree_command TEXT,
@@ -649,10 +722,16 @@ export class SqliteStoreContext {
       "execution_backend",
       "TEXT NOT NULL DEFAULT 'host'",
     );
+    this.#ensureColumn(
+      "projects",
+      "default_review_action",
+      "TEXT NOT NULL DEFAULT 'direct_merge'",
+    );
     this.#backfillArtifactScopes();
     this.#backfillAgentAdapterDefaults();
     this.#backfillProjectConcurrencyDefaults();
     this.#backfillProjectExecutionBackendDefaults();
+    this.#backfillProjectReviewActionDefaults();
     this.#backfillTicketContext();
   }
 
@@ -785,6 +864,18 @@ export class SqliteStoreContext {
           UPDATE projects
           SET execution_backend = 'host'
           WHERE execution_backend IS NULL OR execution_backend = ''
+        `,
+      )
+      .run();
+  }
+
+  #backfillProjectReviewActionDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET default_review_action = 'direct_merge'
+          WHERE default_review_action IS NULL OR default_review_action = ''
         `,
       )
       .run();

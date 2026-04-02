@@ -113,10 +113,17 @@ export function ProjectRail({
                         size="xs"
                         onClick={() => {
                           controller.selectProject(item.projectId);
-                          controller.setInspectorState({
-                            kind: "session",
-                            sessionId: item.sessionId,
-                          });
+                          controller.setInspectorState(
+                            item.targetKind === "draft"
+                              ? {
+                                  kind: "draft",
+                                  draftId: item.targetId,
+                                }
+                              : {
+                                  kind: "session",
+                                  sessionId: item.targetId,
+                                },
+                          );
                         }}
                       >
                         {item.actionLabel}

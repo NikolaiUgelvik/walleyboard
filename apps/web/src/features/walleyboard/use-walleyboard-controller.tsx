@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ClipboardEvent, useEffect, useRef, useState } from "react";
+import { type ClipboardEvent, useEffect, useState } from "react";
 import type {
   AgentAdapter,
   DraftTicketState,
@@ -9,45 +9,44 @@ import type {
   Project,
   RepositoryBranchChoices,
   RepositoryBranchesResponse,
+  ReviewAction,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
 import {
-  type PendingDraftEditorSync,
   emptyDraftEditorFields,
+  type PendingDraftEditorSync,
   resolveDraftEditorSync,
 } from "../../lib/draft-editor-sync.js";
-import { hasNewInboxItems } from "../../lib/inbox-alert.js";
 import { deriveInboxItems } from "../../lib/inbox-items.js";
 import {
+  useDraftRefinementActivity,
+  useGlobalDrafts,
+} from "./draft-queries.js";
+import {
   type ArchiveActionFeedback,
-  type DraftEventsResponse,
-  type DraftsResponse,
-  type InspectorState,
-  type NewDraftAction,
-  type ProjectModelPreset,
-  type ProjectReasoningEffortSelection,
-  type ProjectsResponse,
-  type RepositoriesResponse,
-  type ReviewPackageResponse,
-  type SessionLogsResponse,
-  type SessionResponse,
-  type TicketWorkspaceDiffResponse,
-  type TicketWorkspacePreviewResponse,
-  type TicketsResponse,
   arraysEqual,
   blobToBase64,
   buildMarkdownImageInsertion,
+  type DraftEventsResponse,
+  type DraftsResponse,
   diffLayoutStorageKey,
   draftMatchesSearch,
   fetchJson,
   findLatestRevertableRefineEvent,
   focusElementById,
+  type InspectorState,
   mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
+  type NewDraftAction,
   normalizeText,
+  type ProjectModelPreset,
+  type ProjectReasoningEffortSelection,
+  type ProjectsResponse,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
+  type RepositoriesResponse,
+  type ReviewPackageResponse,
   readDiffLayoutPreference,
   readLastOpenProjectId,
   repositoryTargetBranchesEqual,
@@ -57,9 +56,15 @@ import {
   resolveProjectModelValue,
   resolveProjectReasoningEffortSelection,
   resolveProjectReasoningEffortValue,
+  type SessionLogsResponse,
+  type SessionResponse,
+  type TicketsResponse,
+  type TicketWorkspaceDiffResponse,
+  type TicketWorkspacePreviewResponse,
   ticketMatchesSearch,
   writeLastOpenProjectId,
 } from "./shared.js";
+import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
 
@@ -84,6 +89,10 @@ export function useWalleyBoardController() {
     useState<AgentAdapter>("codex");
   const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
     useState<ExecutionBackend>("host");
+  const [
+    projectOptionsDefaultReviewAction,
+    setProjectOptionsDefaultReviewAction,
+  ] = useState<ReviewAction>("direct_merge");
   const [projectOptionsDraftModelPreset, setProjectOptionsDraftModelPreset] =
     useState<ProjectModelPreset>("default");
   const [projectOptionsDraftModelCustom, setProjectOptionsDraftModelCustom] =
@@ -153,8 +162,6 @@ export function useWalleyBoardController() {
     "split" | "stacked"
   >(() => readDiffLayoutPreference());
   const [boardSearch, setBoardSearch] = useState("");
-  const inboxAlertAudioRef = useRef<HTMLAudioElement | null>(null);
-  const previousInboxItemKeysRef = useRef<string[] | null>(null);
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
@@ -193,6 +200,9 @@ export function useWalleyBoardController() {
   const globalTickets = globalTicketsQueries.flatMap(
     (query) => query.data?.tickets ?? [],
   );
+  const { globalDrafts, globalDraftsQueries } = useGlobalDrafts(
+    projectsQuery.data?.projects ?? [],
+  );
 
   const globalSessionSummaries = useQueries({
     queries: globalTickets
@@ -210,7 +220,6 @@ export function useWalleyBoardController() {
         refetchInterval: 2_000,
       })),
   });
-
   const repositoriesQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "repositories"],
     queryFn: () =>
@@ -434,21 +443,6 @@ export function useWalleyBoardController() {
   }, [ticketWorkspaceDiffLayout]);
 
   useEffect(() => {
-    if (typeof Audio === "undefined") {
-      return;
-    }
-
-    const audio = new Audio("/alert.mp3");
-    audio.preload = "auto";
-    inboxAlertAudioRef.current = audio;
-
-    return () => {
-      audio.pause();
-      inboxAlertAudioRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     if (selectedSessionId !== null) {
       setTicketWorkspaceTab("diff");
     }
@@ -525,6 +519,28 @@ export function useWalleyBoardController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
+  const globalSessionById = new Map(
+    globalSessionSummaries
+      .map((query) => query.data?.session)
+      .filter((value): value is ExecutionSession => value !== undefined)
+      .map((item) => [item.id, item]),
+  );
+  const actionItems = deriveInboxItems({
+    drafts: globalDrafts,
+    projects: projectsQuery.data?.projects ?? [],
+    tickets: globalTickets,
+    sessionsById: globalSessionById,
+  });
+  const actionItemKeys = actionItems.map((item) => item.key);
+  const inboxQueriesSettled =
+    projectsQuery.data !== undefined &&
+    globalDraftsQueries.every((query) => !query.isPending) &&
+    globalTicketsQueries.every((query) => !query.isPending) &&
+    globalSessionSummaries.every((query) => !query.isPending);
+  const { silenceNextInboxItemKey } = useInboxAlert({
+    actionItemKeys,
+    inboxQueriesSettled,
+  });
   const mutations = useWalleyBoardMutations({
     queryClient,
     pendingDraftEditorSync,
@@ -546,6 +562,7 @@ export function useWalleyBoardController() {
     setRepositoryPath,
     setRequestedChangesBody,
     setResumeReason,
+    silenceNextInboxItemKey,
     setTerminalCommand,
     setValidationCommandsText,
     tickets,
@@ -605,6 +622,8 @@ export function useWalleyBoardController() {
     (projectOptionsAgentAdapter !== projectOptionsProject.agent_adapter ||
       projectOptionsExecutionBackend !==
         projectOptionsProject.execution_backend ||
+      projectOptionsDefaultReviewAction !==
+        projectOptionsProject.default_review_action ||
       projectOptionsPreWorktreeCommandValue !==
         projectOptionsProject.pre_worktree_command ||
       projectOptionsPostWorktreeCommandValue !==
@@ -629,6 +648,7 @@ export function useWalleyBoardController() {
       : (draftEditorRepositoriesQuery.data?.repositories ?? []);
   const draftEditorRepository = draftEditorRepositories[0] ?? null;
   const drafts = draftsQuery.data?.drafts ?? [];
+  const { isDraftRefinementActive } = useDraftRefinementActivity(drafts);
   const selectedDraft =
     drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const selectedDraftRepository =
@@ -679,12 +699,6 @@ export function useWalleyBoardController() {
     ticketWorkspacePreviewQuery.data?.preview ?? null;
   const sessionById = new Map(
     sessionSummaries
-      .map((query) => query.data?.session)
-      .filter((value): value is ExecutionSession => value !== undefined)
-      .map((item) => [item.id, item]),
-  );
-  const globalSessionById = new Map(
-    globalSessionSummaries
       .map((query) => query.data?.session)
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
@@ -740,37 +754,6 @@ export function useWalleyBoardController() {
   }
 
   const doneColumnTickets = groupedTickets.done;
-
-  const actionItems = deriveInboxItems({
-    projects: projectsQuery.data?.projects ?? [],
-    tickets: globalTickets,
-    sessionsById: globalSessionById,
-  });
-  const actionItemKeys = actionItems.map((item) => item.key);
-  const inboxQueriesSettled =
-    projectsQuery.data !== undefined &&
-    globalTicketsQueries.every((query) => !query.isPending) &&
-    globalSessionSummaries.every((query) => !query.isPending);
-
-  useEffect(() => {
-    if (!inboxQueriesSettled) {
-      return;
-    }
-
-    const previousInboxItemKeys = previousInboxItemKeysRef.current;
-    previousInboxItemKeysRef.current = actionItemKeys;
-    if (!hasNewInboxItems(previousInboxItemKeys, actionItemKeys)) {
-      return;
-    }
-
-    const audio = inboxAlertAudioRef.current;
-    if (!audio) {
-      return;
-    }
-
-    audio.currentTime = 0;
-    void audio.play().catch(() => {});
-  }, [actionItemKeys, inboxQueriesSettled]);
 
   const selectedSessionTicketSession = selectedSessionTicket?.session_id
     ? (sessionById.get(selectedSessionTicket.session_id) ?? session)
@@ -1028,6 +1011,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(null);
     setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
+    setProjectOptionsDefaultReviewAction("direct_merge");
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
@@ -1046,6 +1030,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(project.id);
     setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
+    setProjectOptionsDefaultReviewAction(project.default_review_action);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
     );
@@ -1149,6 +1134,7 @@ export function useWalleyBoardController() {
         projectOptionsAgentAdapter === "claude-code"
           ? "host"
           : projectOptionsExecutionBackend,
+      defaultReviewAction: projectOptionsDefaultReviewAction,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
       draftAnalysisModel: projectOptionsDraftModelValue,
@@ -1339,10 +1325,10 @@ export function useWalleyBoardController() {
     handleSaveNewDraft,
     healthQuery,
     hideInspector,
-    inboxAlertAudioRef,
     initializeNewDraftEditor,
     inspectorState,
     inspectorVisible,
+    isDraftRefinementActive,
     latestDraftEventMeta,
     latestQuestionsResult,
     latestRevertableRefineEvent,
@@ -1360,6 +1346,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchChoices,
     projectOptionsBranchesByRepositoryId,
     projectOptionsBranchesQuery,
+    projectOptionsDefaultReviewAction,
     projectOptionsDirty,
     projectOptionsAgentAdapter,
     projectOptionsDraftModelCustom,
@@ -1429,6 +1416,7 @@ export function useWalleyBoardController() {
     setProjectModalOpen,
     setProjectName,
     setProjectOptionsAgentAdapter,
+    setProjectOptionsDefaultReviewAction,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,

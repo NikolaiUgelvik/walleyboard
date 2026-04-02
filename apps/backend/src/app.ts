@@ -1,5 +1,6 @@
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import fastifyRateLimit from "fastify-rate-limit";
 
 import { ClaudeCodeAdapter } from "./lib/agent-adapters/claude-code-adapter.js";
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
@@ -7,6 +8,8 @@ import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { DockerRuntimeManager } from "./lib/docker-runtime.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
+import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
+import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import { draftRoutes } from "./routes/drafts.js";
@@ -41,6 +44,16 @@ export async function createApp() {
     apiBaseUrl: `http://${apiHost}:${port}`,
     eventHub,
   });
+  const githubPullRequestService = new GitHubPullRequestService({
+    eventHub,
+    executionRuntime,
+    store,
+    ticketWorkspaceService,
+  });
+  executionRuntime.setReviewReadyHandler((input) =>
+    githubPullRequestService.handleReviewReady(input),
+  );
+  githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();
 
   try {
@@ -74,6 +87,7 @@ export async function createApp() {
   });
 
   await app.register(websocket);
+  await app.register(fastifyRateLimit, globalRateLimitOptions());
   await app.register(healthRoutes, { dockerRuntime });
   await app.register(projectRoutes, { store, executionRuntime });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
@@ -81,12 +95,14 @@ export async function createApp() {
     eventHub,
     store,
     executionRuntime,
+    githubPullRequestService,
     ticketWorkspaceService,
   });
   await app.register(sessionRoutes, { eventHub, store, executionRuntime });
   await app.register(websocketRoutes, { eventHub });
 
   app.addHook("onClose", async () => {
+    githubPullRequestService.stop();
     executionRuntime.dispose();
   });
 

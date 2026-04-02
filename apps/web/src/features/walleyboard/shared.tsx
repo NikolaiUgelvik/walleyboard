@@ -16,8 +16,10 @@ import type {
   ExecutionSession,
   Project,
   ProtocolEvent,
+  PullRequestRef,
   ReasoningEffort,
   RepositoryConfig,
+  ReviewAction,
   ReviewPackage,
   StructuredEvent,
   TicketFrontmatter,
@@ -100,6 +102,10 @@ export const executionBackendOptions = [
   { label: "Host", value: "host" },
   { label: "Docker", value: "docker" },
 ] satisfies Array<{ label: string; value: ExecutionBackend }>;
+export const reviewActionOptions = [
+  { label: "Direct merge", value: "direct_merge" },
+  { label: "Create pull request", value: "pull_request" },
+] satisfies Array<{ label: string; value: ReviewAction }>;
 export const agentAdapterOptions = [
   { label: "Codex", value: "codex" },
   { label: "Claude Code", value: "claude-code" },
@@ -203,6 +209,11 @@ export type ArchiveActionFeedback = {
 
 export type DiffLayout = "split" | "stacked";
 export type TicketWorkspaceTab = "diff" | "terminal" | "preview" | "activity";
+export type ReviewCardActionKind = "merge" | "create_pr" | "open_pr";
+export type ReviewCardAction = {
+  kind: ReviewCardActionKind;
+  label: string;
+};
 
 export type InspectorState =
   | { kind: "hidden" }
@@ -500,6 +511,7 @@ export async function saveProjectOptionsRequest(
   body: {
     agent_adapter: AgentAdapter;
     execution_backend: ExecutionBackend;
+    default_review_action: ReviewAction;
     pre_worktree_command: string | null;
     post_worktree_command: string | null;
     draft_analysis_model: string | null;
@@ -607,6 +619,90 @@ export function humanizeSessionStatus(
       return normalized.charAt(0).toUpperCase() + normalized.slice(1);
     }
   }
+}
+
+export function humanizeReviewAction(action: ReviewAction): string {
+  return action === "pull_request" ? "Create pull request" : "Direct merge";
+}
+
+export function hasActiveLinkedPullRequest(
+  linkedPr: TicketFrontmatter["linked_pr"],
+): linkedPr is PullRequestRef {
+  return (
+    linkedPr !== null &&
+    linkedPr.state !== "closed" &&
+    linkedPr.state !== "merged"
+  );
+}
+
+export function describePullRequestStatus(linkedPr: PullRequestRef): string {
+  if (linkedPr.state === "merged") {
+    return "Merged";
+  }
+
+  if (linkedPr.state === "closed") {
+    return "Closed";
+  }
+
+  switch (linkedPr.review_status) {
+    case "approved":
+      return "Approved";
+    case "changes_requested":
+      return "Changes requested";
+    case "pending":
+      return "Awaiting review";
+    default:
+      return "Open";
+  }
+}
+
+export function resolveReviewCardActions(
+  project: Project | null | undefined,
+  ticket: TicketFrontmatter,
+): {
+  primary: ReviewCardAction | null;
+  secondary: ReviewCardAction | null;
+} {
+  if (ticket.status !== "review") {
+    return {
+      primary: null,
+      secondary: null,
+    };
+  }
+
+  if (hasActiveLinkedPullRequest(ticket.linked_pr)) {
+    return {
+      primary: {
+        kind: "open_pr",
+        label: `Open PR #${ticket.linked_pr.number}`,
+      },
+      secondary: null,
+    };
+  }
+
+  if (project?.default_review_action === "pull_request") {
+    return {
+      primary: {
+        kind: "create_pr",
+        label: "Create pull request",
+      },
+      secondary: {
+        kind: "merge",
+        label: "Merge",
+      },
+    };
+  }
+
+  return {
+    primary: {
+      kind: "merge",
+      label: "Merge",
+    },
+    secondary: {
+      kind: "create_pr",
+      label: "Create pull request",
+    },
+  };
 }
 
 export function humanizePlanStatus(
@@ -838,10 +934,21 @@ function parseDraftRefinementResult(value: unknown): {
 }
 
 export function MarkdownListItems({ items }: { items: string[] }) {
+  const seenItems = new Map<string, number>();
+  const keyedItems = items.map((item) => {
+    const occurrence = seenItems.get(item) ?? 0;
+    seenItems.set(item, occurrence + 1);
+
+    return {
+      item,
+      key: `markdown-list-item-${item}-${occurrence}`,
+    };
+  });
+
   return (
     <List size="sm" spacing={4}>
-      {items.map((item, index) => (
-        <List.Item key={`${index}-${item.slice(0, 32)}`}>
+      {keyedItems.map(({ item, key }) => (
+        <List.Item key={key}>
           <MarkdownContent content={item} />
         </List.Item>
       ))}
@@ -984,6 +1091,7 @@ export function ticketMatchesSearch(
     ticket.ticket_type,
     ticket.target_branch,
     ticket.working_branch ?? "",
+    ticket.linked_pr?.url ?? "",
     ...ticket.acceptance_criteria,
   ]
     .join(" ")

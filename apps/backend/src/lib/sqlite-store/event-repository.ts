@@ -1,6 +1,6 @@
 import type { StructuredEvent } from "../../../../../packages/contracts/src/index.js";
 
-import { type SqliteStoreContext, mapStructuredEvent } from "./shared.js";
+import { mapStructuredEvent, type SqliteStoreContext } from "./shared.js";
 
 export class EventRepository {
   constructor(private readonly context: SqliteStoreContext) {}

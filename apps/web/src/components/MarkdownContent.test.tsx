@@ -8,16 +8,16 @@ import { MarkdownContent } from "./MarkdownContent.js";
 
 test("renders block markdown while leaving raw HTML escaped", () => {
   const html = renderToStaticMarkup(
-    <MarkdownContent
-      content={[
+    React.createElement(MarkdownContent, {
+      content: [
         "# Heading",
         "",
         "- **Bold** item",
         "- [External link](https://example.com)",
         "",
         "Plain <script>alert(1)</script> with `code`.",
-      ].join("\n")}
-    />,
+      ].join("\n"),
+    }),
   );
 
   assert.match(html, /<h1>Heading<\/h1>/);
@@ -33,10 +33,10 @@ test("renders block markdown while leaving raw HTML escaped", () => {
 
 test("renders inline markdown without wrapping block elements", () => {
   const html = renderToStaticMarkup(
-    <MarkdownContent
-      inline
-      content={"**Bold** and _emphasis_ with [link](#x)"}
-    />,
+    React.createElement(MarkdownContent, {
+      inline: true,
+      content: "**Bold** and _emphasis_ with [link](#x)",
+    }),
   );
 
   assert.match(
@@ -51,13 +51,13 @@ test("renders inline markdown without wrapping block elements", () => {
 
 test("renders markdown images with safe src values", () => {
   const html = renderToStaticMarkup(
-    <MarkdownContent
-      content={[
+    React.createElement(MarkdownContent, {
+      content: [
         "Pasted screenshot:",
         "",
         "![Clipboard image](/projects/project-1/draft-artifacts/scope-1/example.png)",
-      ].join("\n")}
-    />,
+      ].join("\n"),
+    }),
   );
 
   assert.match(
@@ -68,12 +68,11 @@ test("renders markdown images with safe src values", () => {
 
 test("resolves project artifact links against the backend origin", () => {
   const html = renderToStaticMarkup(
-    <MarkdownContent
-      inline
-      content={
-        "[Artifact](/projects/project-1/draft-artifacts/scope-1/example.png)"
-      }
-    />,
+    React.createElement(MarkdownContent, {
+      inline: true,
+      content:
+        "[Artifact](/projects/project-1/draft-artifacts/scope-1/example.png)",
+    }),
   );
 
   assert.match(

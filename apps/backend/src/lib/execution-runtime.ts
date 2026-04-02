@@ -4,13 +4,11 @@ import { nanoid } from "nanoid";
 import { type IPty, spawn as spawnPty } from "node-pty";
 
 import type {
-  DraftTicketState,
   ExecutionSession,
   Project,
   RepositoryConfig,
-  StructuredEvent,
+  ReviewPackage,
   TicketFrontmatter,
-  ValidationResult,
 } from "../../../../packages/contracts/src/index.js";
 
 import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
@@ -23,12 +21,10 @@ import {
   buildMergeConflictSummaryPath,
   buildOutputSummaryPath,
   buildProcessEnv,
-  buildValidationLogPath,
   buildWorkspaceOutputPath,
   extractPersistedAttemptGuidance,
   formatMarkdownLog,
   hasMeaningfulContent,
-  resolveValidationWorkingDirectory,
   runGit,
   streamLines,
   summarizeDraftQuestions,
@@ -46,7 +42,6 @@ import {
 import type {
   DraftAnalysisInput,
   DraftAnalysisMode,
-  DraftFeasibilityResult,
   DraftRefinementResult,
   ExecutionMode,
   ExecutionRuntimeOptions,
@@ -66,7 +61,6 @@ import {
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
 import type { Store } from "./store.js";
-import { nowIso } from "./time.js";
 
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
@@ -89,6 +83,15 @@ export class ExecutionRuntime {
     string,
     Set<(didExit: boolean) => void>
   >();
+  #reviewReadyHandler:
+    | ((input: {
+        project: Project;
+        repository: RepositoryConfig;
+        reviewPackage: ReviewPackage;
+        session: ExecutionSession;
+        ticket: TicketFrontmatter;
+      }) => Promise<void>)
+    | null = null;
 
   constructor({
     adapterRegistry,
@@ -124,6 +127,20 @@ export class ExecutionRuntime {
 
   dispose(): void {
     this.#dockerRuntime.dispose();
+  }
+
+  setReviewReadyHandler(
+    handler:
+      | ((input: {
+          project: Project;
+          repository: RepositoryConfig;
+          reviewPackage: ReviewPackage;
+          session: ExecutionSession;
+          ticket: TicketFrontmatter;
+        }) => Promise<void>)
+      | null,
+  ): void {
+    this.#reviewReadyHandler = handler;
   }
 
   async stopExecution(
@@ -1130,7 +1147,7 @@ export class ExecutionRuntime {
       }
     });
 
-    child.onExit(async ({ exitCode, signal }) => {
+    child.onExit(async ({ exitCode }) => {
       const stopReason = this.#stoppingSessions.get(session.id);
       if (stopReason) {
         this.#stoppingSessions.delete(session.id);
@@ -1346,6 +1363,31 @@ export class ExecutionRuntime {
     );
     publishTicketUpdated(this.#eventHub, ticket);
     publishSessionUpdated(this.#eventHub, completedSession);
+
+    if (this.#reviewReadyHandler && ticket && completedSession) {
+      try {
+        await this.#reviewReadyHandler({
+          project: input.project,
+          repository: input.repository,
+          reviewPackage,
+          session: completedSession,
+          ticket,
+        });
+      } catch (error) {
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          input.sessionId,
+          input.attemptId,
+          `[pull request sync warning] ${
+            error instanceof Error
+              ? error.message
+              : "Unable to sync the linked pull request"
+          }`,
+        );
+      }
+    }
+
     this.startQueuedSessions(input.project.id);
   }
 

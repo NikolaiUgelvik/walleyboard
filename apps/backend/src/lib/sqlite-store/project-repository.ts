@@ -9,14 +9,15 @@ import type {
 import { nowIso } from "../time.js";
 
 import {
-  type SqliteStoreContext,
   defaultMaxConcurrentSessions,
   mapProject,
   mapRepository,
   normalizeOptionalCommand,
   normalizeOptionalModel,
   normalizeOptionalReasoningEffort,
+  normalizeReviewAction,
   requireValue,
+  type SqliteStoreContext,
   slugify,
   stringifyJson,
 } from "./shared.js";
@@ -69,10 +70,10 @@ export class ProjectRepository {
         `
           INSERT INTO projects (
             id, slug, name, agent_adapter, execution_backend, default_target_branch, pre_worktree_command,
-            post_worktree_command, draft_analysis_model,
+            post_worktree_command, default_review_action, draft_analysis_model,
             draft_analysis_reasoning_effort, ticket_work_model,
             ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -84,6 +85,7 @@ export class ProjectRepository {
         defaultTargetBranch,
         null,
         null,
+        "direct_merge",
         null,
         null,
         null,
@@ -168,6 +170,10 @@ export class ProjectRepository {
       input.pre_worktree_command === undefined
         ? project.pre_worktree_command
         : normalizeOptionalCommand(input.pre_worktree_command);
+    const defaultReviewAction =
+      input.default_review_action === undefined
+        ? project.default_review_action
+        : normalizeReviewAction(input.default_review_action);
     const postWorktreeCommand =
       input.post_worktree_command === undefined
         ? project.post_worktree_command
@@ -203,6 +209,7 @@ export class ProjectRepository {
           UPDATE projects
           SET agent_adapter = ?,
               execution_backend = ?,
+              default_review_action = ?,
               pre_worktree_command = ?,
               post_worktree_command = ?,
               draft_analysis_model = ?,
@@ -216,6 +223,7 @@ export class ProjectRepository {
       .run(
         agentAdapter,
         executionBackend,
+        defaultReviewAction,
         preWorktreeCommand,
         postWorktreeCommand,
         draftAnalysisModel,

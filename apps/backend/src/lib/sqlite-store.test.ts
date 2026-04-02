@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -28,6 +28,25 @@ function createReadyTicket(
     acceptance_criteria: [`Keep execution ${index} isolated.`],
     target_branch: "main",
   });
+}
+
+function listRelativePaths(rootPath: string, relativePath = ""): string[] {
+  const absolutePath =
+    relativePath.length === 0 ? rootPath : join(rootPath, relativePath);
+  const entries = readdirSync(absolutePath, { withFileTypes: true });
+  const paths: string[] = [];
+
+  for (const entry of entries) {
+    const childRelativePath =
+      relativePath.length === 0 ? entry.name : join(relativePath, entry.name);
+    paths.push(childRelativePath);
+
+    if (entry.isDirectory()) {
+      paths.push(...listRelativePaths(rootPath, childRelativePath));
+    }
+  }
+
+  return paths.sort((left, right) => left.localeCompare(right));
 }
 
 test("parallel ticket sessions stay isolated across stop and resume", () => {
@@ -172,6 +191,44 @@ test("projects default to host execution and persist execution backend updates",
     assert.equal(
       reloadedStore.getProject(project.id)?.execution_backend,
       "docker",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("projects default to direct merge and persist review action updates", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-review-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Review Action",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(
+      store.getProject(project.id)?.default_review_action,
+      "direct_merge",
+    );
+
+    store.updateProject(project.id, {
+      default_review_action: "pull_request",
+    });
+
+    assert.equal(
+      store.getProject(project.id)?.default_review_action,
+      "pull_request",
+    );
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reloadedStore.getProject(project.id)?.default_review_action,
+      "pull_request",
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -838,6 +895,79 @@ test("markdown content is preserved across draft, ticket, and session note flows
       draftDescription,
     );
   } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("drafts and tickets keep markdown in SQLite instead of creating ticket files", {
+  concurrency: false,
+}, () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-store-"));
+  const originalWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+  process.env.WALLEYBOARD_HOME = tempDir;
+
+  try {
+    const store = new SqliteStore();
+    const { project, repository } = store.createProject({
+      name: "SQLite Ticket Storage Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const draftDescription = [
+      "# Stored In SQLite",
+      "",
+      "- Keep markdown exactly as written.",
+      "- Do not emit ticket markdown files on disk.",
+    ].join("\n");
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Keep markdown in SQLite",
+      description: draftDescription,
+      proposed_acceptance_criteria: [
+        "Persist the markdown body without writing a ticket file.",
+      ],
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: draft.proposed_acceptance_criteria,
+      target_branch: "main",
+    });
+
+    const reopenedStore = new SqliteStore();
+    assert.equal(
+      reopenedStore.getTicket(ticket.id)?.description,
+      draftDescription,
+    );
+
+    const persistedPaths = listRelativePaths(tempDir);
+    assert.ok(persistedPaths.includes("walleyboard.sqlite"));
+    assert.deepEqual(
+      persistedPaths.filter((path) => path.endsWith(".md")),
+      [],
+    );
+    assert.equal(
+      persistedPaths.some(
+        (path) =>
+          path === "projects" ||
+          path.startsWith("projects/") ||
+          path === "tickets" ||
+          path.endsWith("/tickets") ||
+          path.includes("/tickets/"),
+      ),
+      false,
+    );
+  } finally {
+    if (originalWalleyBoardHome === undefined) {
+      process.env.WALLEYBOARD_HOME = undefined;
+    } else {
+      process.env.WALLEYBOARD_HOME = originalWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
