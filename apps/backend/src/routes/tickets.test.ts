@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 
 import type { TicketFrontmatter } from "../../../../packages/contracts/src/index.js";
@@ -144,6 +145,7 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
     };
 
     const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
     await app.register(ticketRoutes, {
       eventHub: new EventHub(),
       store,

@@ -9,7 +9,6 @@ import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
-import { withRouteRateLimit } from "../lib/route-rate-limit.js";
 import type { Store } from "../lib/store.js";
 
 type SessionRouteOptions = {
@@ -52,7 +51,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/terminal/takeover",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) => {
       const session = store.getSession(request.params.sessionId);
       if (!session) {
@@ -166,7 +165,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/terminal/restore-agent",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) => {
       const session = store.getSession(request.params.sessionId);
       if (!session) {
@@ -279,7 +278,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/checkpoint-response",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) => {
       const input = parseBody(
         reply,
@@ -490,7 +489,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/input",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) => {
       const input = parseBody(reply, sessionInputSchema, request.body);
       if (!input) {

@@ -8,7 +8,6 @@ import {
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
-import { withRouteRateLimit } from "../lib/route-rate-limit.js";
 import type { Store } from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
 import {
@@ -93,7 +92,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/repository-branches",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {
@@ -153,46 +152,50 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     }),
   );
 
-  app.post("/projects", withRouteRateLimit(), async (request, reply) => {
-    const input = parseBody(reply, createProjectInputSchema, request.body);
-    if (!input) {
-      return;
-    }
+  app.post(
+    "/projects",
+    { onRequest: app.rateLimit() },
+    async (request, reply) => {
+      const input = parseBody(reply, createProjectInputSchema, request.body);
+      if (!input) {
+        return;
+      }
 
-    try {
-      const { project, repository } = store.createProject(input);
+      try {
+        const { project, repository } = store.createProject(input);
 
-      reply.code(201).send(
-        makeCommandAck(true, "Project created", {
-          project_id: project.id,
-          repo_id: repository.id,
-        }),
-      );
-    } catch (error) {
-      reply.code(409).send({
-        error:
-          error instanceof Error ? error.message : "Unable to create project",
-      });
-    }
-  });
+        reply.code(201).send(
+          makeCommandAck(true, "Project created", {
+            project_id: project.id,
+            repo_id: repository.id,
+          }),
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to create project",
+        });
+      }
+    },
+  );
 
   app.patch<{ Params: { projectId: string } }>(
     "/projects/:projectId",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) =>
       handleProjectUpdate(request.params.projectId, request.body, reply),
   );
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/update",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) =>
       handleProjectUpdate(request.params.projectId, request.body, reply),
   );
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/delete",
-    withRouteRateLimit(),
+    { onRequest: app.rateLimit() },
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {
