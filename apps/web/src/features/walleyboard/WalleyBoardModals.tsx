@@ -131,7 +131,16 @@ export function WalleyBoardModals({
                 <Select
                   label="Agent CLI"
                   description="Choose which agent runtime this project uses for draft analysis and ticket work."
-                  data={agentAdapterOptions}
+                  data={agentAdapterOptions.map((option) =>
+                    option.value === "claude-code" &&
+                    !controller.claudeCodeHealth?.available
+                      ? {
+                          ...option,
+                          label: "Claude Code (not installed)",
+                          disabled: true,
+                        }
+                      : option,
+                  )}
                   value={controller.projectOptionsAgentAdapter}
                   onChange={(value) => {
                     if (value !== "codex" && value !== "claude-code") {

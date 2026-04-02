@@ -106,6 +106,12 @@ function createSession(): ExecutionSession {
   };
 }
 
+const testCliPath = "/usr/local/bin/claude";
+
+function createAdapter(): ClaudeCodeAdapter {
+  return new ClaudeCodeAdapter(testCliPath);
+}
+
 function createDraft(): DraftTicketState {
   return {
     id: "draft-1",
@@ -207,8 +213,9 @@ test("stripAnsi: removes C1 CSI with ? prefix and ~ terminator", () => {
 // buildDraftShellCommand
 // ---------------------------------------------------------------------------
 
-test("buildDraftShellCommand: returns bash -c with claude args and redirect", () => {
+test("buildDraftShellCommand: returns bash -c with cli path and redirect", () => {
   const result = buildDraftShellCommand(
+    "/usr/local/bin/claude",
     ["-p", "hello world", "--output-format", "json"],
     "/tmp/output.json",
   );
@@ -216,13 +223,14 @@ test("buildDraftShellCommand: returns bash -c with claude args and redirect", ()
   assert.equal(result.args.length, 2);
   assert.equal(result.args[0], "-c");
   const shellString = result.args[1] ?? "";
-  assert.ok(shellString.startsWith("claude "));
+  assert.ok(shellString.includes("/usr/local/bin/claude"));
   assert.ok(shellString.includes(">"));
   assert.ok(shellString.includes("/tmp/output.json"));
 });
 
 test("buildDraftShellCommand: special characters in prompt are escaped", () => {
   const result = buildDraftShellCommand(
+    "/usr/local/bin/claude",
     ["-p", "it's a $test"],
     "/tmp/out.json",
   );
@@ -540,7 +548,7 @@ test("formatClaudeCodeExitReason: whitespace-only raw output is treated as empty
 // ---------------------------------------------------------------------------
 
 test("ClaudeCodeAdapter.resolveModelSelection: no model configured", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const project = createProject();
   const selection = adapter.resolveModelSelection(project, "ticket");
   assert.equal(selection.model, null);
@@ -548,7 +556,7 @@ test("ClaudeCodeAdapter.resolveModelSelection: no model configured", () => {
 });
 
 test("ClaudeCodeAdapter.resolveModelSelection: with model set", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const project = createProject({
     ticket_work_model: "claude-sonnet-4-5-20250514",
   });
@@ -558,7 +566,7 @@ test("ClaudeCodeAdapter.resolveModelSelection: with model set", () => {
 });
 
 test("ClaudeCodeAdapter.resolveModelSelection: draft scope uses draft_analysis_model", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const project = createProject({
     draft_analysis_model: "claude-haiku-3-5-20241022",
     ticket_work_model: "claude-sonnet-4-5-20250514",
@@ -568,7 +576,7 @@ test("ClaudeCodeAdapter.resolveModelSelection: draft scope uses draft_analysis_m
 });
 
 test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "refine",
@@ -588,7 +596,7 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
 });
 
 test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "questions",
@@ -602,7 +610,7 @@ test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildExecutionRun({
     executionMode: "plan",
     extraInstructions: [],
@@ -614,7 +622,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
     ticket: createTicket(),
     useDockerRuntime: false,
   });
-  assert.equal(run.command, "claude");
+  assert.equal(run.command, testCliPath);
   assert.ok(run.args.includes("--output-format"));
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "plan");
@@ -623,7 +631,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
@@ -635,7 +643,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
     ticket: createTicket(),
     useDockerRuntime: false,
   });
-  assert.equal(run.command, "claude");
+  assert.equal(run.command, testCliPath);
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
@@ -644,7 +652,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: includes --resume when adapter_session_ref is set", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const session = createSession();
   session.adapter_session_ref = "sess-resume-abc";
   const run = adapter.buildExecutionRun({
@@ -667,7 +675,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: includes --resume when adapter_sessio
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: no --resume when adapter_session_ref is null", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
@@ -686,7 +694,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: no --resume when adapter_session_ref 
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: no --resume when adapter_session_ref is empty string", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const session = createSession();
   session.adapter_session_ref = "   ";
   const run = adapter.buildExecutionRun({
@@ -707,7 +715,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: no --resume when adapter_session_ref 
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: permission modes by execution type", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   for (const mode of ["plan", "implementation"] as const) {
     const run = adapter.buildExecutionRun({
       executionMode: mode,
@@ -739,7 +747,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: permission modes by execution type", 
 });
 
 test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: ["src/index.ts"],
     failureMessage: "CONFLICT in src/index.ts",
@@ -752,7 +760,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
     ticket: createTicket(),
     useDockerRuntime: false,
   });
-  assert.equal(run.command, "claude");
+  assert.equal(run.command, testCliPath);
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
@@ -761,7 +769,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
 });
 
 test("ClaudeCodeAdapter.buildMergeConflictRun: includes --resume when adapter_session_ref is set", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const session = createSession();
   session.adapter_session_ref = "sess-merge-def";
   const run = adapter.buildMergeConflictRun({
@@ -785,7 +793,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --resume when adapter_se
 });
 
 test("ClaudeCodeAdapter.buildMergeConflictRun: no --resume when adapter_session_ref is null", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: ["src/index.ts"],
     failureMessage: "CONFLICT in src/index.ts",
@@ -805,7 +813,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: no --resume when adapter_session_
 });
 
 test("ClaudeCodeAdapter.buildMergeConflictRun: merge stage", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: [],
     failureMessage: "Merge conflict",
@@ -818,13 +826,13 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: merge stage", () => {
     ticket: createTicket(),
     useDockerRuntime: false,
   });
-  assert.equal(run.command, "claude");
+  assert.equal(run.command, testCliPath);
   assert.ok(run.args.includes("--output-format"));
   assert.ok(run.args.includes("stream-json"));
 });
 
 test("ClaudeCodeAdapter: all run builders return dockerSpec null", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const draftRun = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "refine",
@@ -861,7 +869,7 @@ test("ClaudeCodeAdapter: all run builders return dockerSpec null", () => {
 });
 
 test("ClaudeCodeAdapter.interpretOutputLine delegates to interpretClaudeCodeStreamJsonLine", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const line = JSON.stringify({ type: "system", message: "test" });
   const result = adapter.interpretOutputLine(line);
   assert.ok(result.logLine.includes("[claude-code system]"));
@@ -869,7 +877,7 @@ test("ClaudeCodeAdapter.interpretOutputLine delegates to interpretClaudeCodeStre
 });
 
 test("ClaudeCodeAdapter.formatExitReason delegates to formatClaudeCodeExitReason", () => {
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = createAdapter();
   const result = adapter.formatExitReason(0, null, "");
   assert.equal(result, "Claude Code exited with code 0.");
 });

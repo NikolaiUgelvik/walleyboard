@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import type { z } from "zod";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
@@ -6,6 +7,7 @@ import {
   normalizeOptionalModel,
   truncate,
 } from "../execution-runtime/helpers.js";
+import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -23,6 +25,33 @@ import type {
   MergeConflictRunInput,
   PreparedAgentRun,
 } from "./types.js";
+
+// Resolves the absolute path to the `claude` CLI binary from the config
+// file at ~/.walleyboard/claude-cli-path. Both the health check and the
+// adapter use this single source of truth so they always agree on which
+// binary to invoke.
+//
+// This function never throws. If the config file is missing or empty, it
+// returns a sentinel path that will fail at spawn time with ENOENT. This
+// is intentional: the run builders are called outside try/catch in the
+// execution runtime, so throwing here would leave sessions stuck. By
+// returning a bad path instead, the existing spawn error handling kicks
+// in and properly fails the session with a visible error message.
+const missingCliSentinel = "/walleyboard-claude-cli-not-configured";
+
+export function resolveClaudeCliPath(): string {
+  const configPath = resolveWalleyBoardPath("claude-cli-path");
+  if (!existsSync(configPath)) {
+    return missingCliSentinel;
+  }
+
+  const cliPath = readFileSync(configPath, "utf8").trim();
+  if (cliPath.length === 0) {
+    return missingCliSentinel;
+  }
+
+  return cliPath;
+}
 
 // Claude Code permission modes. Every run builder must use one of these to
 // set permission args. This is the single place where permission policy is
@@ -87,10 +116,11 @@ export function shellEscape(value: string): string {
  * Uses `bash` for broad compatibility across Linux distributions.
  */
 export function buildDraftShellCommand(
+  cliPath: string,
   claudeArgs: string[],
   outputPath: string,
 ): { command: string; args: string[] } {
-  const parts = ["claude"];
+  const parts = [shellEscape(cliPath)];
   for (const arg of claudeArgs) {
     parts.push(shellEscape(arg));
   }
@@ -325,6 +355,15 @@ export function interpretClaudeCodeStreamJsonLine(
 export class ClaudeCodeAdapter implements AgentCliAdapter {
   readonly id = "claude-code" as const;
   readonly label = "Claude Code";
+  readonly #cliPathOverride: string | null;
+
+  constructor(cliPathOverride?: string) {
+    this.#cliPathOverride = cliPathOverride ?? null;
+  }
+
+  #resolveCliPath(): string {
+    return this.#cliPathOverride ?? resolveClaudeCliPath();
+  }
 
   resolveModelSelection(project: Project, scope: "draft" | "ticket") {
     return {
@@ -365,6 +404,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     // to the output file. The runtime reads this file after exit and passes
     // its contents to parseDraftResult.
     const { command, args } = buildDraftShellCommand(
+      this.#resolveCliPath(),
       claudeArgs,
       input.outputPath,
     );
@@ -415,12 +455,12 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     // PTY and captures the entire stream-json transcript rather than just
     // the final result.
     //
-    // Instead, spawn `claude` directly. The outputPath file will not be
+    // Instead, spawn claude directly. The outputPath file will not be
     // populated by the CLI, but the runtime handles this gracefully -
     // it falls back to a default message when the file is missing or empty.
     // Session log lines are still captured via PTY onData.
     return {
-      command: "claude",
+      command: this.#resolveCliPath(),
       args,
       outputPath: input.outputPath,
       // Claude Code does not support Docker runtime.
@@ -460,7 +500,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     // runtime). The runtime reads it and gets "", which is handled
     // gracefully. Stdout still flows to child.stdout for streamLines.
     return {
-      command: "claude",
+      command: this.#resolveCliPath(),
       args,
       outputPath: input.outputPath,
       // Claude Code does not support Docker runtime.
