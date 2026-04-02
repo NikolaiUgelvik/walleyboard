@@ -6,7 +6,10 @@ type ReviewFollowUpInput = Parameters<
 >[0];
 
 type ReviewFollowUpDependencies = {
-  agentReviewService: Pick<AgentReviewService, "startReviewLoop">;
+  agentReviewService: Pick<
+    AgentReviewService,
+    "hasActiveReviewLoop" | "startReviewLoop"
+  >;
   githubPullRequestService: Pick<GitHubPullRequestService, "handleReviewReady">;
 };
 
@@ -22,7 +25,9 @@ export async function runReviewFollowUp(
 
   if (input.project.automatic_agent_review) {
     try {
-      agentReviewService.startReviewLoop(input.ticket.id);
+      if (!agentReviewService.hasActiveReviewLoop(input.ticket.id)) {
+        agentReviewService.startReviewLoop(input.ticket.id);
+      }
     } catch (error) {
       failures.push(
         `Automatic agent review could not start: ${toErrorMessage(

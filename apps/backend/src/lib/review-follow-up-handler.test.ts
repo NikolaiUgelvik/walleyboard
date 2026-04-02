@@ -106,6 +106,9 @@ test("runReviewFollowUp starts automatic agent review when the project enables i
 
   await runReviewFollowUp(createReviewInput(true), {
     agentReviewService: {
+      hasActiveReviewLoop() {
+        return false;
+      },
       startReviewLoop(ticketId: number) {
         reviewStarts.push(ticketId);
         return undefined as never;
@@ -128,6 +131,34 @@ test("runReviewFollowUp leaves manual agent review in place when the project dis
 
   await runReviewFollowUp(createReviewInput(false), {
     agentReviewService: {
+      hasActiveReviewLoop() {
+        return false;
+      },
+      startReviewLoop(ticketId: number) {
+        reviewStarts.push(ticketId);
+        return undefined as never;
+      },
+    },
+    githubPullRequestService: {
+      async handleReviewReady(input) {
+        githubFollowUps.push(input.ticket.id);
+      },
+    },
+  });
+
+  assert.deepEqual(reviewStarts, []);
+  assert.deepEqual(githubFollowUps, [12]);
+});
+
+test("runReviewFollowUp keeps an active automatic review loop running without restarting it", async () => {
+  const reviewStarts: number[] = [];
+  const githubFollowUps: number[] = [];
+
+  await runReviewFollowUp(createReviewInput(true), {
+    agentReviewService: {
+      hasActiveReviewLoop(ticketId: number) {
+        return ticketId === 12;
+      },
       startReviewLoop(ticketId: number) {
         reviewStarts.push(ticketId);
         return undefined as never;
