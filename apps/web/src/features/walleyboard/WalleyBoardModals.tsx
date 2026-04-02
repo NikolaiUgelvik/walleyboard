@@ -21,6 +21,7 @@ import {
   projectModelPresetOptions,
   reasoningEffortOptions,
   resolveRepositoryTargetBranch,
+  reviewActionOptions,
   slugify,
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
@@ -193,6 +194,28 @@ export function WalleyBoardModals({
                     check failed.
                   </Text>
                 ) : null}
+              </Stack>
+
+              <Stack gap="sm">
+                <Text fw={600}>Default review action</Text>
+                <SegmentedControl
+                  data={reviewActionOptions}
+                  value={controller.projectOptionsDefaultReviewAction}
+                  onChange={(value) => {
+                    if (value !== "direct_merge" && value !== "pull_request") {
+                      return;
+                    }
+
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsDefaultReviewAction(value);
+                  }}
+                />
+                <Text size="sm" c="dimmed">
+                  New review tickets default to this action until a GitHub pull
+                  request is linked. Once a PR exists, the card switches to
+                  tracking that PR instead of offering duplicate review paths.
+                </Text>
               </Stack>
 
               <Stack gap="sm">

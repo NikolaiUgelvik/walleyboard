@@ -8,6 +8,7 @@ import type {
   Project,
   ReasoningEffort,
   RepositoryConfig,
+  ReviewAction,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -118,6 +119,7 @@ export function useWalleyBoardMutations({
       agentAdapter: AgentAdapter;
       projectId: string;
       executionBackend: ExecutionBackend;
+      defaultReviewAction: ReviewAction;
       preWorktreeCommand: string | null;
       postWorktreeCommand: string | null;
       draftAnalysisModel: string | null;
@@ -132,6 +134,7 @@ export function useWalleyBoardMutations({
       saveProjectOptionsRequest(input.projectId, {
         agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
+        default_review_action: input.defaultReviewAction,
         pre_worktree_command: input.preWorktreeCommand,
         post_worktree_command: input.postWorktreeCommand,
         draft_analysis_model: input.draftAnalysisModel,
@@ -709,6 +712,27 @@ export function useWalleyBoardMutations({
     },
   });
 
+  const createPullRequestMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<CommandAck>(`/tickets/${ticketId}/create-pr`, {}),
+    onSuccess: async (_, ticketId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-package"],
+        }),
+      ]);
+    },
+  });
+
   const requestChangesMutation = useMutation({
     mutationFn: (input: { ticketId: number; body: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/request-changes`, {
@@ -841,6 +865,7 @@ export function useWalleyBoardMutations({
     confirmDraftMutation,
     createDraftMutation,
     createProjectMutation,
+    createPullRequestMutation,
     deleteDraftMutation,
     deleteProjectMutation,
     deleteTicketMutation,

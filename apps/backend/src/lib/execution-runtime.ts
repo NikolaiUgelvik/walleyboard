@@ -7,6 +7,7 @@ import type {
   ExecutionSession,
   Project,
   RepositoryConfig,
+  ReviewPackage,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -82,6 +83,15 @@ export class ExecutionRuntime {
     string,
     Set<(didExit: boolean) => void>
   >();
+  #reviewReadyHandler:
+    | ((input: {
+        project: Project;
+        repository: RepositoryConfig;
+        reviewPackage: ReviewPackage;
+        session: ExecutionSession;
+        ticket: TicketFrontmatter;
+      }) => Promise<void>)
+    | null = null;
 
   constructor({
     adapterRegistry,
@@ -117,6 +127,20 @@ export class ExecutionRuntime {
 
   dispose(): void {
     this.#dockerRuntime.dispose();
+  }
+
+  setReviewReadyHandler(
+    handler:
+      | ((input: {
+          project: Project;
+          repository: RepositoryConfig;
+          reviewPackage: ReviewPackage;
+          session: ExecutionSession;
+          ticket: TicketFrontmatter;
+        }) => Promise<void>)
+      | null,
+  ): void {
+    this.#reviewReadyHandler = handler;
   }
 
   async stopExecution(
@@ -1324,6 +1348,31 @@ export class ExecutionRuntime {
     );
     publishTicketUpdated(this.#eventHub, ticket);
     publishSessionUpdated(this.#eventHub, completedSession);
+
+    if (this.#reviewReadyHandler && ticket && completedSession) {
+      try {
+        await this.#reviewReadyHandler({
+          project: input.project,
+          repository: input.repository,
+          reviewPackage,
+          session: completedSession,
+          ticket,
+        });
+      } catch (error) {
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          input.sessionId,
+          input.attemptId,
+          `[pull request sync warning] ${
+            error instanceof Error
+              ? error.message
+              : "Unable to sync the linked pull request"
+          }`,
+        );
+      }
+    }
+
     this.startQueuedSessions(input.project.id);
   }
 

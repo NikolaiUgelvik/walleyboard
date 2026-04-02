@@ -8,6 +8,7 @@ import { DockerRuntimeManager } from "./lib/docker-runtime.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
+import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import { draftRoutes } from "./routes/drafts.js";
@@ -39,6 +40,16 @@ export async function createApp() {
     apiBaseUrl: `http://${apiHost}:${port}`,
     eventHub,
   });
+  const githubPullRequestService = new GitHubPullRequestService({
+    eventHub,
+    executionRuntime,
+    store,
+    ticketWorkspaceService,
+  });
+  executionRuntime.setReviewReadyHandler((input) =>
+    githubPullRequestService.handleReviewReady(input),
+  );
+  githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();
 
   try {
@@ -80,12 +91,14 @@ export async function createApp() {
     eventHub,
     store,
     executionRuntime,
+    githubPullRequestService,
     ticketWorkspaceService,
   });
   await app.register(sessionRoutes, { eventHub, store, executionRuntime });
   await app.register(websocketRoutes, { eventHub });
 
   app.addHook("onClose", async () => {
+    githubPullRequestService.stop();
     executionRuntime.dispose();
   });
 

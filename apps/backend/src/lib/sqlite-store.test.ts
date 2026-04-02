@@ -197,6 +197,44 @@ test("projects default to host execution and persist execution backend updates",
   }
 });
 
+test("projects default to direct merge and persist review action updates", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-review-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Review Action",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(
+      store.getProject(project.id)?.default_review_action,
+      "direct_merge",
+    );
+
+    store.updateProject(project.id, {
+      default_review_action: "pull_request",
+    });
+
+    assert.equal(
+      store.getProject(project.id)?.default_review_action,
+      "pull_request",
+    );
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reloadedStore.getProject(project.id)?.default_review_action,
+      "pull_request",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("started sessions snapshot the project's agent adapter", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-session-adapter-"));
 

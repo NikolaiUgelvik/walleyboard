@@ -12,6 +12,7 @@ import {
   pullRequestRefSchema,
   reasoningEffortSchema,
   repositoryConfigSchema,
+  reviewActionSchema,
   reviewPackageSchema,
   structuredEventSchema,
   ticketFrontmatterSchema,
@@ -34,6 +35,7 @@ export const createProjectInputSchema = z.object({
 export const updateProjectInputSchema = z.object({
   agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),
+  default_review_action: reviewActionSchema.optional(),
   pre_worktree_command: z.string().min(1).nullable().optional(),
   post_worktree_command: z.string().min(1).nullable().optional(),
   draft_analysis_model: z.string().min(1).nullable().optional(),

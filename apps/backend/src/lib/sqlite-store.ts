@@ -5,6 +5,7 @@ import type {
   ExecutionAttempt,
   ExecutionSession,
   Project,
+  PullRequestRef,
   RepositoryConfig,
   RequestedChangeNote,
   ReviewPackage,
@@ -192,8 +193,16 @@ export class SqliteStore implements Store {
     return this.#ticketExecutionWorkflow.stopTicket(ticketId, reason);
   }
 
-  requestTicketChanges(ticketId: number, body: string): RestartTicketResult {
-    return this.#ticketExecutionWorkflow.requestTicketChanges(ticketId, body);
+  requestTicketChanges(
+    ticketId: number,
+    body: string,
+    authorType?: RequestedChangeNote["author_type"],
+  ): RestartTicketResult {
+    return this.#ticketExecutionWorkflow.requestTicketChanges(
+      ticketId,
+      body,
+      authorType,
+    );
   }
 
   recordMergeConflict(ticketId: number, body: string): MergeConflictResult {
@@ -277,6 +286,13 @@ export class SqliteStore implements Store {
     status: TicketFrontmatter["status"],
   ): TicketFrontmatter | undefined {
     return this.#tickets.updateTicketStatus(ticketId, status);
+  }
+
+  updateTicketLinkedPr(
+    ticketId: number,
+    linkedPr: PullRequestRef | null,
+  ): TicketFrontmatter | undefined {
+    return this.#tickets.updateTicketLinkedPr(ticketId, linkedPr);
   }
 
   listSessionAttempts(sessionId: string): ExecutionAttempt[] {

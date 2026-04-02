@@ -281,7 +281,11 @@ export class TicketExecutionWorkflowService {
     };
   }
 
-  requestTicketChanges(ticketId: number, body: string): RestartTicketResult {
+  requestTicketChanges(
+    ticketId: number,
+    body: string,
+    authorType: "user" | "system" = "user",
+  ): RestartTicketResult {
     const ticket = this.tickets.getTicket(ticketId);
     if (!ticket) {
       throw new Error("Ticket not found");
@@ -328,7 +332,7 @@ export class TicketExecutionWorkflowService {
           ) VALUES (?, ?, ?, ?, ?, ?)
         `,
       )
-      .run(noteId, ticketId, reviewPackage.id, "user", body, timestamp);
+      .run(noteId, ticketId, reviewPackage.id, authorType, body, timestamp);
 
     this.context.db
       .prepare(

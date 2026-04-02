@@ -17,6 +17,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     name: "Project One",
     agent_adapter: "codex",
     execution_backend: "host",
+    default_review_action: "direct_merge",
     default_target_branch: "main",
     pre_worktree_command: null,
     post_worktree_command: null,

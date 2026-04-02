@@ -143,6 +143,14 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       async disposeTicket() {},
       async stopPreviewAndWait() {},
     };
+    const githubPullRequestService = {
+      async createPullRequest() {
+        throw new Error("Not used in this test");
+      },
+      async reconcileTicket() {
+        throw new Error("Not used in this test");
+      },
+    };
 
     const app = Fastify();
     await app.register(fastifyRateLimit, { global: false });
@@ -150,6 +158,7 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       eventHub: new EventHub(),
       store,
       executionRuntime: executionRuntime as never,
+      githubPullRequestService: githubPullRequestService as never,
       ticketWorkspaceService: ticketWorkspaceService as never,
     });
 

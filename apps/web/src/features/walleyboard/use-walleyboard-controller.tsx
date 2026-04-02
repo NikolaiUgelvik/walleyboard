@@ -9,6 +9,7 @@ import type {
   Project,
   RepositoryBranchChoices,
   RepositoryBranchesResponse,
+  ReviewAction,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -88,6 +89,10 @@ export function useWalleyBoardController() {
     useState<AgentAdapter>("codex");
   const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
     useState<ExecutionBackend>("host");
+  const [
+    projectOptionsDefaultReviewAction,
+    setProjectOptionsDefaultReviewAction,
+  ] = useState<ReviewAction>("direct_merge");
   const [projectOptionsDraftModelPreset, setProjectOptionsDraftModelPreset] =
     useState<ProjectModelPreset>("default");
   const [projectOptionsDraftModelCustom, setProjectOptionsDraftModelCustom] =
@@ -619,6 +624,8 @@ export function useWalleyBoardController() {
     (projectOptionsAgentAdapter !== projectOptionsProject.agent_adapter ||
       projectOptionsExecutionBackend !==
         projectOptionsProject.execution_backend ||
+      projectOptionsDefaultReviewAction !==
+        projectOptionsProject.default_review_action ||
       projectOptionsPreWorktreeCommandValue !==
         projectOptionsProject.pre_worktree_command ||
       projectOptionsPostWorktreeCommandValue !==
@@ -1054,6 +1061,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(null);
     setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
+    setProjectOptionsDefaultReviewAction("direct_merge");
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
@@ -1072,6 +1080,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(project.id);
     setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
+    setProjectOptionsDefaultReviewAction(project.default_review_action);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
     );
@@ -1172,6 +1181,7 @@ export function useWalleyBoardController() {
       agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
       executionBackend: projectOptionsExecutionBackend,
+      defaultReviewAction: projectOptionsDefaultReviewAction,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
       draftAnalysisModel: projectOptionsDraftModelValue,
@@ -1383,6 +1393,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchChoices,
     projectOptionsBranchesByRepositoryId,
     projectOptionsBranchesQuery,
+    projectOptionsDefaultReviewAction,
     projectOptionsDirty,
     projectOptionsAgentAdapter,
     projectOptionsDraftModelCustom,
@@ -1452,6 +1463,7 @@ export function useWalleyBoardController() {
     setProjectModalOpen,
     setProjectName,
     setProjectOptionsAgentAdapter,
+    setProjectOptionsDefaultReviewAction,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,

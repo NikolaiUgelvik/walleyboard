@@ -7,6 +7,7 @@ import type {
   ExecutionSession,
   ExecutionSessionStatus,
   Project,
+  PullRequestRef,
   RepositoryConfig,
   RequestedChangeNote,
   ReviewPackage,
@@ -141,7 +142,11 @@ export interface Store {
     runtime: PreparedExecutionRuntime,
   ): StartTicketResult;
   stopTicket(ticketId: number, reason?: string): StopTicketResult;
-  requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
+  requestTicketChanges(
+    ticketId: number,
+    body: string,
+    authorType?: RequestedChangeNote["author_type"],
+  ): RestartTicketResult;
   recordMergeConflict(ticketId: number, body: string): MergeConflictResult;
   resumeTicket(ticketId: number, reason?: string): RestartTicketResult;
   restartInterruptedTicket(
@@ -178,6 +183,10 @@ export interface Store {
   updateTicketStatus(
     ticketId: number,
     status: TicketFrontmatter["status"],
+  ): TicketFrontmatter | undefined;
+  updateTicketLinkedPr(
+    ticketId: number,
+    linkedPr: PullRequestRef | null,
   ): TicketFrontmatter | undefined;
   listSessionAttempts(sessionId: string): ExecutionAttempt[];
   getSession(sessionId: string): ExecutionSession | undefined;

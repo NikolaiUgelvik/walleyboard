@@ -78,7 +78,10 @@ export function deriveInboxItems(input: {
         key: `review-${ticket.id}`,
         color: "blue",
         title: `Review ready for ticket #${ticket.id}`,
-        message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
+        message:
+          ticket.linked_pr === null
+            ? `${ticket.title} is ready for review and can be merged or sent back for changes.`
+            : `${ticket.title} is linked to PR #${ticket.linked_pr.number} and is waiting on GitHub review.`,
         targetKind: "session",
         targetId: ticket.session_id,
         actionLabel: "Open Review",

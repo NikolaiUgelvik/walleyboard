@@ -1,8 +1,11 @@
-import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
+import type {
+  PullRequestRef,
+  TicketFrontmatter,
+} from "../../../../../packages/contracts/src/index.js";
 
 import type { ListProjectTicketsOptions } from "../store.js";
 import { nowIso } from "../time.js";
-import { mapTicket, type SqliteStoreContext } from "./shared.js";
+import { mapTicket, type SqliteStoreContext, stringifyJson } from "./shared.js";
 
 export class TicketRepository {
   constructor(private readonly context: SqliteStoreContext) {}
@@ -69,6 +72,32 @@ export class TicketRepository {
         `,
       )
       .run(status, nowIso(), ticketId);
+
+    return this.getTicket(ticketId);
+  }
+
+  updateTicketLinkedPr(
+    ticketId: number,
+    linkedPr: PullRequestRef | null,
+  ): TicketFrontmatter | undefined {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      return undefined;
+    }
+
+    this.context.db
+      .prepare(
+        `
+          UPDATE tickets
+          SET linked_pr = ?, updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        linkedPr === null ? null : stringifyJson(linkedPr),
+        nowIso(),
+        ticketId,
+      );
 
     return this.getTicket(ticketId);
   }
