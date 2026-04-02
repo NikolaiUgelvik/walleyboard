@@ -12,6 +12,8 @@ This document turns the PRD into the current module boundaries, workflow terms, 
   - split by concern into read/workspace, execution, lifecycle, and review registration modules
 - `lib/event-hub`
   - fan-out of backend events to WebSocket subscribers
+- `lib/docker-runtime`
+  - Docker health checks, managed session-container lifecycle, and runtime image bootstrapping for Docker-backed projects
 - `lib/sqlite-store`
   - shared SQLite bootstrap, schema setup, transaction helpers, and record mappers
   - focused repositories for projects, drafts, tickets, sessions, structured events, and review artifacts
@@ -26,7 +28,8 @@ This document turns the PRD into the current module boundaries, workflow terms, 
   - source of truth for API payloads and event envelopes
   - Zod first, inferred types second
 - `packages/db`
-  - SQLite schema only
+  - reference SQLite schema only
+  - runtime persistence currently lives in the backend sqlite-store
   - no business logic
 
 ## High-Level Status
@@ -35,11 +38,13 @@ Implemented now:
 
 - local Fastify + React app with shared contracts, SQLite persistence, and websocket-driven board/session updates
 - board workflow with `Draft`, `Ready`, `In progress`, `In review`, and `Done`
+- project options for host or Docker-backed execution, model overrides, and pre/post-worktree commands
 - draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session/worktree
 - Codex-managed execution modes through `codex exec`, with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
 - review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request-changes and resume, allows manual terminal takeover with restore-agent handoff, and merges directly from `review` into the target branch with cleanup
+- ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
 - conservative restart recovery that marks active sessions `interrupted` instead of auto-restoring live execution
 
 Not yet implemented:
@@ -54,6 +59,8 @@ Not yet implemented:
 - The draft-to-ready flow is "edit draft -> `Refine` or `Questions` -> optional `Revert Refine` -> `Create Ready`".
 - Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`.
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session/worktree. `create-pr` and `reconcile` remain scaffolded only.
+- Completed tickets can be archived out of the active board and restored later.
+- Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup.
 
 ## Next Milestones
 
@@ -74,12 +81,13 @@ Not yet implemented:
 
 ## Starter Endpoints
 
-Representative current route surface. `create-pr` and `reconcile` are scaffolded review actions; see `apps/backend/src/routes` for the full route set.
+Representative current route surface. `create-pr` and `reconcile` are scaffolded review actions.
 
 - `GET /health`
 - `GET /projects`
 - `GET /projects/:projectId`
 - `GET /projects/:projectId/archived-tickets`
+- `GET /projects/:projectId/repository-branches`
 - `GET /projects/:projectId/repositories`
 - `GET /projects/:projectId/tickets`
 - `GET /projects/:projectId/drafts`
@@ -95,6 +103,8 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - `GET /sessions/:sessionId/logs`
 - `POST /projects`
 - `PATCH /projects/:projectId`
+- `POST /projects/:projectId/update`
+- `POST /projects/:projectId/delete`
 - `POST /drafts`
 - `POST /projects/:projectId/draft-artifacts`
 - `PATCH /drafts/:draftId`
@@ -106,6 +116,9 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - `POST /tickets/:ticketId/start`
 - `POST /tickets/:ticketId/stop`
 - `POST /tickets/:ticketId/resume`
+- `POST /tickets/:ticketId/restart`
+- `POST /tickets/:ticketId/archive`
+- `POST /tickets/:ticketId/restore`
 - `POST /tickets/:ticketId/delete`
 - `POST /tickets/:ticketId/request-changes`
 - `POST /tickets/:ticketId/create-pr`
@@ -141,6 +154,7 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 ## Current Implementation Notes
 
 - Project setup is real and persisted in SQLite, and repository validation commands can be configured during project setup.
+- Projects can choose a host or Docker execution backend, plus project-level pre/post-worktree commands and model overrides.
 - Draft and ticket Markdown are persisted in SQLite-backed records, while filesystem writes are reserved for artifacts, logs, summaries, and worktrees.
 - Production source files are kept under a hard 1500-line cap through `scripts/check-production-file-sizes.mjs`, and the root lint workflow runs that gate before Biome.
 - Board-visible work now uses the `Draft`, `Ready`, `In progress`, `In review`, and `Done` flow, with websocket updates keeping drafts, tickets, sessions, and review packages current in the UI.
@@ -152,6 +166,7 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - Successful execution runs validation before review handoff, generates a local review package and persisted diff artifact, surfaces review-ready and waiting action cards, and moves the ticket to `review`.
 - The session workspace view combines diff, preview, interpreted activity, and a raw project terminal transcript for the prepared worktree.
 - From `review`, local direct merge to the target branch is implemented, including worktree and local-branch cleanup plus automatic merge-conflict fallback that moves work back to `in_progress` when recovery cannot finish the merge safely.
+- Completed tickets can be archived and later restored into the active board, and interrupted sessions can be restarted from scratch after tearing down the preserved workspace.
 - Ticket deletion stops active work when needed, removes persisted ticket/session metadata, and deletes walleyboard-owned local artifacts such as worktrees, local branches, summaries, and validation directories.
 - Backend startup marks active sessions and attempts `interrupted`, preserves the existing worktree and branch, and leaves resume manual instead of auto-restoring live execution.
 - GitHub PR creation and external reconciliation are scaffolded only and are not implemented yet.

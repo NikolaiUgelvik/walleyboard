@@ -1,5 +1,7 @@
 # PRD: AI WalleyBoard Application
 
+Current-state implementation details live in `README.md` and `docs/implementation-starter-pack.md`. This PRD describes the intended product direction, with Section 11 capturing the stricter MVP slice.
+
 ## 1. Overview
 Build a local-first single-page application for orchestrating AI-assisted software work across multiple repositories, Codex CLI instances, and git worktrees. The application should provide a Kanban-style workflow for drafting, refining, planning, executing, reviewing, and completing engineering tickets from one interface.
 
@@ -50,13 +52,17 @@ Today this workflow is fragmented across issue trackers, local notes, terminals,
 - Pull request: an optional GitHub review object linked to a ticket
 
 ### 6.2 Board Workflow
-The Kanban board consists of the following columns:
+The active board surface consists of the following columns:
+- Draft: persisted draft records that are still being authored or refined and are not executable yet
 - Ready: tickets that are refined enough to execute but are not currently active
 - In Progress: tickets that are active, queued, or currently being worked on by Codex
 - Review: tickets under human review or linked to an open pull request
 - Done: completed tickets
 
+Archived done tickets are managed outside the active board and can be restored later.
+
 State transitions:
+- Promoting a `Draft` into `Ready` requires explicit confirmation of repository, ticket type, acceptance criteria, and target branch.
 - Moving a ticket into `In Progress` requires explicit user approval.
 - Moving a ticket into `In Progress` creates or resumes the ticket's execution session.
 - If the concurrency limit has been reached, the ticket still moves to `In Progress` but its execution session enters a queued status until a slot opens.
@@ -136,6 +142,7 @@ Storage constraints:
 - The ticket creation drawer may use a separate temporary refinement session.
 - A refinement session is not the same object as the primary execution session.
 - Execution sessions must be resumable across application restarts.
+- In the current MVP, resumability means preserving the logical session, worktree, and branch so the user can resume from `interrupted`; automatic live PTY reattachment remains deferred.
 - Full raw logs of execution sessions must be persisted.
 - Structured events must also be persisted.
 
@@ -152,7 +159,7 @@ Suggested execution session statuses:
 #### Execution Session Resume Semantics
 - In v1, resumable does not require the original CLI process to survive indefinitely.
 - The system should treat an execution session as a durable logical unit that may contain one or more process attempts over time.
-- On backend startup or reconnect, the system should first try to reattach to an existing PTY-backed Codex process if it is still alive.
+- The target behavior on backend startup or reconnect is to first try to reattach to an existing PTY-backed Codex process if it is still alive.
 - If the original process is no longer alive or cannot be reattached safely, the session should move to `interrupted`.
 - From `interrupted`, the user may explicitly resume the session.
 - Resuming an interrupted session should launch a new Codex process in the same worktree and branch using persisted context that includes:
@@ -168,7 +175,7 @@ To avoid ambiguity, the product should distinguish between two separate concepts
 - AI-assisted ticket refinement: an optional drafting feature used while creating or refining a ticket
 - Execution planning flag: a session launch option that starts the model in planning mode before implementation
 
-Neither concept is a separate board column or board state. The board column for non-active work is `Ready`.
+Neither concept is a separate board column or board state. The non-active work columns are `Draft` and `Ready`.
 
 ### 6.7 Ticket Lifecycle Summary
 The intended v1 happy path is:
@@ -221,7 +228,7 @@ The intended v1 happy path is:
 
 #### Draft Persistence and Ticket Split Semantics
 - A new ticket should begin as a persisted `draft` record before it becomes `Ready`.
-- Draft tickets should not appear as normal board cards until they are explicitly saved as execution-ready.
+- Draft records may appear in a dedicated `Draft` board column, but they must remain non-executable until they are explicitly confirmed as execution-ready.
 - If the user closes the drawer or the app restarts, draft progress must be recoverable.
 - Wizard progress should persist:
   - The latest draft title and description
@@ -1067,6 +1074,7 @@ Notes on persisted ownership:
 
 ### 8.7 Codex Execution Environment
 - Each execution session must run through Codex CLI as the execution runtime.
+- The current implementation supports both `host` and `docker` execution backends selected per project.
 - Codex should provide the execution sandbox and command policy boundary for autonomous work.
 - The walleyboard should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
 - Planning-first runs should launch Codex with read-only behavior.
@@ -1246,6 +1254,7 @@ The MVP should prove one reliable end-to-end workflow:
 ### 11.2 Included in MVP
 - Single-user local web application with local backend
 - Manual project and repository configuration
+- Drafts visible in a dedicated `Draft` board column before promotion to `Ready`
 - One repository per ticket
 - Ticket states:
   - `draft`
@@ -1261,9 +1270,11 @@ The MVP should prove one reliable end-to-end workflow:
   - acceptance-criteria drafting
   - repository confirmation
 - One logical execution session per ticket
-- At most one actively running execution session globally
+- Per-project concurrency limits with queued follow-on starts once the active-session limit is reached
+- Host or Docker-backed ticket execution selected per project
 - Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
+- Manual terminal takeover with explicit restore-agent handoff
 - Repo-configured validation commands
 - Review package generation with:
   - diff
@@ -1273,17 +1284,17 @@ The MVP should prove one reliable end-to-end workflow:
   - remaining risks
 - Request-changes loop back to the same ticket, worktree, branch, and session
 - Explicit stop action that preserves the in-progress ticket and existing worktree for manual resume
+- Interrupted-session restart from scratch after tearing down the preserved workspace
 - Ticket deletion with best-effort cleanup of walleyboard-owned local artifacts
 - Direct merge flow with rebase-then-merge
 - Local worktree and local branch cleanup after successful merge
+- Archive and restore for completed tickets
 - Ticket Markdown plus SQLite-backed indexed state
 
 ### 11.3 Explicitly Deferred from MVP
 - Pull request creation from the app
 - GitHub polling and external PR reconciliation
 - Remote branch deletion
-- Multiple concurrent execution sessions
-- Queueing and scheduler-based delayed start
 - Automatic ticket splitting into multiple created tickets
 - Cross-repository execution from a single ticket
 - Automatic live PTY reattachment after backend restart
@@ -1296,7 +1307,7 @@ The MVP should prove one reliable end-to-end workflow:
 - If the backend restarts while a session is running, the session may conservatively move to `interrupted` and require explicit manual resume.
 - The refinement flow may present split-ticket advice, but MVP does not need to create multiple child tickets automatically.
 - Review in MVP is a local review experience and does not require GitHub PR objects.
-- The backend may reject starting a second execution session while one is already running instead of implementing queueing.
+- Queueing may remain a simple per-project FIFO flow without cross-project prioritization.
 - In-app notifications are sufficient for MVP as long as waiting states are visible and hard to miss.
 - GitHub CLI credentials are not required for the MVP path unless a later feature flag enables PR operations.
 
