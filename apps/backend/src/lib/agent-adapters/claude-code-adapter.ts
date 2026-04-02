@@ -53,11 +53,10 @@ function appendClaudePermissionArgs(
  * that must be removed before attempting JSON.parse.
  */
 export function stripAnsi(value: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping requires matching control characters.
-  return value.replace(
-    /\x1b\[[0-9;?]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()#][A-Za-z0-9]|\x1b[A-Za-z0-9=><]|\x9b[0-9;?]*[A-Za-z~]/g,
-    "",
-  );
+  const ansiPattern =
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping requires matching control characters.
+    /\x1b\[[0-9;?]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()#][A-Za-z0-9]|\x1b[A-Za-z0-9=><]|\x9b[0-9;?]*[A-Za-z~]/g;
+  return value.replace(ansiPattern, "");
 }
 
 /**
@@ -70,7 +69,7 @@ export function stripAnsi(value: string): string {
  * argument truncation in C-based programs (bash included).
  */
 export function shellEscape(value: string): string {
-  return "'" + value.replace(/\0/g, "").replace(/'/g, "'\\''") + "'";
+  return `'${value.replace(/\0/g, "").replace(/'/g, "'\\''")}'`;
 }
 
 /**

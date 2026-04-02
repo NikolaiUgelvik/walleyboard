@@ -10,14 +10,6 @@ import {
   normalizeOptionalReasoningEffort,
   truncate,
 } from "../execution-runtime/helpers.js";
-import type {
-  AgentCliAdapter,
-  DraftRunInput,
-  ExecutionRunInput,
-  InterpretedAdapterLine,
-  MergeConflictRunInput,
-  PreparedAgentRun,
-} from "./types.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -27,6 +19,14 @@ import {
   buildMergeConflictPrompt,
   buildPlanPrompt,
 } from "./shared-execution-prompts.js";
+import type {
+  AgentCliAdapter,
+  DraftRunInput,
+  ExecutionRunInput,
+  InterpretedAdapterLine,
+  MergeConflictRunInput,
+  PreparedAgentRun,
+} from "./types.js";
 
 const codexDockerSpec = {
   imageTag: "walleyboard/codex-runtime:ubuntu-24.04-node-24",

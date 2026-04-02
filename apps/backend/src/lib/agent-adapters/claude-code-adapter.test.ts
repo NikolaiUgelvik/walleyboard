@@ -4,6 +4,7 @@ import test from "node:test";
 import { z } from "zod";
 
 import type {
+  DraftTicketState,
   ExecutionSession,
   Project,
   RepositoryConfig,
@@ -105,6 +106,24 @@ function createSession(): ExecutionSession {
   };
 }
 
+function createDraft(): DraftTicketState {
+  return {
+    id: "draft-1",
+    project_id: "project-1",
+    artifact_scope_id: "artifact-scope-1",
+    title_draft: "Test",
+    description_draft: "Description",
+    proposed_repo_id: "repo-1",
+    confirmed_repo_id: null,
+    proposed_ticket_type: "feature",
+    proposed_acceptance_criteria: [],
+    wizard_status: "editing",
+    split_proposal_summary: null,
+    created_at: "2026-04-01T00:00:00.000Z",
+    updated_at: "2026-04-01T00:00:00.000Z",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // shellEscape
 // ---------------------------------------------------------------------------
@@ -196,7 +215,7 @@ test("buildDraftShellCommand: returns bash -c with claude args and redirect", ()
   assert.equal(result.command, "bash");
   assert.equal(result.args.length, 2);
   assert.equal(result.args[0], "-c");
-  const shellString = result.args[1];
+  const shellString = result.args[1] ?? "";
   assert.ok(shellString.startsWith("claude "));
   assert.ok(shellString.includes(">"));
   assert.ok(shellString.includes("/tmp/output.json"));
@@ -207,7 +226,7 @@ test("buildDraftShellCommand: special characters in prompt are escaped", () => {
     ["-p", "it's a $test"],
     "/tmp/out.json",
   );
-  const shellString = result.args[1];
+  const shellString = result.args[1] ?? "";
   // The single quote in "it's" should be properly escaped.
   assert.ok(shellString.includes("'it'\\''s a $test'"));
 });
@@ -255,7 +274,7 @@ test("parseClaudeCodeJsonResult: NDJSON result with markdown fences", () => {
     '{"type":"system","message":"starting"}',
     JSON.stringify({
       type: "result",
-      result: "```json\n" + innerJson + "\n```",
+      result: `\`\`\`json\n${innerJson}\n\`\`\``,
     }),
   ].join("\n");
   const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
@@ -379,7 +398,7 @@ test("interpretClaudeCodeStreamJsonLine: ANSI-prefixed JSON is parsed correctly"
     result: "done",
     cost_usd: 0.05,
   });
-  const ansiPrefixed = "\x1b[0m" + json;
+  const ansiPrefixed = `\x1b[0m${json}`;
   const result = interpretClaudeCodeStreamJsonLine(ansiPrefixed);
   assert.ok(result.logLine.startsWith("[claude-code result]"));
   assert.ok(result.logLine.includes("done"));
@@ -551,12 +570,7 @@ test("ClaudeCodeAdapter.resolveModelSelection: draft scope uses draft_analysis_m
 test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   const adapter = new ClaudeCodeAdapter();
   const run = adapter.buildDraftRun({
-    draft: {
-      title_draft: "Test",
-      description_draft: "Description",
-      proposed_ticket_type: "feature",
-      proposed_acceptance_criteria: [],
-    },
+    draft: createDraft(),
     mode: "refine",
     outputPath: "/tmp/output.json",
     project: createProject(),
@@ -564,30 +578,26 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   });
   assert.equal(run.command, "bash");
   assert.equal(run.args[0], "-c");
-  assert.ok(run.args[1].includes("claude"));
-  assert.ok(run.args[1].includes("--output-format"));
-  assert.ok(run.args[1].includes("--permission-mode"));
-  assert.ok(run.args[1].includes("plan"));
-  assert.ok(!run.args[1].includes("dangerously-skip-permissions"));
+  const shellCmd = run.args[1] ?? "";
+  assert.ok(shellCmd.includes("claude"));
+  assert.ok(shellCmd.includes("--output-format"));
+  assert.ok(shellCmd.includes("--permission-mode"));
+  assert.ok(shellCmd.includes("plan"));
+  assert.ok(!shellCmd.includes("dangerously-skip-permissions"));
   assert.equal(run.dockerSpec, null);
 });
 
 test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
   const adapter = new ClaudeCodeAdapter();
   const run = adapter.buildDraftRun({
-    draft: {
-      title_draft: "Test",
-      description_draft: "Description",
-      proposed_ticket_type: "feature",
-      proposed_acceptance_criteria: [],
-    },
+    draft: createDraft(),
     mode: "questions",
     outputPath: "/tmp/output.json",
     project: createProject(),
     repository: createRepository(),
   });
   assert.equal(run.command, "bash");
-  assert.ok(run.args[1].includes("claude"));
+  assert.ok((run.args[1] ?? "").includes("claude"));
   assert.equal(run.dockerSpec, null);
 });
 
@@ -816,12 +826,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: merge stage", () => {
 test("ClaudeCodeAdapter: all run builders return dockerSpec null", () => {
   const adapter = new ClaudeCodeAdapter();
   const draftRun = adapter.buildDraftRun({
-    draft: {
-      title_draft: "T",
-      description_draft: "D",
-      proposed_ticket_type: "feature",
-      proposed_acceptance_criteria: [],
-    },
+    draft: createDraft(),
     mode: "refine",
     outputPath: "/tmp/o.json",
     project: createProject(),

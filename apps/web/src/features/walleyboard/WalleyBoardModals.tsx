@@ -148,6 +148,11 @@ export function WalleyBoardModals({
                 />
               </Stack>
 
+              {/* Docker is not supported for Claude Code. This UI guard is the
+                  primary enforcement point - we intentionally skip server-side
+                  cross-field validation since our threat model does not cover
+                  users bypassing the UI via raw API calls. The runtime still
+                  produces a clear error if the combination is somehow reached. */}
               <Stack gap="xs">
                 <Text fw={600}>Execution backend</Text>
                 <SegmentedControl
