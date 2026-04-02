@@ -26,12 +26,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import {
-  type ClipboardEvent,
-  useEffect,
-  useEffectEvent,
-  useState,
-} from "react";
+import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 import type {
   CommandAck,
   DraftTicketState,
@@ -63,6 +58,7 @@ import {
   emptyDraftEditorFields,
   resolveDraftEditorSync,
 } from "./lib/draft-editor-sync.js";
+import { deriveInboxItems } from "./lib/inbox-items.js";
 import { getBoardTicketDescriptionPreview } from "./lib/ticket-description-preview.js";
 
 const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
@@ -213,15 +209,6 @@ type TicketWorkspacePreviewResponse = {
 
 type ReviewPackageResponse = {
   review_package: ReviewPackage;
-};
-
-type ActionItem = {
-  key: string;
-  color: "blue" | "yellow";
-  title: string;
-  message: string;
-  sessionId: string;
-  actionLabel: string;
 };
 
 type NewDraftAction = "save" | "refine" | "questions" | "confirm";
@@ -1158,6 +1145,36 @@ export function App() {
     retry: false,
   });
 
+  const globalTicketsQueries = useQueries({
+    queries: (projectsQuery.data?.projects ?? []).map((project) => ({
+      queryKey: ["projects", project.id, "tickets"],
+      queryFn: () =>
+        fetchJson<TicketsResponse>(`/projects/${project.id}/tickets`),
+      refetchInterval: 2_000,
+    })),
+  });
+
+  const globalTickets = globalTicketsQueries.flatMap(
+    (query) => query.data?.tickets ?? [],
+  );
+
+  const globalSessionSummaries = useQueries({
+    queries: globalTickets
+      .filter(
+        (
+          ticket,
+        ): ticket is TicketFrontmatter & {
+          session_id: string;
+        } => ticket.session_id !== null,
+      )
+      .map((ticket) => ({
+        queryKey: ["sessions", ticket.session_id],
+        queryFn: () =>
+          fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
+        refetchInterval: 2_000,
+      })),
+  });
+
   const repositoriesQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "repositories"],
     queryFn: () =>
@@ -1386,7 +1403,11 @@ export function App() {
     }
   }, [selectedSessionId]);
 
-  const handleProtocolEvent = useEffectEvent((event: ProtocolEvent) => {
+  const handleProtocolEventRef = useRef<(event: ProtocolEvent) => void>(
+    () => {},
+  );
+
+  handleProtocolEventRef.current = (event: ProtocolEvent) => {
     if (event.event_type === "draft.updated") {
       const draft = event.payload.draft as DraftTicketState | undefined;
       if (!draft) {
@@ -1653,20 +1674,20 @@ export function App() {
         },
       );
     }
-  });
+  };
 
   useEffect(() => {
     const socket = new WebSocket(websocketUrl);
 
     socket.onmessage = (messageEvent) => {
       const event = JSON.parse(messageEvent.data) as ProtocolEvent;
-      handleProtocolEvent(event);
+      handleProtocolEventRef.current(event);
     };
 
     return () => {
       socket.close();
     };
-  }, [handleProtocolEvent]);
+  }, []);
 
   const sessionQuery = useQuery({
     queryKey: ["sessions", selectedSessionId],
@@ -2564,6 +2585,12 @@ export function App() {
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
   );
+  const globalSessionById = new Map(
+    globalSessionSummaries
+      .map((query) => query.data?.session)
+      .filter((value): value is ExecutionSession => value !== undefined)
+      .map((item) => [item.id, item]),
+  );
 
   useEffect(() => {
     if (
@@ -2614,65 +2641,10 @@ export function App() {
 
   const doneColumnTickets = groupedTickets.done;
 
-  const actionItems: ActionItem[] = tickets.flatMap((ticket): ActionItem[] => {
-    const sessionForTicket =
-      ticket.session_id !== null
-        ? (sessionById.get(ticket.session_id) ?? null)
-        : null;
-
-    if (ticket.status === "review" && ticket.session_id) {
-      return [
-        {
-          key: `review-${ticket.id}`,
-          color: "blue",
-          title: `Review ready for ticket #${ticket.id}`,
-          message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
-          sessionId: ticket.session_id,
-          actionLabel: "Open Review",
-        },
-      ];
-    }
-
-    if (
-      sessionForTicket &&
-      [
-        "awaiting_input",
-        "failed",
-        "interrupted",
-        "paused_checkpoint",
-        "paused_user_control",
-      ].includes(sessionForTicket.status)
-    ) {
-      const label =
-        sessionForTicket.plan_status === "awaiting_feedback"
-          ? `Plan feedback needed for ticket #${ticket.id}`
-          : sessionForTicket.status === "failed"
-            ? `Execution failed for ticket #${ticket.id}`
-            : sessionForTicket.status === "paused_user_control"
-              ? `Manual terminal active for ticket #${ticket.id}`
-              : `Input needed for ticket #${ticket.id}`;
-      const message =
-        (sessionForTicket.plan_status === "awaiting_feedback"
-          ? sessionForTicket.plan_summary
-          : null) ??
-        sessionForTicket.last_summary ??
-        (sessionForTicket.status === "paused_user_control"
-          ? `${ticket.title} is in direct terminal mode on its worktree.`
-          : `${ticket.title} needs your attention before the next attempt can continue.`);
-
-      return [
-        {
-          key: `session-${ticket.id}`,
-          color: "yellow",
-          title: label,
-          message,
-          sessionId: sessionForTicket.id,
-          actionLabel: "Open Session",
-        },
-      ];
-    }
-
-    return [];
+  const actionItems = deriveInboxItems({
+    projects: projectsQuery.data?.projects ?? [],
+    tickets: globalTickets,
+    sessionsById: globalSessionById,
   });
 
   const selectedSessionTicketSession = selectedSessionTicket?.session_id
@@ -3375,9 +3347,14 @@ export function App() {
                       data-tone={item.color}
                     >
                       <Stack gap={6}>
-                        <Text fw={700} size="sm">
-                          {item.title}
-                        </Text>
+                        <Group justify="space-between" align="flex-start">
+                          <Text fw={700} size="sm" style={{ flex: 1 }}>
+                            {item.title}
+                          </Text>
+                          <Badge variant="light" color="gray" size="xs">
+                            {item.projectName}
+                          </Badge>
+                        </Group>
                         <MarkdownContent
                           className="markdown-muted markdown-small"
                           content={item.message}
@@ -3387,6 +3364,7 @@ export function App() {
                             variant="light"
                             size="xs"
                             onClick={() => {
+                              selectProject(item.projectId);
                               setInspectorState({
                                 kind: "session",
                                 sessionId: item.sessionId,
