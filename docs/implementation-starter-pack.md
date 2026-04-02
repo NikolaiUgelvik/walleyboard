@@ -32,12 +32,12 @@ Implemented now:
 - draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session/worktree
+- Codex-managed execution modes through `codex exec`, with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
 - review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request-changes and resume, allows manual terminal takeover with restore-agent handoff, and merges directly from `review` into the target branch with cleanup
 - conservative restart recovery that marks active sessions `interrupted` instead of auto-restoring live execution
 
 Not yet implemented:
 
-- Bubblewrap sandbox lifecycle management around execution or validation
 - automatic restoration of a live execution after an application restart
 - GitHub pull request creation or external review reconciliation from the `review` stage
 - richer validation configuration and review-time override handling beyond the current project-setup defaults
@@ -51,7 +51,6 @@ Not yet implemented:
 
 ## Next Milestones
 
-- Add Bubblewrap-backed sandbox orchestration around the live Codex runtime and validation commands.
 - Add GitHub pull request creation and reconciliation when direct merge is not the right review path.
 - Add richer validation configuration and override handling.
 - Decide whether interrupted sessions should auto-resume or stay manual after restart.

@@ -250,7 +250,7 @@ A ticket must not start execution until all of the following are true:
 When a ticket is explicitly approved and moved to `In Progress`, the system should automatically:
 - Create or restore the worktree
 - Create or restore the working branch
-- Launch or resume the execution session inside the sandbox
+- Launch or resume the execution session through the Codex execution runtime
 
 Execution start options:
 - Start immediately
@@ -748,7 +748,7 @@ Adapter scope:
 Documented behavior alignment:
 - The adapter must assume Codex CLI runs locally and can read, modify, and run code on the user's machine.
 - The adapter must keep local execution under backend control rather than allowing the model to execute commands outside the orchestrator's runtime boundaries.
-- The adapter must preserve sandboxing, auditing, and command visibility for all execution attempts.
+- The adapter must launch Codex with the intended execution mode, keep worktree and session control under backend ownership, capture logs and summaries, and enforce UI-level approvals around workflow actions.
 - The adapter must not rely on undocumented internal Codex behavior when a conservative backend-controlled alternative exists.
 
 Mode mapping:
@@ -772,7 +772,7 @@ Adapter launch contract:
 - Resumed attempts must include enough persisted context for Codex to continue work in the same logical session without relying on the previous PTY process still existing.
 
 Autonomy policy:
-- The Codex adapter should run as autonomously as possible within the sandbox and repository policy.
+- The Codex adapter should run as autonomously as possible within Codex execution policy and repository policy.
 - The default policy should be:
   - Continue working without user interruption while the task is clear and allowed
   - Ask for input when clarification is required
@@ -1058,128 +1058,21 @@ Notes on persisted ownership:
 - The default worktree-creation hook policy should be `block`.
 - The default worktree-removal hook policy should be `warn`.
 
-### 8.7 Sandboxing
-- Each execution session must run in a sandboxed environment.
-- The system should use Bubblewrap `bwrap` or an equivalent sandboxing mechanism.
-- Sandboxing should apply per ticket, session, and worktree.
-- By default, the sandbox should mount only what the ticket needs:
-  - The ticket's repository or worktree
-  - Required system tooling
-  - Network access
-  - Git and `gh`
-  - Repo-local toolchain commands such as `npm`
-- Additional repository mounts or permissions should require explicit opt-in configuration.
+### 8.7 Codex Execution Environment
+- Each execution session must run through Codex CLI as the execution runtime.
+- Codex should provide the execution sandbox and command policy boundary for autonomous work.
+- The orchestrator should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
+- Planning-first runs should launch Codex with read-only behavior.
+- Implementation runs should launch Codex with workspace-write behavior against the prepared worktree.
+- Validation commands and hooks should continue to run as backend-owned subprocesses against that same worktree.
+- The orchestrator should not add a second OS-level sandbox layer in v1.
 
-#### Credential and Environment Policy
-- Environment variables should be denied by default except for a minimal runtime allowlist required for interactive terminal behavior and core tooling.
-- Repository configuration may explicitly allow additional environment variables by name.
+#### Credential and Summary Safety
 - `gh` authentication should use the user's existing local GitHub CLI credentials rather than storing duplicate credentials inside the application.
 - Git author name and email should use existing local git configuration unless explicitly overridden by repository configuration.
 - The application must not write credentials into ticket Markdown, structured events, or agent-generated summaries.
 - Structured events and generated summaries should redact configured secret values before persistence.
 - Raw logs may be stored locally, but any derived summaries or indexed payloads must be redacted.
-
-#### V1 Sandbox Host Assumptions
-- V1 sandboxing should officially target Linux hosts.
-- The reference implementation should use Bubblewrap `bwrap` as the default sandbox backend.
-- Other operating systems may be supported later, but they are out of scope for the fully supported v1 sandbox profile.
-
-#### V1 Sandbox Profiles
-The backend should support two sandbox profiles in v1:
-
-Refinement profile:
-- Intended for AI-assisted ticket refinement and repository understanding tasks
-- Default filesystem access:
-  - Read-only access to explicitly selected project repositories when repository inspection is needed
-  - No writable worktree mount
-  - Private temporary directory
-- Disallowed actions by policy:
-  - Git push
-  - PR creation
-  - Merge operations
-  - Arbitrary writes outside private temp space
-
-Execution profile:
-- Intended for implementation, validation, and review preparation
-- Default filesystem access:
-  - Read-write access to the ticket worktree only
-  - Read-only access to required system binaries and libraries
-  - Private temporary directory
-  - Private sandbox home directory
-- Additional repository mounts must be explicitly configured and mounted read-only unless write access is specifically justified
-
-#### Filesystem Mount Policy
-The sandbox should use an explicit allowlist of mounts.
-
-Required writable mounts:
-- Ticket worktree path
-- Sandbox-private temporary directory
-- Sandbox-private home directory for runtime-local config and tool state
-
-Required read-only mounts:
-- System runtime directories required to execute the configured tools
-- Read-only credential/config mounts approved by the backend
-
-Default blocked mounts:
-- The rest of the user's home directory
-- Unrelated repositories
-- Sensitive system directories not required for execution
-- Orchestrator application state directories except for narrowly scoped files the backend explicitly binds
-
-The sandbox-private home directory should:
-- Be unique per execution session or attempt
-- Not expose the user's full host home directory
-- Receive only the minimum bound configuration files needed for Codex, git, and `gh`
-
-#### Credential Mount Policy
-The backend should prepare sandbox credentials explicitly instead of inheriting the full host environment.
-
-Allowed credential/config inputs:
-- Codex CLI authentication material required to launch the local Codex runtime
-- Git configuration needed for author identity
-- GitHub CLI configuration only when PR or GitHub operations are enabled for that workflow
-
-Credential mount rules:
-- Credentials should be mounted read-only into the sandbox-private home
-- Host SSH keys should not be mounted by default
-- Additional secret files must require explicit repository or project configuration
-- The backend should record which credential classes were mounted for each attempt without storing secret values
-
-#### Environment Allowlist
-The backend should pass only a minimal environment allowlist into the sandbox.
-
-Expected default allowlist:
-- `PATH`
-- `LANG`
-- `LC_ALL`
-- `TERM`
-- `COLORTERM`
-- `HOME`
-- `TMPDIR`
-- `GIT_AUTHOR_NAME`
-- `GIT_AUTHOR_EMAIL`
-- `GIT_COMMITTER_NAME`
-- `GIT_COMMITTER_EMAIL`
-
-Rules:
-- `OPENAI_API_KEY` or equivalent Codex runtime credentials may be passed only when required by the configured Codex runtime
-- Repository configuration may opt in additional environment variables by exact name
-- Wildcard environment passthrough must not be allowed in v1
-
-#### Network Policy
-Codex and supporting developer tools may require network access, but network access should still be explicit and auditable.
-
-V1 network modes:
-- `off`
-  - For refinement or local-only analysis that does not require remote access
-- `on`
-  - For Codex execution, package installation, remote git operations, or GitHub operations when required
-
-Rules:
-- The backend must record the network mode for every execution attempt
-- The backend should prefer `off` when a task can be completed locally
-- If `on` is used, the attempt audit record should capture the reason, such as Codex access, dependency installation, git fetch, or PR creation
-- Fine-grained domain allowlisting is a desirable later enhancement but is not required for the supported v1 profile
 
 #### Resource and Timeout Policy
 - Each execution attempt should have backend-enforced resource limits in addition to any limits suggested by the runtime
@@ -1188,25 +1081,14 @@ Rules:
 - The backend should define a maximum log chunk size for streamed PTY output to avoid unbounded memory pressure
 
 #### Approval and Control Boundaries
-- The sandbox is the safety boundary for autonomous work, not a replacement for workflow-level approvals
-- Codex may operate autonomously inside the sandbox, but the orchestrator must still require explicit user action for:
+- Codex execution policy is the safety boundary for autonomous work, not a replacement for workflow-level approvals
+- Codex may operate autonomously within its execution policy and repository policy, but the orchestrator must still require explicit user action for:
   - Starting execution
   - Validation override
   - Direct merge
   - PR creation if that action remains user-initiated
 - The backend must not assume it can inspect or veto every sub-command Codex executes inside the CLI runtime
-- Therefore the sandbox must be strong enough that autonomous execution remains acceptable even when command-by-command mediation is unavailable
-
-#### Sandbox Audit Requirements
-For every execution attempt, the backend must persist:
-- Sandbox profile used
-- Writable mounts
-- Read-only credential mounts by class
-- Network mode
-- Effective environment variable names passed through
-- Worktree path
-- Attempt start and end timestamps
-- Exit reason or interruption reason
+- Therefore the orchestrator must choose Codex execution settings that keep autonomous execution acceptable even when command-by-command mediation is unavailable
 
 ### 8.8 Recommended Technical Stack
 The recommended v1 stack is:
@@ -1283,7 +1165,7 @@ Utilities:
 
 #### Stack Rationale
 - TypeScript end-to-end keeps domain types shared across board state, ticket parsing, session state, and backend orchestration logic.
-- Node.js is the best fit for managing local processes, PTYs, filesystem state, git operations, `gh`, and sandbox launches from one runtime.
+- Node.js is the best fit for managing local processes, PTYs, filesystem state, git operations, `gh`, and Codex launches from one runtime.
 - React plus Mantine fits a dense board-first power-user UI with drawers, panels, forms, badges, tables, and status-heavy workflows.
 - xterm.js is an optional fit for a future manual project terminal, but the main session view should still prefer interpreted agent activity over raw transcripts.
 - `node-pty` should back all interactive Codex CLI sessions and any future manual terminal so the application gets real PTY behavior rather than a plain pipe-based subprocess.
@@ -1336,7 +1218,6 @@ Before implementation begins, the v1 build should treat the following as frozen 
 - Direct-merge policy of rebase-then-merge
 - Default remote branch deletion after successful PR merge
 - Default hook failure policies
-- Default sandbox environment and credential handling
 
 ## 11. Strict MVP Slice
 The PRD above describes the target v1 product direction. The initial implementation must use a stricter MVP slice.
@@ -1350,7 +1231,7 @@ The MVP should prove one reliable end-to-end workflow:
 2. Create a draft ticket with title and description
 3. Run AI-assisted refinement
 4. Save an execution-ready ticket
-5. Start Codex execution in an isolated worktree
+5. Start Codex execution in a dedicated worktree
 6. Receive in-app notification when user input or approval is required
 7. Review the resulting diff, commits, validation results, and summary
 8. Request changes or merge directly
@@ -1358,8 +1239,6 @@ The MVP should prove one reliable end-to-end workflow:
 
 ### 11.2 Included in MVP
 - Single-user local web application with local backend
-- Linux-only supported execution environment
-- Bubblewrap-based sandboxing
 - Manual project and repository configuration
 - One repository per ticket
 - Ticket states:
