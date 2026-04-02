@@ -89,7 +89,11 @@ async function createApp(
     agentReviewService: {} as never,
     appendSessionOutput() {},
     eventHub: new EventHub(),
-    executionRuntime: {} as never,
+    executionRuntime: {
+      hasActiveExecution() {
+        return false;
+      },
+    } as never,
     githubPullRequestService: {} as never,
     store: {
       appendSessionLog() {
@@ -193,13 +197,65 @@ test("workspace terminal reports a clear error when the ticket has no prepared w
   }
 });
 
+test("workspace terminal reports a clear error when the agent still owns the worktree", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-owned-"));
+  const app = await createApp({
+    executionRuntime: {
+      hasActiveExecution(sessionId: string) {
+        return sessionId === "session-13";
+      },
+    } as never,
+    store: {
+      getSession(sessionId: string) {
+        return sessionId === "session-13"
+          ? {
+              id: "session-13",
+              status: "running",
+              worktree_path: tempDir,
+            }
+          : null;
+      },
+      getTicket(ticketId: number) {
+        return ticketId === 13 ? { id: 13, session_id: "session-13" } : null;
+      },
+    } as never,
+  });
+
+  let socket: WebSocketClient | null = null;
+  try {
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    socket = await openSocket(
+      `${address.replace(/^http/, "ws")}/tickets/13/workspace/terminal`,
+    );
+
+    const message = await waitForSocketMessage(
+      socket,
+      (candidate) => candidate.type === "terminal.error",
+    );
+
+    assert.deepEqual(message, {
+      type: "terminal.error",
+      message:
+        "The agent still controls this worktree. Stop or finish the current run before opening the workspace terminal.",
+    });
+  } finally {
+    socket?.close();
+    await app.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("workspace terminal publishes shell exit messages for worktree sessions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-"));
   const app = await createApp({
     store: {
       getSession(sessionId: string) {
         return sessionId === "session-12"
-          ? { id: "session-12", worktree_path: tempDir }
+          ? {
+              id: "session-12",
+              status: "completed",
+              worktree_path: tempDir,
+            }
           : null;
       },
       getTicket(ticketId: number) {

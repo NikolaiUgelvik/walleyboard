@@ -173,7 +173,7 @@ test("ticket workspace actions switch preview labels and surface preview errors"
   assert.match(collectText(tree), /Browser blocked the preview tab\./);
 });
 
-test("ticket workspace actions disable controls when the session has no worktree", () => {
+test("ticket workspace actions keep activity available after worktree cleanup", () => {
   const { controller, ticket } = createController({
     selectedTicket: createTicket({ status: "done" }),
     session: { status: "completed", worktree_path: null },
@@ -184,12 +184,38 @@ test("ticket workspace actions disable controls when the session has no worktree
     "Open worktree diff",
     "Open worktree terminal",
     "Preview",
-    "Open activity stream",
   ]) {
     const action = findElementByProp(tree, "aria-label", label);
     assert.ok(action);
     assert.equal((action.props as { disabled?: boolean }).disabled, true);
   }
+
+  const activityAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open activity stream",
+  );
+  assert.ok(activityAction);
+  assert.equal(
+    (activityAction.props as { disabled?: boolean }).disabled,
+    false,
+  );
+});
+
+test("ticket workspace terminal action stays disabled while the agent owns the worktree", () => {
+  const { controller, ticket } = createController({
+    session: { status: "running", worktree_path: "/tmp/worktree-9" },
+  });
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+  const terminalAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open worktree terminal",
+  );
+
+  assert.ok(terminalAction);
+  assert.equal((terminalAction.props as { disabled?: boolean }).disabled, true);
 });
 
 test("ticket workspace activity action opens the activity modal from the card", () => {

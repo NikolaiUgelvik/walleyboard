@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { type IPty, spawn as spawnPty } from "node-pty";
+import type { ExecutionSession } from "../../../../../packages/contracts/src/index.js";
 
 import { parsePositiveInt } from "../../lib/http.js";
 import {
@@ -18,6 +19,13 @@ type TerminalResizeMessage = {
   cols: number;
   rows: number;
 };
+
+const terminalBlockedSessionStatuses = [
+  "queued",
+  "running",
+  "paused_checkpoint",
+  "awaiting_input",
+] satisfies ExecutionSession["status"][];
 
 function isTerminalInputMessage(value: unknown): value is TerminalInputMessage {
   if (!value || typeof value !== "object") {
@@ -47,9 +55,15 @@ function isTerminalResizeMessage(
   );
 }
 
+function terminalBlockedBySession(session: ExecutionSession): boolean {
+  return terminalBlockedSessionStatuses.includes(
+    session.status as (typeof terminalBlockedSessionStatuses)[number],
+  );
+}
+
 export function registerTicketReadWorkspaceRoutes(
   app: FastifyInstance,
-  { store, ticketWorkspaceService }: TicketRouteDependencies,
+  { executionRuntime, store, ticketWorkspaceService }: TicketRouteDependencies,
 ) {
   app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId",
@@ -289,6 +303,20 @@ export function registerTicketReadWorkspaceRoutes(
           JSON.stringify({
             type: "terminal.error",
             message: "Session has no prepared worktree",
+          }),
+        );
+        socket.close();
+        return;
+      }
+      if (
+        terminalBlockedBySession(session) ||
+        executionRuntime.hasActiveExecution(session.id)
+      ) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message:
+              "The agent still controls this worktree. Stop or finish the current run before opening the workspace terminal.",
           }),
         );
         socket.close();
