@@ -590,7 +590,7 @@ export function OrchestratorModals({
               id="project-name"
               name="projectName"
               label="Project name"
-              placeholder="receipt-designer"
+              placeholder="example-repo"
               value={controller.projectName}
               onChange={(event) =>
                 controller.setProjectName(event.currentTarget.value)
@@ -601,7 +601,7 @@ export function OrchestratorModals({
               id="repository-path"
               name="repositoryPath"
               label="Repository path"
-              placeholder="/home/nikolai/git/receipt-designer"
+              placeholder="/home/user/git/example-repo"
               value={controller.repositoryPath}
               onChange={(event) =>
                 controller.setRepositoryPath(event.currentTarget.value)
