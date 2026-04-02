@@ -68,17 +68,18 @@ export class ProjectRepository {
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, execution_backend, default_target_branch, pre_worktree_command,
+            id, slug, name, agent_adapter, execution_backend, default_target_branch, pre_worktree_command,
             post_worktree_command, draft_analysis_model,
             draft_analysis_reasoning_effort, ticket_work_model,
             ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
         projectId,
         slug,
         input.name.trim(),
+        "codex",
         "host",
         defaultTargetBranch,
         null,
@@ -149,6 +150,10 @@ export class ProjectRepository {
       input.draft_analysis_model === undefined
         ? project.draft_analysis_model
         : normalizeOptionalModel(input.draft_analysis_model);
+    const agentAdapter =
+      input.agent_adapter === undefined
+        ? project.agent_adapter
+        : input.agent_adapter;
     const executionBackend =
       input.execution_backend === undefined
         ? project.execution_backend
@@ -190,7 +195,8 @@ export class ProjectRepository {
       .prepare(
         `
           UPDATE projects
-          SET execution_backend = ?,
+          SET agent_adapter = ?,
+              execution_backend = ?,
               pre_worktree_command = ?,
               post_worktree_command = ?,
               draft_analysis_model = ?,
@@ -202,6 +208,7 @@ export class ProjectRepository {
         `,
       )
       .run(
+        agentAdapter,
         executionBackend,
         preWorktreeCommand,
         postWorktreeCommand,

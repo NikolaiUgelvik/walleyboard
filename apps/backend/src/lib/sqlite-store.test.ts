@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { SqliteStore } from "./sqlite-store.js";
@@ -43,6 +44,7 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
     });
 
     assert.equal(project.max_concurrent_sessions, 4);
+    assert.equal(project.agent_adapter, "codex");
 
     const firstTicket = createReadyTicket(store, project.id, repository.id, 1);
     const secondTicket = createReadyTicket(store, project.id, repository.id, 2);
@@ -158,6 +160,7 @@ test("projects default to host execution and persist execution backend updates",
     });
 
     assert.equal(store.getProject(project.id)?.execution_backend, "host");
+    assert.equal(store.getProject(project.id)?.agent_adapter, "codex");
 
     store.updateProject(project.id, {
       execution_backend: "docker",
@@ -169,6 +172,117 @@ test("projects default to host execution and persist execution backend updates",
     assert.equal(
       reloadedStore.getProject(project.id)?.execution_backend,
       "docker",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("started sessions snapshot the project's agent adapter", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-session-adapter-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Session Adapter Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started adapter snapshot session"],
+    });
+
+    assert.equal(started.session.agent_adapter, project.agent_adapter);
+    assert.equal(started.session.adapter_session_ref, null);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sqlite migration renames codex_session_id to adapter_session_ref", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-session-migrate-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const db = new DatabaseSync(databasePath);
+    db.exec(`
+      CREATE TABLE execution_sessions (
+        id TEXT PRIMARY KEY,
+        ticket_id INTEGER NOT NULL,
+        project_id TEXT NOT NULL,
+        repo_id TEXT NOT NULL,
+        worktree_path TEXT,
+        codex_session_id TEXT,
+        status TEXT NOT NULL,
+        planning_enabled INTEGER NOT NULL,
+        plan_status TEXT NOT NULL DEFAULT 'not_requested',
+        plan_summary TEXT,
+        current_attempt_id TEXT,
+        latest_requested_change_note_id TEXT,
+        latest_review_package_id TEXT,
+        queue_entered_at TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        last_heartbeat_at TEXT,
+        last_summary TEXT
+      );
+    `);
+    db.prepare(
+      `
+        INSERT INTO execution_sessions (
+          id, ticket_id, project_id, repo_id, worktree_path, codex_session_id,
+          status, planning_enabled, plan_status, plan_summary, current_attempt_id,
+          latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
+          started_at, completed_at, last_heartbeat_at, last_summary
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      "session-1",
+      1,
+      "project-1",
+      "repo-1",
+      "/tmp/worktree",
+      "old-codex-thread",
+      "awaiting_input",
+      0,
+      "not_requested",
+      null,
+      "attempt-1",
+      null,
+      null,
+      null,
+      "2026-04-01T00:00:00.000Z",
+      null,
+      "2026-04-01T00:00:00.000Z",
+      null,
+    );
+    db.close();
+
+    const store = new SqliteStore(databasePath);
+    const session = store.getSession("session-1");
+    assert.ok(session);
+    assert.equal(session.agent_adapter, "codex");
+    assert.equal(session.adapter_session_ref, "old-codex-thread");
+
+    const validationDb = new DatabaseSync(databasePath);
+    const columns = validationDb
+      .prepare("PRAGMA table_info(execution_sessions)")
+      .all() as Array<{ name: string }>;
+    validationDb.close();
+
+    assert.equal(
+      columns.some((column) => column.name === "adapter_session_ref"),
+      true,
+    );
+    assert.equal(
+      columns.some((column) => column.name === "codex_session_id"),
+      false,
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -357,7 +471,7 @@ test("restartInterruptedTicket keeps ids but resets fresh-launch session state",
       plan_status: "approved",
       plan_summary: "Approved plan",
     });
-    store.updateSessionCodexSessionId(
+    store.updateSessionAdapterSessionRef(
       started.session.id,
       "019d4cd5-78db-7c22-b9d7-bb251d30a1f1",
     );
@@ -385,7 +499,7 @@ test("restartInterruptedTicket keeps ids but resets fresh-launch session state",
     assert.equal(restarted.session.id, started.session.id);
     assert.equal(restarted.attempt.attempt_number, 2);
     assert.equal(restarted.session.status, "awaiting_input");
-    assert.equal(restarted.session.codex_session_id, null);
+    assert.equal(restarted.session.adapter_session_ref, null);
     assert.equal(restarted.session.plan_status, "drafting");
     assert.equal(restarted.session.plan_summary, null);
     assert.equal(
@@ -398,14 +512,14 @@ test("restartInterruptedTicket keeps ids but resets fresh-launch session state",
   }
 });
 
-test("codex session ids persist across resume and reload", () => {
+test("adapter session refs persist across resume and reload", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-codex-session-"));
   const databasePath = join(tempDir, "orchestrator.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
     const { project, repository } = store.createProject({
-      name: "Codex Session Project",
+      name: "Adapter Session Project",
       repository: {
         name: "repo",
         path: join(tempDir, "repo"),
@@ -416,31 +530,31 @@ test("codex session ids persist across resume and reload", () => {
     const started = store.startTicket(ticket.id, false, {
       workingBranch: "codex/ticket-1",
       worktreePath: join(tempDir, "worktrees", "ticket-1"),
-      logs: ["Started codex session ticket"],
+      logs: ["Started adapter session ticket"],
     });
 
-    assert.equal(started.session.codex_session_id, null);
+    assert.equal(started.session.adapter_session_ref, null);
 
-    const codexSessionId = "019d4cd5-78db-7c22-b9d7-bb251d30a1f1";
-    const linkedSession = store.updateSessionCodexSessionId(
+    const adapterSessionRef = "019d4cd5-78db-7c22-b9d7-bb251d30a1f1";
+    const linkedSession = store.updateSessionAdapterSessionRef(
       started.session.id,
-      codexSessionId,
+      adapterSessionRef,
     );
-    assert.equal(linkedSession?.codex_session_id, codexSessionId);
+    assert.equal(linkedSession?.adapter_session_ref, adapterSessionRef);
 
     store.updateSessionStatus(
       started.session.id,
       "interrupted",
-      "Paused so Codex can resume on the same thread.",
+      "Paused so the agent can resume on the same session reference.",
     );
 
     const resumed = store.resumeTicket(ticket.id, "continue from the same run");
-    assert.equal(resumed.session.codex_session_id, codexSessionId);
+    assert.equal(resumed.session.adapter_session_ref, adapterSessionRef);
 
     const reopenedStore = new SqliteStore(databasePath);
     assert.equal(
-      reopenedStore.getSession(started.session.id)?.codex_session_id,
-      codexSessionId,
+      reopenedStore.getSession(started.session.id)?.adapter_session_ref,
+      adapterSessionRef,
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -501,7 +615,7 @@ test("restartInterruptedTicket preserves prior history and appends fresh restart
     );
     assert.ok(
       restarted.logs.includes(
-        "Preserving ticket history while resetting the local worktree and Codex thread.",
+        "Preserving ticket history while resetting the local worktree and adapter session state.",
       ),
     );
     assert.ok(

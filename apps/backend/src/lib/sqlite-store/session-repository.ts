@@ -152,16 +152,16 @@ export class SessionRepository {
     return this.getSession(sessionId);
   }
 
-  updateSessionCodexSessionId(
+  updateSessionAdapterSessionRef(
     sessionId: string,
-    codexSessionId: string,
+    adapterSessionRef: string,
   ): ExecutionSession | undefined {
     const existingSession = this.getSession(sessionId);
     if (!existingSession) {
       return undefined;
     }
 
-    if (existingSession.codex_session_id === codexSessionId) {
+    if (existingSession.adapter_session_ref === adapterSessionRef) {
       return existingSession;
     }
 
@@ -169,11 +169,11 @@ export class SessionRepository {
       .prepare(
         `
           UPDATE execution_sessions
-          SET codex_session_id = ?, last_heartbeat_at = ?
+          SET adapter_session_ref = ?, last_heartbeat_at = ?
           WHERE id = ?
         `,
       )
-      .run(codexSessionId, nowIso(), sessionId);
+      .run(adapterSessionRef, nowIso(), sessionId);
 
     return this.getSession(sessionId);
   }

@@ -10,11 +10,13 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 import { ticketTypeSchema } from "../../../../../packages/contracts/src/index.js";
 
+import type { AgentAdapterRegistry } from "../agent-adapters/registry.js";
 import type { DockerRuntimeManager } from "../docker-runtime.js";
 import type { EventHub } from "../event-hub.js";
 import type { Store } from "../store.js";
 
 export type ExecutionRuntimeOptions = {
+  adapterRegistry: AgentAdapterRegistry;
   dockerRuntime: DockerRuntimeManager;
   eventHub: EventHub;
   store: Store;

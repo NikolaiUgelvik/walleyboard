@@ -23,6 +23,7 @@ export const ticketTypeSchema = z.enum([
 ]);
 
 export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+export const agentAdapterSchema = z.enum(["codex"]);
 export const executionBackendSchema = z.enum(["host", "docker"]);
 
 export const executionSessionStatusSchema = z.enum([
@@ -127,6 +128,7 @@ export const projectSchema = z.object({
   id: opaqueIdSchema,
   slug: z.string().min(1),
   name: z.string().min(1),
+  agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
   default_target_branch: z.string().min(1).nullable(),
   pre_worktree_command: z.string().min(1).nullable(),
@@ -177,8 +179,9 @@ export const executionSessionSchema = z.object({
   ticket_id: z.number().int().positive(),
   project_id: opaqueIdSchema,
   repo_id: opaqueIdSchema,
+  agent_adapter: agentAdapterSchema,
   worktree_path: absolutePathSchema.nullable(),
-  codex_session_id: opaqueIdSchema.nullable(),
+  adapter_session_ref: opaqueIdSchema.nullable(),
   status: executionSessionStatusSchema,
   planning_enabled: z.boolean(),
   plan_status: executionPlanStatusSchema,
@@ -251,6 +254,7 @@ export type ReviewPackage = z.infer<typeof reviewPackageSchema>;
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketType = z.infer<typeof ticketTypeSchema>;
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+export type AgentAdapter = z.infer<typeof agentAdapterSchema>;
 export type ExecutionBackend = z.infer<typeof executionBackendSchema>;
 export type ExecutionPlanStatus = z.infer<typeof executionPlanStatusSchema>;
 export type ExecutionSessionStatus = z.infer<

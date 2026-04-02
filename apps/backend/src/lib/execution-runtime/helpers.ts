@@ -177,7 +177,7 @@ export function buildOutputSummaryPath(
   const summaryDir = join(
     process.cwd(),
     ".local",
-    "codex-summaries",
+    "agent-summaries",
     project.slug,
   );
   ensureDirectory(summaryDir);
@@ -202,7 +202,7 @@ export function buildMergeConflictSummaryPath(
   const summaryDir = join(
     process.cwd(),
     ".local",
-    "codex-summaries",
+    "agent-summaries",
     project.slug,
   );
   ensureDirectory(summaryDir);

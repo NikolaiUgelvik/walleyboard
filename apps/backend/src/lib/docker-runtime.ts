@@ -6,15 +6,12 @@ import {
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { type IPty, spawn as spawnPty } from "node-pty";
+import type { PreparedAgentRun } from "./agent-adapters/types.js";
 
 export const dockerWorkspacePath = "/workspace";
-export const dockerHomePath = "/home/codex";
-export const dockerCodexConfigPath = `${dockerHomePath}/.codex`;
-export const dockerRuntimeImageTag =
-  "orchestrator/codex-runtime:ubuntu-24.04-node-24";
 
 const dockerManagedLabel = "com.orchestrator.managed";
 const dockerRepoRootHashLabel = "com.orchestrator.repo_root_hash";
@@ -37,6 +34,7 @@ export type DockerCapability = {
 };
 
 type SessionContainer = {
+  dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
   id: string;
   name: string;
   projectId: string;
@@ -45,11 +43,11 @@ type SessionContainer = {
 };
 
 type DockerRuntimeDependencies = {
+  configHomeResolver?: (configMountPath: string) => string;
   execFileSyncImpl?: typeof execFileSync;
   spawnImpl?: typeof spawn;
   spawnPtyImpl?: typeof spawnPty;
   repoRoot?: string;
-  codexHomePath?: string;
   uid?: number;
   gid?: number;
 };
@@ -72,7 +70,7 @@ export class DockerRuntimeManager {
   readonly #spawnPtyImpl: typeof spawnPty;
   readonly #repoRoot: string;
   readonly #repoRootHash: string;
-  readonly #codexHomePath: string;
+  readonly #configHomeResolver: (configMountPath: string) => string;
   readonly #uid: number;
   readonly #gid: number;
   readonly #sessionContainers = new Map<string, SessionContainer>();
@@ -85,8 +83,9 @@ export class DockerRuntimeManager {
     this.#repoRootHash = createHash("sha256")
       .update(this.#repoRoot)
       .digest("hex");
-    this.#codexHomePath =
-      dependencies.codexHomePath ?? join(homedir(), ".codex");
+    this.#configHomeResolver =
+      dependencies.configHomeResolver ??
+      ((configMountPath: string) => join(homedir(), basename(configMountPath)));
     this.#uid = dependencies.uid ?? process.getuid?.() ?? 1000;
     this.#gid = dependencies.gid ?? process.getgid?.() ?? 1000;
   }
@@ -166,14 +165,18 @@ export class DockerRuntimeManager {
   }
 
   ensureSessionContainer(input: {
+    dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
     sessionId: string;
     projectId: string;
     ticketId: number;
     worktreePath: string;
   }): SessionContainer {
     this.assertAvailable();
-    this.#ensureRuntimeImage();
-    this.#ensureCodexHome();
+    this.#ensureRuntimeImage(input.dockerSpec);
+    const configHomePath = this.#resolveConfigHomePath(
+      input.dockerSpec.configMountPath,
+    );
+    this.#ensureConfigHome(configHomePath);
 
     const name = buildContainerName(this.#repoRootHash, input.sessionId);
     this.#removeContainerIfPresent(name);
@@ -199,18 +202,19 @@ export class DockerRuntimeManager {
       "--workdir",
       dockerWorkspacePath,
       "--mount",
-      `type=bind,src=${this.#codexHomePath},dst=${dockerCodexConfigPath}`,
+      `type=bind,src=${configHomePath},dst=${input.dockerSpec.configMountPath}`,
       "--mount",
       `type=bind,src=${input.worktreePath},dst=${dockerWorkspacePath}`,
       "-e",
-      `HOME=${dockerHomePath}`,
-      dockerRuntimeImageTag,
+      `HOME=${input.dockerSpec.homePath}`,
+      input.dockerSpec.imageTag,
       "tail",
       "-f",
       "/dev/null",
     ]);
 
     const container = {
+      dockerSpec: input.dockerSpec,
       id: containerId,
       name,
       projectId: input.projectId,
@@ -244,7 +248,7 @@ export class DockerRuntimeManager {
         "-w",
         dockerWorkspacePath,
         "-e",
-        `HOME=${dockerHomePath}`,
+        `HOME=${container.dockerSpec.homePath}`,
         container.id,
         command,
         ...args,
@@ -272,7 +276,7 @@ export class DockerRuntimeManager {
         "-w",
         dockerWorkspacePath,
         "-e",
-        `HOME=${dockerHomePath}`,
+        `HOME=${container.dockerSpec.homePath}`,
         container.id,
         command,
         ...args,
@@ -310,33 +314,33 @@ export class DockerRuntimeManager {
     return container;
   }
 
-  #ensureRuntimeImage(): void {
+  #ensureRuntimeImage(
+    dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>,
+  ): void {
     try {
-      this.#runDocker(["image", "inspect", dockerRuntimeImageTag]);
+      this.#runDocker(["image", "inspect", dockerSpec.imageTag]);
       return;
     } catch {
       this.#runDocker([
         "build",
         "--pull",
         "--tag",
-        dockerRuntimeImageTag,
+        dockerSpec.imageTag,
         "--file",
-        join(
-          this.#repoRoot,
-          "apps",
-          "backend",
-          "docker",
-          "codex-runtime.Dockerfile",
-        ),
+        join(this.#repoRoot, dockerSpec.dockerfilePath),
         this.#repoRoot,
       ]);
     }
   }
 
-  #ensureCodexHome(): void {
-    if (!existsSync(this.#codexHomePath)) {
-      mkdirSync(this.#codexHomePath, { recursive: true });
+  #ensureConfigHome(configHomePath: string): void {
+    if (!existsSync(configHomePath)) {
+      mkdirSync(configHomePath, { recursive: true });
     }
+  }
+
+  #resolveConfigHomePath(configMountPath: string): string {
+    return this.#configHomeResolver(configMountPath);
   }
 
   #listManagedContainers(): string[] {

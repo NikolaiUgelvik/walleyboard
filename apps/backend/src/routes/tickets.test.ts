@@ -83,7 +83,10 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       "stale\n",
       "utf8",
     );
-    store.updateSessionCodexSessionId(started.session.id, "old-codex-thread");
+    store.updateSessionAdapterSessionRef(
+      started.session.id,
+      "old-codex-thread",
+    );
     store.updateSessionStatus(
       started.session.id,
       "interrupted",
@@ -147,7 +150,7 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
     assert.ok(restartedSession);
     assert.equal(restartedSession.id, started.session.id);
     assert.equal(restartedSession.status, "awaiting_input");
-    assert.equal(restartedSession.codex_session_id, null);
+    assert.equal(restartedSession.adapter_session_ref, null);
     assert.equal(store.listSessionAttempts(started.session.id).length, 2);
     assert.equal(
       existsSync(join(initialRuntime.worktreePath, "stale.txt")),

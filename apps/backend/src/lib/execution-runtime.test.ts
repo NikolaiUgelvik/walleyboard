@@ -11,6 +11,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
+import { AgentAdapterRegistry } from "./agent-adapters/registry.js";
 import { ExecutionRuntime } from "./execution-runtime.js";
 
 function createProject(): Project {
@@ -18,6 +19,7 @@ function createProject(): Project {
     id: "project-1",
     slug: "project-1",
     name: "Project",
+    agent_adapter: "codex",
     execution_backend: "docker",
     default_target_branch: "main",
     pre_worktree_command: null,
@@ -74,8 +76,9 @@ function createSession(worktreePath: string): ExecutionSession {
     ticket_id: 14,
     project_id: "project-1",
     repo_id: "repo-1",
+    agent_adapter: "codex",
     worktree_path: worktreePath,
-    codex_session_id: null,
+    adapter_session_ref: null,
     status: "awaiting_input",
     planning_enabled: false,
     plan_status: "not_requested",
@@ -91,7 +94,7 @@ function createSession(worktreePath: string): ExecutionSession {
   };
 }
 
-test("docker-backed execution launches codex with dangerous mode inside Docker", () => {
+test("docker-backed execution launches the configured adapter command inside Docker", () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "orchestrator-execution-runtime-"),
   );
@@ -113,7 +116,7 @@ test("docker-backed execution launches codex with dangerous mode inside Docker",
     dispose() {},
     ensureSessionContainer() {},
     spawnPtyInSession(_sessionId: string, command: string, args: string[]) {
-      assert.equal(command, "codex");
+      assert.equal(command, "test-agent");
       spawnedArgs = args;
       return {
         kill() {},
@@ -145,7 +148,57 @@ test("docker-backed execution launches codex with dangerous mode inside Docker",
   };
 
   try {
+    const adapterRegistry = new AgentAdapterRegistry([
+      {
+        id: "codex",
+        label: "Fake Agent",
+        buildDraftRun() {
+          throw new Error("draft runs are not used in this test");
+        },
+        buildExecutionRun(input) {
+          return {
+            command: "test-agent",
+            args: [
+              "exec",
+              "--json",
+              "--dangerously-bypass-approvals-and-sandbox",
+              "--output-last-message",
+              input.outputPath,
+              "fake prompt",
+            ],
+            outputPath: input.outputPath,
+            dockerSpec: {
+              imageTag: "example/test-agent:latest",
+              dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+              homePath: "/home/test-agent",
+              configMountPath: "/home/test-agent/.fake-agent",
+            },
+          };
+        },
+        buildMergeConflictRun() {
+          throw new Error("merge-conflict runs are not used in this test");
+        },
+        interpretOutputLine(line) {
+          return {
+            logLine: line,
+          };
+        },
+        parseDraftResult() {
+          throw new Error("draft parsing is not used in this test");
+        },
+        formatExitReason() {
+          return "fake exit";
+        },
+        resolveModelSelection() {
+          return {
+            model: null,
+            reasoningEffort: null,
+          };
+        },
+      },
+    ]);
     const runtime = new ExecutionRuntime({
+      adapterRegistry,
       dockerRuntime: dockerRuntime as never,
       eventHub: eventHub as never,
       store: store as never,
@@ -177,6 +230,7 @@ test("docker-backed execution launches codex with dangerous mode inside Docker",
     assert.ok(outputPath);
     assert.equal(outputPath.startsWith(worktreePath), true);
     assert.match(outputPath, /\.orchestrator\//);
+    assert.equal(dockerArgs[0], "exec");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

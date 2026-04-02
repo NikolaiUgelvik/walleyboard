@@ -236,13 +236,13 @@ export class SqliteStore implements Store {
     return this.#sessions.updateSessionStatus(sessionId, status, lastSummary);
   }
 
-  updateSessionCodexSessionId(
+  updateSessionAdapterSessionRef(
     sessionId: string,
-    codexSessionId: string,
+    adapterSessionRef: string,
   ): ExecutionSession | undefined {
-    return this.#sessions.updateSessionCodexSessionId(
+    return this.#sessions.updateSessionAdapterSessionRef(
       sessionId,
-      codexSessionId,
+      adapterSessionRef,
     );
   }
 

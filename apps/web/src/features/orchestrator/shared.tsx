@@ -9,6 +9,7 @@ import {
   useMantineColorScheme,
 } from "@mantine/core";
 import type {
+  AgentAdapter,
   CommandAck,
   DraftTicketState,
   ExecutionBackend,
@@ -99,6 +100,9 @@ export const executionBackendOptions = [
   { label: "Host", value: "host" },
   { label: "Docker", value: "docker" },
 ] satisfies Array<{ label: string; value: ExecutionBackend }>;
+export const agentAdapterOptions = [
+  { label: "Codex", value: "codex" },
+] satisfies Array<{ label: string; value: AgentAdapter }>;
 
 export function readLastOpenProjectId(): string | null {
   if (typeof window === "undefined") {
@@ -493,6 +497,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 export async function saveProjectOptionsRequest(
   projectId: string,
   body: {
+    agent_adapter: AgentAdapter;
     execution_backend: ExecutionBackend;
     pre_worktree_command: string | null;
     post_worktree_command: string | null;
@@ -759,12 +764,12 @@ export function parseDraftEventMeta(event: StructuredEvent): {
       typeof event.payload.summary === "string"
         ? event.payload.summary
         : status === "started"
-          ? "Codex run started."
+          ? "Agent run started."
           : status === "failed"
-            ? "Codex run failed."
+            ? "Agent run failed."
             : status === "reverted"
-              ? "Codex run reverted."
-              : "Codex run completed.",
+              ? "Agent run reverted."
+              : "Agent run completed.",
     error: typeof event.payload.error === "string" ? event.payload.error : null,
     result,
   };

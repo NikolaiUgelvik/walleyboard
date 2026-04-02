@@ -1,6 +1,7 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 import type {
+  AgentAdapter,
   DraftTicketState,
   ExecutionBackend,
   ExecutionSession,
@@ -79,6 +80,8 @@ export function useOrchestratorController() {
   const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
     string | null
   >(null);
+  const [projectOptionsAgentAdapter, setProjectOptionsAgentAdapter] =
+    useState<AgentAdapter>("codex");
   const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
     useState<ExecutionBackend>("host");
   const [projectOptionsDraftModelPreset, setProjectOptionsDraftModelPreset] =
@@ -598,8 +601,9 @@ export function useOrchestratorController() {
     });
   const projectOptionsDirty =
     projectOptionsProject !== null &&
-    (projectOptionsExecutionBackend !==
-      projectOptionsProject.execution_backend ||
+    (projectOptionsAgentAdapter !== projectOptionsProject.agent_adapter ||
+      projectOptionsExecutionBackend !==
+        projectOptionsProject.execution_backend ||
       projectOptionsPreWorktreeCommandValue !==
         projectOptionsProject.pre_worktree_command ||
       projectOptionsPostWorktreeCommandValue !==
@@ -1021,6 +1025,7 @@ export function useOrchestratorController() {
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);
+    setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
@@ -1038,6 +1043,7 @@ export function useOrchestratorController() {
       ])?.repositories ?? [];
 
     setProjectOptionsProjectId(project.id);
+    setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
@@ -1136,6 +1142,7 @@ export function useOrchestratorController() {
 
     setProjectOptionsFormError(null);
     mutations.updateProjectMutation.mutate({
+      agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
       executionBackend: projectOptionsExecutionBackend,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
@@ -1349,6 +1356,7 @@ export function useOrchestratorController() {
     projectOptionsBranchesByRepositoryId,
     projectOptionsBranchesQuery,
     projectOptionsDirty,
+    projectOptionsAgentAdapter,
     projectOptionsDraftModelCustom,
     projectOptionsDraftModelPreset,
     projectOptionsDraftModelValue,
@@ -1415,6 +1423,7 @@ export function useOrchestratorController() {
     setProjectDeleteConfirmText,
     setProjectModalOpen,
     setProjectName,
+    setProjectOptionsAgentAdapter,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,

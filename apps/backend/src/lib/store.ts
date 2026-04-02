@@ -159,9 +159,9 @@ export interface Store {
     status: ExecutionSessionStatus,
     lastSummary?: string | null,
   ): ExecutionSession | undefined;
-  updateSessionCodexSessionId(
+  updateSessionAdapterSessionRef(
     sessionId: string,
-    codexSessionId: string,
+    adapterSessionRef: string,
   ): ExecutionSession | undefined;
   claimNextQueuedSession(projectId: string): ExecutionSession | undefined;
   completeSession(

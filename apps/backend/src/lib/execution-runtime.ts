@@ -13,47 +13,29 @@ import type {
   ValidationResult,
 } from "../../../../packages/contracts/src/index.js";
 
+import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
+import type { AgentCliAdapter } from "./agent-adapters/types.js";
 import type { DockerRuntimeManager } from "./docker-runtime.js";
 import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import {
-  appendContextSections,
-  appendCriteriaSections,
-  appendMarkdownSection,
   buildDraftAnalysisOutputPath,
   buildMergeConflictSummaryPath,
   buildOutputSummaryPath,
   buildProcessEnv,
   buildValidationLogPath,
   buildWorkspaceOutputPath,
-  extractCodexSessionIdFromJsonLine,
   extractPersistedAttemptGuidance,
-  formatCodexExitReason,
-  formatDraftAnalysisExitReason,
   formatMarkdownLog,
   hasMeaningfulContent,
-  normalizeOptionalModel,
-  normalizeOptionalReasoningEffort,
-  parseCodexJsonResult,
   resolveValidationWorkingDirectory,
   runGit,
   streamLines,
-  summarizeCodexJsonLine,
   summarizeDraftQuestions,
   summarizeDraftRefinement,
   truncate,
   writeReviewDiff,
 } from "./execution-runtime/helpers.js";
-import {
-  appendCodexExecutionModeArgs,
-  appendCodexModelArgs,
-  appendDangerousDockerArgs,
-  buildCodexImplementationPrompt,
-  buildCodexPlanPrompt,
-  buildDraftQuestionsPrompt,
-  buildDraftRefinementPrompt,
-  buildMergeConflictResolutionPrompt,
-} from "./execution-runtime/prompts.js";
 import {
   publishDraftUpdated,
   publishSessionOutput,
@@ -87,6 +69,7 @@ import type { Store } from "./store.js";
 import { nowIso } from "./time.js";
 
 export class ExecutionRuntime {
+  readonly #adapterRegistry: AgentAdapterRegistry;
   readonly #dockerRuntime: DockerRuntimeManager;
   readonly #eventHub: EventHub;
   readonly #store: Store;
@@ -107,10 +90,24 @@ export class ExecutionRuntime {
     Set<(didExit: boolean) => void>
   >();
 
-  constructor({ dockerRuntime, eventHub, store }: ExecutionRuntimeOptions) {
+  constructor({
+    adapterRegistry,
+    dockerRuntime,
+    eventHub,
+    store,
+  }: ExecutionRuntimeOptions) {
+    this.#adapterRegistry = adapterRegistry;
     this.#dockerRuntime = dockerRuntime;
     this.#eventHub = eventHub;
     this.#store = store;
+  }
+
+  #getProjectAdapter(project: Project): AgentCliAdapter {
+    return this.#adapterRegistry.get(project.agent_adapter);
+  }
+
+  #getSessionAdapter(session: ExecutionSession): AgentCliAdapter {
+    return this.#adapterRegistry.get(session.agent_adapter);
   }
 
   assertProjectExecutionBackendAvailable(project: Project): void {
@@ -307,6 +304,7 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no prepared worktree");
     }
 
+    const adapter = this.#getSessionAdapter(input.session);
     const useDockerRuntime = input.project.execution_backend === "docker";
     const outputSummaryPath = useDockerRuntime
       ? buildWorkspaceOutputPath(
@@ -319,33 +317,26 @@ export class ExecutionRuntime {
           input.ticket.id,
           input.session.id,
         );
-    const prompt = buildMergeConflictResolutionPrompt({
-      ticket: input.ticket,
-      repository: input.repository,
-      targetBranch: input.targetBranch,
-      stage: input.stage,
+    const run = adapter.buildMergeConflictRun({
       conflictedFiles: input.conflictedFiles,
       failureMessage: input.failureMessage,
+      outputPath: outputSummaryPath,
+      project: input.project,
+      repository: input.repository,
+      session: input.session,
+      stage: input.stage,
+      targetBranch: input.targetBranch,
+      ticket: input.ticket,
+      useDockerRuntime,
     });
-    const args = ["exec", "--json", "--output-last-message", outputSummaryPath];
-    if (useDockerRuntime) {
-      appendDangerousDockerArgs(args);
-    } else {
-      args.push("--full-auto");
-    }
-    const model = normalizeOptionalModel(input.project.ticket_work_model);
-    const reasoningEffort = normalizeOptionalReasoningEffort(
-      input.project.ticket_work_reasoning_effort,
+    const { model, reasoningEffort } = adapter.resolveModelSelection(
+      input.project,
+      "ticket",
     );
-    appendCodexModelArgs(args, {
-      model,
-      reasoningEffort,
-    });
-    args.push(prompt);
 
     const logs = [
-      `Launching Codex merge-conflict resolution in ${input.session.worktree_path}`,
-      `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
+      `Launching ${adapter.label} merge-conflict resolution in ${input.session.worktree_path}`,
+      `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
     ];
     if (model) {
       logs.push(`Model override: ${model}`);
@@ -359,7 +350,7 @@ export class ExecutionRuntime {
 
     return await new Promise((resolve) => {
       let settled = false;
-      let codexOutput = "";
+      let adapterOutput = "";
 
       const finish = (result: {
         resolved: boolean;
@@ -379,7 +370,13 @@ export class ExecutionRuntime {
       let child: ChildProcessWithoutNullStreams;
       try {
         if (useDockerRuntime) {
+          if (!run.dockerSpec) {
+            throw new Error(
+              `${adapter.label} does not provide a Docker execution configuration.`,
+            );
+          }
           this.#dockerRuntime.ensureSessionContainer({
+            dockerSpec: run.dockerSpec,
             sessionId: input.session.id,
             projectId: input.project.id,
             ticketId: input.ticket.id,
@@ -387,52 +384,57 @@ export class ExecutionRuntime {
           });
           child = this.#dockerRuntime.spawnProcessInSession(
             input.session.id,
-            "codex",
-            args,
+            run.command,
+            run.args,
             {
               cwd: worktreePath,
               env: ptyEnv,
             },
           );
         } else {
-          child = spawn("codex", args, {
+          child = spawn(run.command, run.args, {
             cwd: worktreePath,
             env: ptyEnv,
           });
         }
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Codex failed to start";
+          error instanceof Error
+            ? error.message
+            : `${adapter.label} failed to start`;
         finish({
           resolved: false,
           logs,
-          note: `Codex could not start while resolving ${input.stage} conflicts: ${message}`,
+          note: `${adapter.label} could not start while resolving ${input.stage} conflicts: ${message}`,
         });
         return;
       }
 
-      const captureCodexLine = (line: string) => {
+      const captureAdapterLine = (line: string) => {
+        const interpreted = adapter.interpretOutputLine(line);
         if (logs.length < 16) {
-          logs.push(summarizeCodexJsonLine(line));
+          logs.push(interpreted.logLine);
         }
-        codexOutput += `${line}\n`;
+        adapterOutput += `${line}\n`;
       };
 
-      streamLines(child.stdout, captureCodexLine);
+      streamLines(child.stdout, captureAdapterLine);
       streamLines(child.stderr, (line) => {
         if (logs.length < 16) {
-          logs.push(`[codex stderr] ${truncate(line)}`);
+          logs.push(`[${adapter.id} stderr] ${truncate(line)}`);
         }
-        codexOutput += `${line}\n`;
+        adapterOutput += `${line}\n`;
       });
 
       child.once("error", (error) => {
         const message =
-          error instanceof Error ? error.message : "Codex execution failed";
+          error instanceof Error
+            ? error.message
+            : `${adapter.label} execution failed`;
         finish({
           resolved: false,
           logs,
-          note: `Codex execution failed while resolving ${input.stage} conflicts: ${message}`,
+          note: `${adapter.label} execution failed while resolving ${input.stage} conflicts: ${message}`,
         });
       });
 
@@ -452,15 +454,15 @@ export class ExecutionRuntime {
           return;
         }
 
-        const reason = formatCodexExitReason(
+        const reason = adapter.formatExitReason(
           exitCode,
           signal,
-          summary || codexOutput,
+          summary || adapterOutput,
         );
         finish({
           resolved: false,
           logs,
-          note: `Codex could not finish resolving the ${input.stage} conflicts. ${reason}`,
+          note: `${adapter.label} could not finish resolving the ${input.stage} conflicts. ${reason}`,
         });
       });
     });
@@ -638,6 +640,7 @@ export class ExecutionRuntime {
       throw new Error("Draft analysis already running");
     }
 
+    const adapter = this.#getProjectAdapter(project);
     const runId = nanoid();
     const startedEvent = this.#store.recordDraftEvent(
       draft.id,
@@ -651,49 +654,30 @@ export class ExecutionRuntime {
         instruction: hasMeaningfulContent(instruction) ? instruction : null,
         summary:
           mode === "refine"
-            ? `Codex is refining this draft in ${repository.name}.`
-            : `Codex is checking draft feasibility in ${repository.name}.`,
+            ? `${adapter.label} is refining this draft in ${repository.name}.`
+            : `${adapter.label} is checking draft feasibility in ${repository.name}.`,
       },
     );
     publishStructuredEvent(this.#eventHub, startedEvent);
 
-    const prompt =
-      mode === "refine"
-        ? buildDraftRefinementPrompt(draft, repository, instruction)
-        : buildDraftQuestionsPrompt(draft, repository, instruction);
     const outputPath = buildDraftAnalysisOutputPath(
       project,
       draft.id,
       runId,
       mode,
     );
-    const child = spawn(
-      "codex",
-      (() => {
-        const model = normalizeOptionalModel(project.draft_analysis_model);
-        const reasoningEffort = normalizeOptionalReasoningEffort(
-          project.draft_analysis_reasoning_effort,
-        );
-        const args = [
-          "exec",
-          "--json",
-          "--full-auto",
-          "--output-last-message",
-          outputPath,
-        ];
-
-        appendCodexModelArgs(args, {
-          model,
-          reasoningEffort,
-        });
-        args.push(prompt);
-        return args;
-      })(),
-      {
-        cwd: repository.path,
-        env: buildProcessEnv(),
-      },
-    );
+    const run = adapter.buildDraftRun({
+      draft,
+      mode,
+      outputPath,
+      project,
+      repository,
+      ...(hasMeaningfulContent(instruction) ? { instruction } : {}),
+    });
+    const child = spawn(run.command, run.args, {
+      cwd: repository.path,
+      env: buildProcessEnv(),
+    });
     child.stdin.end();
 
     this.#activeDraftRuns.set(draft.id, child);
@@ -713,10 +697,10 @@ export class ExecutionRuntime {
     };
 
     streamLines(child.stdout, (line) => {
-      captureLine(summarizeCodexJsonLine(line));
+      captureLine(adapter.interpretOutputLine(line).logLine);
     });
     streamLines(child.stderr, (line) => {
-      captureLine(`[stderr] ${line}`);
+      captureLine(`[${adapter.id} stderr] ${line}`);
     });
 
     const failRun = (reason: string): void => {
@@ -751,7 +735,7 @@ export class ExecutionRuntime {
         }
       }, 1_000);
       failRun(
-        `Codex ${mode === "refine" ? "refinement" : "feasibility"} timed out after ${Math.round(
+        `${adapter.label} ${mode === "refine" ? "refinement" : "feasibility"} timed out after ${Math.round(
           draftAnalysisTimeoutMs / 1_000,
         )} seconds.`,
       );
@@ -760,8 +744,10 @@ export class ExecutionRuntime {
     child.once("error", (error) => {
       clearTimeout(timeoutId);
       const message =
-        error instanceof Error ? error.message : "Codex failed to start";
-      failRun(`Codex failed to start: ${message}`);
+        error instanceof Error
+          ? error.message
+          : `${adapter.label} failed to start`;
+      failRun(`${adapter.label} failed to start: ${message}`);
     });
 
     child.once("close", (exitCode, signal) => {
@@ -775,14 +761,14 @@ export class ExecutionRuntime {
         : "";
 
       if (exitCode !== 0) {
-        failRun(formatDraftAnalysisExitReason(exitCode, signal, rawOutput));
+        failRun(adapter.formatExitReason(exitCode, signal, rawOutput));
         return;
       }
 
       try {
         if (mode === "refine") {
           const beforeDraft = this.#store.getDraft(draft.id);
-          const result = parseCodexJsonResult(
+          const result = adapter.parseDraftResult(
             rawOutput,
             draftRefinementResultSchema,
           );
@@ -828,7 +814,7 @@ export class ExecutionRuntime {
           return;
         }
 
-        const result = parseCodexJsonResult(
+        const result = adapter.parseDraftResult(
           rawOutput,
           draftFeasibilityResultSchema,
         );
@@ -852,7 +838,7 @@ export class ExecutionRuntime {
         const message =
           error instanceof Error
             ? error.message
-            : "Unable to process Codex output";
+            : `Unable to process ${adapter.label} output`;
         failRun(message);
       }
     });
@@ -880,6 +866,7 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no current attempt");
     }
 
+    const adapter = this.#getSessionAdapter(session);
     const extraInstructions: PromptContextSection[] = [];
     const persistedResumeGuidance = hasMeaningfulContent(additionalInstruction)
       ? null
@@ -911,51 +898,42 @@ export class ExecutionRuntime {
       session.planning_enabled && session.plan_status !== "approved"
         ? "plan"
         : "implementation";
-    const prompt =
-      executionMode === "plan"
-        ? buildCodexPlanPrompt(ticket, repository, extraInstructions)
-        : buildCodexImplementationPrompt(
-            ticket,
-            repository,
-            extraInstructions,
-            session.plan_summary,
-          );
     const useDockerRuntime = project.execution_backend === "docker";
     const outputSummaryPath = useDockerRuntime
       ? buildWorkspaceOutputPath(session.worktree_path, session.id)
       : buildOutputSummaryPath(project, ticket.id, session.id);
-    const codexSessionId = hasMeaningfulContent(session.codex_session_id)
-      ? session.codex_session_id
-      : null;
-    const shouldResumeCodex = codexSessionId !== null;
-    const args = shouldResumeCodex
-      ? ["exec", "resume", "--json"]
-      : ["exec", "--json"];
-    if (useDockerRuntime) {
-      appendDangerousDockerArgs(args);
-    } else {
-      appendCodexExecutionModeArgs(args, executionMode);
-    }
-    args.push("--output-last-message", outputSummaryPath);
-    const model = normalizeOptionalModel(project.ticket_work_model);
-    const reasoningEffort = normalizeOptionalReasoningEffort(
-      project.ticket_work_reasoning_effort,
-    );
-    appendCodexModelArgs(args, {
-      model,
-      reasoningEffort,
+    const run = adapter.buildExecutionRun({
+      executionMode,
+      extraInstructions,
+      outputPath: outputSummaryPath,
+      planSummary: session.plan_summary,
+      project,
+      repository,
+      session,
+      ticket,
+      useDockerRuntime,
     });
-    if (codexSessionId) {
-      args.push(codexSessionId);
-    }
-    args.push(prompt);
+    const activeSessionRef = hasMeaningfulContent(session.adapter_session_ref)
+      ? session.adapter_session_ref
+      : null;
+    const shouldResumeAgent = activeSessionRef !== null;
+    const { model, reasoningEffort } = adapter.resolveModelSelection(
+      project,
+      "ticket",
+    );
 
     const ptyEnv = buildProcessEnv();
     let child: IPty;
 
     try {
       if (useDockerRuntime) {
+        if (!run.dockerSpec) {
+          throw new Error(
+            `${adapter.label} does not provide a Docker execution configuration.`,
+          );
+        }
         this.#dockerRuntime.ensureSessionContainer({
+          dockerSpec: run.dockerSpec,
           sessionId: session.id,
           projectId: project.id,
           ticketId: ticket.id,
@@ -963,8 +941,8 @@ export class ExecutionRuntime {
         });
         child = this.#dockerRuntime.spawnPtyInSession(
           session.id,
-          "codex",
-          args,
+          run.command,
+          run.args,
           {
             cwd: session.worktree_path,
             env: ptyEnv,
@@ -974,7 +952,7 @@ export class ExecutionRuntime {
           },
         );
       } else {
-        child = spawnPty("codex", args, {
+        child = spawnPty(run.command, run.args, {
           cwd: session.worktree_path,
           env: ptyEnv,
           cols: 120,
@@ -984,13 +962,15 @@ export class ExecutionRuntime {
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Codex PTY failed to start";
+        error instanceof Error
+          ? error.message
+          : `${adapter.label} PTY failed to start`;
       this.cleanupExecutionEnvironment(session.id);
       this.#finishFailure({
         ticket,
         sessionId: session.id,
         attemptId,
-        reason: `Codex failed to start: ${message}`,
+        reason: `${adapter.label} failed to start: ${message}`,
       });
       return;
     }
@@ -1003,7 +983,7 @@ export class ExecutionRuntime {
     const runningSession = this.#store.updateSessionStatus(
       session.id,
       "running",
-      "Codex execution is running inside the prepared worktree.",
+      `${adapter.label} execution is running inside the prepared worktree.`,
     );
     publishSessionUpdated(this.#eventHub, runningSession);
     publishSessionOutput(
@@ -1012,23 +992,23 @@ export class ExecutionRuntime {
       session.id,
       attemptId,
       useDockerRuntime
-        ? `Launching Codex in Docker for ${session.worktree_path}`
-        : `Launching Codex in ${session.worktree_path}`,
+        ? `Launching ${adapter.label} in Docker for ${session.worktree_path}`
+        : `Launching ${adapter.label} in ${session.worktree_path}`,
     );
     publishSessionOutput(
       this.#eventHub,
       this.#store,
       session.id,
       attemptId,
-      `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
+      `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
     );
-    if (shouldResumeCodex) {
+    if (shouldResumeAgent) {
       publishSessionOutput(
         this.#eventHub,
         this.#store,
         session.id,
         attemptId,
-        `Resuming Codex session: ${codexSessionId}`,
+        `Resuming ${adapter.label} session: ${activeSessionRef}`,
       );
     }
     if (model) {
@@ -1056,8 +1036,8 @@ export class ExecutionRuntime {
         session.id,
         attemptId,
         executionMode === "plan"
-          ? "Planning mode enabled: Codex will outline a plan before editing."
-          : "Approved plan confirmed: Codex will now implement the ticket.",
+          ? "Planning mode enabled: the agent will outline a plan before editing."
+          : "Approved plan confirmed: the agent will now implement the ticket.",
       );
     }
     if (requestedChangeNote) {
@@ -1088,23 +1068,23 @@ export class ExecutionRuntime {
     }
 
     let pendingBuffer = "";
-    let activeCodexSessionId = codexSessionId;
+    let persistedSessionRef = activeSessionRef;
 
-    const persistCodexSessionId = (line: string) => {
-      const discoveredSessionId = extractCodexSessionIdFromJsonLine(line);
-      if (!hasMeaningfulContent(discoveredSessionId)) {
+    const persistAdapterSessionRef = (line: string) => {
+      const interpreted = adapter.interpretOutputLine(line);
+      if (!hasMeaningfulContent(interpreted.sessionRef)) {
         return;
       }
-      if (discoveredSessionId === activeCodexSessionId) {
+      if (interpreted.sessionRef === persistedSessionRef) {
         return;
       }
 
-      const previousSessionId = activeCodexSessionId;
-      activeCodexSessionId = discoveredSessionId;
+      const previousSessionRef = persistedSessionRef;
+      persistedSessionRef = interpreted.sessionRef;
 
-      const updatedSession = this.#store.updateSessionCodexSessionId(
+      const updatedSession = this.#store.updateSessionAdapterSessionRef(
         session.id,
-        discoveredSessionId,
+        interpreted.sessionRef,
       );
       if (updatedSession) {
         publishSessionUpdated(this.#eventHub, updatedSession);
@@ -1115,9 +1095,9 @@ export class ExecutionRuntime {
         this.#store,
         session.id,
         attemptId,
-        previousSessionId
-          ? `Codex session updated: ${previousSessionId} -> ${discoveredSessionId}`
-          : `Codex session attached: ${discoveredSessionId}`,
+        previousSessionRef
+          ? `${adapter.label} session updated: ${previousSessionRef} -> ${interpreted.sessionRef}`
+          : `${adapter.label} session attached: ${interpreted.sessionRef}`,
       );
     };
 
@@ -1128,13 +1108,13 @@ export class ExecutionRuntime {
         const newlineIndex = pendingBuffer.indexOf("\n");
         const line = pendingBuffer.slice(0, newlineIndex);
         pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
-        persistCodexSessionId(line);
+        persistAdapterSessionRef(line);
         publishSessionOutput(
           this.#eventHub,
           this.#store,
           session.id,
           attemptId,
-          summarizeCodexJsonLine(line),
+          adapter.interpretOutputLine(line).logLine,
         );
       }
     });
@@ -1150,13 +1130,13 @@ export class ExecutionRuntime {
       }
 
       if (pendingBuffer.trim().length > 0) {
-        persistCodexSessionId(pendingBuffer);
+        persistAdapterSessionRef(pendingBuffer);
         publishSessionOutput(
           this.#eventHub,
           this.#store,
           session.id,
           attemptId,
-          summarizeCodexJsonLine(pendingBuffer),
+          adapter.interpretOutputLine(pendingBuffer).logLine,
         );
         pendingBuffer = "";
       }
@@ -1171,8 +1151,8 @@ export class ExecutionRuntime {
           finalSummary && finalSummary.length > 0
             ? finalSummary
             : executionMode === "plan"
-              ? "Codex finished planning, but no plan summary was captured."
-              : "Codex finished successfully, but no final summary was captured.";
+              ? `${adapter.label} finished planning, but no plan summary was captured.`
+              : `${adapter.label} finished successfully, but no final summary was captured.`;
 
         if (executionMode === "plan") {
           this.#finishPlanSuccess({
@@ -1183,6 +1163,7 @@ export class ExecutionRuntime {
           });
         } else {
           await this.#finishSuccess({
+            adapterLabel: adapter.label,
             project,
             repository,
             ticketId: ticket.id,
@@ -1200,15 +1181,18 @@ export class ExecutionRuntime {
         ticket,
         sessionId: session.id,
         attemptId,
-        reason: `Codex exited with ${exitCode === undefined ? "unknown code" : `code ${exitCode}`}${
-          signal ? ` and signal ${signal}` : ""
-        }.${finalSummary ? ` Final summary: ${finalSummary}` : ""}`,
+        reason: adapter.formatExitReason(
+          exitCode ?? null,
+          null,
+          finalSummary ?? "",
+        ),
       });
       resolveTrackedExit(this.#exitWaiters, session.id, true);
     });
   }
 
   async #finishSuccess(input: {
+    adapterLabel: string;
     project: Project;
     repository: RepositoryConfig;
     ticketId: number;
@@ -1244,7 +1228,7 @@ export class ExecutionRuntime {
 
       if (commitRefs.length === 0) {
         throw new Error(
-          "Codex finished without creating a commit on the working branch.",
+          `${input.adapterLabel} finished without creating a commit on the working branch.`,
         );
       }
 
@@ -1287,8 +1271,7 @@ export class ExecutionRuntime {
     });
 
     if (blockingFailure) {
-      const summary =
-        "Codex finished, but one or more required validation commands failed.";
+      const summary = `${input.adapterLabel} finished, but one or more required validation commands failed.`;
       const failedSession = this.#store.completeSession(input.sessionId, {
         status: "failed",
         last_summary: summary,
@@ -1327,7 +1310,7 @@ export class ExecutionRuntime {
       this.#store,
       input.sessionId,
       input.attemptId,
-      "Codex finished successfully.",
+      `${input.adapterLabel} finished successfully.`,
     );
     publishSessionOutput(
       this.#eventHub,

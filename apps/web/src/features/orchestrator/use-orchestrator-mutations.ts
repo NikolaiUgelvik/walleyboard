@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import type {
+  AgentAdapter,
   CommandAck,
   ExecutionBackend,
   Project,
@@ -116,6 +117,7 @@ export function useOrchestratorMutations({
 
   const updateProjectMutation = useMutation({
     mutationFn: (input: {
+      agentAdapter: AgentAdapter;
       projectId: string;
       executionBackend: ExecutionBackend;
       preWorktreeCommand: string | null;
@@ -130,6 +132,7 @@ export function useOrchestratorMutations({
       }>;
     }) =>
       saveProjectOptionsRequest(input.projectId, {
+        agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
         pre_worktree_command: input.preWorktreeCommand,
         post_worktree_command: input.postWorktreeCommand,

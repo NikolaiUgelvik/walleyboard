@@ -65,10 +65,10 @@ export class TicketExecutionWorkflowService {
     const summary = shouldQueue
       ? planningEnabled
         ? "Execution queued. The worktree is ready and planning will begin when a project slot opens."
-        : "Execution queued. The worktree is ready and Codex will start when a project slot opens."
+        : "Execution queued. The worktree is ready and the agent will start when a project slot opens."
       : planningEnabled
-        ? "Execution session created, worktree prepared, and plan requested from Codex."
-        : "Execution session created, worktree prepared, and Codex launch requested.";
+        ? "Execution session created, worktree prepared, and a plan requested from the agent."
+        : "Execution session created, worktree prepared, and the agent launch requested.";
 
     this.context.db
       .prepare(
@@ -90,10 +90,10 @@ export class TicketExecutionWorkflowService {
       .prepare(
         `
           INSERT INTO execution_sessions (
-            id, ticket_id, project_id, repo_id, worktree_path, codex_session_id, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
+            id, ticket_id, project_id, repo_id, agent_adapter, worktree_path, adapter_session_ref, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
             latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
             started_at, completed_at, last_heartbeat_at, last_summary
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -101,6 +101,7 @@ export class TicketExecutionWorkflowService {
         ticket.id,
         ticket.project,
         ticket.repo,
+        project.agent_adapter,
         runtime.worktreePath,
         null,
         shouldQueue ? "queued" : "awaiting_input",
@@ -135,7 +136,7 @@ export class TicketExecutionWorkflowService {
       ...runtime.logs,
       shouldQueue
         ? `Execution queued. ${project.max_concurrent_sessions} running slots are already in use for this project.`
-        : "Codex launch has been handed off to the execution runtime.",
+        : "Agent launch has been handed off to the execution runtime.",
     ];
 
     for (const line of logs) {
@@ -757,7 +758,7 @@ export class TicketExecutionWorkflowService {
         `
           UPDATE execution_sessions
           SET worktree_path = ?,
-              codex_session_id = ?,
+              adapter_session_ref = ?,
               status = ?,
               queue_entered_at = ?,
               plan_status = ?,
@@ -806,7 +807,7 @@ export class TicketExecutionWorkflowService {
       reasonBody
         ? formatMarkdownLog("Fresh restart guidance recorded", reasonBody)
         : "Fresh restart requested without additional guidance.",
-      "Preserving ticket history while resetting the local worktree and Codex thread.",
+      "Preserving ticket history while resetting the local worktree and adapter session state.",
       `Working branch recreated: ${runtime.workingBranch}`,
       `Worktree recreated at: ${runtime.worktreePath}`,
       ...runtime.logs,

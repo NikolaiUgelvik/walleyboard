@@ -28,15 +28,15 @@ test("getHealth reports Docker availability from docker version", () => {
   });
 });
 
-test("ensureSessionContainer builds the image and binds only codex config and workspace", () => {
+test("ensureSessionContainer uses the adapter docker spec for image and config mounts", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-docker-runtime-"));
   const worktreePath = join(tempDir, "workspace");
-  const codexHomePath = join(tempDir, ".codex");
+  const configHomePath = join(tempDir, ".test-agent");
   const commands: Array<{ command: string; args: string[] }> = [];
 
   try {
     const runtime = new DockerRuntimeManager({
-      codexHomePath,
+      configHomeResolver: () => configHomePath,
       execFileSyncImpl: ((command: string, args: string[]) => {
         commands.push({ command, args });
 
@@ -70,6 +70,12 @@ test("ensureSessionContainer builds the image and binds only codex config and wo
     });
 
     runtime.ensureSessionContainer({
+      dockerSpec: {
+        imageTag: "example/test-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/test-agent",
+        configMountPath: "/home/test-agent/.test-agent",
+      },
       sessionId: "session-1",
       projectId: "project-1",
       ticketId: 42,
@@ -85,7 +91,7 @@ test("ensureSessionContainer builds the image and binds only codex config and wo
       arg.startsWith("type=bind,"),
     );
     assert.deepEqual(mountArgs, [
-      `type=bind,src=${codexHomePath},dst=/home/codex/.codex`,
+      `type=bind,src=${configHomePath},dst=/home/test-agent/.test-agent`,
       `type=bind,src=${worktreePath},dst=/workspace`,
     ]);
   } finally {
@@ -100,7 +106,7 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
 
   try {
     const runtime = new DockerRuntimeManager({
-      codexHomePath: join(tempDir, ".codex"),
+      configHomeResolver: () => join(tempDir, ".test-agent"),
       execFileSyncImpl: ((command: string, args: string[]) => {
         commands.push({ command, args });
 
@@ -139,6 +145,12 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
     });
 
     runtime.ensureSessionContainer({
+      dockerSpec: {
+        imageTag: "example/test-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/test-agent",
+        configMountPath: "/home/test-agent/.test-agent",
+      },
       sessionId: "session-1",
       projectId: "project-1",
       ticketId: 42,
@@ -160,7 +172,7 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
       "-w",
       "/workspace",
       "-e",
-      "HOME=/home/codex",
+      "HOME=/home/test-agent",
       "container-id",
       "codex",
       "exec",

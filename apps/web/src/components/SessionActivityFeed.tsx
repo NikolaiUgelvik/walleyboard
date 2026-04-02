@@ -41,6 +41,15 @@ type ParsedExecutionSummary = {
   risks: string[];
 };
 
+function sessionAgentLabel(session: ExecutionSession): string {
+  switch (session.agent_adapter) {
+    case "codex":
+      return "Codex";
+    default:
+      return "Agent";
+  }
+}
+
 function createActivity(
   key: string,
   tone: ActivityTone,
@@ -261,13 +270,80 @@ function interpretCodexEvent(
   return null;
 }
 
+function interpretGenericAdapterLine(
+  line: string,
+  index: number,
+  session: ExecutionSession,
+): SessionActivity | null {
+  const agentLabel = sessionAgentLabel(session);
+  const adapterPrefix = `[${session.agent_adapter} `;
+
+  const adapterStderr = extractDetail(
+    line,
+    `[${session.agent_adapter} stderr] `,
+  );
+  if (adapterStderr) {
+    return createActivity(
+      `${session.agent_adapter}-stderr-${index}`,
+      "yellow",
+      "Tool warning",
+      adapterStderr,
+    );
+  }
+
+  const adapterRaw = extractDetail(line, `[${session.agent_adapter} raw] `);
+  if (adapterRaw) {
+    return createActivity(
+      `${session.agent_adapter}-raw-${index}`,
+      "blue",
+      `${agentLabel} update`,
+      adapterRaw,
+    );
+  }
+
+  if (line.startsWith(adapterPrefix)) {
+    const match = line.match(/^\[[^\]]+\]\s+(.+)$/);
+    return createActivity(
+      `${session.agent_adapter}-event-${index}`,
+      "blue",
+      `${agentLabel} update`,
+      match?.[1] ?? line,
+    );
+  }
+
+  return null;
+}
+
+function extractLaunchPath(line: string, agentLabel: string): string | null {
+  return (
+    extractDetail(line, `Launching ${agentLabel} in Docker for `) ??
+    extractDetail(line, `Launching ${agentLabel} in `) ??
+    extractDetail(line, "Launching Agent in Docker for ") ??
+    extractDetail(line, "Launching Agent in ")
+  );
+}
+
 function interpretSessionLog(
   line: string,
   index: number,
+  session: ExecutionSession,
 ): SessionActivity | null {
-  const codexEvent = interpretCodexEvent(line, index);
-  if (codexEvent) {
-    return codexEvent;
+  const agentLabel = sessionAgentLabel(session);
+
+  if (session.agent_adapter === "codex") {
+    const codexEvent = interpretCodexEvent(line, index);
+    if (codexEvent) {
+      return codexEvent;
+    }
+  } else {
+    const genericAdapterLine = interpretGenericAdapterLine(
+      line,
+      index,
+      session,
+    );
+    if (genericAdapterLine) {
+      return genericAdapterLine;
+    }
   }
 
   const created = extractDetail(line, "Session created for ticket ");
@@ -310,47 +386,26 @@ function interpretSessionLog(
     );
   }
 
-  const launchPath = extractDetail(line, "Launching Codex in ");
+  const launchPath = extractLaunchPath(line, agentLabel);
   if (launchPath) {
     return createActivity(
       `launch-${index}`,
       "blue",
-      "Codex started",
+      `${agentLabel} started`,
       launchPath,
     );
   }
 
-  const codexMessage = extractDetail(line, "[codex agent_message] ");
-  if (codexMessage) {
-    return createActivity(
-      `codex-message-${index}`,
-      "blue",
-      "Codex update",
-      codexMessage,
-    );
+  const genericAdapterLine = interpretGenericAdapterLine(line, index, session);
+  if (genericAdapterLine) {
+    return genericAdapterLine;
   }
 
-  const codexStderr = extractDetail(line, "[codex stderr] ");
-  if (codexStderr) {
-    return createActivity(
-      `codex-stderr-${index}`,
-      "yellow",
-      "Tool warning",
-      codexStderr,
-    );
-  }
-
-  const codexRaw = extractDetail(line, "[codex raw] ");
-  if (codexRaw) {
-    return createActivity(
-      `codex-raw-${index}`,
-      "blue",
-      "Codex update",
-      codexRaw,
-    );
-  }
-
-  if (line.startsWith("[codex ") || line.startsWith("[validation ")) {
+  if (
+    line.startsWith("[codex ") ||
+    line.startsWith(`[${session.agent_adapter} `) ||
+    line.startsWith("[validation ")
+  ) {
     return null;
   }
 
@@ -397,12 +452,12 @@ function interpretSessionLog(
     );
   }
 
-  if (line === "Codex finished successfully.") {
+  if (line === `${agentLabel} finished successfully.`) {
     return createActivity(
       `finished-${index}`,
       "green",
       "Implementation finished",
-      "Codex completed the implementation phase.",
+      `${agentLabel} completed the implementation phase.`,
     );
   }
 
@@ -612,10 +667,11 @@ function interpretSessionLog(
   }
 
   if (
-    line.startsWith("Command: codex ") ||
+    line.startsWith("Command: ") ||
     line.startsWith("Verified git repository: ") ||
     line.startsWith("Checked out target branch: ") ||
-    line === "Codex launch has been handed off to the execution runtime."
+    line === "Codex launch has been handed off to the execution runtime." ||
+    line === "Agent launch has been handed off to the execution runtime."
   ) {
     return null;
   }
@@ -623,18 +679,19 @@ function interpretSessionLog(
   return createActivity(`system-${index}`, "gray", "System update", line);
 }
 
-function fallbackSummary(status: ExecutionSession["status"]): string {
-  switch (status) {
+function fallbackSummary(session: ExecutionSession): string {
+  const agentLabel = sessionAgentLabel(session);
+  switch (session.status) {
     case "queued":
       return "Execution is queued and waiting to start.";
     case "running":
-      return "Codex is currently working on the ticket.";
+      return `${agentLabel} is currently working on the ticket.`;
     case "paused_checkpoint":
-      return "Codex is waiting for approval before it can continue.";
+      return `${agentLabel} is waiting for approval before it can continue.`;
     case "paused_user_control":
       return "The session is paused for manual control.";
     case "awaiting_input":
-      return "Codex needs more input before the next attempt can continue.";
+      return `${agentLabel} needs more input before the next attempt can continue.`;
     case "interrupted":
       return "The previous attempt stopped before completion and can be resumed.";
     case "failed":
@@ -745,12 +802,13 @@ export function SessionActivityFeed({
   logs,
   session,
 }: SessionActivityFeedProps) {
+  const agentLabel = sessionAgentLabel(session);
   const interpretedActivities = logs
-    .map((line, index) => interpretSessionLog(line, index))
+    .map((line, index) => interpretSessionLog(line, index, session))
     .filter((activity): activity is SessionActivity => activity !== null);
   const visibleActivities = interpretedActivities.slice(-12).reverse();
   const parsedSummary = parseExecutionSummary(
-    session.last_summary ?? fallbackSummary(session.status),
+    session.last_summary ?? fallbackSummary(session),
   );
 
   return (
@@ -831,8 +889,8 @@ export function SessionActivityFeed({
       <Stack gap={4}>
         <Text fw={600}>Recent Activity</Text>
         <Text size="sm" c="dimmed">
-          This view highlights notable Codex and system updates instead of
-          showing the raw terminal transcript.
+          This view highlights notable {agentLabel} and system updates instead
+          of showing the raw terminal transcript.
         </Text>
         {visibleActivities.length === 0 ? (
           <Text size="sm" c="dimmed">

@@ -329,7 +329,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             status: "awaiting_input",
             last_summary: approved
               ? "Plan approved. Starting implementation on the existing worktree."
-              : "Plan changes requested. Codex will revise the implementation plan.",
+              : "Plan changes requested. The agent will revise the implementation plan.",
           });
 
           if (!updatedPlanSession) {
@@ -424,7 +424,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
               request.params.sessionId,
               forwardedTo === "agent" ? "running" : "paused_user_control",
               forwardedTo === "agent"
-                ? "Checkpoint response was forwarded to the active Codex session."
+                ? "Checkpoint response was forwarded to the active agent session."
                 : "Checkpoint response was forwarded to the active project terminal.",
             ) ?? store.getSession(request.params.sessionId);
           if (!session) {
@@ -504,7 +504,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
               request.params.sessionId,
               forwardedTo === "agent" ? "running" : "paused_user_control",
               forwardedTo === "agent"
-                ? "Live input was forwarded to the active Codex session."
+                ? "Live input was forwarded to the active agent session."
                 : "Manual terminal input was forwarded to the active project shell.",
             ) ?? store.getSession(request.params.sessionId);
           if (!session) {

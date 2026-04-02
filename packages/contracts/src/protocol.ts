@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   absolutePathSchema,
+  agentAdapterSchema,
   draftTicketStateSchema,
   executionAttemptSchema,
   executionBackendSchema,
@@ -31,6 +32,7 @@ export const createProjectInputSchema = z.object({
 });
 
 export const updateProjectInputSchema = z.object({
+  agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),
   pre_worktree_command: z.string().min(1).nullable().optional(),
   post_worktree_command: z.string().min(1).nullable().optional(),

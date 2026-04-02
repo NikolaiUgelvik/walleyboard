@@ -86,7 +86,7 @@ export function removeTicketArtifacts(
     const summaryPath = join(
       process.cwd(),
       ".local",
-      "codex-summaries",
+      "agent-summaries",
       projectSlug,
       `ticket-${ticketId}-${sessionId}.txt`,
     );
@@ -121,7 +121,7 @@ export function removeProjectArtifacts(
       : null,
     join(process.cwd(), ".local", "review-packages", projectSlug),
     join(process.cwd(), ".local", "validation-logs", projectSlug),
-    join(process.cwd(), ".local", "codex-summaries", projectSlug),
+    join(process.cwd(), ".local", "agent-summaries", projectSlug),
     join(process.cwd(), ".local", "draft-analyses", projectSlug),
     artifactRoot(projectSlug),
   ];

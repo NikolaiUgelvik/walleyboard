@@ -70,6 +70,7 @@ function createProject(slug: string): Project {
     id: "project-id",
     slug,
     name: "Project",
+    agent_adapter: "codex",
     execution_backend: "host",
     default_target_branch: "main",
     pre_worktree_command: null,

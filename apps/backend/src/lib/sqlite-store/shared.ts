@@ -143,6 +143,7 @@ export function mapProject(row: Record<string, unknown>): Project {
     id: String(row.id),
     slug: String(row.slug),
     name: String(row.name),
+    agent_adapter: row.agent_adapter === "codex" ? "codex" : "codex",
     execution_backend: row.execution_backend === "docker" ? "docker" : "host",
     default_target_branch:
       row.default_target_branch === null
@@ -273,10 +274,11 @@ export function mapExecutionSession(
     ticket_id: Number(row.ticket_id),
     project_id: String(row.project_id),
     repo_id: String(row.repo_id),
+    agent_adapter: row.agent_adapter === "codex" ? "codex" : "codex",
     worktree_path:
       row.worktree_path === null ? null : String(row.worktree_path),
-    codex_session_id:
-      row.codex_session_id === null ? null : String(row.codex_session_id),
+    adapter_session_ref:
+      row.adapter_session_ref === null ? null : String(row.adapter_session_ref),
     status: String(row.status) as ExecutionSession["status"],
     planning_enabled: Boolean(row.planning_enabled),
     plan_status: String(row.plan_status) as ExecutionSession["plan_status"],
@@ -449,6 +451,7 @@ export class SqliteStoreContext {
         id TEXT PRIMARY KEY,
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
+        agent_adapter TEXT NOT NULL DEFAULT 'codex',
         execution_backend TEXT NOT NULL DEFAULT 'host',
         default_target_branch TEXT,
         pre_worktree_command TEXT,
@@ -520,8 +523,9 @@ export class SqliteStoreContext {
         ticket_id INTEGER NOT NULL,
         project_id TEXT NOT NULL,
         repo_id TEXT NOT NULL,
+        agent_adapter TEXT NOT NULL DEFAULT 'codex',
         worktree_path TEXT,
-        codex_session_id TEXT,
+        adapter_session_ref TEXT,
         status TEXT NOT NULL,
         planning_enabled INTEGER NOT NULL,
         plan_status TEXT NOT NULL DEFAULT 'not_requested',
@@ -591,8 +595,23 @@ export class SqliteStoreContext {
       CREATE INDEX IF NOT EXISTS idx_session_logs_session_id ON session_logs(session_id, id ASC);
     `);
 
+    this.#renameColumnIfPresent(
+      "execution_sessions",
+      "codex_session_id",
+      "adapter_session_ref",
+    );
+    this.#ensureColumn(
+      "projects",
+      "agent_adapter",
+      "TEXT NOT NULL DEFAULT 'codex'",
+    );
+    this.#ensureColumn(
+      "execution_sessions",
+      "agent_adapter",
+      "TEXT NOT NULL DEFAULT 'codex'",
+    );
     this.#ensureColumn("execution_sessions", "worktree_path", "TEXT");
-    this.#ensureColumn("execution_sessions", "codex_session_id", "TEXT");
+    this.#ensureColumn("execution_sessions", "adapter_session_ref", "TEXT");
     this.#ensureColumn(
       "execution_sessions",
       "plan_status",
@@ -620,6 +639,7 @@ export class SqliteStoreContext {
       "TEXT NOT NULL DEFAULT 'host'",
     );
     this.#backfillArtifactScopes();
+    this.#backfillAgentAdapterDefaults();
     this.#backfillProjectConcurrencyDefaults();
     this.#backfillProjectExecutionBackendDefaults();
     this.#backfillTicketContext();
@@ -630,9 +650,7 @@ export class SqliteStoreContext {
     columnName: string,
     definition: string,
   ): void {
-    const columns = this.#db
-      .prepare(`PRAGMA table_info(${tableName})`)
-      .all() as Array<{ name: string }>;
+    const columns = this.#listColumns(tableName);
 
     if (columns.some((column) => column.name === columnName)) {
       return;
@@ -641,6 +659,30 @@ export class SqliteStoreContext {
     this.#db.exec(
       `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`,
     );
+  }
+
+  #renameColumnIfPresent(
+    tableName: string,
+    fromColumn: string,
+    toColumn: string,
+  ): void {
+    const columns = this.#listColumns(tableName);
+    const hasFromColumn = columns.some((column) => column.name === fromColumn);
+    const hasToColumn = columns.some((column) => column.name === toColumn);
+
+    if (!hasFromColumn || hasToColumn) {
+      return;
+    }
+
+    this.#db.exec(
+      `ALTER TABLE ${tableName} RENAME COLUMN ${fromColumn} TO ${toColumn};`,
+    );
+  }
+
+  #listColumns(tableName: string): Array<{ name: string }> {
+    return this.#db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+      name: string;
+    }>;
   }
 
   #backfillTicketContext(): void {
@@ -732,6 +774,28 @@ export class SqliteStoreContext {
           UPDATE projects
           SET execution_backend = 'host'
           WHERE execution_backend IS NULL OR execution_backend = ''
+        `,
+      )
+      .run();
+  }
+
+  #backfillAgentAdapterDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET agent_adapter = 'codex'
+          WHERE agent_adapter IS NULL OR agent_adapter = ''
+        `,
+      )
+      .run();
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET agent_adapter = 'codex'
+          WHERE agent_adapter IS NULL OR agent_adapter = ''
         `,
       )
       .run();

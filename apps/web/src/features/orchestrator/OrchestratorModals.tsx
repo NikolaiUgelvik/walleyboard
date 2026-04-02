@@ -15,6 +15,7 @@ import {
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import {
+  agentAdapterOptions,
   buildRepositoryBranchOptions,
   executionBackendOptions,
   projectModelPresetOptions,
@@ -122,9 +123,27 @@ export function OrchestratorModals({
           >
             <Stack gap="md">
               <Text size="sm" c="dimmed">
-                Model overrides are optional. Default leaves Codex on its normal
-                model selection path for this project.
+                Model overrides are optional. Default leaves the selected agent
+                on its normal model selection path for this project.
               </Text>
+
+              <Stack gap="xs">
+                <Select
+                  label="Agent CLI"
+                  description="Choose which agent runtime this project uses for draft analysis and ticket work."
+                  data={agentAdapterOptions}
+                  value={controller.projectOptionsAgentAdapter}
+                  onChange={(value) => {
+                    if (value !== "codex") {
+                      return;
+                    }
+
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsAgentAdapter(value);
+                  }}
+                />
+              </Stack>
 
               <Stack gap="xs">
                 <Text fw={600}>Execution backend</Text>
@@ -142,7 +161,7 @@ export function OrchestratorModals({
                   }}
                 />
                 <Text size="sm" c="dimmed">
-                  Docker runs ticket-scoped Codex work inside a managed Ubuntu
+                  Docker runs ticket-scoped agent work inside a managed Ubuntu
                   container. Manual terminal takeover and validation still run
                   on the host in this first version.
                 </Text>
@@ -179,7 +198,7 @@ export function OrchestratorModals({
               <Stack gap="sm">
                 <Textarea
                   label="Pre-worktree command"
-                  description="Runs inside each new worktree without blocking Codex startup."
+                  description="Runs inside each new worktree without blocking agent startup."
                   placeholder="npm install"
                   value={controller.projectOptionsPreWorktreeCommand}
                   onChange={(event) => {
@@ -260,7 +279,7 @@ export function OrchestratorModals({
               <Stack gap="sm">
                 <Select
                   label="General ticket work model"
-                  description="Used when Codex starts or resumes ticket implementation work."
+                  description="Used when the selected agent starts or resumes ticket implementation work."
                   data={projectModelPresetOptions}
                   value={controller.projectOptionsTicketModelPreset}
                   onChange={(value) => {
