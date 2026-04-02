@@ -295,8 +295,8 @@ export function WalleyBoardModals({
                 ) : (
                   <Text size="sm" c="dimmed">
                     Docker runs ticket-scoped agent work inside a managed Ubuntu
-                    container. Manual terminal takeover and validation still run
-                    on the host in this first version.
+                    container. The ticket-card worktree terminal and validation
+                    still run on the host in this first version.
                   </Text>
                 )}
                 {controller.dockerHealth ? (

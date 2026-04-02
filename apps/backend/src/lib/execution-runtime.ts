@@ -248,7 +248,11 @@ export class ExecutionRuntime {
           status: "failed",
           last_summary: reason,
         });
-        publishSessionUpdated(this.#eventHub, failedSession);
+        publishSessionUpdated(
+          this.#eventHub,
+          failedSession,
+          failedSession ? this.hasActiveExecution(failedSession.id) : false,
+        );
         continue;
       }
 
@@ -259,7 +263,11 @@ export class ExecutionRuntime {
         attemptId,
         "A project execution slot opened. Launching this queued session.",
       );
-      publishSessionUpdated(this.#eventHub, session);
+      publishSessionUpdated(
+        this.#eventHub,
+        session,
+        this.hasActiveExecution(session.id),
+      );
 
       try {
         this.startExecution({
@@ -289,7 +297,11 @@ export class ExecutionRuntime {
           attemptId,
           `[runtime failure] ${reason}`,
         );
-        publishSessionUpdated(this.#eventHub, failedSession);
+        publishSessionUpdated(
+          this.#eventHub,
+          failedSession,
+          failedSession ? this.hasActiveExecution(failedSession.id) : false,
+        );
       }
     }
   }
@@ -986,7 +998,11 @@ export class ExecutionRuntime {
       "running",
       `${adapter.label} execution is running inside the prepared worktree.`,
     );
-    publishSessionUpdated(this.#eventHub, runningSession);
+    publishSessionUpdated(
+      this.#eventHub,
+      runningSession,
+      runningSession ? this.hasActiveExecution(runningSession.id) : false,
+    );
     publishSessionOutput(
       this.#eventHub,
       this.#store,
@@ -1090,7 +1106,11 @@ export class ExecutionRuntime {
           interpreted.sessionRef,
         );
         if (updatedSession) {
-          publishSessionUpdated(this.#eventHub, updatedSession);
+          publishSessionUpdated(
+            this.#eventHub,
+            updatedSession,
+            updatedSession ? this.hasActiveExecution(updatedSession.id) : false,
+          );
         }
 
         publishSessionOutput(
@@ -1312,7 +1332,11 @@ export class ExecutionRuntime {
         input.attemptId,
         summary,
       );
-      publishSessionUpdated(this.#eventHub, failedSession);
+      publishSessionUpdated(
+        this.#eventHub,
+        failedSession,
+        failedSession ? this.hasActiveExecution(failedSession.id) : false,
+      );
       this.startQueuedSessions(input.project.id);
       return;
     }
@@ -1359,7 +1383,11 @@ export class ExecutionRuntime {
       ),
     );
     publishTicketUpdated(this.#eventHub, ticket);
-    publishSessionUpdated(this.#eventHub, completedSession);
+    publishSessionUpdated(
+      this.#eventHub,
+      completedSession,
+      completedSession ? this.hasActiveExecution(completedSession.id) : false,
+    );
 
     if (this.#reviewReadyHandler && ticket && completedSession) {
       try {
@@ -1422,7 +1450,11 @@ export class ExecutionRuntime {
       input.attemptId,
       "Plan feedback requested: confirm the plan to continue or request changes to revise it.",
     );
-    publishSessionUpdated(this.#eventHub, waitingSession);
+    publishSessionUpdated(
+      this.#eventHub,
+      waitingSession,
+      waitingSession ? this.hasActiveExecution(waitingSession.id) : false,
+    );
     this.startQueuedSessions(input.projectId);
   }
 
@@ -1448,7 +1480,11 @@ export class ExecutionRuntime {
       input.attemptId,
       `[runtime failure] ${input.reason}`,
     );
-    publishSessionUpdated(this.#eventHub, failedSession);
+    publishSessionUpdated(
+      this.#eventHub,
+      failedSession,
+      failedSession ? this.hasActiveExecution(failedSession.id) : false,
+    );
     this.startQueuedSessions(input.ticket.project);
   }
 

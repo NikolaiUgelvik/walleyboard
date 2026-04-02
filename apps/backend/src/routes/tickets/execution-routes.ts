@@ -9,6 +9,7 @@ import {
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
+import { publishSessionUpdated } from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
@@ -80,10 +81,10 @@ export function registerTicketExecutionRoutes(
             ticket,
           }),
         );
-        eventHub.publish(
-          makeProtocolEvent("session.updated", "session", session.id, {
-            session,
-          }),
+        publishSessionUpdated(
+          eventHub,
+          session,
+          executionRuntime.hasActiveExecution(session.id),
         );
         logs.forEach((logLine, index) => {
           eventHub.publish(
@@ -167,10 +168,10 @@ export function registerTicketExecutionRoutes(
             },
           ),
         );
-        eventHub.publish(
-          makeProtocolEvent("session.updated", "session", stopped.session.id, {
-            session: stopped.session,
-          }),
+        publishSessionUpdated(
+          eventHub,
+          stopped.session,
+          executionRuntime.hasActiveExecution(stopped.session.id),
         );
         stopped.logs.forEach((logLine, index) => {
           eventHub.publish(
@@ -251,15 +252,10 @@ export function registerTicketExecutionRoutes(
             },
           ),
         );
-        eventHub.publish(
-          makeProtocolEvent(
-            "session.updated",
-            "session",
-            resumeResult.session.id,
-            {
-              session: resumeResult.session,
-            },
-          ),
+        publishSessionUpdated(
+          eventHub,
+          resumeResult.session,
+          executionRuntime.hasActiveExecution(resumeResult.session.id),
         );
         resumeResult.logs.forEach((logLine, index) => {
           eventHub.publish(
@@ -407,15 +403,10 @@ export function registerTicketExecutionRoutes(
             },
           ),
         );
-        eventHub.publish(
-          makeProtocolEvent(
-            "session.updated",
-            "session",
-            restartResult.session.id,
-            {
-              session: restartResult.session,
-            },
-          ),
+        publishSessionUpdated(
+          eventHub,
+          restartResult.session,
+          executionRuntime.hasActiveExecution(restartResult.session.id),
         );
         restartResult.logs.forEach((logLine, index) => {
           eventHub.publish(

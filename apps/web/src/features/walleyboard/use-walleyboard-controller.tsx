@@ -723,6 +723,12 @@ export function useWalleyBoardController() {
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
   );
+  const agentControlsWorktreeBySessionId = new Map(
+    sessionSummaries
+      .map((query) => query.data)
+      .filter((value): value is SessionResponse => value !== undefined)
+      .map((item) => [item.session.id, item.agent_controls_worktree]),
+  );
 
   const searchNeedle = normalizeText(boardSearch);
   const visibleDrafts = drafts.filter((draft) =>
@@ -1297,6 +1303,7 @@ export function useWalleyBoardController() {
     archiveModalOpen,
     archiveDoneTickets,
     archiveTicket,
+    agentControlsWorktreeBySessionId,
     archivedTicketsQuery,
     boardError,
     boardLoading,

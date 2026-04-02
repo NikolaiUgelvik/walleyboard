@@ -1,6 +1,7 @@
 import type {
   DraftTicketState,
   ExecutionSession,
+  SessionResponse,
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
@@ -8,9 +9,20 @@ import type {
 import { type EventHub, makeProtocolEvent } from "../event-hub.js";
 import type { Store } from "../store.js";
 
+export function buildSessionResponse(
+  session: ExecutionSession,
+  agentControlsWorktree: boolean,
+): SessionResponse {
+  return {
+    session,
+    agent_controls_worktree: agentControlsWorktree,
+  };
+}
+
 export function publishSessionUpdated(
   eventHub: EventHub,
   session: ExecutionSession | undefined,
+  agentControlsWorktree: boolean,
 ): void {
   if (!session) {
     return;
@@ -18,7 +30,7 @@ export function publishSessionUpdated(
 
   eventHub.publish(
     makeProtocolEvent("session.updated", "session", session.id, {
-      session,
+      ...buildSessionResponse(session, agentControlsWorktree),
     }),
   );
 }

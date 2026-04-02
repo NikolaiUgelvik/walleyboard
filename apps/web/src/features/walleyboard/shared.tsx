@@ -171,6 +171,7 @@ export type DraftEventsResponse = {
 
 export type SessionResponse = {
   session: ExecutionSession;
+  agent_controls_worktree: boolean;
 };
 
 export type SessionLogsResponse = {

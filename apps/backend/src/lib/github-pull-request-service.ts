@@ -1020,7 +1020,15 @@ export class GitHubPullRequestService {
       this.#publishSessionOutput(session.id, attemptId, line);
     }
 
-    publishSessionUpdated(this.#dependencies.eventHub, finalSession);
+    publishSessionUpdated(
+      this.#dependencies.eventHub,
+      finalSession,
+      finalSession
+        ? this.#dependencies.executionRuntime.hasActiveExecution(
+            finalSession.id,
+          )
+        : false,
+    );
     publishTicketUpdated(
       this.#dependencies.eventHub,
       finalTicket ?? doneTicket,
@@ -1069,7 +1077,13 @@ export class GitHubPullRequestService {
     );
 
     publishTicketUpdated(this.#dependencies.eventHub, updatedTicket);
-    publishSessionUpdated(this.#dependencies.eventHub, restartResult.session);
+    publishSessionUpdated(
+      this.#dependencies.eventHub,
+      restartResult.session,
+      this.#dependencies.executionRuntime.hasActiveExecution(
+        restartResult.session.id,
+      ),
+    );
     this.#publishExistingLogs(
       restartResult.session.id,
       restartResult.attempt.id,

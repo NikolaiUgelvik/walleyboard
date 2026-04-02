@@ -212,12 +212,16 @@ export function useProtocolEventSync({
 
     if (event.event_type === "session.updated") {
       const session = event.payload.session as ExecutionSession | undefined;
+      const agentControlsWorktree = event.payload.agent_controls_worktree as
+        | boolean
+        | undefined;
       if (!session) {
         return;
       }
 
       queryClient.setQueryData<SessionResponse>(["sessions", session.id], {
         session,
+        agent_controls_worktree: agentControlsWorktree ?? false,
       });
       return;
     }

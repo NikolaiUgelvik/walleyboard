@@ -4,6 +4,7 @@ import { requestChangesInputSchema } from "../../../../../packages/contracts/src
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
+import { publishSessionUpdated } from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
@@ -65,15 +66,10 @@ export function registerTicketReviewRoutes(
             },
           ),
         );
-        eventHub.publish(
-          makeProtocolEvent(
-            "session.updated",
-            "session",
-            restartResult.session.id,
-            {
-              session: restartResult.session,
-            },
-          ),
+        publishSessionUpdated(
+          eventHub,
+          restartResult.session,
+          executionRuntime.hasActiveExecution(restartResult.session.id),
         );
         restartResult.logs.forEach((logLine, index) => {
           eventHub.publish(
@@ -341,10 +337,12 @@ export function registerTicketReviewRoutes(
             ticket: mergedTicket,
           }),
         );
-        eventHub.publish(
-          makeProtocolEvent("session.updated", "session", sessionId, {
-            session: completedSession,
-          }),
+        publishSessionUpdated(
+          eventHub,
+          completedSession,
+          completedSession
+            ? executionRuntime.hasActiveExecution(completedSession.id)
+            : false,
         );
         await ticketWorkspaceService.disposeTicket(ticketId);
 
@@ -366,10 +364,10 @@ export function registerTicketReviewRoutes(
               ticket: mergeConflict.ticket,
             }),
           );
-          eventHub.publish(
-            makeProtocolEvent("session.updated", "session", sessionId, {
-              session: mergeConflict.session,
-            }),
+          publishSessionUpdated(
+            eventHub,
+            mergeConflict.session,
+            executionRuntime.hasActiveExecution(mergeConflict.session.id),
           );
           mergeConflict.logs.forEach((logLine, index) => {
             eventHub.publish(

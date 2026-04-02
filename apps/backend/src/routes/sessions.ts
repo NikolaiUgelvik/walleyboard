@@ -7,6 +7,10 @@ import {
 
 import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
+import {
+  buildSessionResponse,
+  publishSessionUpdated,
+} from "../lib/execution-runtime/publishers.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
 import { commandRouteRateLimit } from "../lib/rate-limit.js";
@@ -31,7 +35,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         return;
       }
 
-      return { session };
+      return buildSessionResponse(
+        session,
+        executionRuntime.hasActiveExecution(session.id),
+      );
     },
   );
 
@@ -85,15 +92,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
               `Manual terminal attached in ${session.worktree_path}. Run direct project commands here, then restore the agent when you're ready to continue.`,
             ) ?? session;
 
-          eventHub.publish(
-            makeProtocolEvent(
-              "session.updated",
-              "session",
-              existingSession.id,
-              {
-                session: existingSession,
-              },
-            ),
+          publishSessionUpdated(
+            eventHub,
+            existingSession,
+            executionRuntime.hasActiveExecution(existingSession.id),
           );
 
           reply.send(
@@ -140,10 +142,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             `Manual terminal attached in ${session.worktree_path}. Run direct project commands here, then restore the agent when you're ready to continue.`,
           ) ?? session;
 
-        eventHub.publish(
-          makeProtocolEvent("session.updated", "session", updatedSession.id, {
-            session: updatedSession,
-          }),
+        publishSessionUpdated(
+          eventHub,
+          updatedSession,
+          executionRuntime.hasActiveExecution(updatedSession.id),
         );
         executionRuntime.startQueuedSessions(ticket.project);
 
@@ -223,15 +225,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             },
           ),
         );
-        eventHub.publish(
-          makeProtocolEvent(
-            "session.updated",
-            "session",
-            resumeResult.session.id,
-            {
-              session: resumeResult.session,
-            },
-          ),
+        publishSessionUpdated(
+          eventHub,
+          resumeResult.session,
+          executionRuntime.hasActiveExecution(resumeResult.session.id),
         );
         resumeResult.logs.forEach((logLine, index) => {
           eventHub.publish(
@@ -362,15 +359,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
           const resumeResult = store.resumeTicket(ticket.id, feedbackBody);
 
-          eventHub.publish(
-            makeProtocolEvent(
-              "session.updated",
-              "session",
-              resumeResult.session.id,
-              {
-                session: resumeResult.session,
-              },
-            ),
+          publishSessionUpdated(
+            eventHub,
+            resumeResult.session,
+            executionRuntime.hasActiveExecution(resumeResult.session.id),
           );
           resumeResult.logs.forEach((logLine, index) => {
             eventHub.publish(
@@ -435,10 +427,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             return;
           }
 
-          eventHub.publish(
-            makeProtocolEvent("session.updated", "session", session.id, {
-              session,
-            }),
+          publishSessionUpdated(
+            eventHub,
+            session,
+            executionRuntime.hasActiveExecution(session.id),
           );
 
           reply.send(
@@ -458,10 +450,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
           `Checkpoint response (approved=${input.approved ?? false}):\n${input.body}`,
         );
 
-        eventHub.publish(
-          makeProtocolEvent("session.updated", "session", session.id, {
-            session,
-          }),
+        publishSessionUpdated(
+          eventHub,
+          session,
+          executionRuntime.hasActiveExecution(session.id),
         );
         eventHub.publish(
           makeProtocolEvent("session.output", "session", session.id, {
@@ -515,10 +507,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             return;
           }
 
-          eventHub.publish(
-            makeProtocolEvent("session.updated", "session", session.id, {
-              session,
-            }),
+          publishSessionUpdated(
+            eventHub,
+            session,
+            executionRuntime.hasActiveExecution(session.id),
           );
 
           reply.send(
@@ -538,10 +530,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
           input.body,
         );
 
-        eventHub.publish(
-          makeProtocolEvent("session.updated", "session", session.id, {
-            session,
-          }),
+        publishSessionUpdated(
+          eventHub,
+          session,
+          executionRuntime.hasActiveExecution(session.id),
         );
         eventHub.publish(
           makeProtocolEvent("session.output", "session", session.id, {

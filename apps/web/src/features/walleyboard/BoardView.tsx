@@ -184,15 +184,22 @@ export function TicketWorkspaceActions({
   const previewError =
     controller.previewActionErrorByTicketId[ticket.id] ?? preview?.error;
   const hasPreparedWorktree = ticketSession?.worktree_path != null;
-  const terminalBlockedBySession = ticketSession?.status === "running";
+  const ticketSessionAgentControlsWorktree =
+    ticket.session_id === null
+      ? false
+      : (controller.agentControlsWorktreeBySessionId.get(ticket.session_id) ??
+        true);
   const diffDisabled = !hasPreparedWorktree;
-  const terminalDisabled = !hasPreparedWorktree || terminalBlockedBySession;
+  const terminalDisabled =
+    !hasPreparedWorktree || ticketSessionAgentControlsWorktree;
   const previewDisabled = !hasPreparedWorktree || previewBusy;
   const activityDisabled = ticket.session_id == null;
   const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
-  const terminalTitle = terminalBlockedBySession
-    ? "Terminal unavailable while the agent controls this worktree"
-    : "Terminal";
+  const terminalTitle = !hasPreparedWorktree
+    ? "Terminal"
+    : ticketSessionAgentControlsWorktree
+      ? "Terminal unavailable while the agent controls this worktree"
+      : "Terminal";
 
   return (
     <Stack gap={6}>

@@ -244,6 +244,7 @@ export const ticketWorkspacePreviewResponseSchema = z.object({
 
 export const sessionResponseSchema = z.object({
   session: executionSessionSchema,
+  agent_controls_worktree: z.boolean(),
 });
 
 export const sessionAttemptsResponseSchema = z.object({
@@ -353,3 +354,4 @@ export type TicketWorkspacePreview = z.infer<
 export type TicketWorkspacePreviewResponse = z.infer<
   typeof ticketWorkspacePreviewResponseSchema
 >;
+export type SessionResponse = z.infer<typeof sessionResponseSchema>;

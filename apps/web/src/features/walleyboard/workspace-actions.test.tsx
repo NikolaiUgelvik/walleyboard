@@ -90,6 +90,7 @@ function createTicket(
 }
 
 function createController(input?: {
+  agentControlsWorktree?: boolean;
   preview?: TicketWorkspacePreview | null;
   previewError?: string;
   session?: Partial<ExecutionSession> | null;
@@ -142,6 +143,10 @@ function createController(input?: {
     sessionById:
       ticket.session_id && session
         ? new Map([[ticket.session_id, session]])
+        : new Map(),
+    agentControlsWorktreeBySessionId:
+      ticket.session_id && session
+        ? new Map([[ticket.session_id, input?.agentControlsWorktree ?? false]])
         : new Map(),
     stopTicketWorkspacePreviewMutation: {
       isPending: false,
@@ -211,7 +216,8 @@ test("ticket workspace actions keep activity available after worktree cleanup", 
 
 test("ticket workspace terminal action stays disabled while the agent owns the worktree", () => {
   const { controller, ticket } = createController({
-    session: { status: "running", worktree_path: "/tmp/worktree-9" },
+    agentControlsWorktree: true,
+    session: { status: "awaiting_input", worktree_path: "/tmp/worktree-9" },
   });
 
   const tree = TicketWorkspaceActions({ controller, ticket });
@@ -225,26 +231,25 @@ test("ticket workspace terminal action stays disabled while the agent owns the w
   assert.equal((terminalAction.props as { disabled?: boolean }).disabled, true);
 });
 
-for (const status of ["queued", "awaiting_input"] as const) {
-  test(`ticket workspace terminal action stays available for ${status} sessions`, () => {
-    const { controller, ticket } = createController({
-      session: { status, worktree_path: "/tmp/worktree-9" },
-    });
-
-    const tree = TicketWorkspaceActions({ controller, ticket });
-    const terminalAction = findElementByProp(
-      tree,
-      "aria-label",
-      "Open worktree terminal",
-    );
-
-    assert.ok(terminalAction);
-    assert.equal(
-      (terminalAction.props as { disabled?: boolean }).disabled,
-      false,
-    );
+test("ticket workspace terminal action stays available when no active agent owns the worktree", () => {
+  const { controller, ticket } = createController({
+    agentControlsWorktree: false,
+    session: { status: "queued", worktree_path: "/tmp/worktree-9" },
   });
-}
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+  const terminalAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open worktree terminal",
+  );
+
+  assert.ok(terminalAction);
+  assert.equal(
+    (terminalAction.props as { disabled?: boolean }).disabled,
+    false,
+  );
+});
 
 test("ticket workspace activity action opens the activity modal from the card", () => {
   const { controller, openCalls, ticket } = createController();
