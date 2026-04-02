@@ -29,6 +29,75 @@ import {
   slugify,
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import { resolveWorkspaceDiffPanelState } from "./workspace-modal-state.js";
+
+type WorkspaceModalContentController = Pick<
+  WalleyBoardController,
+  | "session"
+  | "sessionLogs"
+  | "sessionLogsQuery"
+  | "sessionQuery"
+  | "selectedSessionTicket"
+  | "setTicketWorkspaceDiffLayout"
+  | "ticketWorkspaceDiff"
+  | "ticketWorkspaceDiffLayout"
+  | "ticketWorkspaceDiffQuery"
+  | "workspaceModal"
+>;
+
+export function WorkspaceModalContent({
+  controller,
+}: {
+  controller: WorkspaceModalContentController;
+}) {
+  const workspaceDiffPanelState = resolveWorkspaceDiffPanelState({
+    sessionQuery: controller.sessionQuery,
+    ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,
+  });
+
+  return (
+    <Box className="ticket-workspace-modal-body">
+      {controller.workspaceModal === "diff" ? (
+        <TicketWorkspaceDiffPanel
+          diff={controller.ticketWorkspaceDiff}
+          error={workspaceDiffPanelState.error}
+          isLoading={workspaceDiffPanelState.isLoading}
+          layout={controller.ticketWorkspaceDiffLayout}
+          onLayoutChange={controller.setTicketWorkspaceDiffLayout}
+        />
+      ) : controller.workspaceModal === "terminal" ? (
+        controller.selectedSessionTicket ? (
+          <TicketWorkspaceTerminal
+            ticketId={controller.selectedSessionTicket.id}
+            worktreePath={controller.session?.worktree_path ?? null}
+          />
+        ) : (
+          <Text size="sm" c="dimmed">
+            The ticket worktree is still being prepared.
+          </Text>
+        )
+      ) : controller.workspaceModal === "activity" ? (
+        controller.sessionQuery.isPending ||
+        controller.sessionLogsQuery.isPending ? (
+          <Loader size="sm" />
+        ) : controller.sessionQuery.isError ? (
+          <Text size="sm" c="red">
+            {controller.sessionQuery.error.message}
+          </Text>
+        ) : controller.session ? (
+          <SessionActivityFeed
+            logs={controller.sessionLogs}
+            session={controller.session}
+          />
+        ) : (
+          <Text size="sm" c="dimmed">
+            Session details are not available yet.
+          </Text>
+        )
+      ) : null}
+    </Box>
+  );
+}
 
 export function WalleyBoardModals({
   controller,
@@ -66,53 +135,7 @@ export function WalleyBoardModals({
           },
         }}
       >
-        <Box className="ticket-workspace-modal-body">
-          {controller.workspaceModal === "diff" ? (
-            <TicketWorkspaceDiffPanel
-              diff={controller.ticketWorkspaceDiff}
-              error={
-                controller.ticketWorkspaceDiffQuery.isError
-                  ? controller.ticketWorkspaceDiffQuery.error.message
-                  : null
-              }
-              isLoading={
-                controller.sessionQuery.isPending ||
-                controller.ticketWorkspaceDiffQuery.isPending
-              }
-              layout={controller.ticketWorkspaceDiffLayout}
-              onLayoutChange={controller.setTicketWorkspaceDiffLayout}
-            />
-          ) : controller.workspaceModal === "terminal" ? (
-            controller.selectedSessionTicket ? (
-              <TicketWorkspaceTerminal
-                ticketId={controller.selectedSessionTicket.id}
-                worktreePath={controller.session?.worktree_path ?? null}
-              />
-            ) : (
-              <Text size="sm" c="dimmed">
-                The ticket worktree is still being prepared.
-              </Text>
-            )
-          ) : controller.workspaceModal === "activity" ? (
-            controller.sessionQuery.isPending ||
-            controller.sessionLogsQuery.isPending ? (
-              <Loader size="sm" />
-            ) : controller.sessionQuery.isError ? (
-              <Text size="sm" c="red">
-                {controller.sessionQuery.error.message}
-              </Text>
-            ) : controller.session ? (
-              <SessionActivityFeed
-                logs={controller.sessionLogs}
-                session={controller.session}
-              />
-            ) : (
-              <Text size="sm" c="dimmed">
-                Session details are not available yet.
-              </Text>
-            )
-          ) : null}
-        </Box>
+        <WorkspaceModalContent controller={controller} />
       </Modal>
 
       <Modal

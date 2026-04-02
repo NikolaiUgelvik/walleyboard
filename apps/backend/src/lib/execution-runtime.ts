@@ -41,6 +41,13 @@ import {
   publishTicketUpdated,
 } from "./execution-runtime/publishers.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
+import {
+  closeTrackedWorkspaceTerminalsForExecution,
+  disposeTrackedWorkspaceTerminals,
+  startTrackedManualTerminal,
+  startTrackedWorkspaceTerminal,
+  type WorkspaceTerminalRuntime,
+} from "./execution-runtime/terminal-runtime.js";
 import type {
   DraftAnalysisInput,
   DraftAnalysisMode,
@@ -83,6 +90,10 @@ export class ExecutionRuntime {
   readonly #activeReviewRuns = new Map<
     string,
     { kill(signal?: NodeJS.Signals): unknown }
+  >();
+  readonly #workspaceTerminals = new Map<
+    string,
+    Set<WorkspaceTerminalRuntime>
   >();
   readonly #manualTerminals = new Map<
     string,
@@ -130,6 +141,7 @@ export class ExecutionRuntime {
     for (const child of this.#activeReviewRuns.values()) {
       child.kill("SIGTERM");
     }
+    disposeTrackedWorkspaceTerminals(this.#workspaceTerminals);
     this.#dockerRuntime.dispose();
   }
 
@@ -180,6 +192,22 @@ export class ExecutionRuntime {
 
   hasManualTerminal(sessionId: string): boolean {
     return this.#manualTerminals.has(sessionId);
+  }
+
+  startWorkspaceTerminal(input: {
+    sessionId: string;
+    worktreePath: string;
+    onAgentTakeover?: () => void;
+  }): IPty {
+    return startTrackedWorkspaceTerminal({
+      activeSessions: this.#activeSessions,
+      sessionId: input.sessionId,
+      worktreePath: input.worktreePath,
+      workspaceTerminals: this.#workspaceTerminals,
+      ...(input.onAgentTakeover
+        ? { onAgentTakeover: input.onAgentTakeover }
+        : {}),
+    });
   }
 
   startQueuedSessions(projectId: string): void {
@@ -519,90 +547,15 @@ export class ExecutionRuntime {
     worktreePath,
     attemptId,
   }: ManualTerminalStartInput): void {
-    if (this.#manualTerminals.has(sessionId)) {
-      return;
-    }
-
-    let child: IPty;
-
-    try {
-      child = spawnPty("bash", ["--noprofile", "--norc"], {
-        cwd: worktreePath,
-        env: {
-          ...buildProcessEnv(),
-          TERM: "dumb",
-        },
-        cols: 120,
-        rows: 32,
-        name: "xterm-256color",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Manual terminal failed to start";
-      throw new Error(message);
-    }
-
-    const logAttemptId =
-      attemptId ??
-      this.#store.getSession(sessionId)?.current_attempt_id ??
-      sessionId;
-    this.#manualTerminals.set(sessionId, {
-      pty: child,
+    startTrackedManualTerminal({
       attemptId,
-    });
-    publishSessionOutput(
-      this.#eventHub,
-      this.#store,
+      eventHub: this.#eventHub,
+      manualExitWaiters: this.#manualExitWaiters,
+      manualTerminals: this.#manualTerminals,
       sessionId,
-      logAttemptId,
-      `Manual terminal opened in ${worktreePath}`,
-    );
-
-    let pendingBuffer = "";
-
-    child.onData((chunk) => {
-      pendingBuffer += chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-      while (pendingBuffer.includes("\n")) {
-        const newlineIndex = pendingBuffer.indexOf("\n");
-        const line = pendingBuffer.slice(0, newlineIndex);
-        pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
-        if (line.length > 0) {
-          publishSessionOutput(
-            this.#eventHub,
-            this.#store,
-            sessionId,
-            logAttemptId,
-            `[terminal] ${line}`,
-          );
-        }
-      }
-    });
-
-    child.onExit(() => {
-      if (pendingBuffer.trim().length > 0) {
-        publishSessionOutput(
-          this.#eventHub,
-          this.#store,
-          sessionId,
-          logAttemptId,
-          `[terminal] ${pendingBuffer.trim()}`,
-        );
-        pendingBuffer = "";
-      }
-
-      this.#stoppingManualTerminals.delete(sessionId);
-      this.#manualTerminals.delete(sessionId);
-      publishSessionOutput(
-        this.#eventHub,
-        this.#store,
-        sessionId,
-        logAttemptId,
-        "Manual terminal closed.",
-      );
-      resolveTrackedExit(this.#manualExitWaiters, sessionId, true);
+      stoppingManualTerminals: this.#stoppingManualTerminals,
+      store: this.#store,
+      worktreePath,
     });
   }
 
@@ -911,6 +864,8 @@ export class ExecutionRuntime {
     if (!attemptId) {
       throw new Error("Execution session has no current attempt");
     }
+
+    this.#closeWorkspaceTerminalsForExecution(session.id);
 
     const adapter = this.#getSessionAdapter(session);
     const extraInstructions: PromptContextSection[] = [];
@@ -1495,5 +1450,12 @@ export class ExecutionRuntime {
     );
     publishSessionUpdated(this.#eventHub, failedSession);
     this.startQueuedSessions(input.ticket.project);
+  }
+
+  #closeWorkspaceTerminalsForExecution(sessionId: string): void {
+    closeTrackedWorkspaceTerminalsForExecution({
+      sessionId,
+      workspaceTerminals: this.#workspaceTerminals,
+    });
   }
 }

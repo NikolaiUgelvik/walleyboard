@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isValidElement, type ReactElement, type ReactNode } from "react";
+import React, {
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 import type {
   ExecutionSession,
@@ -12,6 +16,9 @@ import type {
 import { TicketWorkspaceActions } from "./BoardView.js";
 import { TicketWorkspaceSummaryRow } from "./InspectorPane.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import { resolveWorkspaceDiffPanelState } from "./workspace-modal-state.js";
+
+(globalThis as typeof globalThis & { React?: typeof React }).React = React;
 
 function findElementByProp(
   node: ReactNode,
@@ -288,6 +295,24 @@ test("ticket workspace summary row opens the activity stream from the inspector"
   ).onClick();
 
   assert.equal(opened, true);
+});
+
+test("workspace diff modal surfaces session load failures instead of the empty diff state", () => {
+  const state = resolveWorkspaceDiffPanelState({
+    sessionQuery: {
+      error: new Error("Session details could not be loaded."),
+      isError: true,
+      isPending: false,
+    },
+    ticketWorkspaceDiffQuery: {
+      error: null,
+      isError: false,
+      isPending: false,
+    },
+  });
+
+  assert.equal(state.isLoading, false);
+  assert.equal(state.error, "Session details could not be loaded.");
 });
 
 test("ticket workspace summary row supports keyboard activation", () => {

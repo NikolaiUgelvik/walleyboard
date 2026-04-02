@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { type IPty, spawn as spawnPty } from "node-pty";
 
 import { parsePositiveInt } from "../../lib/http.js";
 import {
@@ -306,17 +305,20 @@ export function registerTicketReadWorkspaceRoutes(
         return;
       }
 
-      let terminal: IPty;
+      let terminal: ReturnType<typeof executionRuntime.startWorkspaceTerminal>;
       try {
-        terminal = spawnPty("bash", ["--noprofile", "--norc"], {
-          cwd: session.worktree_path,
-          env: {
-            ...process.env,
-            TERM: "xterm-256color",
+        terminal = executionRuntime.startWorkspaceTerminal({
+          sessionId: session.id,
+          worktreePath: session.worktree_path,
+          onAgentTakeover: () => {
+            socket.send(
+              JSON.stringify({
+                type: "terminal.error",
+                message:
+                  "The agent reclaimed this worktree and closed the workspace terminal.",
+              }),
+            );
           },
-          cols: 120,
-          rows: 32,
-          name: "xterm-256color",
         });
       } catch (error) {
         socket.send(
