@@ -58,12 +58,47 @@ Not yet implemented:
 - Completed tickets can be archived out of the active board and restored later
 - Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup
 
+## Required Command Line Tools
+
+Install these on the host machine before starting WalleyBoard:
+
+- `node` 22 or newer, with the bundled `npm`
+- `bash`
+- `git`
+- `codex`
+
+WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. The default agent integration runs the real `codex` CLI for draft refinement and ticket execution, so the backend expects `codex` to be installed and already authenticated in your normal shell environment.
+
+## Optional Command Line Tools
+
+- `docker`: only needed if you want a project to run ticket work inside a managed container instead of on the host
+- `claude`: only needed if you want to use the Claude Code adapter instead of Codex
+
+If you want Claude Code support, create `~/.walleyboard/claude-cli-path` and put the absolute path to your `claude` binary in that file. WalleyBoard uses that exact path for both health checks and runtime execution.
+
 ## Quick Start
 
-1. Install dependencies with `npm install`.
-2. Start the backend with `npm run dev:backend`.
-3. Start the frontend with `npm run dev:web`.
-4. Generate database artifacts later with `npm run db:generate`.
+1. Install the required command line tools listed above.
+2. Install dependencies with `npm install`.
+3. Start the backend with `npm run dev:backend`.
+4. Start the frontend with `npm run dev:web`.
+5. Open the Vite URL shown in the frontend terminal, usually `http://127.0.0.1:5173`.
+6. Generate database artifacts later with `npm run db:generate`.
+
+## Optional Docker Support
+
+Docker is optional. The app itself runs directly on your host machine; Docker only affects ticket execution for projects configured with the `Docker` execution backend.
+
+To use Docker-backed execution:
+
+1. Install Docker Desktop or Docker Engine.
+2. Make sure the Docker daemon is running and `docker version` succeeds in your shell.
+3. Start WalleyBoard normally with `npm run dev:backend` and `npm run dev:web`.
+4. In project settings, choose the `Docker` execution backend for a Codex-backed project.
+
+On the first Docker-backed run, WalleyBoard builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile). That image installs Node, Git, ripgrep, and the Codex CLI, then mounts the ticket worktree at `/workspace` and your host `~/.codex` directory into the container so Codex can reuse your existing configuration.
+
+`Claude Code` does not currently support the Docker execution backend in WalleyBoard, so Docker projects should use the `Codex` adapter.
 
 ## Quality Gates
 
