@@ -20,9 +20,9 @@ import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
 import {
-  ColorSchemeControl,
   boardColumnMeta,
   boardColumns,
+  ColorSchemeControl,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
@@ -674,9 +674,7 @@ export function BoardView({
                                       </Button>
                                     ) : null}
                                   </Group>
-                                ) : (
-                                  <></>
-                                )}
+                                ) : null}
                               </Stack>
                             </Box>
                           );

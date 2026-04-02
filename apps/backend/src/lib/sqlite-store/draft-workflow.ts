@@ -6,11 +6,11 @@ import type { DraftRepository } from "./draft-repository.js";
 import type { EventRepository } from "./event-repository.js";
 import type { ProjectRepository } from "./project-repository.js";
 import {
-  type SqliteStoreContext,
   normalizeTitle,
   preserveMarkdown,
   preserveMarkdownList,
   requireValue,
+  type SqliteStoreContext,
   stringifyJson,
 } from "./shared.js";
 import type { TicketRepository } from "./ticket-repository.js";

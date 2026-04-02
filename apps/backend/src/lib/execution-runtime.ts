@@ -4,13 +4,10 @@ import { nanoid } from "nanoid";
 import { type IPty, spawn as spawnPty } from "node-pty";
 
 import type {
-  DraftTicketState,
   ExecutionSession,
   Project,
   RepositoryConfig,
-  StructuredEvent,
   TicketFrontmatter,
-  ValidationResult,
 } from "../../../../packages/contracts/src/index.js";
 
 import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
@@ -23,12 +20,10 @@ import {
   buildMergeConflictSummaryPath,
   buildOutputSummaryPath,
   buildProcessEnv,
-  buildValidationLogPath,
   buildWorkspaceOutputPath,
   extractPersistedAttemptGuidance,
   formatMarkdownLog,
   hasMeaningfulContent,
-  resolveValidationWorkingDirectory,
   runGit,
   streamLines,
   summarizeDraftQuestions,
@@ -46,7 +41,6 @@ import {
 import type {
   DraftAnalysisInput,
   DraftAnalysisMode,
-  DraftFeasibilityResult,
   DraftRefinementResult,
   ExecutionMode,
   ExecutionRuntimeOptions,
@@ -66,7 +60,6 @@ import {
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
 import type { Store } from "./store.js";
-import { nowIso } from "./time.js";
 
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
@@ -1119,7 +1112,7 @@ export class ExecutionRuntime {
       }
     });
 
-    child.onExit(async ({ exitCode, signal }) => {
+    child.onExit(async ({ exitCode }) => {
       const stopReason = this.#stoppingSessions.get(session.id);
       if (stopReason) {
         this.#stoppingSessions.delete(session.id);

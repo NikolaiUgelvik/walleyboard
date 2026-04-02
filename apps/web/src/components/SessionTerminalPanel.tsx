@@ -4,8 +4,8 @@ import {
   Group,
   Stack,
   Text,
-  TextInput,
   Textarea,
+  TextInput,
 } from "@mantine/core";
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 

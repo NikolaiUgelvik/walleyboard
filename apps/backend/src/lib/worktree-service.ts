@@ -5,8 +5,8 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
-  rmSync,
   rmdirSync,
+  rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 

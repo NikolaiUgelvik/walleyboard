@@ -2,7 +2,7 @@ import type { TicketFrontmatter } from "../../../../../packages/contracts/src/in
 
 import type { ListProjectTicketsOptions } from "../store.js";
 import { nowIso } from "../time.js";
-import { type SqliteStoreContext, mapTicket } from "./shared.js";
+import { mapTicket, type SqliteStoreContext } from "./shared.js";
 
 export class TicketRepository {
   constructor(private readonly context: SqliteStoreContext) {}

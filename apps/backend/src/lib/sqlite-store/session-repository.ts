@@ -2,7 +2,6 @@ import type {
   ExecutionAttempt,
   ExecutionSession,
   Project,
-  StructuredEvent,
 } from "../../../../../packages/contracts/src/index.js";
 
 import type {
@@ -13,11 +12,11 @@ import type {
 } from "../store.js";
 import { nowIso } from "../time.js";
 import {
-  type SqliteStoreContext,
   formatMarkdownLog,
   mapExecutionAttempt,
   mapExecutionSession,
   requireValue,
+  type SqliteStoreContext,
 } from "./shared.js";
 
 export class SessionRepository {

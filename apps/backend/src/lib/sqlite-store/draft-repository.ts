@@ -7,7 +7,6 @@ import type {
 import type { UpdateDraftRecordInput } from "../store.js";
 import { nowIso } from "../time.js";
 import {
-  type SqliteStoreContext,
   deriveAcceptanceCriteria,
   hasMeaningfulContent,
   mapDraft,
@@ -15,6 +14,7 @@ import {
   preserveMarkdown,
   preserveMarkdownList,
   requireValue,
+  type SqliteStoreContext,
   stringifyJson,
 } from "./shared.js";
 

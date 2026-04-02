@@ -9,7 +9,6 @@ import type {
 import { nowIso } from "../time.js";
 
 import {
-  type SqliteStoreContext,
   defaultMaxConcurrentSessions,
   mapProject,
   mapRepository,
@@ -17,6 +16,7 @@ import {
   normalizeOptionalModel,
   normalizeOptionalReasoningEffort,
   requireValue,
+  type SqliteStoreContext,
   slugify,
   stringifyJson,
 } from "./shared.js";

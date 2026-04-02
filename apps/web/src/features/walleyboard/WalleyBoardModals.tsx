@@ -9,8 +9,8 @@ import {
   Select,
   Stack,
   Text,
-  TextInput,
   Textarea,
+  TextInput,
 } from "@mantine/core";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";

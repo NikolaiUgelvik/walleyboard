@@ -861,80 +861,78 @@ test("markdown content is preserved across draft, ticket, and session note flows
   }
 });
 
-test(
-  "drafts and tickets keep markdown in SQLite instead of creating ticket files",
-  { concurrency: false },
-  () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-store-"));
-    const originalWalleyBoardHome = process.env.WALLEYBOARD_HOME;
-    process.env.WALLEYBOARD_HOME = tempDir;
+test("drafts and tickets keep markdown in SQLite instead of creating ticket files", {
+  concurrency: false,
+}, () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-store-"));
+  const originalWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+  process.env.WALLEYBOARD_HOME = tempDir;
 
-    try {
-      const store = new SqliteStore();
-      const { project, repository } = store.createProject({
-        name: "SQLite Ticket Storage Project",
-        repository: {
-          name: "repo",
-          path: join(tempDir, "repo"),
-        },
-      });
+  try {
+    const store = new SqliteStore();
+    const { project, repository } = store.createProject({
+      name: "SQLite Ticket Storage Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
 
-      const draftDescription = [
-        "# Stored In SQLite",
-        "",
-        "- Keep markdown exactly as written.",
-        "- Do not emit ticket markdown files on disk.",
-      ].join("\n");
-      const draft = store.createDraft({
-        project_id: project.id,
-        title: "Keep markdown in SQLite",
-        description: draftDescription,
-        proposed_acceptance_criteria: [
-          "Persist the markdown body without writing a ticket file.",
-        ],
-      });
-      const ticket = store.confirmDraft(draft.id, {
-        title: draft.title_draft,
-        description: draft.description_draft,
-        repo_id: repository.id,
-        ticket_type: "feature",
-        acceptance_criteria: draft.proposed_acceptance_criteria,
-        target_branch: "main",
-      });
+    const draftDescription = [
+      "# Stored In SQLite",
+      "",
+      "- Keep markdown exactly as written.",
+      "- Do not emit ticket markdown files on disk.",
+    ].join("\n");
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Keep markdown in SQLite",
+      description: draftDescription,
+      proposed_acceptance_criteria: [
+        "Persist the markdown body without writing a ticket file.",
+      ],
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: draft.proposed_acceptance_criteria,
+      target_branch: "main",
+    });
 
-      const reopenedStore = new SqliteStore();
-      assert.equal(
-        reopenedStore.getTicket(ticket.id)?.description,
-        draftDescription,
-      );
+    const reopenedStore = new SqliteStore();
+    assert.equal(
+      reopenedStore.getTicket(ticket.id)?.description,
+      draftDescription,
+    );
 
-      const persistedPaths = listRelativePaths(tempDir);
-      assert.ok(persistedPaths.includes("walleyboard.sqlite"));
-      assert.deepEqual(
-        persistedPaths.filter((path) => path.endsWith(".md")),
-        [],
-      );
-      assert.equal(
-        persistedPaths.some(
-          (path) =>
-            path === "projects" ||
-            path.startsWith("projects/") ||
-            path === "tickets" ||
-            path.endsWith("/tickets") ||
-            path.includes("/tickets/"),
-        ),
-        false,
-      );
-    } finally {
-      if (originalWalleyBoardHome === undefined) {
-        process.env.WALLEYBOARD_HOME = undefined;
-      } else {
-        process.env.WALLEYBOARD_HOME = originalWalleyBoardHome;
-      }
-      rmSync(tempDir, { recursive: true, force: true });
+    const persistedPaths = listRelativePaths(tempDir);
+    assert.ok(persistedPaths.includes("walleyboard.sqlite"));
+    assert.deepEqual(
+      persistedPaths.filter((path) => path.endsWith(".md")),
+      [],
+    );
+    assert.equal(
+      persistedPaths.some(
+        (path) =>
+          path === "projects" ||
+          path.startsWith("projects/") ||
+          path === "tickets" ||
+          path.endsWith("/tickets") ||
+          path.includes("/tickets/"),
+      ),
+      false,
+    );
+  } finally {
+    if (originalWalleyBoardHome === undefined) {
+      process.env.WALLEYBOARD_HOME = undefined;
+    } else {
+      process.env.WALLEYBOARD_HOME = originalWalleyBoardHome;
     }
-  },
-);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
 
 test("recordMergeConflict moves the ticket back to in progress with a system note", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-note-"));

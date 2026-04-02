@@ -837,10 +837,21 @@ function parseDraftRefinementResult(value: unknown): {
 }
 
 export function MarkdownListItems({ items }: { items: string[] }) {
+  const seenItems = new Map<string, number>();
+  const keyedItems = items.map((item) => {
+    const occurrence = seenItems.get(item) ?? 0;
+    seenItems.set(item, occurrence + 1);
+
+    return {
+      item,
+      key: `markdown-list-item-${item}-${occurrence}`,
+    };
+  });
+
   return (
     <List size="sm" spacing={4}>
-      {items.map((item, index) => (
-        <List.Item key={`${index}-${item.slice(0, 32)}`}>
+      {keyedItems.map(({ item, key }) => (
+        <List.Item key={key}>
           <MarkdownContent content={item} />
         </List.Item>
       ))}

@@ -10,8 +10,8 @@ import {
   Stack,
   Tabs,
   Text,
-  TextInput,
   Textarea,
+  TextInput,
 } from "@mantine/core";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
@@ -23,11 +23,11 @@ import { TicketWorkspacePreviewPanel } from "../../components/TicketWorkspacePre
 import {
   DraftEventResultView,
   DraftQuestionsResultView,
-  MarkdownListItems,
   formatTimestamp,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
+  MarkdownListItems,
   parseDraftEventMeta,
   sessionStatusColor,
   ticketStatusColor,

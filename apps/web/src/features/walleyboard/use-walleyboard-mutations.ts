@@ -1,5 +1,5 @@
-import { useMutation } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   AgentAdapter,
@@ -14,14 +14,10 @@ import type {
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import type {
   ArchiveActionFeedback,
-  DraftsResponse,
   InspectorState,
   ProjectsResponse,
-  RepositoriesResponse,
-  ReviewPackageResponse,
-  SessionResponse,
-  TicketWorkspacePreviewResponse,
   TicketsResponse,
+  TicketWorkspacePreviewResponse,
 } from "./shared.js";
 import {
   deriveRepositoryName,

@@ -13,10 +13,10 @@
     "format": "biome format --write src"
   },
   "dependencies": {
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "typescript": "^5.8.2"
+    "@biomejs/biome": "^2.4.10",
+    "typescript": "^6.0.2"
   }
 }

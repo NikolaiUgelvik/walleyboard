@@ -1,6 +1,5 @@
 import type {
   DraftTicketState,
-  Project,
   ReasoningEffort,
   RepositoryConfig,
   TicketFrontmatter,

@@ -3,7 +3,11 @@ import { extname } from "node:path";
 
 import type { FastifyPluginAsync } from "fastify";
 import { nanoid } from "nanoid";
-
+import type {
+  DraftTicketState,
+  StructuredEvent,
+  UploadDraftArtifactResponse,
+} from "../../../../packages/contracts/src/index.js";
 import {
   confirmDraftInputSchema,
   createDraftInputSchema,
@@ -11,11 +15,6 @@ import {
   refineDraftInputSchema,
   updateDraftInputSchema,
   uploadDraftArtifactInputSchema,
-} from "../../../../packages/contracts/src/index.js";
-import type {
-  DraftTicketState,
-  StructuredEvent,
-  UploadDraftArtifactResponse,
 } from "../../../../packages/contracts/src/index.js";
 
 import { makeCommandAck } from "../lib/command-ack.js";

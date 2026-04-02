@@ -10,16 +10,15 @@ import type {
   StopTicketResult,
 } from "../store.js";
 import { nowIso } from "../time.js";
-import type { EventRepository } from "./event-repository.js";
 import type { ProjectRepository } from "./project-repository.js";
 import type { ReviewRepository } from "./review-repository.js";
 import type { SessionRepository } from "./session-repository.js";
 import {
-  type SqliteStoreContext,
   deriveWorkingBranch,
   formatMarkdownLog,
   hasMeaningfulContent,
   requireValue,
+  type SqliteStoreContext,
 } from "./shared.js";
 import type { TicketRepository } from "./ticket-repository.js";
 
@@ -30,7 +29,6 @@ export class TicketExecutionWorkflowService {
     private readonly tickets: TicketRepository,
     private readonly sessions: SessionRepository,
     private readonly reviews: ReviewRepository,
-    private readonly events: EventRepository,
   ) {}
 
   startTicket(

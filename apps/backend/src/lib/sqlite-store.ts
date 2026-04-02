@@ -79,7 +79,6 @@ export class SqliteStore implements Store {
       this.#tickets,
       this.#sessions,
       this.#reviews,
-      this.#events,
     );
   }
 

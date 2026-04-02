@@ -1,9 +1,9 @@
 import "@mantine/core/styles.css";
 
 import {
-  MantineProvider,
   createTheme,
   localStorageColorSchemeManager,
+  MantineProvider,
 } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
