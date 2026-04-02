@@ -366,7 +366,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.outputPath,
     ];
 
-    appendCodexExecutionModeArgs(args, "plan");
+    if (input.useDockerRuntime) {
+      appendDangerousDockerArgs(args);
+    } else {
+      appendCodexExecutionModeArgs(args, "plan");
+    }
     appendCodexModelArgs(args, {
       model,
       reasoningEffort,
