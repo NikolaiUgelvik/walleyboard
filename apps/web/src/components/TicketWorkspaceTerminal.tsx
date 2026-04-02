@@ -17,13 +17,34 @@ function resolveTerminalSocketUrl(ticketId: number): string {
   return `${base}/tickets/${ticketId}/workspace/terminal`;
 }
 
+function resolveTerminalTheme(colorScheme: "light" | "dark") {
+  return colorScheme === "dark"
+    ? {
+        background: "#10151b",
+        foreground: "#eef2f7",
+        cursor: "#f59e0b",
+        selectionBackground: "rgba(245, 158, 11, 0.28)",
+      }
+    : {
+        background: "#f8f7f4",
+        foreground: "#182230",
+        cursor: "#c2410c",
+        selectionBackground: "rgba(194, 65, 12, 0.18)",
+      };
+}
+
 export function TicketWorkspaceTerminal({
   ticketId,
   worktreePath,
 }: TicketWorkspaceTerminalProps) {
   const { colorScheme } = useMantineColorScheme();
+  const terminalColorScheme = colorScheme === "dark" ? "dark" : "light";
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const terminalThemeRef = useRef(resolveTerminalTheme(terminalColorScheme));
+  const fitAddonRef = useRef<FitAddon | null>(null);
   const [error, setError] = useState<string | null>(null);
+  terminalThemeRef.current = resolveTerminalTheme(terminalColorScheme);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -31,29 +52,19 @@ export function TicketWorkspaceTerminal({
       return;
     }
 
+    setError(null);
     const terminal = new Terminal({
       allowProposedApi: false,
       convertEol: true,
       cursorBlink: true,
       fontFamily: "'IBM Plex Mono', 'SFMono-Regular', monospace",
       fontSize: 13,
-      theme:
-        colorScheme === "dark"
-          ? {
-              background: "#10151b",
-              foreground: "#eef2f7",
-              cursor: "#f59e0b",
-              selectionBackground: "rgba(245, 158, 11, 0.28)",
-            }
-          : {
-              background: "#f8f7f4",
-              foreground: "#182230",
-              cursor: "#c2410c",
-              selectionBackground: "rgba(194, 65, 12, 0.18)",
-            },
+      theme: terminalThemeRef.current,
     });
     const fitAddon = new FitAddon();
     const socket = new WebSocket(resolveTerminalSocketUrl(ticketId));
+    terminalRef.current = terminal;
+    fitAddonRef.current = fitAddon;
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
       if (socket.readyState !== WebSocket.OPEN) {
@@ -147,9 +158,22 @@ export function TicketWorkspaceTerminal({
       resizeObserver.disconnect();
       disposable.dispose();
       socket.close();
+      fitAddonRef.current = null;
+      terminalRef.current = null;
       terminal.dispose();
+      container.replaceChildren();
     };
-  }, [colorScheme, ticketId]);
+  }, [ticketId]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    terminal.options.theme = resolveTerminalTheme(terminalColorScheme);
+    fitAddonRef.current?.fit();
+  }, [terminalColorScheme]);
 
   return (
     <Stack gap="sm" style={{ height: "100%" }}>

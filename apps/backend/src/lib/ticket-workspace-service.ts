@@ -303,7 +303,7 @@ export class TicketWorkspaceService {
       return await existing.startPromise;
     }
     if (existing) {
-      this.stopPreview(input.ticketId);
+      await this.stopPreviewAndWait(input.ticketId);
     }
 
     const runtime: PreviewRuntime = {

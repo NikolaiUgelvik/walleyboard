@@ -159,7 +159,7 @@ function TicketMenu({
   );
 }
 
-function TicketWorkspaceActions({
+export function TicketWorkspaceActions({
   controller,
   ticket,
 }: {

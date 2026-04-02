@@ -324,6 +324,7 @@ Before execution begins, the user should see an approval summary that includes:
 - Ticket cards should expose compact action icons for diff, terminal, preview, and full interpreted activity.
 - The inspector workspace area should collapse to a single high-signal activity summary row that opens the same interpreted activity stream.
 - The preview action should start the ticket dev server when needed, open the preview in a new browser tab, and switch to a stop control while that dev server remains active.
+- The ticket-card terminal action should open a plain worktree shell without take-over or restore-agent controls on that surface.
 - The primary monitoring surface should emphasize:
   - Current session status
   - The latest high-signal agent updates

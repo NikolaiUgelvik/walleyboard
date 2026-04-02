@@ -238,7 +238,7 @@ export function registerTicketReadWorkspaceRoutes(
         return;
       }
 
-      ticketWorkspaceService.stopPreview(ticket.id);
+      await ticketWorkspaceService.stopPreviewAndWait(ticket.id);
       reply.send({
         preview: ticketWorkspaceService.getPreview(ticket.id),
       });

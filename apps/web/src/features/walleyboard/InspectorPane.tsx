@@ -36,6 +36,41 @@ import {
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
+export function TicketWorkspaceSummaryRow({
+  activitySummary,
+  onOpenActivityStream,
+}: {
+  activitySummary: string | null;
+  onOpenActivityStream: () => void;
+}) {
+  return (
+    <Stack gap="xs">
+      <Text fw={700}>Ticket workspace</Text>
+      <UnstyledButton
+        aria-label="Open activity stream"
+        className="ticket-workspace-summary-row"
+        onClick={onOpenActivityStream}
+      >
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Stack gap={4} style={{ flex: 1 }}>
+            <Text fw={600}>Activity summary</Text>
+            <MarkdownContent
+              className="markdown-muted markdown-small"
+              content={
+                activitySummary ??
+                "No interpreted activity is available for this session yet."
+              }
+            />
+          </Stack>
+          <Badge variant="light" color="blue">
+            Open stream
+          </Badge>
+        </Group>
+      </UnstyledButton>
+    </Stack>
+  );
+}
+
 function DraftEditorFields({
   controller,
 }: {
@@ -876,42 +911,19 @@ export function InspectorPane({
                   ) : null}
 
                   {controller.selectedSessionTicket ? (
-                    <Stack gap="xs">
-                      <Text fw={700}>Ticket workspace</Text>
-                      <UnstyledButton
-                        className="ticket-workspace-summary-row"
-                        onClick={() => {
-                          if (!controller.selectedSessionTicket) {
-                            return;
-                          }
+                    <TicketWorkspaceSummaryRow
+                      activitySummary={activitySummary}
+                      onOpenActivityStream={() => {
+                        if (!controller.selectedSessionTicket) {
+                          return;
+                        }
 
-                          controller.openTicketWorkspaceModal(
-                            controller.selectedSessionTicket,
-                            "activity",
-                          );
-                        }}
-                      >
-                        <Group
-                          justify="space-between"
-                          align="flex-start"
-                          wrap="nowrap"
-                        >
-                          <Stack gap={4} style={{ flex: 1 }}>
-                            <Text fw={600}>Activity summary</Text>
-                            <MarkdownContent
-                              className="markdown-muted markdown-small"
-                              content={
-                                activitySummary ??
-                                "No interpreted activity is available for this session yet."
-                              }
-                            />
-                          </Stack>
-                          <Badge variant="light" color="blue">
-                            Open stream
-                          </Badge>
-                        </Group>
-                      </UnstyledButton>
-                    </Stack>
+                        controller.openTicketWorkspaceModal(
+                          controller.selectedSessionTicket,
+                          "activity",
+                        );
+                      }}
+                    />
                   ) : null}
                 </Stack>
               </SectionCard>
