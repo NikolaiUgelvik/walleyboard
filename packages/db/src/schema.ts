@@ -75,6 +75,7 @@ export const executionSessionsTable = sqliteTable("execution_sessions", {
   projectId: text("project_id").notNull(),
   repoId: text("repo_id").notNull(),
   worktreePath: text("worktree_path"),
+  codexSessionId: text("codex_session_id"),
   status: text("status").notNull(),
   planningEnabled: integer("planning_enabled", { mode: "boolean" }).notNull(),
   planStatus: text("plan_status").notNull(),

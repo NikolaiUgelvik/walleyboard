@@ -289,6 +289,8 @@ function mapExecutionSession(row: Record<string, unknown>): ExecutionSession {
     repo_id: String(row.repo_id),
     worktree_path:
       row.worktree_path === null ? null : String(row.worktree_path),
+    codex_session_id:
+      row.codex_session_id === null ? null : String(row.codex_session_id),
     status: String(row.status) as ExecutionSession["status"],
     planning_enabled: Boolean(row.planning_enabled),
     plan_status: String(row.plan_status) as ExecutionPlanStatus,
@@ -443,6 +445,7 @@ export class SqliteStore implements Store {
         project_id TEXT NOT NULL,
         repo_id TEXT NOT NULL,
         worktree_path TEXT,
+        codex_session_id TEXT,
         status TEXT NOT NULL,
         planning_enabled INTEGER NOT NULL,
         plan_status TEXT NOT NULL DEFAULT 'not_requested',
@@ -513,6 +516,7 @@ export class SqliteStore implements Store {
     `);
 
     this.#ensureColumn("execution_sessions", "worktree_path", "TEXT");
+    this.#ensureColumn("execution_sessions", "codex_session_id", "TEXT");
     this.#ensureColumn(
       "execution_sessions",
       "plan_status",
@@ -1348,10 +1352,10 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO execution_sessions (
-            id, ticket_id, project_id, repo_id, worktree_path, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
+            id, ticket_id, project_id, repo_id, worktree_path, codex_session_id, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
             latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
             started_at, completed_at, last_heartbeat_at, last_summary
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -1360,6 +1364,7 @@ export class SqliteStore implements Store {
         ticket.project,
         ticket.repo,
         runtime.worktreePath,
+        null,
         shouldQueue ? "queued" : "awaiting_input",
         planningEnabled ? 1 : 0,
         planStatus,
@@ -2019,6 +2024,32 @@ export class SqliteStore implements Store {
         lastSummary ?? existingSession.last_summary,
         sessionId,
       );
+
+    return this.getSession(sessionId);
+  }
+
+  updateSessionCodexSessionId(
+    sessionId: string,
+    codexSessionId: string,
+  ): ExecutionSession | undefined {
+    const existingSession = this.getSession(sessionId);
+    if (!existingSession) {
+      return undefined;
+    }
+
+    if (existingSession.codex_session_id === codexSessionId) {
+      return existingSession;
+    }
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET codex_session_id = ?, last_heartbeat_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(codexSessionId, nowIso(), sessionId);
 
     return this.getSession(sessionId);
   }

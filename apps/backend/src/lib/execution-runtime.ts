@@ -300,6 +300,17 @@ function appendCodexModelArgs(
   }
 }
 
+function appendCodexExecutionModeArgs(
+  args: string[],
+  executionMode: ExecutionMode,
+): void {
+  const sandboxMode =
+    executionMode === "plan" ? "read-only" : "workspace-write";
+
+  args.push("--config", 'approval_policy="on-request"');
+  args.push("--config", `sandbox_mode="${sandboxMode}"`);
+}
+
 function buildCodexImplementationPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
@@ -613,6 +624,19 @@ function formatCodexExitReason(
 function summarizeCodexJsonLine(line: string): string {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
+    const payload =
+      parsed.payload && typeof parsed.payload === "object"
+        ? (parsed.payload as Record<string, unknown>)
+        : null;
+
+    if (
+      parsed.type === "session_meta" &&
+      payload &&
+      typeof payload.id === "string"
+    ) {
+      return `[codex session] ${payload.id}`;
+    }
+
     const eventType =
       typeof parsed.type === "string"
         ? parsed.type
@@ -636,6 +660,44 @@ function summarizeCodexJsonLine(line: string): string {
   } catch {
     return `[codex raw] ${truncate(line)}`;
   }
+}
+
+function extractCodexSessionIdFromJsonLine(line: string): string | null {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    const payload =
+      parsed.payload && typeof parsed.payload === "object"
+        ? (parsed.payload as Record<string, unknown>)
+        : null;
+
+    if (
+      parsed.type === "session_meta" &&
+      payload &&
+      typeof payload.id === "string"
+    ) {
+      return payload.id;
+    }
+
+    if (typeof parsed.session_id === "string") {
+      return parsed.session_id;
+    }
+
+    if (payload && typeof payload.session_id === "string") {
+      return payload.session_id;
+    }
+
+    const thread =
+      payload?.thread && typeof payload.thread === "object"
+        ? (payload.thread as Record<string, unknown>)
+        : null;
+    if (thread && typeof thread.id === "string") {
+      return thread.id;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function streamLines(
@@ -1410,10 +1472,14 @@ export class ExecutionRuntime {
       ticket.id,
       session.id,
     );
-    const args =
-      executionMode === "plan"
-        ? ["exec", "--json", "--full-auto", "--sandbox", "read-only"]
-        : ["exec", "--json", "--full-auto"];
+    const codexSessionId = hasMeaningfulContent(session.codex_session_id)
+      ? session.codex_session_id
+      : null;
+    const shouldResumeCodex = codexSessionId !== null;
+    const args = shouldResumeCodex
+      ? ["exec", "resume", "--json"]
+      : ["exec", "--json"];
+    appendCodexExecutionModeArgs(args, executionMode);
     args.push("--output-last-message", outputSummaryPath);
     const model = normalizeOptionalModel(project.ticket_work_model);
     const reasoningEffort = normalizeOptionalReasoningEffort(
@@ -1423,6 +1489,9 @@ export class ExecutionRuntime {
       model,
       reasoningEffort,
     });
+    if (codexSessionId) {
+      args.push(codexSessionId);
+    }
     args.push(prompt);
 
     const ptyEnv = buildProcessEnv();
@@ -1469,6 +1538,13 @@ export class ExecutionRuntime {
       attemptId,
       `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
     );
+    if (shouldResumeCodex) {
+      this.#log(
+        session.id,
+        attemptId,
+        `Resuming Codex session: ${codexSessionId}`,
+      );
+    }
     if (model) {
       this.#log(session.id, attemptId, `Model override: ${model}`);
     }
@@ -1510,6 +1586,36 @@ export class ExecutionRuntime {
     }
 
     let pendingBuffer = "";
+    let activeCodexSessionId = codexSessionId;
+
+    const persistCodexSessionId = (line: string) => {
+      const discoveredSessionId = extractCodexSessionIdFromJsonLine(line);
+      if (!hasMeaningfulContent(discoveredSessionId)) {
+        return;
+      }
+      if (discoveredSessionId === activeCodexSessionId) {
+        return;
+      }
+
+      const previousSessionId = activeCodexSessionId;
+      activeCodexSessionId = discoveredSessionId;
+
+      const updatedSession = this.#store.updateSessionCodexSessionId(
+        session.id,
+        discoveredSessionId,
+      );
+      if (updatedSession) {
+        this.#emitSessionUpdated(updatedSession);
+      }
+
+      this.#log(
+        session.id,
+        attemptId,
+        previousSessionId
+          ? `Codex session updated: ${previousSessionId} -> ${discoveredSessionId}`
+          : `Codex session attached: ${discoveredSessionId}`,
+      );
+    };
 
     child.onData((chunk) => {
       pendingBuffer += chunk.replace(/\r\n/g, "\n");
@@ -1518,6 +1624,7 @@ export class ExecutionRuntime {
         const newlineIndex = pendingBuffer.indexOf("\n");
         const line = pendingBuffer.slice(0, newlineIndex);
         pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
+        persistCodexSessionId(line);
         this.#log(session.id, attemptId, summarizeCodexJsonLine(line));
       }
     });
@@ -1532,6 +1639,7 @@ export class ExecutionRuntime {
       }
 
       if (pendingBuffer.trim().length > 0) {
+        persistCodexSessionId(pendingBuffer);
         this.#log(session.id, attemptId, summarizeCodexJsonLine(pendingBuffer));
         pendingBuffer = "";
       }

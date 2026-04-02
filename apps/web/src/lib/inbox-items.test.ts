@@ -60,6 +60,7 @@ function createSession(
     project_id: "project-1",
     repo_id: "repo-1",
     worktree_path: "/tmp/worktree-1",
+    codex_session_id: null,
     status: "awaiting_input",
     planning_enabled: false,
     plan_status: "not_requested",

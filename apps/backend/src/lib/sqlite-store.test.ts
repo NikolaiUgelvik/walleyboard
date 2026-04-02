@@ -300,6 +300,55 @@ test("planning sessions keep plan approval state across retries", () => {
   }
 });
 
+test("codex session ids persist across resume and reload", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-codex-session-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Codex Session Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started codex session ticket"],
+    });
+
+    assert.equal(started.session.codex_session_id, null);
+
+    const codexSessionId = "019d4cd5-78db-7c22-b9d7-bb251d30a1f1";
+    const linkedSession = store.updateSessionCodexSessionId(
+      started.session.id,
+      codexSessionId,
+    );
+    assert.equal(linkedSession?.codex_session_id, codexSessionId);
+
+    store.updateSessionStatus(
+      started.session.id,
+      "interrupted",
+      "Paused so Codex can resume on the same thread.",
+    );
+
+    const resumed = store.resumeTicket(ticket.id, "continue from the same run");
+    assert.equal(resumed.session.codex_session_id, codexSessionId);
+
+    const reopenedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reopenedStore.getSession(started.session.id)?.codex_session_id,
+      codexSessionId,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("archived tickets stay in storage but leave active project lists", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-archive-"));
   const databasePath = join(tempDir, "orchestrator.sqlite");

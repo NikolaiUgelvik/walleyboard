@@ -154,6 +154,10 @@ export interface Store {
     status: ExecutionSessionStatus,
     lastSummary?: string | null,
   ): ExecutionSession | undefined;
+  updateSessionCodexSessionId(
+    sessionId: string,
+    codexSessionId: string,
+  ): ExecutionSession | undefined;
   claimNextQueuedSession(projectId: string): ExecutionSession | undefined;
   completeSession(
     sessionId: string,

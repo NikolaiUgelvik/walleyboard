@@ -176,6 +176,7 @@ export const executionSessionSchema = z.object({
   project_id: opaqueIdSchema,
   repo_id: opaqueIdSchema,
   worktree_path: absolutePathSchema.nullable(),
+  codex_session_id: opaqueIdSchema.nullable(),
   status: executionSessionStatusSchema,
   planning_enabled: z.boolean(),
   plan_status: executionPlanStatusSchema,
