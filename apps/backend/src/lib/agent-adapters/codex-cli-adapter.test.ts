@@ -110,6 +110,49 @@ function createReviewPackage(): ReviewPackage {
   };
 }
 
+test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspace", () => {
+  const adapter = new CodexCliAdapter();
+  const session = createSession();
+
+  const run = adapter.buildExecutionRun({
+    executionMode: "implementation",
+    extraInstructions: [],
+    outputPath: "/tmp/spacegame-worktree/.walleyboard/session-1-summary.txt",
+    planSummary: null,
+    project: createProject(),
+    repository: createRepository(),
+    session,
+    ticket: createTicket(),
+    useDockerRuntime: true,
+  });
+
+  const outputFlagIndex = run.args.indexOf("--output-last-message");
+  assert.notEqual(outputFlagIndex, -1);
+  assert.equal(
+    run.args[outputFlagIndex + 1],
+    "/workspace/.walleyboard/session-1-summary.txt",
+  );
+  assert.equal(run.outputPath, "/workspace/.walleyboard/session-1-summary.txt");
+});
+
+test("CodexCliAdapter.buildExecutionRun rejects Docker output paths outside the worktree", () => {
+  const adapter = new CodexCliAdapter();
+
+  assert.throws(() =>
+    adapter.buildExecutionRun({
+      executionMode: "implementation",
+      extraInstructions: [],
+      outputPath: "/tmp/outside-summary.txt",
+      planSummary: null,
+      project: createProject(),
+      repository: createRepository(),
+      session: createSession(),
+      ticket: createTicket(),
+      useDockerRuntime: true,
+    }),
+  );
+});
+
 test("CodexCliAdapter.buildReviewRun uses read-only sandbox on host", () => {
   const adapter = new CodexCliAdapter();
 
@@ -135,18 +178,19 @@ test("CodexCliAdapter.buildReviewRun uses read-only sandbox on host", () => {
 
 test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () => {
   const adapter = new CodexCliAdapter();
+  const session = createSession();
 
   const run = adapter.buildReviewRun({
-    outputPath: "/tmp/review.json",
+    outputPath: "/tmp/spacegame-worktree/.walleyboard/review.json",
     project: createProject(),
     repository: createRepository(),
     reviewPackage: createReviewPackage(),
-    session: createSession(),
+    session,
     ticket: createTicket(),
     useDockerRuntime: true,
   });
 
-  assert.ok(run.args.includes("--full-auto"));
+  assert.equal(run.args.includes("--full-auto"), false);
   assert.ok(run.args.includes("--dangerously-bypass-approvals-and-sandbox"));
   assert.equal(
     run.args.some((value) => value.includes('approval_policy="')),
@@ -156,5 +200,12 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
     run.args.some((value) => value.includes('sandbox_mode="')),
     false,
   );
+  const outputFlagIndex = run.args.indexOf("--output-last-message");
+  assert.notEqual(outputFlagIndex, -1);
+  assert.equal(
+    run.args[outputFlagIndex + 1],
+    "/workspace/.walleyboard/review.json",
+  );
+  assert.equal(run.outputPath, "/workspace/.walleyboard/review.json");
   assert.ok(run.dockerSpec);
 });

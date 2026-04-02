@@ -1,9 +1,11 @@
+import { join, relative } from "node:path";
 import type { z } from "zod";
 
 import type {
   Project,
   ReasoningEffort,
 } from "../../../../../packages/contracts/src/index.js";
+import { dockerWorkspacePath } from "../docker-runtime.js";
 import {
   hasMeaningfulContent,
   normalizeOptionalModel,
@@ -66,6 +68,43 @@ function appendCodexExecutionModeArgs(
 
 function appendDangerousDockerArgs(args: string[]): void {
   args.push("--dangerously-bypass-approvals-and-sandbox");
+}
+
+function resolveDockerOutputPath(
+  outputPath: string,
+  worktreePath: string,
+): string {
+  const relativeOutputPath = relative(worktreePath, outputPath);
+  if (
+    relativeOutputPath.length === 0 ||
+    relativeOutputPath.startsWith("..") ||
+    relativeOutputPath === "." ||
+    relativeOutputPath.includes("../")
+  ) {
+    throw new Error(
+      "Docker-backed Codex runs must write output inside the mounted worktree.",
+    );
+  }
+
+  return join(dockerWorkspacePath, relativeOutputPath);
+}
+
+function resolveAgentOutputPath(input: {
+  outputPath: string;
+  useDockerRuntime: boolean;
+  worktreePath: string | null;
+}): string {
+  if (!input.useDockerRuntime) {
+    return input.outputPath;
+  }
+
+  if (!input.worktreePath) {
+    throw new Error(
+      "Docker-backed Codex runs require a prepared worktree path.",
+    );
+  }
+
+  return resolveDockerOutputPath(input.outputPath, input.worktreePath);
 }
 
 function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
@@ -274,6 +313,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
+    const outputPath = resolveAgentOutputPath({
+      outputPath: input.outputPath,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath: input.session.worktree_path,
+    });
     const args = resumeSessionRef
       ? ["exec", "resume", "--json"]
       : ["exec", "--json"];
@@ -284,7 +328,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       appendCodexExecutionModeArgs(args, input.executionMode);
     }
 
-    args.push("--output-last-message", input.outputPath);
+    args.push("--output-last-message", outputPath);
     appendCodexModelArgs(args, {
       model,
       reasoningEffort,
@@ -312,7 +356,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
     return {
       command: "codex",
       args,
-      outputPath: input.outputPath,
+      outputPath,
       dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };
   }
@@ -322,7 +366,12 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
-    const args = ["exec", "--json", "--output-last-message", input.outputPath];
+    const outputPath = resolveAgentOutputPath({
+      outputPath: input.outputPath,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath: input.session.worktree_path,
+    });
+    const args = ["exec", "--json", "--output-last-message", outputPath];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
@@ -348,7 +397,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
     return {
       command: "codex",
       args,
-      outputPath: input.outputPath,
+      outputPath,
       dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };
   }
@@ -358,17 +407,17 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
-    const args = [
-      "exec",
-      "--json",
-      "--full-auto",
-      "--output-last-message",
-      input.outputPath,
-    ];
+    const outputPath = resolveAgentOutputPath({
+      outputPath: input.outputPath,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath: input.session.worktree_path,
+    });
+    const args = ["exec", "--json", "--output-last-message", outputPath];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
     } else {
+      args.push("--full-auto");
       appendCodexExecutionModeArgs(args, "plan");
     }
     appendCodexModelArgs(args, {
@@ -386,7 +435,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
     return {
       command: "codex",
       args,
-      outputPath: input.outputPath,
+      outputPath,
       dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };
   }
