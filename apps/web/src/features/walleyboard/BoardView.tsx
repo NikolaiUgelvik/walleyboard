@@ -118,7 +118,7 @@ export function BoardView({
 }) {
   return (
     <Box className="walleyboard-main">
-      <Stack gap="md">
+      <Stack className="workbench-shell" gap="md">
         <Box className="workbench-header">
           <Group justify="space-between" align="flex-start">
             <Stack gap={6}>
