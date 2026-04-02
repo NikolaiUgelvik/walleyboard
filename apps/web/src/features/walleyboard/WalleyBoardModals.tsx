@@ -141,6 +141,9 @@ export function WalleyBoardModals({
                     controller.setProjectOptionsFormError(null);
                     controller.updateProjectMutation.reset();
                     controller.setProjectOptionsAgentAdapter(value);
+                    if (value === "claude-code") {
+                      controller.setProjectOptionsExecutionBackend("host");
+                    }
                   }}
                 />
               </Stack>
@@ -149,7 +152,14 @@ export function WalleyBoardModals({
                 <Text fw={600}>Execution backend</Text>
                 <SegmentedControl
                   data={executionBackendOptions}
-                  value={controller.projectOptionsExecutionBackend}
+                  disabled={
+                    controller.projectOptionsAgentAdapter === "claude-code"
+                  }
+                  value={
+                    controller.projectOptionsAgentAdapter === "claude-code"
+                      ? "host"
+                      : controller.projectOptionsExecutionBackend
+                  }
                   onChange={(value) => {
                     if (value !== "host" && value !== "docker") {
                       return;
@@ -160,11 +170,17 @@ export function WalleyBoardModals({
                     controller.setProjectOptionsExecutionBackend(value);
                   }}
                 />
-                <Text size="sm" c="dimmed">
-                  Docker runs ticket-scoped agent work inside a managed Ubuntu
-                  container. Manual terminal takeover and validation still run
-                  on the host in this first version.
-                </Text>
+                {controller.projectOptionsAgentAdapter === "claude-code" ? (
+                  <Text size="sm" c="dimmed">
+                    Docker execution is not yet supported for Claude Code.
+                  </Text>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    Docker runs ticket-scoped agent work inside a managed Ubuntu
+                    container. Manual terminal takeover and validation still run
+                    on the host in this first version.
+                  </Text>
+                )}
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
                     <Text size="sm" c="dimmed">

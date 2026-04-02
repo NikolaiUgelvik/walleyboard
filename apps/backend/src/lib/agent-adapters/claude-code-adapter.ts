@@ -1,23 +1,20 @@
 import type { z } from "zod";
 
-import type {
-  Project,
-  RepositoryConfig,
-  TicketFrontmatter,
-} from "../../../../../packages/contracts/src/index.js";
+import type { Project } from "../../../../../packages/contracts/src/index.js";
 import {
-  appendContextSections,
-  appendCriteriaSections,
-  appendMarkdownSection,
   hasMeaningfulContent,
   normalizeOptionalModel,
   truncate,
 } from "../execution-runtime/helpers.js";
-import type { PromptContextSection } from "../execution-runtime/types.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
 } from "./shared-draft-prompts.js";
+import {
+  buildImplementationPrompt,
+  buildMergeConflictPrompt,
+  buildPlanPrompt,
+} from "./shared-execution-prompts.js";
 import type {
   AgentCliAdapter,
   DraftRunInput,
@@ -27,18 +24,53 @@ import type {
   PreparedAgentRun,
 } from "./types.js";
 
-// Claude Code read-only tools allowlist for plan mode.
-const planModeAllowedTools =
-  "Read,Glob,Grep,Bash(git diff:git log:git status:git branch:ls:cat:head:tail:find:wc),Agent";
+// Claude Code permission modes. Every run builder must use one of these to
+// set permission args. This is the single place where permission policy is
+// decided, so a new run type cannot accidentally omit it.
+type ClaudePermissionMode = "read-only" | "full-access";
+
+const fullAccessAllowedTools =
+  "Read,Write,Edit,Glob,Grep,Bash,Agent,NotebookEdit";
+
+function appendClaudePermissionArgs(
+  args: string[],
+  mode: ClaudePermissionMode,
+): void {
+  switch (mode) {
+    case "read-only":
+      args.push("--permission-mode", "plan");
+      break;
+    case "full-access":
+      args.push("--permission-mode", "dontAsk");
+      args.push("--allowedTools", fullAccessAllowedTools);
+      break;
+  }
+}
+
+/**
+ * Strip ANSI escape sequences from a string. PTY output often contains
+ * color codes, cursor movement, and other terminal control sequences
+ * that must be removed before attempting JSON.parse.
+ */
+export function stripAnsi(value: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping requires matching control characters.
+  return value.replace(
+    /\x1b\[[0-9;?]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()#][A-Za-z0-9]|\x1b[A-Za-z0-9=><]|\x9b[0-9;?]*[A-Za-z~]/g,
+    "",
+  );
+}
 
 /**
  * Escape a string for safe embedding inside single quotes in a POSIX shell
  * command. Every single-quote in the value is replaced with the sequence
  * '\'' (end current quote, insert escaped literal single-quote, resume
  * quoting).
+ *
+ * NUL bytes are stripped as a defense-in-depth measure since they can cause
+ * argument truncation in C-based programs (bash included).
  */
-function shellEscape(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'";
+export function shellEscape(value: string): string {
+  return "'" + value.replace(/\0/g, "").replace(/'/g, "'\\''") + "'";
 }
 
 /**
@@ -53,10 +85,9 @@ function shellEscape(value: string): string {
  * with PTY (ANSI escape codes) and stream-json (capturing the entire
  * transcript instead of just the result).
  *
- * Uses `bash` (not `sh`) to guarantee `pipefail` support on Linux hosts
- * where `/bin/sh` may be `dash`.
+ * Uses `bash` for broad compatibility across Linux distributions.
  */
-function buildDraftShellCommand(
+export function buildDraftShellCommand(
   claudeArgs: string[],
   outputPath: string,
 ): { command: string; args: string[] } {
@@ -71,136 +102,28 @@ function buildDraftShellCommand(
   };
 }
 
-function appendClaudeCodeModelArgs(
-  args: string[],
-  model: string | null,
-): void {
+function appendClaudeCodeModelArgs(args: string[], model: string | null): void {
   if (model) {
     args.push("--model", model);
   }
 }
 
-function buildClaudeCodeImplementationPrompt(
-  ticket: TicketFrontmatter,
-  repository: RepositoryConfig,
-  extraInstructions: PromptContextSection[],
-  planSummary: string | null,
-): string {
-  const sections: string[] = [
-    `Implement ticket #${ticket.id} in the repository ${repository.name}.`,
-    "",
-  ];
-
-  appendMarkdownSection(sections, "Title", ticket.title);
-  sections.push("");
-  appendMarkdownSection(sections, "Description", ticket.description);
-  sections.push("");
-  appendCriteriaSections(
-    sections,
-    ticket.acceptance_criteria,
-    "Preserve the intended user workflow and keep the change small and focused.",
-  );
-  sections.push(
-    "",
-    "Execution rules:",
-    "- Make the smallest complete change that satisfies the ticket.",
-    "- Stay inside this repository worktree.",
-    "- Run lightweight validation when it is obvious and inexpensive.",
-    "- Create a git commit before finishing if you made code changes.",
-    "- End with a concise summary that includes changed files, validation run, and remaining risks.",
-  );
-
-  if (hasMeaningfulContent(planSummary)) {
-    sections.push("");
-    appendMarkdownSection(sections, "Approved plan", planSummary);
+/**
+ * Strip leading/trailing markdown code fences from a string, if present.
+ * Returns the inner content trimmed.
+ */
+function stripMarkdownFences(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("```")) {
+    return trimmed;
   }
-
-  appendContextSections(sections, "Additional context", extraInstructions);
-  return sections.join("\n");
+  return trimmed
+    .replace(/^```[\w-]*\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 }
 
-function buildClaudeCodePlanPrompt(
-  ticket: TicketFrontmatter,
-  repository: RepositoryConfig,
-  extraInstructions: PromptContextSection[],
-): string {
-  const sections: string[] = [
-    `Plan ticket #${ticket.id} in the repository ${repository.name}.`,
-    "",
-  ];
-
-  appendMarkdownSection(sections, "Title", ticket.title);
-  appendMarkdownSection(sections, "Description", ticket.description);
-  appendCriteriaSections(
-    sections,
-    ticket.acceptance_criteria,
-    "Preserve the intended user workflow and keep the change small and focused.",
-  );
-  sections.push(
-    "",
-    "Execution rules:",
-    "- Stay inside this repository worktree.",
-    "- Read files and inspect the repository as needed.",
-    "- Do not modify files, create commits, or run write operations.",
-    "- Return a concise implementation plan only.",
-    "- End with a short plan summary that the user can approve or revise.",
-  );
-  appendContextSections(sections, "Additional context", extraInstructions);
-  return sections.join("\n");
-}
-
-function buildClaudeCodeMergeConflictPrompt(input: {
-  ticket: TicketFrontmatter;
-  repository: RepositoryConfig;
-  targetBranch: string;
-  stage: "rebase" | "merge";
-  conflictedFiles: string[];
-  failureMessage: string;
-}): string {
-  const sections: string[] = [
-    `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository ${input.repository.name}.`,
-    "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
-    "",
-  ];
-
-  appendMarkdownSection(sections, "Title", input.ticket.title);
-  sections.push("");
-  appendMarkdownSection(sections, "Description", input.ticket.description);
-  sections.push("");
-  appendCriteriaSections(
-    sections,
-    input.ticket.acceptance_criteria,
-    "Preserve the ticket intent while resolving the git conflicts.",
-  );
-  sections.push("");
-  appendMarkdownSection(sections, "Target branch", input.targetBranch);
-  sections.push("");
-  appendMarkdownSection(sections, "Conflict stage", input.stage);
-  sections.push("");
-  appendMarkdownSection(
-    sections,
-    "Conflicted files",
-    input.conflictedFiles.length > 0
-      ? input.conflictedFiles.join("\n")
-      : "Unknown",
-  );
-  sections.push("");
-  appendMarkdownSection(sections, "Git failure", input.failureMessage);
-  sections.push(
-    "",
-    "Requirements:",
-    "- Stay inside this repository worktree.",
-    "- Make the smallest safe conflict resolution that keeps the ticket intent and the latest target-branch behavior.",
-    "- If a rebase is in progress, resolve conflicts, stage the files, and run `git rebase --continue` until the rebase finishes.",
-    "- If a merge is in progress, resolve conflicts, stage the files, and finish the merge.",
-    "- Do not abort the rebase or merge unless it is impossible to resolve safely.",
-    "- Do not open a PR or change ticket metadata.",
-    "- End with a concise summary stating whether the git operation finished cleanly.",
-  );
-  return sections.join("\n");
-}
-
-function parseClaudeCodeJsonResult<T>(
+export function parseClaudeCodeJsonResult<T>(
   rawOutput: string,
   schema: z.ZodType<T>,
 ): T {
@@ -217,20 +140,21 @@ function parseClaudeCodeJsonResult<T>(
   try {
     const wrapper = JSON.parse(trimmed) as Record<string, unknown>;
     if (typeof wrapper.result === "string") {
-      candidates.push(wrapper.result.trim());
+      const resultText = wrapper.result.trim();
+      candidates.push(resultText);
+      // Also try stripping markdown fences from the result field.
+      const unfenced = stripMarkdownFences(resultText);
+      if (unfenced !== resultText) {
+        candidates.push(unfenced);
+      }
     }
   } catch {
     // Not a wrapper object - try other candidates.
   }
 
-  // Strip markdown code fences if present.
+  // Strip markdown code fences if present on the outer input.
   if (trimmed.startsWith("```")) {
-    candidates.push(
-      trimmed
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```$/i, "")
-        .trim(),
-    );
+    candidates.push(stripMarkdownFences(trimmed));
   }
 
   // For stream-json output, try extracting the last result line.
@@ -246,7 +170,13 @@ function parseClaudeCodeJsonResult<T>(
     try {
       const parsed = JSON.parse(lineTrimmed) as Record<string, unknown>;
       if (parsed.type === "result" && typeof parsed.result === "string") {
-        candidates.push(parsed.result.trim());
+        const resultText = parsed.result.trim();
+        candidates.push(resultText);
+        // Also try stripping markdown fences from the NDJSON result.
+        const unfenced = stripMarkdownFences(resultText);
+        if (unfenced !== resultText) {
+          candidates.push(unfenced);
+        }
       }
     } catch {
       // Not a JSON line - skip.
@@ -264,7 +194,7 @@ function parseClaudeCodeJsonResult<T>(
   throw new Error("Claude Code did not return valid JSON output.");
 }
 
-function formatClaudeCodeExitReason(
+export function formatClaudeCodeExitReason(
   exitCode: number | null,
   signal: NodeJS.Signals | null,
   rawOutput: string,
@@ -278,10 +208,10 @@ function formatClaudeCodeExitReason(
   }.${summary}`;
 }
 
-function interpretClaudeCodeStreamJsonLine(
+export function interpretClaudeCodeStreamJsonLine(
   line: string,
 ): InterpretedAdapterLine {
-  const normalized = line.trim();
+  const normalized = stripAnsi(line.trim());
   if (normalized.length === 0) {
     return {
       logLine: "",
@@ -291,8 +221,17 @@ function interpretClaudeCodeStreamJsonLine(
   try {
     const parsed = JSON.parse(normalized) as Record<string, unknown>;
 
-    const eventType =
-      typeof parsed.type === "string" ? parsed.type : "event";
+    // Extract session_id from any event that carries it.
+    const sessionRef =
+      typeof parsed.session_id === "string" ? parsed.session_id : undefined;
+
+    // Helper to attach sessionRef only when present (exactOptionalPropertyTypes
+    // forbids assigning undefined to an optional property).
+    const withSession = (
+      base: InterpretedAdapterLine,
+    ): InterpretedAdapterLine => (sessionRef ? { ...base, sessionRef } : base);
+
+    const eventType = typeof parsed.type === "string" ? parsed.type : "event";
 
     // Handle result events.
     if (eventType === "result") {
@@ -304,9 +243,13 @@ function interpretClaudeCodeStreamJsonLine(
         typeof parsed.cost_usd === "number"
           ? ` (cost: $${parsed.cost_usd.toFixed(4)})`
           : "";
-      return {
+      const base: InterpretedAdapterLine = {
         logLine: `[claude-code result] ${truncate(resultText)}${costSuffix}`,
       };
+      if (typeof parsed.result === "string") {
+        base.outputContent = parsed.result;
+      }
+      return withSession(base);
     }
 
     // Handle assistant messages.
@@ -315,9 +258,9 @@ function interpretClaudeCodeStreamJsonLine(
       if (message && typeof message === "object") {
         const messageRecord = message as Record<string, unknown>;
         if (typeof messageRecord.content === "string") {
-          return {
+          return withSession({
             logLine: `[claude-code assistant] ${truncate(messageRecord.content)}`,
-          };
+          });
         }
 
         // Content can be an array of content blocks.
@@ -332,22 +275,22 @@ function interpretClaudeCodeStreamJsonLine(
             .map((block) => String(block.text ?? ""))
             .filter((text) => text.length > 0);
           if (textParts.length > 0) {
-            return {
+            return withSession({
               logLine: `[claude-code assistant] ${truncate(textParts.join(" "))}`,
-            };
+            });
           }
         }
       }
 
       if (typeof parsed.message === "string") {
-        return {
+        return withSession({
           logLine: `[claude-code assistant] ${truncate(parsed.message)}`,
-        };
+        });
       }
 
-      return {
+      return withSession({
         logLine: `[claude-code assistant] ${truncate(JSON.stringify(parsed))}`,
-      };
+      });
     }
 
     // Handle system messages.
@@ -356,9 +299,9 @@ function interpretClaudeCodeStreamJsonLine(
         typeof parsed.message === "string"
           ? parsed.message
           : JSON.stringify(parsed);
-      return {
+      return withSession({
         logLine: `[claude-code system] ${truncate(text)}`,
-      };
+      });
     }
 
     // Generic fallback for other event types.
@@ -370,12 +313,12 @@ function interpretClaudeCodeStreamJsonLine(
           : typeof parsed.output === "string"
             ? parsed.output
             : JSON.stringify(parsed);
-    return {
+    return withSession({
       logLine: `[claude-code ${eventType}] ${truncate(text)}`,
-    };
+    });
   } catch {
     return {
-      logLine: `[claude-code raw] ${truncate(line)}`,
+      logLine: `[claude-code raw] ${truncate(normalized)}`,
     };
   }
 }
@@ -413,8 +356,8 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
           ),
       "--output-format",
       "json",
-      "--dangerously-skip-permissions",
     ];
+    appendClaudePermissionArgs(claudeArgs, "read-only");
 
     appendClaudeCodeModelArgs(claudeArgs, model);
 
@@ -439,27 +382,31 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     const { model } = this.resolveModelSelection(input.project, "ticket");
     const prompt =
       input.executionMode === "plan"
-        ? buildClaudeCodePlanPrompt(
+        ? buildPlanPrompt(
             input.ticket,
             input.repository,
             input.extraInstructions,
           )
-        : buildClaudeCodeImplementationPrompt(
+        : buildImplementationPrompt(
             input.ticket,
             input.repository,
             input.extraInstructions,
             input.planSummary,
           );
 
-    const args = ["-p", prompt, "--output-format", "stream-json"];
+    const resumeRef = hasMeaningfulContent(input.session.adapter_session_ref)
+      ? input.session.adapter_session_ref
+      : null;
 
-    // Both plan and implementation modes need --dangerously-skip-permissions
-    // for non-interactive (PTY) execution. Plan mode additionally restricts
-    // available tools via --allowedTools.
-    args.push("--dangerously-skip-permissions");
-    if (input.executionMode === "plan") {
-      args.push("--allowedTools", planModeAllowedTools);
+    const args: string[] = [];
+    if (resumeRef) {
+      args.push("--resume", resumeRef);
     }
+    args.push("-p", prompt, "--output-format", "stream-json");
+    appendClaudePermissionArgs(
+      args,
+      input.executionMode === "plan" ? "read-only" : "full-access",
+    );
 
     appendClaudeCodeModelArgs(args, model);
 
@@ -484,7 +431,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildMergeConflictRun(input: MergeConflictRunInput): PreparedAgentRun {
     const { model } = this.resolveModelSelection(input.project, "ticket");
-    const prompt = buildClaudeCodeMergeConflictPrompt({
+    const prompt = buildMergeConflictPrompt({
       ticket: input.ticket,
       repository: input.repository,
       targetBranch: input.targetBranch,
@@ -493,13 +440,16 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       failureMessage: input.failureMessage,
     });
 
-    const args = [
-      "-p",
-      prompt,
-      "--output-format",
-      "stream-json",
-      "--dangerously-skip-permissions",
-    ];
+    const resumeRef = hasMeaningfulContent(input.session.adapter_session_ref)
+      ? input.session.adapter_session_ref
+      : null;
+
+    const args: string[] = [];
+    if (resumeRef) {
+      args.push("--resume", resumeRef);
+    }
+    args.push("-p", prompt, "--output-format", "stream-json");
+    appendClaudePermissionArgs(args, "full-access");
 
     appendClaudeCodeModelArgs(args, model);
 
@@ -519,8 +469,6 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     };
   }
 
-  // Claude Code does not support session resumption, so sessionRef is
-  // intentionally never set on returned InterpretedAdapterLine values.
   interpretOutputLine(line: string): InterpretedAdapterLine {
     return interpretClaudeCodeStreamJsonLine(line);
   }

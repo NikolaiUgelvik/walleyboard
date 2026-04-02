@@ -410,8 +410,12 @@ export class ExecutionRuntime {
         return;
       }
 
+      let lastOutputContent: string | undefined;
       const captureAdapterLine = (line: string) => {
         const interpreted = adapter.interpretOutputLine(line);
+        if (hasMeaningfulContent(interpreted.outputContent)) {
+          lastOutputContent = interpreted.outputContent;
+        }
         if (logs.length < 16) {
           logs.push(interpreted.logLine);
         }
@@ -439,9 +443,13 @@ export class ExecutionRuntime {
       });
 
       child.once("close", (exitCode, signal) => {
-        const summary = existsSync(outputSummaryPath)
+        let summary = existsSync(outputSummaryPath)
           ? readFileSync(outputSummaryPath, "utf8").trim()
           : "";
+        if (summary.length === 0 && lastOutputContent) {
+          writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
+          summary = lastOutputContent.trim();
+        }
         if (summary.length > 0) {
           logs.push(`Merge-conflict resolution summary: ${truncate(summary)}`);
         }
@@ -1069,9 +1077,13 @@ export class ExecutionRuntime {
 
     let pendingBuffer = "";
     let persistedSessionRef = activeSessionRef;
+    let lastOutputContent: string | undefined;
 
     const persistAdapterSessionRef = (line: string) => {
       const interpreted = adapter.interpretOutputLine(line);
+      if (hasMeaningfulContent(interpreted.outputContent)) {
+        lastOutputContent = interpreted.outputContent;
+      }
       if (!hasMeaningfulContent(interpreted.sessionRef)) {
         return;
       }
@@ -1141,9 +1153,13 @@ export class ExecutionRuntime {
         pendingBuffer = "";
       }
 
-      const finalSummary = existsSync(outputSummaryPath)
+      let finalSummary = existsSync(outputSummaryPath)
         ? readFileSync(outputSummaryPath, "utf8").trim()
         : null;
+      if ((!finalSummary || finalSummary.length === 0) && lastOutputContent) {
+        writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
+        finalSummary = lastOutputContent.trim();
+      }
       this.cleanupExecutionEnvironment(session.id);
 
       if (exitCode === 0) {

@@ -1144,7 +1144,10 @@ export function useWalleyBoardController() {
     mutations.updateProjectMutation.mutate({
       agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
-      executionBackend: projectOptionsExecutionBackend,
+      executionBackend:
+        projectOptionsAgentAdapter === "claude-code"
+          ? "host"
+          : projectOptionsExecutionBackend,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
       draftAnalysisModel: projectOptionsDraftModelValue,
