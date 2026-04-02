@@ -26,6 +26,7 @@ import {
   extractPersistedAttemptGuidance,
   formatMarkdownLog,
   hasMeaningfulContent,
+  resolveTargetBranch,
   runGit,
   streamLines,
   summarizeDraftQuestions,
@@ -1087,10 +1088,14 @@ export class ExecutionRuntime {
     let pendingBuffer = "";
     let persistedSessionRef = activeSessionRef;
     let lastOutputContent: string | undefined;
+    let lastPlanContent: string | undefined;
     let suppressedDockerFailureDetail: string | undefined;
 
     const processAdapterLine = (line: string) => {
       const interpreted = adapter.interpretOutputLine(line);
+      if (hasMeaningfulContent(interpreted.planContent)) {
+        lastPlanContent = interpreted.planContent;
+      }
       if (hasMeaningfulContent(interpreted.outputContent)) {
         lastOutputContent = interpreted.outputContent;
       }
@@ -1186,12 +1191,16 @@ export class ExecutionRuntime {
         pendingBuffer = "";
       }
 
+      // Prefer plan content (from ExitPlanMode) over generic output content.
+      // Plan content is set only for ExitPlanMode tool_use blocks, so later
+      // assistant text messages cannot overwrite the actual plan.
+      const bestOutputContent = lastPlanContent ?? lastOutputContent;
       let finalSummary = existsSync(outputSummaryPath)
         ? readFileSync(outputSummaryPath, "utf8").trim()
         : null;
-      if ((!finalSummary || finalSummary.length === 0) && lastOutputContent) {
-        writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
-        finalSummary = lastOutputContent.trim();
+      if ((!finalSummary || finalSummary.length === 0) && bestOutputContent) {
+        writeFileSync(outputSummaryPath, bestOutputContent, "utf8");
+        finalSummary = bestOutputContent.trim();
       }
       this.cleanupExecutionEnvironment(session.id);
 
@@ -1218,7 +1227,7 @@ export class ExecutionRuntime {
             ticketId: ticket.id,
             sessionId: session.id,
             attemptId,
-            targetBranch: ticket.target_branch,
+            targetBranch: resolveTargetBranch(repository, ticket.target_branch),
             summary,
           });
         }

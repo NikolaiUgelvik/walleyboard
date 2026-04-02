@@ -7,6 +7,7 @@ import type {
   TicketFrontmatter,
   TicketWorkspaceDiff,
 } from "../../../../../packages/contracts/src/index.js";
+import { resolveTargetBranch } from "../../lib/execution-runtime/helpers.js";
 import { parsePositiveInt } from "../../lib/http.js";
 import {
   commandRouteRateLimit,
@@ -172,9 +173,13 @@ export function registerTicketReadWorkspaceRoutes(
       if (ticket.session_id && ticket.working_branch) {
         const session = store.getSession(ticket.session_id);
         if (session?.worktree_path) {
+          const repository = store.getRepository(ticket.repo);
+          const effectiveTargetBranch = repository
+            ? resolveTargetBranch(repository, ticket.target_branch)
+            : ticket.target_branch;
           return {
             workspace_diff: ticketWorkspaceService.getDiff({
-              targetBranch: ticket.target_branch,
+              targetBranch: effectiveTargetBranch,
               ticketId: ticket.id,
               workingBranch: ticket.working_branch,
               worktreePath: session.worktree_path,

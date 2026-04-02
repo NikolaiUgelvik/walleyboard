@@ -4,6 +4,7 @@ import { requestChangesInputSchema } from "../../../../../packages/contracts/src
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
+import { resolveTargetBranch } from "../../lib/execution-runtime/helpers.js";
 import { publishSessionUpdated } from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
@@ -234,11 +235,15 @@ export function registerTicketReviewRoutes(
       try {
         await ticketWorkspaceService.stopPreviewAndWait(ticketId);
 
+        const effectiveTargetBranch = resolveTargetBranch(
+          repository,
+          ticket.target_branch,
+        );
         const mergeResult = await mergeReviewedBranch(
           repository,
           session.worktree_path,
           ticket.working_branch,
-          ticket.target_branch,
+          effectiveTargetBranch,
           {
             resolveConflicts: (input) =>
               executionRuntime.resolveMergeConflicts({
@@ -246,7 +251,7 @@ export function registerTicketReviewRoutes(
                 repository,
                 ticket,
                 session,
-                targetBranch: ticket.target_branch,
+                targetBranch: effectiveTargetBranch,
                 stage: input.stage,
                 conflictedFiles: input.conflictedFiles,
                 failureMessage: input.failureMessage,
@@ -320,7 +325,7 @@ export function registerTicketReviewRoutes(
 
         store.recordTicketEvent(ticketId, "ticket.merged", {
           ticket_id: ticketId,
-          target_branch: ticket.target_branch,
+          target_branch: effectiveTargetBranch,
           target_head: mergeResult.targetHead,
           cleanup_warnings: cleanupWarnings,
         });

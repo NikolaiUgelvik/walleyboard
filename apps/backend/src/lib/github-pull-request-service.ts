@@ -10,6 +10,7 @@ import type {
 } from "../../../../packages/contracts/src/index.js";
 
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
+import { resolveTargetBranch } from "./execution-runtime/helpers.js";
 import {
   publishSessionOutput,
   publishSessionUpdated,
@@ -581,7 +582,7 @@ export class GitHubPullRequestService {
     );
     const baseBranch = resolvePullRequestBaseBranch(
       repository.path,
-      ticket.target_branch,
+      resolveTargetBranch(repository, ticket.target_branch),
     );
     syncGitRemote(repository.path, session.worktree_path, githubRepository);
     runGit(session.worktree_path, [

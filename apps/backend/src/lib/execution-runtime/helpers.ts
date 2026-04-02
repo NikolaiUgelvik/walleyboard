@@ -27,6 +27,18 @@ export function hasMeaningfulContent(
   return typeof value === "string" && value.trim().length > 0;
 }
 
+/**
+ * Resolve the effective target branch for a ticket. The repository config
+ * is the live source of truth; the ticket's target_branch is a snapshot
+ * from creation time that may be stale if the repo config changed since.
+ */
+export function resolveTargetBranch(
+  repository: RepositoryConfig,
+  ticketTargetBranch: string,
+): string {
+  return repository.target_branch ?? ticketTargetBranch;
+}
+
 export function formatMarkdownLog(label: string, body: string): string {
   return `${label}:\n${body}`;
 }

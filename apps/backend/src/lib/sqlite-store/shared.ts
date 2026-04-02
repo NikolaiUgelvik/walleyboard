@@ -206,8 +206,13 @@ export function deriveAcceptanceCriteria(
   return Array.from(criteria);
 }
 
-export function deriveWorkingBranch(ticketId: number, title: string): string {
-  return `codex/ticket-${ticketId}-${slugify(title).slice(0, 24)}`;
+export function deriveWorkingBranch(
+  ticketId: number,
+  title: string,
+  agentAdapter?: string,
+): string {
+  const prefix = agentAdapter === "claude-code" ? "claude" : "codex";
+  return `${prefix}/ticket-${ticketId}-${slugify(title).slice(0, 24)}`;
 }
 
 export function mapProject(row: Record<string, unknown>): Project {

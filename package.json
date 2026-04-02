@@ -14,6 +14,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run sizecheck && npm run lint --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",
+    "postinstall": "node scripts/fix-node-pty-permissions.mjs",
     "prepare": "husky",
     "dev:backend": "npm --workspace @walleyboard/backend run dev",
     "dev:web": "npm --workspace @walleyboard/web run dev",

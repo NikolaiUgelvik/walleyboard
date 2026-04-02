@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 import { z } from "zod";
@@ -11,9 +12,11 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
+import { hasMeaningfulContent } from "../execution-runtime/helpers.js";
 import {
   buildDraftShellCommand,
   ClaudeCodeAdapter,
+  findLastTopLevelJsonStart,
   formatClaudeCodeExitReason,
   interpretClaudeCodeStreamJsonLine,
   parseClaudeCodeJsonResult,
@@ -110,8 +113,8 @@ function createSession(): ExecutionSession {
 
 const testCliPath = "/usr/local/bin/claude";
 
-function createAdapter(): ClaudeCodeAdapter {
-  return new ClaudeCodeAdapter(testCliPath);
+function createAdapter(cliPath?: string): ClaudeCodeAdapter {
+  return new ClaudeCodeAdapter(cliPath ?? testCliPath);
 }
 
 function createDraft(): DraftTicketState {
@@ -327,6 +330,164 @@ test("parseClaudeCodeJsonResult: hyphenated language tag in markdown fences is s
 });
 
 // ---------------------------------------------------------------------------
+// findLastTopLevelJsonStart
+// ---------------------------------------------------------------------------
+
+test("findLastTopLevelJsonStart: returns -1 for text with no braces", () => {
+  assert.equal(findLastTopLevelJsonStart("no braces here"), -1);
+});
+
+test("findLastTopLevelJsonStart: returns 0 for a single JSON object", () => {
+  assert.equal(findLastTopLevelJsonStart('{"a":1}'), 0);
+});
+
+test("findLastTopLevelJsonStart: finds start of last top-level object after text", () => {
+  const text = 'Some reasoning text {"answer":"correct"}';
+  const idx = findLastTopLevelJsonStart(text);
+  assert.equal(idx, 20);
+  assert.equal(text.slice(idx), '{"answer":"correct"}');
+});
+
+test("findLastTopLevelJsonStart: handles nested braces correctly", () => {
+  const text = '{"outer":{"inner":1}}';
+  const idx = findLastTopLevelJsonStart(text);
+  // Should find the outermost {, not the nested one.
+  assert.equal(idx, 0);
+});
+
+test("findLastTopLevelJsonStart: with reasoning text containing nested JSON", () => {
+  // Reasoning text includes a nested object reference, then the actual JSON.
+  const text =
+    'The config has {"nested":true} as a field. Here is the result: {"answer":"final"}';
+  const idx = findLastTopLevelJsonStart(text);
+  // Should find the last top-level JSON object.
+  assert.equal(text.slice(idx), '{"answer":"final"}');
+});
+
+test("findLastTopLevelJsonStart: returns -1 for unbalanced braces", () => {
+  assert.equal(findLastTopLevelJsonStart("{ unclosed"), -1);
+});
+
+test("findLastTopLevelJsonStart: known limitation - braces inside JSON string values cause fail-safe -1", () => {
+  // The brace scanner does not track JSON string contexts, so a closing brace
+  // inside a string value (e.g. "has } brace") causes the brace count to
+  // become unbalanced. This is fail-safe: returning -1 means the caller falls
+  // back to other parsing strategies rather than extracting corrupt JSON.
+  assert.equal(findLastTopLevelJsonStart('text {"answer":"has } brace"}'), -1);
+});
+
+// ---------------------------------------------------------------------------
+// parseClaudeCodeJsonResult: reasoning text + embedded JSON (F-2 tests)
+// ---------------------------------------------------------------------------
+
+test("parseClaudeCodeJsonResult: wrapper result with reasoning text before JSON", () => {
+  const wrapper = JSON.stringify({
+    result:
+      'Let me analyze the requirements. Here is the result:\n\n{"answer":"from-reasoning"}',
+  });
+  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
+  assert.equal(result.answer, "from-reasoning");
+});
+
+test("parseClaudeCodeJsonResult: wrapper result with multiple JSON fragments in reasoning", () => {
+  // The model mentions a JSON snippet in reasoning, then provides the actual answer.
+  // The balanced-brace scan should find the last top-level object.
+  const wrapper = JSON.stringify({
+    result:
+      'I considered {"answer":"wrong"} but decided on {"answer":"correct"}',
+  });
+  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
+  assert.equal(result.answer, "correct");
+});
+
+test("parseClaudeCodeJsonResult: wrapper result with nested JSON in reasoning does not extract sub-object", () => {
+  // If the reasoning mentions an object with nested braces, the balanced scan
+  // should not extract just the inner sub-object.
+  const wrapper = JSON.stringify({
+    result:
+      'The config is {"outer":{"sub":"value"}} and then {"answer":"real"}',
+  });
+  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
+  assert.equal(result.answer, "real");
+});
+
+test("parseClaudeCodeJsonResult: NDJSON with reasoning text before embedded JSON", () => {
+  const ndjson = [
+    '{"type":"system","message":"starting"}',
+    JSON.stringify({
+      type: "result",
+      result:
+        'After analysis, here is the answer:\n{"answer":"ndjson-reasoning"}',
+    }),
+  ].join("\n");
+  const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
+  assert.equal(result.answer, "ndjson-reasoning");
+});
+
+test("parseClaudeCodeJsonResult: NDJSON with multiple JSON fragments in reasoning", () => {
+  const ndjson = [
+    '{"type":"system","message":"starting"}',
+    JSON.stringify({
+      type: "result",
+      result:
+        'I tried {"answer":"attempt1"} but the correct one is {"answer":"attempt2"}',
+    }),
+  ].join("\n");
+  const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
+  assert.equal(result.answer, "attempt2");
+});
+
+// ---------------------------------------------------------------------------
+// F-3 scenario: planContent survives later assistant messages
+// ---------------------------------------------------------------------------
+
+test("interpretClaudeCodeStreamJsonLine: planContent is not overwritten by subsequent assistant text", () => {
+  // Simulate the production scenario: ExitPlanMode event followed by
+  // a regular assistant text event.
+  const planText = "# Implementation Plan\n\n1. Create module\n2. Add tests";
+
+  const exitPlanLine = JSON.stringify({
+    type: "assistant",
+    message: {
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_abc",
+          name: "ExitPlanMode",
+          input: { plan: planText },
+        },
+      ],
+    },
+  });
+
+  const followUpLine = JSON.stringify({
+    type: "assistant",
+    message: {
+      content: [
+        {
+          type: "text",
+          text: "The plan is complete and covers all 6 acceptance criteria...",
+        },
+      ],
+    },
+  });
+
+  const exitResult = interpretClaudeCodeStreamJsonLine(exitPlanLine);
+  const followResult = interpretClaudeCodeStreamJsonLine(followUpLine);
+
+  // ExitPlanMode should set planContent, not outputContent.
+  assert.equal(exitResult.planContent, planText);
+  assert.equal(exitResult.outputContent, undefined);
+
+  // Follow-up should set outputContent only; planContent should be absent.
+  assert.equal(
+    followResult.outputContent,
+    "The plan is complete and covers all 6 acceptance criteria...",
+  );
+  assert.equal(followResult.planContent, undefined);
+});
+
+// ---------------------------------------------------------------------------
 // interpretClaudeCodeStreamJsonLine
 // ---------------------------------------------------------------------------
 
@@ -352,13 +513,13 @@ test("interpretClaudeCodeStreamJsonLine: result event sets outputContent", () =>
   assert.equal(result.outputContent, "Final summary of work done");
 });
 
-test("interpretClaudeCodeStreamJsonLine: non-result event does not set outputContent", () => {
+test("interpretClaudeCodeStreamJsonLine: assistant event sets outputContent for plan summary capture", () => {
   const line = JSON.stringify({
     type: "assistant",
     message: { content: [{ type: "text", text: "thinking..." }] },
   });
   const result = interpretClaudeCodeStreamJsonLine(line);
-  assert.equal(result.outputContent, undefined);
+  assert.equal(result.outputContent, "thinking...");
 });
 
 test("interpretClaudeCodeStreamJsonLine: assistant message with content blocks", () => {
@@ -373,7 +534,56 @@ test("interpretClaudeCodeStreamJsonLine: assistant message with content blocks",
   });
   const result = interpretClaudeCodeStreamJsonLine(line);
   assert.ok(result.logLine.startsWith("[claude-code assistant]"));
-  assert.ok(result.logLine.includes("Hello World"));
+  assert.ok(result.logLine.includes("Hello"));
+  assert.ok(result.logLine.includes("World"));
+  assert.equal(result.outputContent, "Hello\n\nWorld");
+});
+
+test("interpretClaudeCodeStreamJsonLine: ExitPlanMode tool_use extracts plan field as planContent", () => {
+  const planText =
+    "# Plan: Add status bar\n\n## Context\n\nThe TUI needs a persistent status bar.";
+  const line = JSON.stringify({
+    type: "assistant",
+    message: {
+      content: [
+        { type: "text", text: "I'll finalize the plan now." },
+        {
+          type: "tool_use",
+          id: "toolu_abc",
+          name: "ExitPlanMode",
+          input: {
+            allowedPrompts: [],
+            plan: planText,
+          },
+        },
+      ],
+    },
+  });
+  const result = interpretClaudeCodeStreamJsonLine(line);
+  // The plan field should be set as planContent (not outputContent) so
+  // the runtime can track it separately from generic assistant text.
+  assert.equal(result.planContent, planText);
+  assert.equal(result.outputContent, undefined);
+});
+
+test("interpretClaudeCodeStreamJsonLine: ExitPlanMode without plan field falls back to text outputContent", () => {
+  const line = JSON.stringify({
+    type: "assistant",
+    message: {
+      content: [
+        { type: "text", text: "Done planning." },
+        {
+          type: "tool_use",
+          id: "toolu_abc",
+          name: "ExitPlanMode",
+          input: {},
+        },
+      ],
+    },
+  });
+  const result = interpretClaudeCodeStreamJsonLine(line);
+  assert.equal(result.outputContent, "Done planning.");
+  assert.equal(result.planContent, undefined);
 });
 
 test("interpretClaudeCodeStreamJsonLine: system message", () => {
@@ -882,4 +1092,270 @@ test("ClaudeCodeAdapter.formatExitReason delegates to formatClaudeCodeExitReason
   const adapter = createAdapter();
   const result = adapter.formatExitReason(0, null, "");
   assert.equal(result, "Claude Code exited with code 0.");
+});
+
+// ---------------------------------------------------------------------------
+// --verbose is required alongside --output-format stream-json in print mode
+// ---------------------------------------------------------------------------
+
+test("ClaudeCodeAdapter.buildExecutionRun: includes --verbose with stream-json", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildExecutionRun({
+    executionMode: "plan",
+    extraInstructions: [],
+    outputPath: "/tmp/output.json",
+    planSummary: null,
+    project: createProject(),
+    repository: createRepository(),
+    session: createSession(),
+    ticket: createTicket(),
+    useDockerRuntime: false,
+  });
+  assert.ok(run.args.includes("stream-json"), "should use stream-json format");
+  assert.ok(
+    run.args.includes("--verbose"),
+    "stream-json in print mode requires --verbose",
+  );
+});
+
+test("ClaudeCodeAdapter.buildMergeConflictRun: includes --verbose with stream-json", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildMergeConflictRun({
+    conflictedFiles: [],
+    failureMessage: "fail",
+    outputPath: "/tmp/output.json",
+    project: createProject(),
+    repository: createRepository(),
+    session: createSession(),
+    stage: "rebase",
+    targetBranch: "main",
+    ticket: createTicket(),
+    useDockerRuntime: false,
+  });
+  assert.ok(run.args.includes("stream-json"), "should use stream-json format");
+  assert.ok(
+    run.args.includes("--verbose"),
+    "stream-json in print mode requires --verbose",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Integration test: verify flag combinations against the real Claude CLI.
+// Skipped by default; run with RUN_INTEGRATION_TESTS=1.
+// ---------------------------------------------------------------------------
+
+import { resolveClaudeCliPath } from "./claude-code-adapter.js";
+
+const runIntegration = process.env.RUN_INTEGRATION_TESTS === "1";
+
+test("integration: Claude CLI accepts execution run flags", {
+  skip: !runIntegration,
+}, () => {
+  const cliPath = resolveClaudeCliPath();
+  const adapter = createAdapter(cliPath);
+  const run = adapter.buildExecutionRun({
+    executionMode: "plan",
+    extraInstructions: [],
+    outputPath: "/tmp/walleyboard-test-output.json",
+    planSummary: null,
+    project: createProject(),
+    repository: createRepository(),
+    session: createSession(),
+    ticket: createTicket(),
+    useDockerRuntime: false,
+  });
+  // Replace the long prompt with a trivial one to avoid burning tokens.
+  const promptIdx = run.args.indexOf("-p");
+  const args = [...run.args];
+  args[promptIdx + 1] = "say ok";
+  // --max-turns 1 to exit immediately after the first response.
+  args.push("--max-turns", "1");
+  execFileSync(run.command, args, { timeout: 120_000 });
+});
+
+test("integration: Claude CLI accepts merge conflict run flags", {
+  skip: !runIntegration,
+}, () => {
+  const cliPath = resolveClaudeCliPath();
+  const adapter = createAdapter(cliPath);
+  const run = adapter.buildMergeConflictRun({
+    conflictedFiles: [],
+    failureMessage: "test",
+    outputPath: "/tmp/walleyboard-test-output.json",
+    project: createProject(),
+    repository: createRepository(),
+    session: createSession(),
+    stage: "rebase",
+    targetBranch: "main",
+    ticket: createTicket(),
+    useDockerRuntime: false,
+  });
+  const promptIdx = run.args.indexOf("-p");
+  const args = [...run.args];
+  args[promptIdx + 1] = "say ok";
+  args.push("--max-turns", "1");
+  execFileSync(run.command, args, { timeout: 120_000 });
+});
+
+test("integration: Claude CLI accepts draft run flags", {
+  skip: !runIntegration,
+}, () => {
+  const cliPath = resolveClaudeCliPath();
+  const adapter = createAdapter(cliPath);
+  const run = adapter.buildDraftRun({
+    draft: createDraft(),
+    mode: "refine",
+    outputPath: "/tmp/walleyboard-test-output.json",
+    project: createProject(),
+    repository: createRepository(),
+  });
+  // Draft runs use bash -c "claude ... > output". Extract the inner claude
+  // command and replace the prompt with a trivial one.
+  const innerCmd = run.args[run.args.indexOf("-c") + 1];
+  assert.ok(innerCmd, "expected -c flag to have a following argument");
+  // Verify the shell command invokes claude with --output-format json.
+  assert.ok(
+    innerCmd.includes("--output-format"),
+    "draft run should include --output-format",
+  );
+  // Spawn claude directly with the same flags to validate flag acceptance.
+  const draftArgs = [
+    "-p",
+    "say ok",
+    "--output-format",
+    "json",
+    "--max-turns",
+    "1",
+  ];
+  execFileSync(cliPath, draftArgs, { timeout: 120_000 });
+});
+
+test("integration: stream-json assistant events produce outputContent for plan summary capture", {
+  skip: !runIntegration,
+}, () => {
+  const cliPath = resolveClaudeCliPath();
+  // Spawn claude in stream-json mode and capture output.
+  const output = execFileSync(
+    cliPath,
+    [
+      "-p",
+      "say ok",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--max-turns",
+      "1",
+    ],
+    { timeout: 120_000, encoding: "utf8" },
+  );
+
+  const lines = output.split("\n").filter((l: string) => l.trim().length > 0);
+  let sawAssistantWithOutput = false;
+  let sawResultEvent = false;
+
+  for (const line of lines) {
+    const interpreted = interpretClaudeCodeStreamJsonLine(line);
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed.type === "assistant") {
+        // After the fix, assistant text events should set outputContent.
+        if (hasMeaningfulContent(interpreted.outputContent)) {
+          sawAssistantWithOutput = true;
+        }
+      }
+      if (parsed.type === "result") {
+        sawResultEvent = true;
+      }
+    } catch {
+      // Non-JSON lines are fine.
+    }
+  }
+
+  assert.ok(sawResultEvent, "should have received a result event");
+  assert.ok(
+    sawAssistantWithOutput,
+    "assistant events should set outputContent so plan summaries are captured",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Runtime-level plan content priority (F-2: tests the lastPlanContent ??
+// lastOutputContent logic that execution-runtime.ts uses to pick the final
+// summary). This simulates processAdapterLine without spinning up the full
+// runtime, using the same interpreted-line shapes the adapter produces.
+// ---------------------------------------------------------------------------
+
+test("runtime plan priority: planContent is preferred over later outputContent", () => {
+  // Simulate the sequence that caused the "plan overwritten" bug:
+  //   1. ExitPlanMode tool_use -> sets planContent
+  //   2. Follow-up assistant text -> sets outputContent
+  // The runtime should prefer planContent.
+
+  const planText = "## Plan\n1. Refactor module A\n2. Add tests for module B";
+  const followUpText =
+    "The plan is complete and covers all 6 acceptance criteria.";
+
+  // Build interpreted lines matching what the adapter produces.
+  const exitPlanLine = {
+    logLine: "[plan] ExitPlanMode",
+    planContent: planText,
+    outputContent: undefined as string | undefined,
+  };
+  const assistantLine = {
+    logLine: followUpText,
+    planContent: undefined as string | undefined,
+    outputContent: followUpText,
+  };
+
+  // Replay the same tracking logic as processAdapterLine in execution-runtime.
+  let lastPlanContent: string | undefined;
+  let lastOutputContent: string | undefined;
+
+  for (const interpreted of [exitPlanLine, assistantLine]) {
+    if (hasMeaningfulContent(interpreted.planContent)) {
+      lastPlanContent = interpreted.planContent;
+    }
+    if (hasMeaningfulContent(interpreted.outputContent)) {
+      lastOutputContent = interpreted.outputContent;
+    }
+  }
+
+  const bestOutputContent = lastPlanContent ?? lastOutputContent;
+  assert.equal(
+    bestOutputContent,
+    planText,
+    "plan content should take priority over follow-up assistant text",
+  );
+  // Verify that outputContent was also tracked (it just loses priority).
+  assert.equal(lastOutputContent, followUpText);
+});
+
+test("runtime plan priority: falls back to outputContent when no planContent exists", () => {
+  // When no ExitPlanMode event fires, the runtime should use outputContent.
+  const assistantText = "Here is the implementation summary.";
+
+  const assistantLine = {
+    logLine: assistantText,
+    planContent: undefined as string | undefined,
+    outputContent: assistantText,
+  };
+
+  let lastPlanContent: string | undefined;
+  let lastOutputContent: string | undefined;
+
+  for (const interpreted of [assistantLine]) {
+    if (hasMeaningfulContent(interpreted.planContent)) {
+      lastPlanContent = interpreted.planContent;
+    }
+    if (hasMeaningfulContent(interpreted.outputContent)) {
+      lastOutputContent = interpreted.outputContent;
+    }
+  }
+
+  const bestOutputContent = lastPlanContent ?? lastOutputContent;
+  assert.equal(
+    bestOutputContent,
+    assistantText,
+    "should fall back to outputContent when no plan was captured",
+  );
 });
