@@ -7,6 +7,7 @@ import type {
   Project,
   ReasoningEffort,
   RepositoryConfig,
+  ReviewPackage,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 import type {
@@ -69,12 +70,23 @@ export type MergeConflictRunInput = {
   useDockerRuntime: boolean;
 };
 
+export type ReviewRunInput = {
+  outputPath: string;
+  project: Project;
+  repository: RepositoryConfig;
+  reviewPackage: ReviewPackage;
+  session: ExecutionSession;
+  ticket: TicketFrontmatter;
+  useDockerRuntime: boolean;
+};
+
 export interface AgentCliAdapter {
   readonly id: AgentAdapterId;
   readonly label: string;
   buildDraftRun(input: DraftRunInput): PreparedAgentRun;
   buildExecutionRun(input: ExecutionRunInput): PreparedAgentRun;
   buildMergeConflictRun(input: MergeConflictRunInput): PreparedAgentRun;
+  buildReviewRun(input: ReviewRunInput): PreparedAgentRun;
   interpretOutputLine(line: string): InterpretedAdapterLine;
   parseDraftResult<T>(rawOutput: string, schema: z.ZodType<T>): T;
   formatExitReason(

@@ -17,6 +17,7 @@ import type { TicketRouteDependencies } from "./shared.js";
 export function registerTicketReviewRoutes(
   app: FastifyInstance,
   {
+    agentReviewService,
     appendSessionOutput,
     eventHub,
     executionRuntime,
@@ -116,6 +117,35 @@ export function registerTicketReviewRoutes(
             error instanceof Error
               ? error.message
               : "Unable to request changes",
+        });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/start-agent-review",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      try {
+        const reviewRun = agentReviewService.startReviewLoop(ticketId);
+        reply.send(
+          makeCommandAck(true, "Agent review started", {
+            ticket_id: ticketId,
+            session_id: reviewRun.implementation_session_id,
+          }),
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to start agent review",
         });
       }
     },

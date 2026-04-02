@@ -14,6 +14,8 @@ import type {
   RequestedChangeNote,
   ReviewAction,
   ReviewPackage,
+  ReviewReport,
+  ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
@@ -415,6 +417,24 @@ export function mapReviewPackage(row: Record<string, unknown>): ReviewPackage {
   };
 }
 
+export function mapReviewRun(row: Record<string, unknown>): ReviewRun {
+  return {
+    id: String(row.id),
+    ticket_id: Number(row.ticket_id),
+    review_package_id: String(row.review_package_id),
+    implementation_session_id: String(row.implementation_session_id),
+    status: String(row.status) as ReviewRun["status"],
+    adapter_session_ref:
+      row.adapter_session_ref === null ? null : String(row.adapter_session_ref),
+    report: parseJson<ReviewReport | null>(row.report, null),
+    failure_message:
+      row.failure_message === null ? null : String(row.failure_message),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+    completed_at: row.completed_at === null ? null : String(row.completed_at),
+  };
+}
+
 export function mapRequestedChangeNote(
   row: Record<string, unknown>,
 ): RequestedChangeNote {
@@ -656,6 +676,20 @@ export class SqliteStoreContext {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS review_runs (
+        id TEXT PRIMARY KEY,
+        ticket_id INTEGER NOT NULL,
+        review_package_id TEXT NOT NULL,
+        implementation_session_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        adapter_session_ref TEXT,
+        report TEXT,
+        failure_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
       CREATE TABLE IF NOT EXISTS requested_change_notes (
         id TEXT PRIMARY KEY,
         ticket_id INTEGER NOT NULL,
@@ -675,6 +709,7 @@ export class SqliteStoreContext {
       CREATE INDEX IF NOT EXISTS idx_repositories_project_id ON repositories(project_id);
       CREATE INDEX IF NOT EXISTS idx_drafts_project_id ON draft_ticket_states(project_id);
       CREATE INDEX IF NOT EXISTS idx_tickets_project_id ON tickets(project_id);
+      CREATE INDEX IF NOT EXISTS idx_review_runs_ticket_id ON review_runs(ticket_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_events_entity ON structured_events(entity_type, entity_id, occurred_at DESC);
       CREATE INDEX IF NOT EXISTS idx_session_logs_session_id ON session_logs(session_id, id ASC);
     `);

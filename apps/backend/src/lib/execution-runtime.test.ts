@@ -177,6 +177,9 @@ test("docker-backed execution launches the configured adapter command inside Doc
         buildMergeConflictRun() {
           throw new Error("merge-conflict runs are not used in this test");
         },
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
+        },
         interpretOutputLine(line) {
           return {
             logLine: line,
@@ -336,6 +339,9 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
         },
         buildMergeConflictRun() {
           throw new Error("merge-conflict runs are not used in this test");
+        },
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
         },
         interpretOutputLine(line) {
           return {

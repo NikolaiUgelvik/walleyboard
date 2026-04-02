@@ -126,6 +126,20 @@ export const reviewPackagesTable = sqliteTable("review_packages", {
   createdAt: text("created_at").notNull(),
 });
 
+export const reviewRunsTable = sqliteTable("review_runs", {
+  id: text("id").primaryKey(),
+  ticketId: integer("ticket_id").notNull(),
+  reviewPackageId: text("review_package_id").notNull(),
+  implementationSessionId: text("implementation_session_id").notNull(),
+  status: text("status").notNull(),
+  adapterSessionRef: text("adapter_session_ref"),
+  report: text("report", { mode: "json" }),
+  failureMessage: text("failure_message"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  completedAt: text("completed_at"),
+});
+
 export const requestedChangeNotesTable = sqliteTable("requested_change_notes", {
   id: text("id").primaryKey(),
   ticketId: integer("ticket_id").notNull(),

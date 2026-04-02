@@ -14,6 +14,7 @@ import {
   repositoryConfigSchema,
   reviewActionSchema,
   reviewPackageSchema,
+  reviewRunSchema,
   structuredEventSchema,
   ticketFrontmatterSchema,
   ticketTypeSchema,
@@ -199,6 +200,10 @@ export const reviewPackageResponseSchema = z.object({
   review_package: reviewPackageSchema,
 });
 
+export const reviewRunResponseSchema = z.object({
+  review_run: reviewRunSchema,
+});
+
 export const ticketEventsResponseSchema = z.object({
   events: z.array(structuredEventSchema),
 });
@@ -275,6 +280,7 @@ export const eventEntityTypeSchema = z.enum([
   "attempt",
   "draft",
   "review_package",
+  "review_run",
   "pull_request",
   "worktree",
   "git",
@@ -339,6 +345,7 @@ export type TicketWorkspaceDiffResponse = z.infer<
 export type TicketWorkspacePreviewState = z.infer<
   typeof ticketWorkspacePreviewStateSchema
 >;
+export type ReviewRunResponse = z.infer<typeof reviewRunResponseSchema>;
 export type TicketWorkspacePreview = z.infer<
   typeof ticketWorkspacePreviewSchema
 >;

@@ -33,6 +33,7 @@ import {
   diffLayoutStorageKey,
   draftMatchesSearch,
   fetchJson,
+  fetchOptionalJson,
   findLatestRevertableRefineEvent,
   focusElementById,
   type InspectorState,
@@ -47,6 +48,7 @@ import {
   parseDraftQuestionsResult,
   type RepositoriesResponse,
   type ReviewPackageResponse,
+  type ReviewRunResponse,
   readDiffLayoutPreference,
   readLastOpenProjectId,
   repositoryTargetBranchesEqual,
@@ -494,6 +496,23 @@ export function useWalleyBoardController() {
       selectedSessionTicketStatus === "review",
   });
 
+  const latestReviewRunQuery = useQuery({
+    queryKey: ["tickets", selectedSessionTicketId, "review-run"],
+    queryFn: () =>
+      fetchOptionalJson<ReviewRunResponse>(
+        `/tickets/${selectedSessionTicketId}/review-run`,
+      ),
+    enabled:
+      selectedSessionTicketId !== null &&
+      selectedSessionTicketStatus === "review",
+    refetchInterval:
+      selectedSessionTicketId !== null &&
+      selectedSessionTicketStatus === "review"
+        ? 2_000
+        : false,
+    retry: false,
+  });
+
   const ticketWorkspaceDiffQuery = useQuery({
     queryKey: ["tickets", selectedSessionTicketId, "workspace", "diff"],
     queryFn: () =>
@@ -693,6 +712,7 @@ export function useWalleyBoardController() {
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
+  const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
   const ticketWorkspaceDiff =
     ticketWorkspaceDiffQuery.data?.workspace_diff ?? null;
   const ticketWorkspacePreview =
@@ -1380,6 +1400,8 @@ export function useWalleyBoardController() {
     restartTicketFromScratch,
     requestedChangesBody,
     resumeReason,
+    latestReviewRun,
+    latestReviewRunQuery,
     reviewCount,
     reviewPackage,
     reviewPackageQuery,

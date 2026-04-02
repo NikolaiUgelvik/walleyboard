@@ -50,6 +50,25 @@ export function registerTicketReadWorkspaceRoutes(
   );
 
   app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/review-run",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const reviewRun = store.getLatestReviewRun(ticketId);
+      if (!reviewRun) {
+        reply.code(404).send({ error: "Review run not found" });
+        return;
+      }
+
+      return { review_run: reviewRun };
+    },
+  );
+
+  app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/events",
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);

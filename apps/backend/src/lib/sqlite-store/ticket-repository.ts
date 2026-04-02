@@ -172,6 +172,10 @@ export class TicketRepository {
       .prepare("SELECT id FROM review_packages WHERE ticket_id = ?")
       .all(ticketId) as Array<{ id: string }>;
     const reviewPackageIds = reviewPackageRows.map((row) => row.id);
+    const reviewRunRows = this.context.db
+      .prepare("SELECT id FROM review_runs WHERE ticket_id = ?")
+      .all(ticketId) as Array<{ id: string }>;
+    const reviewRunIds = reviewRunRows.map((row) => row.id);
 
     const sessionId = ticket.session_id;
     const attemptRows =
@@ -187,6 +191,9 @@ export class TicketRepository {
       .run(ticketId);
     this.context.db
       .prepare("DELETE FROM review_packages WHERE ticket_id = ?")
+      .run(ticketId);
+    this.context.db
+      .prepare("DELETE FROM review_runs WHERE ticket_id = ?")
       .run(ticketId);
 
     if (sessionId) {
@@ -218,6 +225,17 @@ export class TicketRepository {
           `,
         )
         .run(reviewPackageId);
+    }
+
+    for (const reviewRunId of reviewRunIds) {
+      this.context.db
+        .prepare(
+          `
+            DELETE FROM structured_events
+            WHERE entity_type = 'review_run' AND entity_id = ?
+          `,
+        )
+        .run(reviewRunId);
     }
 
     for (const attemptId of attemptIds) {

@@ -16,6 +16,7 @@ import {
   buildImplementationPrompt,
   buildMergeConflictPrompt,
   buildPlanPrompt,
+  buildReviewPrompt,
 } from "./shared-execution-prompts.js";
 import type {
   AgentCliAdapter,
@@ -24,6 +25,7 @@ import type {
   InterpretedAdapterLine,
   MergeConflictRunInput,
   PreparedAgentRun,
+  ReviewRunInput,
 } from "./types.js";
 
 // Resolves the absolute path to the `claude` CLI binary from the config
@@ -504,6 +506,35 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       args,
       outputPath: input.outputPath,
       // Claude Code does not support Docker runtime.
+      dockerSpec: null,
+    };
+  }
+
+  buildReviewRun(input: ReviewRunInput): PreparedAgentRun {
+    const { model } = this.resolveModelSelection(input.project, "ticket");
+    const claudeArgs = [
+      "-p",
+      buildReviewPrompt({
+        repository: input.repository,
+        reviewPackage: input.reviewPackage,
+        ticket: input.ticket,
+      }),
+      "--output-format",
+      "json",
+    ];
+    appendClaudePermissionArgs(claudeArgs, "read-only");
+    appendClaudeCodeModelArgs(claudeArgs, model);
+
+    const { command, args } = buildDraftShellCommand(
+      this.#resolveCliPath(),
+      claudeArgs,
+      input.outputPath,
+    );
+
+    return {
+      command,
+      args,
+      outputPath: input.outputPath,
       dockerSpec: null,
     };
   }

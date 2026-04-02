@@ -8,6 +8,7 @@ import type {
   Project,
   RepositoryConfig,
   ReviewPackage,
+  ReviewReport,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -39,6 +40,7 @@ import {
   publishStructuredEvent,
   publishTicketUpdated,
 } from "./execution-runtime/publishers.js";
+import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
 import type {
   DraftAnalysisInput,
   DraftAnalysisMode,
@@ -62,6 +64,15 @@ import {
 } from "./execution-runtime/waiters.js";
 import type { Store } from "./store.js";
 
+type ReviewReadyInput = {
+  project: Project;
+  repository: RepositoryConfig;
+  reviewPackage: ReviewPackage;
+  session: ExecutionSession;
+  ticket: TicketFrontmatter;
+};
+type ReviewReadyHandler = (input: ReviewReadyInput) => Promise<void>;
+
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
   readonly #dockerRuntime: DockerRuntimeManager;
@@ -69,12 +80,13 @@ export class ExecutionRuntime {
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();
   readonly #activeDraftRuns = new Map<string, ChildProcessWithoutNullStreams>();
+  readonly #activeReviewRuns = new Map<
+    string,
+    ChildProcessWithoutNullStreams
+  >();
   readonly #manualTerminals = new Map<
     string,
-    {
-      pty: IPty;
-      attemptId: string | null;
-    }
+    { pty: IPty; attemptId: string | null }
   >();
   readonly #stoppingSessions = new Map<string, string>();
   readonly #stoppingManualTerminals = new Map<string, string>();
@@ -83,15 +95,7 @@ export class ExecutionRuntime {
     string,
     Set<(didExit: boolean) => void>
   >();
-  #reviewReadyHandler:
-    | ((input: {
-        project: Project;
-        repository: RepositoryConfig;
-        reviewPackage: ReviewPackage;
-        session: ExecutionSession;
-        ticket: TicketFrontmatter;
-      }) => Promise<void>)
-    | null = null;
+  #reviewReadyHandler: ReviewReadyHandler | null = null;
 
   constructor({
     adapterRegistry,
@@ -114,10 +118,7 @@ export class ExecutionRuntime {
   }
 
   assertProjectExecutionBackendAvailable(project: Project): void {
-    if (project.execution_backend !== "docker") {
-      return;
-    }
-
+    if (project.execution_backend !== "docker") return;
     this.#dockerRuntime.assertAvailable();
   }
 
@@ -126,20 +127,13 @@ export class ExecutionRuntime {
   }
 
   dispose(): void {
+    for (const child of this.#activeReviewRuns.values()) {
+      child.kill("SIGTERM");
+    }
     this.#dockerRuntime.dispose();
   }
 
-  setReviewReadyHandler(
-    handler:
-      | ((input: {
-          project: Project;
-          repository: RepositoryConfig;
-          reviewPackage: ReviewPackage;
-          session: ExecutionSession;
-          ticket: TicketFrontmatter;
-        }) => Promise<void>)
-      | null,
-  ): void {
+  setReviewReadyHandler(handler: ReviewReadyHandler | null): void {
     this.#reviewReadyHandler = handler;
   }
 
@@ -299,6 +293,33 @@ export class ExecutionRuntime {
       project,
       repository,
       instruction,
+    });
+  }
+
+  async runTicketReview(input: {
+    project: Project;
+    repository: RepositoryConfig;
+    reviewPackage: ReviewPackage;
+    reviewRunId: string;
+    session: ExecutionSession;
+    ticket: TicketFrontmatter;
+  }): Promise<{
+    adapterSessionRef: string | null;
+    report: ReviewReport;
+  }> {
+    return runTicketReviewSession({
+      activeReviewRuns: this.#activeReviewRuns,
+      adapter: this.#getSessionAdapter(input.session),
+      cleanupExecutionEnvironment: (sessionId) => {
+        this.cleanupExecutionEnvironment(sessionId);
+      },
+      dockerRuntime: this.#dockerRuntime,
+      project: input.project,
+      repository: input.repository,
+      reviewPackage: input.reviewPackage,
+      reviewRunId: input.reviewRunId,
+      session: input.session,
+      ticket: input.ticket,
     });
   }
 

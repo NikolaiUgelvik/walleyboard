@@ -5,6 +5,7 @@ import fastifyRateLimit from "fastify-rate-limit";
 import { ClaudeCodeAdapter } from "./lib/agent-adapters/claude-code-adapter.js";
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
+import { AgentReviewService } from "./lib/agent-review-service.js";
 import { DockerRuntimeManager } from "./lib/docker-runtime.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
@@ -38,6 +39,11 @@ export async function createApp() {
     adapterRegistry,
     dockerRuntime,
     eventHub,
+    store,
+  });
+  const agentReviewService = new AgentReviewService({
+    eventHub,
+    executionRuntime,
     store,
   });
   const ticketWorkspaceService = new TicketWorkspaceService({
@@ -92,6 +98,7 @@ export async function createApp() {
   await app.register(projectRoutes, { store, executionRuntime });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, {
+    agentReviewService,
     eventHub,
     store,
     executionRuntime,

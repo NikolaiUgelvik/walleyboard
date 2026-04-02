@@ -151,10 +151,16 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
         throw new Error("Not used in this test");
       },
     };
+    const agentReviewService = {
+      startReviewLoop() {
+        throw new Error("Not used in this test");
+      },
+    };
 
     const app = Fastify();
     await app.register(fastifyRateLimit, { global: false });
     await app.register(ticketRoutes, {
+      agentReviewService: agentReviewService as never,
       eventHub: new EventHub(),
       store,
       executionRuntime: executionRuntime as never,
@@ -196,5 +202,55 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
     restoreWalleyBoardHome();
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("start-agent-review route delegates to the agent review service", async () => {
+  const requestedTicketIds: number[] = [];
+  const app = Fastify();
+
+  try {
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop(ticketId: number) {
+          requestedTicketIds.push(ticketId);
+          return {
+            id: "review-run-1",
+            ticket_id: ticketId,
+            review_package_id: "review-package-1",
+            implementation_session_id: "session-7",
+            status: "running",
+            adapter_session_ref: null,
+            report: null,
+            failure_message: null,
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:00:00.000Z",
+            completed_at: null,
+          };
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store: {
+        appendSessionLog() {
+          return 0;
+        },
+      } as never,
+      executionRuntime: {} as never,
+      githubPullRequestService: {} as never,
+      ticketWorkspaceService: {} as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tickets/7/start-agent-review",
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().accepted, true);
+    assert.deepEqual(requestedTicketIds, [7]);
+  } finally {
+    await app.close();
   }
 });

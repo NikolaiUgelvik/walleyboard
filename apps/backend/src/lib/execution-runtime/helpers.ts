@@ -204,6 +204,16 @@ export function buildDraftAnalysisOutputPath(
   return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
 }
 
+export function buildReviewRunOutputPath(
+  project: Project,
+  ticketId: number,
+  reviewRunId: string,
+): string {
+  const reviewDir = resolveWalleyBoardPath("agent-reviews", project.slug);
+  ensureDirectory(reviewDir);
+  return join(reviewDir, `ticket-${ticketId}-${reviewRunId}.json`);
+}
+
 export function parseCodexJsonResult<T>(
   rawOutput: string,
   schema: z.ZodType<T>,

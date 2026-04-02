@@ -228,6 +228,7 @@ export const structuredEventSchema = z.object({
     "attempt",
     "draft",
     "review_package",
+    "review_run",
     "worktree",
     "git",
     "pull_request",
@@ -250,6 +251,46 @@ export const reviewPackageSchema = z.object({
   created_at: timestampSchema,
 });
 
+export const reviewFindingSeveritySchema = z.enum(["high", "medium", "low"]);
+export const reviewFindingCategorySchema = z.enum([
+  "first_principles",
+  "code_smell",
+  "separation_of_concerns",
+  "correctness",
+  "testing",
+  "maintainability",
+]);
+
+export const reviewFindingSchema = z.object({
+  severity: reviewFindingSeveritySchema,
+  category: reviewFindingCategorySchema,
+  title: z.string().min(1),
+  details: z.string().min(1),
+  suggested_fix: z.string().min(1),
+});
+
+export const reviewReportSchema = z.object({
+  summary: z.string().min(1),
+  strengths: z.array(z.string().min(1)).default([]),
+  actionable_findings: z.array(reviewFindingSchema).default([]),
+});
+
+export const reviewRunStatusSchema = z.enum(["running", "completed", "failed"]);
+
+export const reviewRunSchema = z.object({
+  id: opaqueIdSchema,
+  ticket_id: z.number().int().positive(),
+  review_package_id: opaqueIdSchema,
+  implementation_session_id: opaqueIdSchema,
+  status: reviewRunStatusSchema,
+  adapter_session_ref: opaqueIdSchema.nullable(),
+  report: reviewReportSchema.nullable(),
+  failure_message: z.string().nullable(),
+  created_at: timestampSchema,
+  updated_at: timestampSchema,
+  completed_at: timestampSchema.nullable(),
+});
+
 export type HookConfig = z.infer<typeof hookConfigSchema>;
 export type ValidationCommand = z.infer<typeof validationCommandSchema>;
 export type ValidationResult = z.infer<typeof validationResultSchema>;
@@ -263,6 +304,9 @@ export type ExecutionSession = z.infer<typeof executionSessionSchema>;
 export type ExecutionAttempt = z.infer<typeof executionAttemptSchema>;
 export type StructuredEvent = z.infer<typeof structuredEventSchema>;
 export type ReviewPackage = z.infer<typeof reviewPackageSchema>;
+export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
+export type ReviewReport = z.infer<typeof reviewReportSchema>;
+export type ReviewRun = z.infer<typeof reviewRunSchema>;
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketType = z.infer<typeof ticketTypeSchema>;
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;

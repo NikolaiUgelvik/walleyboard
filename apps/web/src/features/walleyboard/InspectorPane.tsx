@@ -14,6 +14,7 @@ import {
   TextInput,
 } from "@mantine/core";
 
+import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
 import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
@@ -1062,6 +1063,33 @@ export function InspectorPane({
                                 />
                               </Stack>
                             ) : null}
+                            <AgentReviewPanel
+                              latestReviewRun={controller.latestReviewRun}
+                              latestReviewRunPending={
+                                controller.latestReviewRunQuery.isPending
+                              }
+                              onStart={() => {
+                                if (!selectedSessionTicket) {
+                                  return;
+                                }
+
+                                controller.startAgentReviewMutation.mutate(
+                                  selectedSessionTicket.id,
+                                );
+                              }}
+                              startError={
+                                controller.startAgentReviewMutation.isError
+                                  ? controller.startAgentReviewMutation.error
+                                      .message
+                                  : null
+                              }
+                              startPending={
+                                controller.startAgentReviewMutation.isPending &&
+                                controller.startAgentReviewMutation
+                                  .variables ===
+                                  controller.selectedSessionTicket.id
+                              }
+                            />
                             {controller.mergeTicketMutation.isError ? (
                               <Text size="sm" c="red">
                                 {controller.mergeTicketMutation.error.message}

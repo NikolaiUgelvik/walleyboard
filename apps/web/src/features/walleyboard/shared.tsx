@@ -21,6 +21,7 @@ import type {
   RepositoryConfig,
   ReviewAction,
   ReviewPackage,
+  ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
   TicketWorkspaceDiff,
@@ -189,6 +190,10 @@ export type ReviewPackageResponse = {
   review_package: ReviewPackage;
 };
 
+export type ReviewRunResponse = {
+  review_run: ReviewRun;
+};
+
 export type NewDraftAction = "save" | "refine" | "questions" | "confirm";
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
@@ -331,6 +336,39 @@ export async function fetchJson<T>(path: string): Promise<T> {
     response = await fetch(`${apiBaseUrl}${path}`);
   } catch {
     throw new Error("Backend unavailable. Restart the backend and try again.");
+  }
+
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+
+    try {
+      const body = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
+      if (body.message || body.error) {
+        message = body.message ?? body.error ?? message;
+      }
+    } catch {
+      // Keep the default message when the response is not JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+export async function fetchOptionalJson<T>(path: string): Promise<T | null> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`);
+  } catch {
+    throw new Error("Backend unavailable. Restart the backend and try again.");
+  }
+
+  if (response.status === 404) {
+    return null;
   }
 
   if (!response.ok) {

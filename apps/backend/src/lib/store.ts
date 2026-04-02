@@ -11,6 +11,8 @@ import type {
   RepositoryConfig,
   RequestedChangeNote,
   ReviewPackage,
+  ReviewReport,
+  ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
   TicketType,
@@ -78,6 +80,20 @@ export type CreateReviewPackageInput = {
   remaining_risks: string[];
 };
 
+export type CreateReviewRunInput = {
+  ticket_id: number;
+  review_package_id: string;
+  implementation_session_id: string;
+};
+
+export type UpdateReviewRunInput = {
+  status?: ReviewRun["status"];
+  adapter_session_ref?: string | null;
+  report?: ReviewReport | null;
+  failure_message?: string | null;
+  completed_at?: string | null;
+};
+
 export type UpdateExecutionAttemptInput = {
   status?: ExecutionAttempt["status"];
   pty_pid?: number | null;
@@ -136,6 +152,7 @@ export interface Store {
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
   getTicket(ticketId: number): TicketFrontmatter | undefined;
   getReviewPackage(ticketId: number): ReviewPackage | undefined;
+  getLatestReviewRun(ticketId: number): ReviewRun | undefined;
   startTicket(
     ticketId: number,
     planningEnabled: boolean,
@@ -179,6 +196,11 @@ export interface Store {
     input: UpdateExecutionAttemptInput,
   ): ExecutionAttempt | undefined;
   createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
+  createReviewRun(input: CreateReviewRunInput): ReviewRun;
+  updateReviewRun(
+    reviewRunId: string,
+    input: UpdateReviewRunInput,
+  ): ReviewRun | undefined;
   recoverInterruptedSessions(): StartupRecoveryResult;
   updateTicketStatus(
     ticketId: number,

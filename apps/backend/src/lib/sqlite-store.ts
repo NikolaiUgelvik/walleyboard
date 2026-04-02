@@ -9,6 +9,7 @@ import type {
   RepositoryConfig,
   RequestedChangeNote,
   ReviewPackage,
+  ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
   UpdateProjectInput,
@@ -28,6 +29,7 @@ import type {
   CompleteSessionInput,
   ConfirmDraftInput,
   CreateReviewPackageInput,
+  CreateReviewRunInput,
   ListProjectTicketsOptions,
   MergeConflictResult,
   PreparedExecutionRuntime,
@@ -38,6 +40,7 @@ import type {
   Store,
   UpdateDraftRecordInput,
   UpdateExecutionAttemptInput,
+  UpdateReviewRunInput,
   UpdateSessionPlanInput,
 } from "./store.js";
 
@@ -177,6 +180,10 @@ export class SqliteStore implements Store {
     return this.#reviews.getReviewPackage(ticketId);
   }
 
+  getLatestReviewRun(ticketId: number): ReviewRun | undefined {
+    return this.#reviews.getLatestReviewRun(ticketId);
+  }
+
   startTicket(
     ticketId: number,
     planningEnabled: boolean,
@@ -275,6 +282,17 @@ export class SqliteStore implements Store {
 
   createReviewPackage(input: CreateReviewPackageInput): ReviewPackage {
     return this.#reviews.createReviewPackage(input);
+  }
+
+  createReviewRun(input: CreateReviewRunInput): ReviewRun {
+    return this.#reviews.createReviewRun(input);
+  }
+
+  updateReviewRun(
+    reviewRunId: string,
+    input: UpdateReviewRunInput,
+  ): ReviewRun | undefined {
+    return this.#reviews.updateReviewRun(reviewRunId, input);
   }
 
   recoverInterruptedSessions(): StartupRecoveryResult {

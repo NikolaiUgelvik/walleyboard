@@ -18,6 +18,7 @@ import {
   buildImplementationPrompt,
   buildMergeConflictPrompt,
   buildPlanPrompt,
+  buildReviewPrompt,
 } from "./shared-execution-prompts.js";
 import type {
   AgentCliAdapter,
@@ -26,6 +27,7 @@ import type {
   InterpretedAdapterLine,
   MergeConflictRunInput,
   PreparedAgentRun,
+  ReviewRunInput,
 } from "./types.js";
 
 const codexDockerSpec = {
@@ -340,6 +342,40 @@ export class CodexCliAdapter implements AgentCliAdapter {
         stage: input.stage,
         conflictedFiles: input.conflictedFiles,
         failureMessage: input.failureMessage,
+      }),
+    );
+
+    return {
+      command: "codex",
+      args,
+      outputPath: input.outputPath,
+      dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
+    };
+  }
+
+  buildReviewRun(input: ReviewRunInput): PreparedAgentRun {
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "ticket",
+    );
+    const args = [
+      "exec",
+      "--json",
+      "--full-auto",
+      "--output-last-message",
+      input.outputPath,
+    ];
+
+    appendCodexExecutionModeArgs(args, "plan");
+    appendCodexModelArgs(args, {
+      model,
+      reasoningEffort,
+    });
+    args.push(
+      buildReviewPrompt({
+        repository: input.repository,
+        reviewPackage: input.reviewPackage,
+        ticket: input.ticket,
       }),
     );
 

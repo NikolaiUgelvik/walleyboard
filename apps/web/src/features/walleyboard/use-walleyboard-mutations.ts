@@ -733,6 +733,27 @@ export function useWalleyBoardMutations({
     },
   });
 
+  const startAgentReviewMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<CommandAck>(`/tickets/${ticketId}/start-agent-review`, {}),
+    onSuccess: async (_, ticketId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-run"],
+        }),
+      ]);
+    },
+  });
+
   const requestChangesMutation = useMutation({
     mutationFn: (input: { ticketId: number; body: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/request-changes`, {
@@ -880,6 +901,7 @@ export function useWalleyBoardMutations({
     revertDraftRefineMutation,
     saveDraftMutation,
     sessionInputMutation,
+    startAgentReviewMutation,
     startTicketMutation,
     startTicketWorkspacePreviewMutation,
     stopTicketMutation,
