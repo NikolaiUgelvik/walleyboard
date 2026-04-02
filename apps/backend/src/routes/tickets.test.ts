@@ -129,6 +129,9 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
     const executionRuntime = {
       assertProjectExecutionBackendAvailable() {},
       cleanupExecutionEnvironment() {},
+      hasActiveExecution() {
+        return false;
+      },
       startExecution(input: {
         session: { id: string; worktree_path: string | null };
         ticket: { id: number };
@@ -279,6 +282,9 @@ test("merge route clears the persisted worktree path after cleanup", async () =>
       eventHub: new EventHub(),
       store,
       executionRuntime: {
+        hasActiveExecution() {
+          return false;
+        },
         resolveMergeConflicts() {
           throw new Error("Merge conflicts are not expected in this test");
         },

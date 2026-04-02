@@ -96,6 +96,9 @@ test("AgentReviewService reruns review until no actionable findings remain", asy
     let reviewInvocationCount = 0;
     let resumedReviewPackageCount = 0;
     const executionRuntime = {
+      hasActiveExecution() {
+        return false;
+      },
       async runTicketReview() {
         reviewInvocationCount += 1;
         return reviewInvocationCount === 1

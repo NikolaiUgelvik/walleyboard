@@ -141,7 +141,7 @@ export function TicketWorkspaceTerminal({
       setError("The workspace terminal could not connect.");
     });
 
-    const disposable = terminal.onData((data) => {
+    const disposable = terminal.onData((data: string) => {
       if (socket.readyState !== WebSocket.OPEN) {
         return;
       }

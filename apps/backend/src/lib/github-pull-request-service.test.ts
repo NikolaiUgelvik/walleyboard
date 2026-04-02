@@ -155,6 +155,9 @@ function createService(
   const previewStops: number[] = [];
   const disposedTickets: number[] = [];
   const executionRuntime = {
+    hasActiveExecution() {
+      return false;
+    },
     startExecution(input: {
       session: { id: string; worktree_path: string | null };
       ticket: { id: number };
