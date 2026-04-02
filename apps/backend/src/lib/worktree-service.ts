@@ -143,6 +143,12 @@ function normalizeOptionalCommand(
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function hasMeaningfulContent(
+  value: string | null | undefined,
+): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function listGitRemotes(repoPath: string): string[] {
   const output = runGit(repoPath, ["remote"]);
   if (output.length === 0) {
@@ -209,6 +215,10 @@ export function runPreWorktreeCommand(
 
 export type PreparedWorktreeRemovalResult = {
   status: "removed" | "scheduled";
+};
+
+export type ImmediateWorktreeResetResult = {
+  warnings: string[];
 };
 
 export function prepareWorktree(
@@ -319,6 +329,56 @@ export function removePreparedWorktree(
   runGit(repository.path, ["worktree", "remove", "--force", worktreePath]);
   tryRemoveWorktreeRoot(worktreePath);
   return { status: "removed" };
+}
+
+export function resetPreparedWorktreeImmediately(
+  repository: RepositoryConfig,
+  worktreePath: string | null | undefined,
+  workingBranch?: string | null,
+  postWorktreeCommand?: string | null,
+): ImmediateWorktreeResetResult {
+  const warnings: string[] = [];
+  const normalizedCommand = normalizeOptionalCommand(postWorktreeCommand);
+  const normalizedWorktreePath = hasMeaningfulContent(worktreePath)
+    ? worktreePath
+    : null;
+
+  if (
+    normalizedCommand &&
+    normalizedWorktreePath &&
+    existsSync(normalizedWorktreePath)
+  ) {
+    try {
+      execFileSync("sh", ["-lc", normalizedCommand], {
+        cwd: normalizedWorktreePath,
+        encoding: "utf8",
+        env: process.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown post-worktree failure";
+      warnings.push(`Post-worktree command failed: ${message}`);
+    }
+  }
+
+  if (normalizedWorktreePath && existsSync(normalizedWorktreePath)) {
+    runGit(repository.path, [
+      "worktree",
+      "remove",
+      "--force",
+      normalizedWorktreePath,
+    ]);
+    tryRemoveWorktreeRoot(normalizedWorktreePath);
+  }
+
+  if (hasMeaningfulContent(workingBranch)) {
+    removeLocalBranch(repository, workingBranch);
+  }
+
+  return { warnings };
 }
 
 export function removeLocalBranch(

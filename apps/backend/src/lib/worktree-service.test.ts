@@ -22,6 +22,7 @@ import {
   fetchRepositoryBranches,
   mergeReviewedBranch,
   prepareWorktree,
+  resetPreparedWorktreeImmediately,
 } from "./worktree-service.js";
 
 function runGit(
@@ -222,6 +223,62 @@ test("prepareWorktree resolves a remote target branch to a local branch and pull
     assert.equal(
       readFileSync(join(runtime.worktreePath, "upstream.txt"), "utf8"),
       "upstream change\n",
+    );
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resetPreparedWorktreeImmediately removes the worktree and branch even when post-worktree cleanup fails", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-reset-worktree-"));
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(tempDir);
+
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    const project = createProject("reset-worktree-project");
+    const runtime = prepareWorktree(
+      project,
+      createRepositoryConfig(repoPath, "main"),
+      createTicket("main"),
+    );
+
+    configureGitIdentity(runtime.worktreePath);
+    writeFileSync(
+      join(runtime.worktreePath, "ticket.txt"),
+      "ticket work\n",
+      "utf8",
+    );
+
+    const cleanupLogPath = join(tempDir, "cleanup-log.txt");
+    const result = resetPreparedWorktreeImmediately(
+      createRepositoryConfig(repoPath, "main"),
+      runtime.worktreePath,
+      runtime.workingBranch,
+      `printf 'cleanup ran\\n' > '${cleanupLogPath}'; exit 7`,
+    );
+
+    assert.equal(result.warnings.length, 1);
+    const warning = result.warnings[0];
+    assert.ok(warning);
+    assert.match(warning, /Post-worktree command failed/);
+    assert.equal(readFileSync(cleanupLogPath, "utf8"), "cleanup ran\n");
+    assert.equal(existsSync(runtime.worktreePath), false);
+    assert.equal(
+      runGit(repoPath, ["branch", "--list", runtime.workingBranch]),
+      "",
     );
   } finally {
     process.chdir(previousCwd);

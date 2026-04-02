@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 
 import {
   requestChangesInputSchema,
+  restartTicketInputSchema,
   resumeTicketInputSchema,
   startTicketInputSchema,
   stopTicketInputSchema,
@@ -24,6 +25,7 @@ import {
   prepareWorktree,
   removeLocalBranch,
   removePreparedWorktree,
+  resetPreparedWorktreeImmediately,
   runPreWorktreeCommand,
 } from "../lib/worktree-service.js";
 
@@ -462,6 +464,164 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         reply.code(409).send({
           error:
             error instanceof Error ? error.message : "Unable to resume ticket",
+        });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/restart",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const input = parseBody(reply, restartTicketInputSchema, request.body);
+      if (!input) {
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+      if (ticket.status !== "in_progress") {
+        reply.code(409).send({
+          error: "Only in-progress tickets can restart from scratch",
+        });
+        return;
+      }
+      if (!ticket.session_id) {
+        reply.code(409).send({ error: "Ticket has no execution session" });
+        return;
+      }
+
+      const session = store.getSession(ticket.session_id);
+      if (!session) {
+        reply.code(404).send({ error: "Execution session not found" });
+        return;
+      }
+      if (session.status !== "interrupted") {
+        reply.code(409).send({
+          error: "Only interrupted sessions can restart from scratch",
+        });
+        return;
+      }
+
+      const project = store.getProject(ticket.project);
+      if (!project) {
+        reply.code(404).send({ error: "Project not found" });
+        return;
+      }
+
+      const repository = store.getRepository(ticket.repo);
+      if (!repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      try {
+        appendSessionOutput(
+          session.id,
+          session.current_attempt_id,
+          "Fresh restart requested. Discarding the preserved worktree and local branch before creating a clean attempt.",
+        );
+
+        await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+        await ticketWorkspaceService.disposeTicket(ticketId);
+
+        const cleanup = resetPreparedWorktreeImmediately(
+          repository,
+          session.worktree_path,
+          ticket.working_branch,
+          project.post_worktree_command,
+        );
+        for (const warning of cleanup.warnings) {
+          appendSessionOutput(
+            session.id,
+            session.current_attempt_id,
+            `Restart cleanup warning: ${warning}`,
+          );
+        }
+
+        const runtime = prepareWorktree(project, repository, {
+          ...ticket,
+          working_branch: null,
+        });
+        const restartResult = store.restartInterruptedTicket(
+          ticketId,
+          runtime,
+          input.reason,
+        );
+
+        eventHub.publish(
+          makeProtocolEvent(
+            "ticket.updated",
+            "ticket",
+            String(restartResult.ticket.id),
+            {
+              ticket: restartResult.ticket,
+            },
+          ),
+        );
+        eventHub.publish(
+          makeProtocolEvent(
+            "session.updated",
+            "session",
+            restartResult.session.id,
+            {
+              session: restartResult.session,
+            },
+          ),
+        );
+        restartResult.logs.forEach((logLine, index) => {
+          eventHub.publish(
+            makeProtocolEvent(
+              "session.output",
+              "session",
+              restartResult.session.id,
+              {
+                session_id: restartResult.session.id,
+                attempt_id: restartResult.attempt.id,
+                sequence:
+                  store.getSessionLogs(restartResult.session.id).length -
+                  restartResult.logs.length +
+                  index,
+                chunk: logLine,
+              },
+            ),
+          );
+        });
+
+        executionRuntime.startExecution({
+          project,
+          repository,
+          ticket: restartResult.ticket,
+          session: restartResult.session,
+          ...(input.reason && input.reason.trim().length > 0
+            ? { additionalInstruction: input.reason }
+            : {}),
+        });
+        runPreWorktreeCommand(
+          runtime.worktreePath,
+          project.pre_worktree_command,
+        );
+
+        reply.send(
+          makeCommandAck(true, "Execution session restarted from scratch", {
+            ticket_id: restartResult.ticket.id,
+            session_id: restartResult.session.id,
+          }),
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to restart ticket from scratch",
         });
       }
     },

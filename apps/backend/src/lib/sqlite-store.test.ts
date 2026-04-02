@@ -300,6 +300,72 @@ test("planning sessions keep plan approval state across retries", () => {
   }
 });
 
+test("restartInterruptedTicket keeps ids but resets fresh-launch session state", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-fresh-restart-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Fresh Restart Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, true, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started planning session"],
+    });
+
+    store.updateSessionPlan(started.session.id, {
+      plan_status: "approved",
+      plan_summary: "Approved plan",
+    });
+    store.updateSessionCodexSessionId(
+      started.session.id,
+      "019d4cd5-78db-7c22-b9d7-bb251d30a1f1",
+    );
+    store.updateSessionStatus(
+      started.session.id,
+      "interrupted",
+      "Paused after the original worktree drifted too far.",
+    );
+    store.updateExecutionAttempt(started.attempt.id, {
+      status: "interrupted",
+      end_reason: "user_restart",
+    });
+
+    const restarted = store.restartInterruptedTicket(
+      ticket.id,
+      {
+        workingBranch: "codex/ticket-1",
+        worktreePath: join(tempDir, "worktrees", "ticket-1-fresh"),
+        logs: ["Prepared a fresh worktree"],
+      },
+      "Start over from a clean branch",
+    );
+
+    assert.equal(restarted.ticket.id, ticket.id);
+    assert.equal(restarted.session.id, started.session.id);
+    assert.equal(restarted.attempt.attempt_number, 2);
+    assert.equal(restarted.session.status, "awaiting_input");
+    assert.equal(restarted.session.codex_session_id, null);
+    assert.equal(restarted.session.plan_status, "drafting");
+    assert.equal(restarted.session.plan_summary, null);
+    assert.equal(
+      restarted.session.worktree_path,
+      join(tempDir, "worktrees", "ticket-1-fresh"),
+    );
+    assert.notEqual(restarted.session.current_attempt_id, started.attempt.id);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("codex session ids persist across resume and reload", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-codex-session-"));
   const databasePath = join(tempDir, "orchestrator.sqlite");
@@ -344,6 +410,78 @@ test("codex session ids persist across resume and reload", () => {
       reopenedStore.getSession(started.session.id)?.codex_session_id,
       codexSessionId,
     );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("restartInterruptedTicket preserves prior history and appends fresh restart logs", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-restart-logs-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Restart Log Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started implementation session"],
+    });
+
+    store.updateSessionStatus(
+      started.session.id,
+      "interrupted",
+      "The local branch should be discarded and recreated.",
+    );
+    store.updateExecutionAttempt(started.attempt.id, {
+      status: "interrupted",
+      end_reason: "user_restart",
+    });
+
+    const logsBeforeRestart = store.getSessionLogs(started.session.id);
+    const restarted = store.restartInterruptedTicket(ticket.id, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1-fresh"),
+      logs: ["Prepared fresh workspace from target branch"],
+    });
+
+    const logsAfterRestart = store.getSessionLogs(started.session.id);
+    assert.equal(store.listSessionAttempts(started.session.id).length, 2);
+    assert.deepEqual(
+      logsAfterRestart.slice(0, logsBeforeRestart.length),
+      logsBeforeRestart,
+    );
+    assert.deepEqual(
+      logsAfterRestart.slice(-restarted.logs.length),
+      restarted.logs,
+    );
+    assert.ok(
+      restarted.logs.includes(
+        "Fresh restart requested without additional guidance.",
+      ),
+    );
+    assert.ok(
+      restarted.logs.includes(
+        "Preserving ticket history while resetting the local worktree and Codex thread.",
+      ),
+    );
+    assert.ok(
+      restarted.logs.includes("Working branch recreated: codex/ticket-1"),
+    );
+    assert.ok(
+      restarted.logs.includes(
+        `Worktree recreated at: ${join(tempDir, "worktrees", "ticket-1-fresh")}`,
+      ),
+    );
+    assert.ok(restarted.logs.includes("Starting fresh execution attempt 2."));
+    assert.equal(restarted.attempt.attempt_number, 2);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

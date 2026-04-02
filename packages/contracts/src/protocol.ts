@@ -99,6 +99,10 @@ export const resumeTicketInputSchema = z.object({
   reason: z.string().min(1).optional(),
 });
 
+export const restartTicketInputSchema = z.object({
+  reason: z.string().min(1).optional(),
+});
+
 export const requestChangesInputSchema = z.object({
   body: z.string().min(1),
 });
@@ -295,6 +299,7 @@ export type UploadDraftArtifactResponse = z.infer<
 export type StartTicketInput = z.infer<typeof startTicketInputSchema>;
 export type StopTicketInput = z.infer<typeof stopTicketInputSchema>;
 export type ResumeTicketInput = z.infer<typeof resumeTicketInputSchema>;
+export type RestartTicketInput = z.infer<typeof restartTicketInputSchema>;
 export type RequestChangesInput = z.infer<typeof requestChangesInputSchema>;
 export type CheckpointResponseInput = z.infer<
   typeof checkpointResponseInputSchema

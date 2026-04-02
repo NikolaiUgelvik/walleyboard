@@ -144,6 +144,11 @@ export interface Store {
   requestTicketChanges(ticketId: number, body: string): RestartTicketResult;
   recordMergeConflict(ticketId: number, body: string): MergeConflictResult;
   resumeTicket(ticketId: number, reason?: string): RestartTicketResult;
+  restartInterruptedTicket(
+    ticketId: number,
+    runtime: PreparedExecutionRuntime,
+    reason?: string,
+  ): RestartTicketResult;
   addSessionInput(sessionId: string, body: string): ExecutionSession;
   updateSessionPlan(
     sessionId: string,

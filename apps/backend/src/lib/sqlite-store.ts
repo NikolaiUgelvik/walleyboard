@@ -1924,6 +1924,164 @@ export class SqliteStore implements Store {
     };
   }
 
+  restartInterruptedTicket(
+    ticketId: number,
+    runtime: PreparedExecutionRuntime,
+    reason?: string,
+  ): RestartTicketResult {
+    const ticket = this.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+    if (ticket.status !== "in_progress") {
+      throw new Error("Only in-progress tickets can be restarted");
+    }
+    if (!ticket.session_id) {
+      throw new Error("Ticket has no execution session");
+    }
+
+    const session = this.getSession(ticket.session_id);
+    if (!session) {
+      throw new Error("Execution session not found");
+    }
+    if (session.status !== "interrupted") {
+      throw new Error("Only interrupted sessions can restart from scratch");
+    }
+
+    const project = this.getProject(ticket.project);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const attemptId = nanoid();
+    const timestamp = nowIso();
+    const attemptNumber = this.#nextAttemptNumber(session.id);
+    const shouldQueue =
+      this.#countOccupiedExecutionSlotsForProject(ticket.project) >=
+      project.max_concurrent_sessions;
+    const reasonBody = hasMeaningfulContent(reason) ? reason : null;
+    const nextPlanStatus: ExecutionPlanStatus = session.planning_enabled
+      ? "drafting"
+      : "not_requested";
+    const summary = reasonBody
+      ? formatMarkdownLog("Execution restart requested", reasonBody)
+      : shouldQueue
+        ? "Fresh restart requested. The session is queued and will start when a project slot opens."
+        : "Fresh restart requested. A new worktree is ready and execution will start from scratch.";
+
+    this.#db
+      .prepare(
+        `
+          UPDATE tickets
+          SET working_branch = ?, updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(runtime.workingBranch, timestamp, ticketId);
+
+    this.#db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET worktree_path = ?,
+              codex_session_id = ?,
+              status = ?,
+              queue_entered_at = ?,
+              plan_status = ?,
+              plan_summary = ?,
+              current_attempt_id = ?,
+              completed_at = ?,
+              last_heartbeat_at = ?,
+              last_summary = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        runtime.worktreePath,
+        null,
+        shouldQueue ? "queued" : "awaiting_input",
+        shouldQueue ? timestamp : null,
+        nextPlanStatus,
+        null,
+        attemptId,
+        null,
+        timestamp,
+        summary,
+        session.id,
+      );
+
+    this.#db
+      .prepare(
+        `
+          INSERT INTO execution_attempts (
+            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        attemptId,
+        session.id,
+        attemptNumber,
+        "queued",
+        null,
+        timestamp,
+        null,
+        null,
+      );
+
+    const logs = [
+      reasonBody
+        ? formatMarkdownLog("Fresh restart guidance recorded", reasonBody)
+        : "Fresh restart requested without additional guidance.",
+      "Preserving ticket history while resetting the local worktree and Codex thread.",
+      `Working branch recreated: ${runtime.workingBranch}`,
+      `Worktree recreated at: ${runtime.worktreePath}`,
+      ...runtime.logs,
+      shouldQueue
+        ? `Queued fresh execution attempt ${attemptNumber} until a project running slot opens.`
+        : `Starting fresh execution attempt ${attemptNumber}.`,
+    ];
+
+    for (const line of logs) {
+      this.#appendSessionLog(session.id, line);
+    }
+
+    this.#recordStructuredEvent(
+      "ticket",
+      String(ticketId),
+      "ticket.restarted",
+      {
+        ticket_id: ticketId,
+        session_id: session.id,
+        attempt_id: attemptId,
+        working_branch: runtime.workingBranch,
+        worktree_path: runtime.worktreePath,
+      },
+    );
+    this.#recordStructuredEvent("session", session.id, "session.restarted", {
+      ticket_id: ticketId,
+      attempt_id: attemptId,
+      reason: reasonBody,
+      worktree_path: runtime.worktreePath,
+    });
+
+    return {
+      ticket: requireValue(
+        this.getTicket(ticketId),
+        "Ticket not found after fresh restart",
+      ),
+      session: requireValue(
+        this.getSession(session.id),
+        "Session not found after fresh restart",
+      ),
+      attempt: requireValue(
+        this.listSessionAttempts(session.id)[attemptNumber - 1],
+        "Execution attempt not found after fresh restart",
+      ),
+      logs,
+    };
+  }
+
   addSessionInput(sessionId: string, body: string): ExecutionSession {
     const session = this.getSession(sessionId);
     if (!session) {

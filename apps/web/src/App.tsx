@@ -2087,6 +2087,12 @@ export function App() {
         queryClient.invalidateQueries({
           queryKey: ["sessions", selectedSessionId, "logs"],
         }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", variables.ticketId, "workspace", "diff"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", variables.ticketId, "workspace", "preview"],
+        }),
       ]);
     },
   });
@@ -2442,6 +2448,45 @@ export function App() {
               }),
               queryClient.invalidateQueries({
                 queryKey: ["sessions", resumedSessionId, "logs"],
+              }),
+            ]
+          : []),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
+      ]);
+    },
+  });
+
+  const restartTicketMutation = useMutation({
+    mutationFn: (input: { ticketId: number; reason?: string }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/restart`, {
+        reason:
+          input.reason && input.reason.trim().length > 0
+            ? input.reason
+            : undefined,
+      }),
+    onSuccess: async (_, variables) => {
+      const restartedSessionId =
+        ticketsQuery.data?.tickets.find(
+          (ticket) => ticket.id === variables.ticketId,
+        )?.session_id ?? null;
+
+      setResumeReason("");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
+        ...(restartedSessionId
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: ["sessions", restartedSessionId],
+              }),
+              queryClient.invalidateQueries({
+                queryKey: ["sessions", restartedSessionId, "logs"],
               }),
             ]
           : []),
@@ -3037,6 +3082,23 @@ export function App() {
     });
   };
 
+  const restartTicketFromScratch = (
+    ticket: TicketFrontmatter,
+    reason?: string,
+  ): void => {
+    const confirmed = window.confirm(
+      `Restart ticket #${ticket.id} from scratch? This deletes the current worktree and local branch, then recreates them from ${ticket.target_branch}.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    restartTicketMutation.mutate({
+      ticketId: ticket.id,
+      ...(reason && reason.trim().length > 0 ? { reason } : {}),
+    });
+  };
+
   const archiveTicket = (ticket: TicketFrontmatter): void => {
     archiveTicketMutation.mutate({
       ticketId: ticket.id,
@@ -3143,9 +3205,13 @@ export function App() {
     ticketSession: ExecutionSession | null,
   ) => {
     const canResume = ticketSession?.status === "interrupted";
+    const canRestart = ticketSession?.status === "interrupted";
     const isResuming =
       resumeTicketMutation.isPending &&
       resumeTicketMutation.variables?.ticketId === ticket.id;
+    const isRestarting =
+      restartTicketMutation.isPending &&
+      restartTicketMutation.variables?.ticketId === ticket.id;
 
     return (
       <Menu withinPortal position="bottom-end">
@@ -3171,6 +3237,18 @@ export function App() {
               }}
             >
               {isResuming ? "Resuming..." : "Resume"}
+            </Menu.Item>
+          ) : null}
+          {canRestart ? (
+            <Menu.Item
+              color="orange"
+              disabled={isRestarting}
+              onClick={(event) => {
+                event.stopPropagation();
+                restartTicketFromScratch(ticket);
+              }}
+            >
+              {isRestarting ? "Restarting..." : "Restart"}
             </Menu.Item>
           ) : null}
           {ticket.status === "done" ? (
@@ -3676,6 +3754,10 @@ export function App() {
                                 resumeTicketMutation.isError &&
                                 resumeTicketMutation.variables?.ticketId ===
                                   ticket.id;
+                              const showRestartError =
+                                restartTicketMutation.isError &&
+                                restartTicketMutation.variables?.ticketId ===
+                                  ticket.id;
                               const showStopError =
                                 stopTicketMutation.isError &&
                                 stopTicketMutation.variables?.ticketId ===
@@ -3782,6 +3864,11 @@ export function App() {
                                     {showResumeError ? (
                                       <Text size="sm" c="red">
                                         {resumeTicketMutation.error.message}
+                                      </Text>
+                                    ) : null}
+                                    {showRestartError ? (
+                                      <Text size="sm" c="red">
+                                        {restartTicketMutation.error.message}
                                       </Text>
                                     ) : null}
                                     {showStopError ? (
@@ -4872,9 +4959,9 @@ export function App() {
                               >
                                 <Stack gap="sm">
                                   <Textarea
-                                    id="resume-reason"
-                                    name="resumeReason"
-                                    label="Resume guidance"
+                                    id="next-attempt-guidance"
+                                    name="nextAttemptGuidance"
+                                    label="Next attempt guidance"
                                     placeholder="Optional. Clarify what Codex should address on the next attempt."
                                     value={resumeReason}
                                     onChange={(event) =>
@@ -4885,6 +4972,13 @@ export function App() {
                                   {resumeTicketMutation.isError ? (
                                     <Text size="sm" c="red">
                                       {resumeTicketMutation.error.message}
+                                    </Text>
+                                  ) : null}
+                                  {restartTicketMutation.isError &&
+                                  restartTicketMutation.variables?.ticketId ===
+                                    selectedSessionTicket.id ? (
+                                    <Text size="sm" c="red">
+                                      {restartTicketMutation.error.message}
                                     </Text>
                                   ) : null}
                                   <Group justify="space-between">
@@ -4907,12 +5001,35 @@ export function App() {
                                     >
                                       Record Note Only
                                     </Button>
-                                    <Button
-                                      type="submit"
-                                      loading={resumeTicketMutation.isPending}
-                                    >
-                                      Resume Execution
-                                    </Button>
+                                    <Group gap="sm">
+                                      {session.status === "interrupted" ? (
+                                        <Button
+                                          color="orange"
+                                          variant="light"
+                                          type="button"
+                                          loading={
+                                            restartTicketMutation.isPending &&
+                                            restartTicketMutation.variables
+                                              ?.ticketId ===
+                                              selectedSessionTicket.id
+                                          }
+                                          onClick={() => {
+                                            restartTicketFromScratch(
+                                              selectedSessionTicket,
+                                              resumeReason,
+                                            );
+                                          }}
+                                        >
+                                          Restart from Scratch
+                                        </Button>
+                                      ) : null}
+                                      <Button
+                                        type="submit"
+                                        loading={resumeTicketMutation.isPending}
+                                      >
+                                        Resume Execution
+                                      </Button>
+                                    </Group>
                                   </Group>
                                 </Stack>
                               </form>

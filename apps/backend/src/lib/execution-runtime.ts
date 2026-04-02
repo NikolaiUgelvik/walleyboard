@@ -120,6 +120,15 @@ function extractMarkdownLogBody(
   return body.length > 0 ? body : null;
 }
 
+function extractPersistedAttemptGuidance(
+  summary: string | null | undefined,
+): string | null {
+  return (
+    extractMarkdownLogBody(summary, "Execution resume requested") ??
+    extractMarkdownLogBody(summary, "Execution restart requested")
+  );
+}
+
 function appendMarkdownSection(
   sections: string[],
   label: string,
@@ -1427,10 +1436,7 @@ export class ExecutionRuntime {
     const extraInstructions: PromptContextSection[] = [];
     const persistedResumeGuidance = hasMeaningfulContent(additionalInstruction)
       ? null
-      : extractMarkdownLogBody(
-          session.last_summary,
-          "Execution resume requested",
-        );
+      : extractPersistedAttemptGuidance(session.last_summary);
     const requestedChangeNote = session.latest_requested_change_note_id
       ? this.#store.getRequestedChangeNote(
           session.latest_requested_change_note_id,
