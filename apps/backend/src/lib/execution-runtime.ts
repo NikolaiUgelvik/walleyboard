@@ -1095,6 +1095,7 @@ export class ExecutionRuntime {
     let pendingBuffer = "";
     let persistedSessionRef = activeSessionRef;
     let lastOutputContent: string | undefined;
+    let suppressedDockerFailureDetail: string | undefined;
 
     const processAdapterLine = (line: string) => {
       const interpreted = adapter.interpretOutputLine(line);
@@ -1129,6 +1130,18 @@ export class ExecutionRuntime {
       return interpreted;
     };
 
+    const shouldSuppressDockerAdapterLine = (line: string) =>
+      useDockerRuntime &&
+      adapter.id === "codex" &&
+      line.startsWith("[codex raw]");
+
+    const recordSuppressedDockerFailureDetail = (line: string) => {
+      const detail = line.replace(/^\[codex raw\]\s*/, "").trim();
+      if (detail.length > 0) {
+        suppressedDockerFailureDetail = detail;
+      }
+    };
+
     child.onData((chunk) => {
       pendingBuffer += chunk.replace(/\r\n/g, "\n");
 
@@ -1137,6 +1150,10 @@ export class ExecutionRuntime {
         const line = pendingBuffer.slice(0, newlineIndex);
         pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
         const interpreted = processAdapterLine(line);
+        if (shouldSuppressDockerAdapterLine(interpreted.logLine)) {
+          recordSuppressedDockerFailureDetail(interpreted.logLine);
+          continue;
+        }
         publishSessionOutput(
           this.#eventHub,
           this.#store,
@@ -1159,13 +1176,17 @@ export class ExecutionRuntime {
 
       if (pendingBuffer.trim().length > 0) {
         const interpreted = processAdapterLine(pendingBuffer);
-        publishSessionOutput(
-          this.#eventHub,
-          this.#store,
-          session.id,
-          attemptId,
-          interpreted.logLine,
-        );
+        if (shouldSuppressDockerAdapterLine(interpreted.logLine)) {
+          recordSuppressedDockerFailureDetail(interpreted.logLine);
+        } else {
+          publishSessionOutput(
+            this.#eventHub,
+            this.#store,
+            session.id,
+            attemptId,
+            interpreted.logLine,
+          );
+        }
         pendingBuffer = "";
       }
 
@@ -1216,7 +1237,7 @@ export class ExecutionRuntime {
         reason: adapter.formatExitReason(
           exitCode ?? null,
           null,
-          finalSummary ?? "",
+          finalSummary ?? suppressedDockerFailureDetail ?? "",
         ),
       });
       resolveTrackedExit(this.#exitWaiters, session.id, true);

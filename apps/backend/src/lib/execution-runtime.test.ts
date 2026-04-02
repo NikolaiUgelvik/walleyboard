@@ -234,3 +234,170 @@ test("docker-backed execution launches the configured adapter command inside Doc
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("docker-backed execution suppresses repeated raw Codex errors and reports one failure detail", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
+  const worktreePath = join(tempDir, "workspace");
+  mkdirSync(worktreePath, { recursive: true });
+
+  const sessionLogs: string[] = [];
+  let onDataHandler: ((chunk: string) => void) | null = null;
+  let onExitHandler:
+    | ((event: { exitCode: number; signal?: number }) => void)
+    | null = null;
+
+  const dockerRuntime = {
+    assertAvailable() {
+      return {
+        installed: true,
+        available: true,
+        client_version: "29.3.1",
+        server_version: "29.3.1",
+        error: null,
+      };
+    },
+    cleanupSessionContainer() {},
+    dispose() {},
+    ensureSessionContainer() {},
+    spawnPtyInSession(_sessionId: string, command: string) {
+      assert.equal(command, "codex");
+      return {
+        kill() {},
+        onData(callback: (chunk: string) => void) {
+          onDataHandler = callback;
+        },
+        onExit(
+          callback: (event: { exitCode: number; signal?: number }) => void,
+        ) {
+          onExitHandler = callback;
+        },
+        pid: 1234,
+        process: "docker",
+        resize() {},
+        write() {},
+      } as never;
+    },
+  };
+  const store = {
+    appendSessionLog(_sessionId: string, line: string) {
+      sessionLogs.push(line);
+      return sessionLogs.length;
+    },
+    claimNextQueuedSession() {
+      return undefined;
+    },
+    completeSession() {
+      return createSession(worktreePath);
+    },
+    getRequestedChangeNote() {
+      return undefined;
+    },
+    updateExecutionAttempt() {
+      return undefined;
+    },
+    updateSessionAdapterSessionRef() {
+      return createSession(worktreePath);
+    },
+    updateSessionStatus(_sessionId: string, _status: string, _summary: string) {
+      return createSession(worktreePath);
+    },
+  };
+  const eventHub = {
+    publish() {},
+  };
+
+  try {
+    const adapterRegistry = new AgentAdapterRegistry([
+      {
+        id: "codex",
+        label: "Codex",
+        buildDraftRun() {
+          throw new Error("draft runs are not used in this test");
+        },
+        buildExecutionRun(input) {
+          return {
+            command: "codex",
+            args: [
+              "exec",
+              "--json",
+              "--dangerously-bypass-approvals-and-sandbox",
+              "--output-last-message",
+              input.outputPath,
+              "fake prompt",
+            ],
+            outputPath: input.outputPath,
+            dockerSpec: {
+              imageTag: "example/codex:latest",
+              dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+              homePath: "/home/codex",
+              configMountPath: "/home/codex/.codex",
+            },
+          };
+        },
+        buildMergeConflictRun() {
+          throw new Error("merge-conflict runs are not used in this test");
+        },
+        interpretOutputLine(line) {
+          return {
+            logLine: `[codex raw] ${line}`,
+          };
+        },
+        parseDraftResult() {
+          throw new Error("draft parsing is not used in this test");
+        },
+        formatExitReason(exitCode, _signal, rawOutput) {
+          return rawOutput.length > 0
+            ? `Codex exited with code ${exitCode}. Final output: ${rawOutput}`
+            : `Codex exited with code ${exitCode}.`;
+        },
+        resolveModelSelection() {
+          return {
+            model: null,
+            reasoningEffort: null,
+          };
+        },
+      },
+    ]);
+    const runtime = new ExecutionRuntime({
+      adapterRegistry,
+      dockerRuntime: dockerRuntime as never,
+      eventHub: eventHub as never,
+      store: store as never,
+    });
+
+    runtime.startExecution({
+      project: createProject(),
+      repository: createRepository(tempDir),
+      ticket: createTicket(),
+      session: createSession(worktreePath),
+    });
+
+    if (!onDataHandler || !onExitHandler) {
+      throw new Error("Expected Docker PTY callbacks to be registered");
+    }
+    const emitData: (chunk: string) => void = onDataHandler;
+    const emitExit: (event: { exitCode: number; signal?: number }) => void =
+      onExitHandler;
+
+    const noisyLine =
+      "ERROR codex_rollout::list reporting a stale rollout path /tmp/stale-rollout";
+
+    emitData(`${noisyLine}\n${noisyLine}\n${noisyLine}\n`);
+    emitExit({
+      exitCode: 1,
+    });
+
+    assert.equal(
+      sessionLogs.some((line) => line.startsWith("[codex raw]")),
+      false,
+    );
+    assert.deepEqual(
+      sessionLogs.filter((line) => line.includes("stale rollout path")),
+      [
+        `[runtime failure] Codex exited with code 1. Final output: ${noisyLine}`,
+      ],
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
