@@ -6,6 +6,10 @@ WalleyBoard is a vibe-coded, local-first workbench for handing the fiddly stuff 
 
 Runtime state lives under `~/.walleyboard/`, with `walleyboard.sqlite` as the source of truth for drafts, tickets, sessions, and review metadata so the repo checkout stays focused on code instead of accumulating local app data.
 
+## Screenshot
+
+![WalleyBoard project board with inbox, project list, and ticket columns](./docs/assets/walleyboard-board.png)
+
 ## Workspace Layout
 
 - `apps/backend`: local Fastify backend, WebSocket transport, route scaffolding, and execution service boundaries
