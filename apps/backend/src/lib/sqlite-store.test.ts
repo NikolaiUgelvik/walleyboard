@@ -125,6 +125,62 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
   }
 });
 
+test("startup recovery leaves sessions alone when the tracked PTY is still alive", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-recovery-live-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Recovery Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started implementation session"],
+    });
+
+    store.updateSessionStatus(
+      started.session.id,
+      "running",
+      "Execution is still attached to a live PTY.",
+    );
+    store.updateExecutionAttempt(started.attempt.id, {
+      status: "running",
+      pty_pid: process.pid,
+    });
+
+    const reopenedStore = new SqliteStore(databasePath);
+    const recovery = reopenedStore.recoverInterruptedSessions();
+
+    assert.deepEqual(recovery.sessions, []);
+    assert.equal(
+      reopenedStore.getSession(started.session.id)?.status,
+      "running",
+    );
+    assert.equal(
+      reopenedStore.listSessionAttempts(started.session.id)[0]?.status,
+      "running",
+    );
+    assert.equal(
+      reopenedStore
+        .getSessionLogs(started.session.id)
+        .includes(
+          "Session was marked interrupted after backend startup recovery.",
+        ),
+      false,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("updateProject persists repository target branch changes", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-options-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

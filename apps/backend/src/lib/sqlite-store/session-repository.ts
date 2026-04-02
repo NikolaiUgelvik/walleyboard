@@ -19,6 +19,28 @@ import {
   type SqliteStoreContext,
 } from "./shared.js";
 
+function isTrackedProcessAlive(pid: number | null | undefined): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof error.code === "string"
+    ) {
+      return error.code === "EPERM";
+    }
+
+    return false;
+  }
+}
+
 export class SessionRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
@@ -305,6 +327,18 @@ export class SessionRepository {
 
     for (const row of rows) {
       const session = mapExecutionSession(row);
+      const activeAttemptRow = session.current_attempt_id
+        ? (this.context.db
+            .prepare("SELECT pty_pid FROM execution_attempts WHERE id = ?")
+            .get(session.current_attempt_id) as
+            | { pty_pid: number | null }
+            | undefined)
+        : undefined;
+
+      if (isTrackedProcessAlive(activeAttemptRow?.pty_pid)) {
+        continue;
+      }
+
       const timestamp = nowIso();
       const summary =
         "The backend restarted while this session was active. The session was marked interrupted and can be resumed on the existing worktree.";
