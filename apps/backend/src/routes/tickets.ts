@@ -239,6 +239,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
           return;
         }
 
+        executionRuntime.assertProjectExecutionBackendAvailable(project);
+
         const runtime = prepareWorktree(
           project,
           repository,
@@ -392,18 +394,27 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
       }
 
       try {
-        const resumeResult = store.resumeTicket(ticketId, input.reason);
-        const project = store.getProject(resumeResult.ticket.project);
+        const ticket = store.getTicket(ticketId);
+        if (!ticket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        const project = store.getProject(ticket.project);
         if (!project) {
           reply.code(404).send({ error: "Project not found" });
           return;
         }
 
-        const repository = store.getRepository(resumeResult.ticket.repo);
+        const repository = store.getRepository(ticket.repo);
         if (!repository) {
           reply.code(404).send({ error: "Repository not found" });
           return;
         }
+
+        executionRuntime.assertProjectExecutionBackendAvailable(project);
+
+        const resumeResult = store.resumeTicket(ticketId, input.reason);
 
         eventHub.publish(
           makeProtocolEvent(
@@ -523,6 +534,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
         return;
       }
 
+      executionRuntime.assertProjectExecutionBackendAvailable(project);
+
       try {
         appendSessionOutput(
           session.id,
@@ -532,6 +545,7 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
 
         await ticketWorkspaceService.stopPreviewAndWait(ticketId);
         await ticketWorkspaceService.disposeTicket(ticketId);
+        executionRuntime.cleanupExecutionEnvironment(session.id);
 
         const cleanup = resetPreparedWorktreeImmediately(
           repository,
@@ -750,6 +764,8 @@ export const ticketRoutes: FastifyPluginAsync<TicketRouteOptions> = async (
               : "Unable to stop active execution",
           );
         }
+
+        executionRuntime.cleanupExecutionEnvironment(session.id);
       }
 
       await ticketWorkspaceService.stopPreviewAndWait(ticketId);

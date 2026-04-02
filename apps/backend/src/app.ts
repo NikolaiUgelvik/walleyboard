@@ -1,6 +1,7 @@
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 
+import { DockerRuntimeManager } from "./lib/docker-runtime.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
@@ -22,12 +23,28 @@ export async function createApp() {
 
   const eventHub = new EventHub();
   const store = new SqliteStore();
-  const executionRuntime = new ExecutionRuntime({ eventHub, store });
+  const dockerRuntime = new DockerRuntimeManager();
+  const executionRuntime = new ExecutionRuntime({
+    dockerRuntime,
+    eventHub,
+    store,
+  });
   const ticketWorkspaceService = new TicketWorkspaceService({
     apiBaseUrl: `http://${apiHost}:${port}`,
     eventHub,
   });
   const recovery = store.recoverInterruptedSessions();
+
+  try {
+    dockerRuntime.cleanupStaleContainers();
+  } catch (error) {
+    app.log.warn(
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Unable to clean up stale Docker containers during backend startup",
+    );
+  }
 
   if (recovery.sessions.length > 0) {
     app.log.warn(
@@ -49,7 +66,7 @@ export async function createApp() {
   });
 
   await app.register(websocket);
-  await app.register(healthRoutes);
+  await app.register(healthRoutes, { dockerRuntime });
   await app.register(projectRoutes, { store, executionRuntime });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, {
@@ -60,6 +77,10 @@ export async function createApp() {
   });
   await app.register(sessionRoutes, { eventHub, store, executionRuntime });
   await app.register(websocketRoutes, { eventHub });
+
+  app.addHook("onClose", async () => {
+    executionRuntime.dispose();
+  });
 
   return app;
 }

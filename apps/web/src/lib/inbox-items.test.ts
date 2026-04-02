@@ -14,6 +14,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     id: "project-1",
     slug: "project-1",
     name: "Project One",
+    execution_backend: "host",
     default_target_branch: "main",
     pre_worktree_command: null,
     post_worktree_command: null,

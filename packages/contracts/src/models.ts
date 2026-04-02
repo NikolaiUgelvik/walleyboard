@@ -23,6 +23,7 @@ export const ticketTypeSchema = z.enum([
 ]);
 
 export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+export const executionBackendSchema = z.enum(["host", "docker"]);
 
 export const executionSessionStatusSchema = z.enum([
   "queued",
@@ -126,6 +127,7 @@ export const projectSchema = z.object({
   id: opaqueIdSchema,
   slug: z.string().min(1),
   name: z.string().min(1),
+  execution_backend: executionBackendSchema,
   default_target_branch: z.string().min(1).nullable(),
   pre_worktree_command: z.string().min(1).nullable(),
   post_worktree_command: z.string().min(1).nullable(),
@@ -249,6 +251,7 @@ export type ReviewPackage = z.infer<typeof reviewPackageSchema>;
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketType = z.infer<typeof ticketTypeSchema>;
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+export type ExecutionBackend = z.infer<typeof executionBackendSchema>;
 export type ExecutionPlanStatus = z.infer<typeof executionPlanStatusSchema>;
 export type ExecutionSessionStatus = z.infer<
   typeof executionSessionStatusSchema

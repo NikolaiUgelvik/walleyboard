@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -69,6 +70,7 @@ function createProject(slug: string): Project {
     id: "project-id",
     slug,
     name: "Project",
+    execution_backend: "host",
     default_target_branch: "main",
     pre_worktree_command: null,
     post_worktree_command: null,
@@ -279,6 +281,55 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
     assert.equal(
       runGit(repoPath, ["branch", "--list", runtime.workingBranch]),
       "",
+    );
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("prepareWorktree creates a self-contained checkout for docker-backed projects", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-docker-worktree-"));
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(tempDir);
+
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    const project = {
+      ...createProject("docker-worktree-project"),
+      execution_backend: "docker" as const,
+    };
+    const runtime = prepareWorktree(
+      project,
+      createRepositoryConfig(repoPath, "main"),
+      createTicket("main"),
+    );
+
+    assert.equal(
+      lstatSync(join(runtime.worktreePath, ".git")).isDirectory(),
+      true,
+    );
+    assert.equal(
+      runGit(runtime.worktreePath, ["config", "--get", "user.name"]),
+      "Test User",
+    );
+    assert.match(
+      readFileSync(
+        join(runtime.worktreePath, ".git", "info", "exclude"),
+        "utf8",
+      ),
+      /\.orchestrator\//,
     );
   } finally {
     process.chdir(previousCwd);

@@ -30,7 +30,9 @@ import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 import type {
   CommandAck,
   DraftTicketState,
+  ExecutionBackend,
   ExecutionSession,
+  HealthResponse,
   Project,
   ProtocolEvent,
   ReasoningEffort,
@@ -127,6 +129,10 @@ const reasoningEffortOptions = [
   { value: "high", label: "High" },
   { value: "xhigh", label: "Extra high" },
 ];
+const executionBackendOptions = [
+  { label: "Host", value: "host" },
+  { label: "Docker", value: "docker" },
+] satisfies Array<{ label: string; value: ExecutionBackend }>;
 
 function readLastOpenProjectId(): string | null {
   if (typeof window === "undefined") {
@@ -163,12 +169,6 @@ type ProjectModelPreset =
   | (typeof projectModelPresetValues)[number]
   | "custom";
 type ProjectReasoningEffortSelection = "default" | ReasoningEffort;
-
-type HealthResponse = {
-  ok: true;
-  service: "backend";
-  timestamp: string;
-};
 
 type ProjectsResponse = {
   projects: Project[];
@@ -528,6 +528,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 async function saveProjectOptionsRequest(
   projectId: string,
   body: {
+    execution_backend: ExecutionBackend;
     pre_worktree_command: string | null;
     post_worktree_command: string | null;
     draft_analysis_model: string | null;
@@ -1056,6 +1057,8 @@ export function App() {
   const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
     string | null
   >(null);
+  const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
+    useState<ExecutionBackend>("host");
   const [projectOptionsDraftModelPreset, setProjectOptionsDraftModelPreset] =
     useState<ProjectModelPreset>("default");
   const [projectOptionsDraftModelCustom, setProjectOptionsDraftModelCustom] =
@@ -1141,6 +1144,7 @@ export function App() {
     queryFn: () => fetchJson<HealthResponse>("/health"),
     retry: false,
   });
+  const dockerHealth = healthQuery.data?.docker ?? null;
 
   const projectsQuery = useQuery({
     queryKey: ["projects"],
@@ -1803,6 +1807,7 @@ export function App() {
   const updateProjectMutation = useMutation({
     mutationFn: (input: {
       projectId: string;
+      executionBackend: ExecutionBackend;
       preWorktreeCommand: string | null;
       postWorktreeCommand: string | null;
       draftAnalysisModel: string | null;
@@ -1815,6 +1820,7 @@ export function App() {
       }>;
     }) =>
       saveProjectOptionsRequest(input.projectId, {
+        execution_backend: input.executionBackend,
         pre_worktree_command: input.preWorktreeCommand,
         post_worktree_command: input.postWorktreeCommand,
         draft_analysis_model: input.draftAnalysisModel,
@@ -2569,8 +2575,10 @@ export function App() {
     });
   const projectOptionsDirty =
     projectOptionsProject !== null &&
-    (projectOptionsPreWorktreeCommandValue !==
-      projectOptionsProject.pre_worktree_command ||
+    (projectOptionsExecutionBackend !==
+      projectOptionsProject.execution_backend ||
+      projectOptionsPreWorktreeCommandValue !==
+        projectOptionsProject.pre_worktree_command ||
       projectOptionsPostWorktreeCommandValue !==
         projectOptionsProject.post_worktree_command ||
       projectOptionsDraftModelValue !==
@@ -2987,6 +2995,7 @@ export function App() {
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);
+    setProjectOptionsExecutionBackend("host");
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
@@ -3003,6 +3012,7 @@ export function App() {
       ])?.repositories ?? [];
 
     setProjectOptionsProjectId(project.id);
+    setProjectOptionsExecutionBackend(project.execution_backend);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
     );
@@ -3101,6 +3111,7 @@ export function App() {
     setProjectOptionsFormError(null);
     updateProjectMutation.mutate({
       projectId: projectOptionsProject.id,
+      executionBackend: projectOptionsExecutionBackend,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
       draftAnalysisModel: projectOptionsDraftModelValue,
@@ -5189,6 +5200,54 @@ export function App() {
                 Model overrides are optional. Default leaves Codex on its normal
                 model selection path for this project.
               </Text>
+
+              <Stack gap="xs">
+                <Text fw={600}>Execution backend</Text>
+                <SegmentedControl
+                  data={executionBackendOptions}
+                  value={projectOptionsExecutionBackend}
+                  onChange={(value) => {
+                    if (value !== "host" && value !== "docker") {
+                      return;
+                    }
+
+                    setProjectOptionsFormError(null);
+                    updateProjectMutation.reset();
+                    setProjectOptionsExecutionBackend(value);
+                  }}
+                />
+                <Text size="sm" c="dimmed">
+                  Docker runs ticket-scoped Codex work inside a managed Ubuntu
+                  container. Manual terminal takeover and validation still run
+                  on the host in this first version.
+                </Text>
+                {dockerHealth ? (
+                  dockerHealth.available ? (
+                    <Text size="sm" c="dimmed">
+                      Docker is available
+                      {dockerHealth.client_version
+                        ? ` (client ${dockerHealth.client_version})`
+                        : ""}
+                      {dockerHealth.server_version
+                        ? `, server ${dockerHealth.server_version}`
+                        : ""}
+                      .
+                    </Text>
+                  ) : (
+                    <Text size="sm" c="orange">
+                      Docker is currently unavailable
+                      {dockerHealth.error ? `: ${dockerHealth.error}` : "."} You
+                      can still save Docker mode, but ticket start and resume
+                      will be rejected until Docker is reachable again.
+                    </Text>
+                  )
+                ) : healthQuery.isError ? (
+                  <Text size="sm" c="orange">
+                    Docker status is unavailable because the backend health
+                    check failed.
+                  </Text>
+                ) : null}
+              </Stack>
 
               <Stack gap="sm">
                 <Textarea

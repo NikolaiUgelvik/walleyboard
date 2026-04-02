@@ -4,6 +4,7 @@ export const projectsTable = sqliteTable("projects", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
+  executionBackend: text("execution_backend").notNull().default("host"),
   defaultTargetBranch: text("default_target_branch"),
   preWorktreeCommand: text("pre_worktree_command"),
   postWorktreeCommand: text("post_worktree_command"),

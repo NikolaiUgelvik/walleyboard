@@ -201,6 +201,8 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         return;
       }
 
+      executionRuntime.assertProjectExecutionBackendAvailable(project);
+
       try {
         await executionRuntime.stopManualTerminal(session.id);
 

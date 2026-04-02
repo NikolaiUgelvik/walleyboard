@@ -23,12 +23,14 @@ import type {
 } from "../../../../packages/contracts/src/index.js";
 import { ticketTypeSchema } from "../../../../packages/contracts/src/index.js";
 
+import type { DockerRuntimeManager } from "./docker-runtime.js";
 import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import type { Store } from "./store.js";
 import { nowIso } from "./time.js";
 
 type ExecutionRuntimeOptions = {
+  dockerRuntime: DockerRuntimeManager;
   eventHub: EventHub;
   store: Store;
 };
@@ -257,6 +259,16 @@ function buildOutputSummaryPath(
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
 
+function buildWorkspaceOutputPath(
+  worktreePath: string,
+  sessionId: string,
+  suffix = "summary",
+): string {
+  const outputDir = join(worktreePath, ".orchestrator");
+  ensureDirectory(outputDir);
+  return join(outputDir, `${sessionId}-${suffix}.txt`);
+}
+
 function buildMergeConflictSummaryPath(
   project: Project,
   ticketId: number,
@@ -318,6 +330,10 @@ function appendCodexExecutionModeArgs(
 
   args.push("--config", 'approval_policy="on-request"');
   args.push("--config", `sandbox_mode="${sandboxMode}"`);
+}
+
+function appendDangerousDockerArgs(args: string[]): void {
+  args.push("--dangerously-bypass-approvals-and-sandbox");
 }
 
 function buildCodexImplementationPrompt(
@@ -738,6 +754,7 @@ function resolveValidationWorkingDirectory(
 }
 
 export class ExecutionRuntime {
+  readonly #dockerRuntime: DockerRuntimeManager;
   readonly #eventHub: EventHub;
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();
@@ -757,9 +774,26 @@ export class ExecutionRuntime {
     Set<(didExit: boolean) => void>
   >();
 
-  constructor({ eventHub, store }: ExecutionRuntimeOptions) {
+  constructor({ dockerRuntime, eventHub, store }: ExecutionRuntimeOptions) {
+    this.#dockerRuntime = dockerRuntime;
     this.#eventHub = eventHub;
     this.#store = store;
+  }
+
+  assertProjectExecutionBackendAvailable(project: Project): void {
+    if (project.execution_backend !== "docker") {
+      return;
+    }
+
+    this.#dockerRuntime.assertAvailable();
+  }
+
+  cleanupExecutionEnvironment(sessionId: string): void {
+    this.#dockerRuntime.cleanupSessionContainer(sessionId);
+  }
+
+  dispose(): void {
+    this.#dockerRuntime.dispose();
   }
 
   async stopExecution(
@@ -769,6 +803,7 @@ export class ExecutionRuntime {
   ): Promise<boolean> {
     const child = this.#activeSessions.get(sessionId);
     if (!child) {
+      this.cleanupExecutionEnvironment(sessionId);
       return false;
     }
 
@@ -918,11 +953,18 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no prepared worktree");
     }
 
-    const outputSummaryPath = buildMergeConflictSummaryPath(
-      input.project,
-      input.ticket.id,
-      input.session.id,
-    );
+    const useDockerRuntime = input.project.execution_backend === "docker";
+    const outputSummaryPath = useDockerRuntime
+      ? buildWorkspaceOutputPath(
+          worktreePath,
+          input.session.id,
+          "merge-conflict",
+        )
+      : buildMergeConflictSummaryPath(
+          input.project,
+          input.ticket.id,
+          input.session.id,
+        );
     const prompt = buildMergeConflictResolutionPrompt({
       ticket: input.ticket,
       repository: input.repository,
@@ -931,13 +973,12 @@ export class ExecutionRuntime {
       conflictedFiles: input.conflictedFiles,
       failureMessage: input.failureMessage,
     });
-    const args = [
-      "exec",
-      "--json",
-      "--full-auto",
-      "--output-last-message",
-      outputSummaryPath,
-    ];
+    const args = ["exec", "--json", "--output-last-message", outputSummaryPath];
+    if (useDockerRuntime) {
+      appendDangerousDockerArgs(args);
+    } else {
+      args.push("--full-auto");
+    }
     const model = normalizeOptionalModel(input.project.ticket_work_model);
     const reasoningEffort = normalizeOptionalReasoningEffort(
       input.project.ticket_work_reasoning_effort,
@@ -975,15 +1016,36 @@ export class ExecutionRuntime {
           return;
         }
         settled = true;
+        if (useDockerRuntime) {
+          this.cleanupExecutionEnvironment(input.session.id);
+        }
         resolve(result);
       };
 
       let child: ChildProcessWithoutNullStreams;
       try {
-        child = spawn("codex", args, {
-          cwd: worktreePath,
-          env: ptyEnv,
-        });
+        if (useDockerRuntime) {
+          this.#dockerRuntime.ensureSessionContainer({
+            sessionId: input.session.id,
+            projectId: input.project.id,
+            ticketId: input.ticket.id,
+            worktreePath,
+          });
+          child = this.#dockerRuntime.spawnProcessInSession(
+            input.session.id,
+            "codex",
+            args,
+            {
+              cwd: worktreePath,
+              env: ptyEnv,
+            },
+          );
+        } else {
+          child = spawn("codex", args, {
+            cwd: worktreePath,
+            env: ptyEnv,
+          });
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Codex failed to start";
@@ -1473,11 +1535,10 @@ export class ExecutionRuntime {
             extraInstructions,
             session.plan_summary,
           );
-    const outputSummaryPath = buildOutputSummaryPath(
-      project,
-      ticket.id,
-      session.id,
-    );
+    const useDockerRuntime = project.execution_backend === "docker";
+    const outputSummaryPath = useDockerRuntime
+      ? buildWorkspaceOutputPath(session.worktree_path, session.id)
+      : buildOutputSummaryPath(project, ticket.id, session.id);
     const codexSessionId = hasMeaningfulContent(session.codex_session_id)
       ? session.codex_session_id
       : null;
@@ -1485,7 +1546,11 @@ export class ExecutionRuntime {
     const args = shouldResumeCodex
       ? ["exec", "resume", "--json"]
       : ["exec", "--json"];
-    appendCodexExecutionModeArgs(args, executionMode);
+    if (useDockerRuntime) {
+      appendDangerousDockerArgs(args);
+    } else {
+      appendCodexExecutionModeArgs(args, executionMode);
+    }
     args.push("--output-last-message", outputSummaryPath);
     const model = normalizeOptionalModel(project.ticket_work_model);
     const reasoningEffort = normalizeOptionalReasoningEffort(
@@ -1504,16 +1569,38 @@ export class ExecutionRuntime {
     let child: IPty;
 
     try {
-      child = spawnPty("codex", args, {
-        cwd: session.worktree_path,
-        env: ptyEnv,
-        cols: 120,
-        rows: 32,
-        name: "xterm-256color",
-      });
+      if (useDockerRuntime) {
+        this.#dockerRuntime.ensureSessionContainer({
+          sessionId: session.id,
+          projectId: project.id,
+          ticketId: ticket.id,
+          worktreePath: session.worktree_path,
+        });
+        child = this.#dockerRuntime.spawnPtyInSession(
+          session.id,
+          "codex",
+          args,
+          {
+            cwd: session.worktree_path,
+            env: ptyEnv,
+            cols: 120,
+            rows: 32,
+            name: "xterm-256color",
+          },
+        );
+      } else {
+        child = spawnPty("codex", args, {
+          cwd: session.worktree_path,
+          env: ptyEnv,
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        });
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Codex PTY failed to start";
+      this.cleanupExecutionEnvironment(session.id);
       this.#finishFailure({
         ticket,
         sessionId: session.id,
@@ -1537,7 +1624,9 @@ export class ExecutionRuntime {
     this.#log(
       session.id,
       attemptId,
-      `Launching Codex in ${session.worktree_path}`,
+      useDockerRuntime
+        ? `Launching Codex in Docker for ${session.worktree_path}`
+        : `Launching Codex in ${session.worktree_path}`,
     );
     this.#log(
       session.id,
@@ -1640,6 +1729,7 @@ export class ExecutionRuntime {
       if (stopReason) {
         this.#stoppingSessions.delete(session.id);
         this.#activeSessions.delete(session.id);
+        this.cleanupExecutionEnvironment(session.id);
         this.#resolveExitWaiters(session.id, true);
         return;
       }
@@ -1653,6 +1743,7 @@ export class ExecutionRuntime {
       const finalSummary = existsSync(outputSummaryPath)
         ? readFileSync(outputSummaryPath, "utf8").trim()
         : null;
+      this.cleanupExecutionEnvironment(session.id);
 
       if (exitCode === 0) {
         const summary =

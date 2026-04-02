@@ -4,6 +4,7 @@ import {
   absolutePathSchema,
   draftTicketStateSchema,
   executionAttemptSchema,
+  executionBackendSchema,
   executionSessionSchema,
   opaqueIdSchema,
   projectSchema,
@@ -30,6 +31,7 @@ export const createProjectInputSchema = z.object({
 });
 
 export const updateProjectInputSchema = z.object({
+  execution_backend: executionBackendSchema.optional(),
   pre_worktree_command: z.string().min(1).nullable().optional(),
   post_worktree_command: z.string().min(1).nullable().optional(),
   draft_analysis_model: z.string().min(1).nullable().optional(),
@@ -134,6 +136,13 @@ export const healthResponseSchema = z.object({
   ok: z.literal(true),
   service: z.literal("backend"),
   timestamp: timestampSchema,
+  docker: z.object({
+    installed: z.boolean(),
+    available: z.boolean(),
+    client_version: z.string().min(1).nullable(),
+    server_version: z.string().min(1).nullable(),
+    error: z.string().min(1).nullable(),
+  }),
 });
 
 export const projectsResponseSchema = z.object({
@@ -306,6 +315,7 @@ export type CheckpointResponseInput = z.infer<
 >;
 export type SessionInput = z.infer<typeof sessionInputSchema>;
 export type CommandAck = z.infer<typeof commandAckSchema>;
+export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type DraftEventsResponse = z.infer<typeof draftEventsResponseSchema>;
 export type RepositoryBranchesResponse = z.infer<
   typeof repositoryBranchesResponseSchema

@@ -163,6 +163,7 @@ function mapProject(row: Record<string, unknown>): Project {
     id: String(row.id),
     slug: String(row.slug),
     name: String(row.name),
+    execution_backend: row.execution_backend === "docker" ? "docker" : "host",
     default_target_branch:
       row.default_target_branch === null
         ? null
@@ -374,6 +375,7 @@ export class SqliteStore implements Store {
         id TEXT PRIMARY KEY,
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
+        execution_backend TEXT NOT NULL DEFAULT 'host',
         default_target_branch TEXT,
         pre_worktree_command TEXT,
         post_worktree_command TEXT,
@@ -538,8 +540,14 @@ export class SqliteStore implements Store {
     this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
     this.#ensureColumn("projects", "post_worktree_command", "TEXT");
+    this.#ensureColumn(
+      "projects",
+      "execution_backend",
+      "TEXT NOT NULL DEFAULT 'host'",
+    );
     this.#backfillArtifactScopes();
     this.#backfillProjectConcurrencyDefaults();
+    this.#backfillProjectExecutionBackendDefaults();
     this.#backfillTicketContext();
   }
 
@@ -689,6 +697,18 @@ export class SqliteStore implements Store {
       .run(defaultMaxConcurrentSessions);
   }
 
+  #backfillProjectExecutionBackendDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET execution_backend = 'host'
+          WHERE execution_backend IS NULL OR execution_backend = ''
+        `,
+      )
+      .run();
+  }
+
   #backfillArtifactScopes(): void {
     const draftRows = this.#db
       .prepare(
@@ -812,17 +832,18 @@ export class SqliteStore implements Store {
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, default_target_branch, pre_worktree_command,
+            id, slug, name, execution_backend, default_target_branch, pre_worktree_command,
             post_worktree_command, draft_analysis_model,
             draft_analysis_reasoning_effort, ticket_work_model,
             ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
         projectId,
         slug,
         input.name.trim(),
+        "host",
         defaultTargetBranch,
         null,
         null,
@@ -892,6 +913,10 @@ export class SqliteStore implements Store {
       input.draft_analysis_model === undefined
         ? project.draft_analysis_model
         : normalizeOptionalModel(input.draft_analysis_model);
+    const executionBackend =
+      input.execution_backend === undefined
+        ? project.execution_backend
+        : input.execution_backend;
     const preWorktreeCommand =
       input.pre_worktree_command === undefined
         ? project.pre_worktree_command
@@ -929,7 +954,8 @@ export class SqliteStore implements Store {
       .prepare(
         `
           UPDATE projects
-          SET pre_worktree_command = ?,
+          SET execution_backend = ?,
+              pre_worktree_command = ?,
               post_worktree_command = ?,
               draft_analysis_model = ?,
               draft_analysis_reasoning_effort = ?,
@@ -940,6 +966,7 @@ export class SqliteStore implements Store {
         `,
       )
       .run(
+        executionBackend,
         preWorktreeCommand,
         postWorktreeCommand,
         draftAnalysisModel,

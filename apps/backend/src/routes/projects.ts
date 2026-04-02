@@ -242,6 +242,10 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
           : undefined;
         let skipLocalBranchCleanup = false;
 
+        if (session) {
+          executionRuntime.cleanupExecutionEnvironment(session.id);
+        }
+
         if (repository && session?.worktree_path) {
           try {
             const worktreeRemoval = removePreparedWorktree(

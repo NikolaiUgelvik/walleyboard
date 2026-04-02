@@ -143,6 +143,38 @@ test("updateProject persists repository target branch changes", () => {
   }
 });
 
+test("projects default to host execution and persist execution backend updates", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-project-backend-"));
+  const databasePath = join(tempDir, "orchestrator.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Backend",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(store.getProject(project.id)?.execution_backend, "host");
+
+    store.updateProject(project.id, {
+      execution_backend: "docker",
+    });
+
+    assert.equal(store.getProject(project.id)?.execution_backend, "docker");
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reloadedStore.getProject(project.id)?.execution_backend,
+      "docker",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("starting beyond the running cap keeps the ticket in progress and queues the session", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-queue-start-"));
 

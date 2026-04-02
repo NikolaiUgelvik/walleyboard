@@ -1,5 +1,13 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmdirSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  rmdirSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import type {
@@ -194,6 +202,58 @@ function tryRemoveWorktreeRoot(worktreePath: string): void {
   }
 }
 
+function isSelfContainedWorkspace(worktreePath: string): boolean {
+  const gitPath = join(worktreePath, ".git");
+  return existsSync(gitPath) && lstatSync(gitPath).isDirectory();
+}
+
+function removeStandaloneWorkspace(worktreePath: string): void {
+  rmSync(worktreePath, { recursive: true, force: true });
+  tryRemoveWorktreeRoot(worktreePath);
+}
+
+function copyGitIdentity(sourceRepoPath: string, workspacePath: string): void {
+  let userName = "";
+  let userEmail = "";
+
+  try {
+    userName = runGit(sourceRepoPath, ["config", "--get", "user.name"]);
+  } catch {
+    userName = "";
+  }
+
+  try {
+    userEmail = runGit(sourceRepoPath, ["config", "--get", "user.email"]);
+  } catch {
+    userEmail = "";
+  }
+
+  if (userName.length > 0) {
+    runGit(workspacePath, ["config", "user.name", userName]);
+  }
+
+  if (userEmail.length > 0) {
+    runGit(workspacePath, ["config", "user.email", userEmail]);
+  }
+}
+
+function addWorkspaceExclude(workspacePath: string, pattern: string): void {
+  const excludePath = join(workspacePath, ".git", "info", "exclude");
+  const existing = existsSync(excludePath)
+    ? readFileSync(excludePath, "utf8")
+    : "";
+
+  if (existing.split("\n").some((line) => line.trim() === pattern)) {
+    return;
+  }
+
+  appendFileSync(
+    excludePath,
+    `${existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""}${pattern}\n`,
+    "utf8",
+  );
+}
+
 export function runPreWorktreeCommand(
   worktreePath: string,
   command: string | null | undefined,
@@ -254,6 +314,42 @@ export function prepareWorktree(
     targetBranch,
   );
 
+  if (project.execution_backend === "docker") {
+    try {
+      runGitAtRoot([
+        "clone",
+        "--quiet",
+        "--no-hardlinks",
+        "--branch",
+        refreshedTarget.mergeBackBranch,
+        repository.path,
+        worktreeRoot,
+      ]);
+      copyGitIdentity(repository.path, worktreeRoot);
+      runGit(worktreeRoot, ["checkout", "-b", workingBranch]);
+      addWorkspaceExclude(worktreeRoot, ".orchestrator/");
+    } catch (error) {
+      if (existsSync(worktreeRoot)) {
+        removeStandaloneWorkspace(worktreeRoot);
+      }
+
+      throw error;
+    }
+
+    const logs = [
+      `Verified git repository: ${repository.path}`,
+      ...refreshedTarget.logs,
+      `Cloned isolated repository checkout: ${worktreeRoot}`,
+      `Created working branch ${workingBranch} from ${refreshedTarget.mergeBackBranch}`,
+    ];
+
+    return {
+      workingBranch,
+      worktreePath: worktreeRoot,
+      logs,
+    };
+  }
+
   try {
     runGit(repository.path, [
       "worktree",
@@ -305,12 +401,15 @@ export function removePreparedWorktree(
   }
 
   const normalizedCommand = normalizeOptionalCommand(postWorktreeCommand);
+  const selfContainedWorkspace = isSelfContainedWorkspace(worktreePath);
   if (normalizedCommand) {
     const child = spawn(
       "sh",
       [
         "-lc",
-        'cd "$1" && sh -lc "$2"; status=$?; git -C "$3" worktree remove --force "$1"; removal_status=$?; if [ $removal_status -eq 0 ] && [ -n "$4" ]; then git -C "$3" branch -D "$4" >/dev/null 2>&1 || true; fi; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status',
+        selfContainedWorkspace
+          ? 'cd "$1" && sh -lc "$2"; status=$?; rm -rf "$1"; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status'
+          : 'cd "$1" && sh -lc "$2"; status=$?; git -C "$3" worktree remove --force "$1"; removal_status=$?; if [ $removal_status -eq 0 ] && [ -n "$4" ]; then git -C "$3" branch -D "$4" >/dev/null 2>&1 || true; fi; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status',
         "sh",
         worktreePath,
         normalizedCommand,
@@ -324,6 +423,11 @@ export function removePreparedWorktree(
     );
     child.unref();
     return { status: "scheduled" };
+  }
+
+  if (selfContainedWorkspace) {
+    removeStandaloneWorkspace(worktreePath);
+    return { status: "removed" };
   }
 
   runGit(repository.path, ["worktree", "remove", "--force", worktreePath]);
@@ -365,16 +469,24 @@ export function resetPreparedWorktreeImmediately(
   }
 
   if (normalizedWorktreePath && existsSync(normalizedWorktreePath)) {
-    runGit(repository.path, [
-      "worktree",
-      "remove",
-      "--force",
-      normalizedWorktreePath,
-    ]);
-    tryRemoveWorktreeRoot(normalizedWorktreePath);
+    if (isSelfContainedWorkspace(normalizedWorktreePath)) {
+      removeStandaloneWorkspace(normalizedWorktreePath);
+    } else {
+      runGit(repository.path, [
+        "worktree",
+        "remove",
+        "--force",
+        normalizedWorktreePath,
+      ]);
+      tryRemoveWorktreeRoot(normalizedWorktreePath);
+    }
   }
 
-  if (hasMeaningfulContent(workingBranch)) {
+  if (
+    hasMeaningfulContent(workingBranch) &&
+    (!normalizedWorktreePath ||
+      !isSelfContainedWorkspace(normalizedWorktreePath))
+  ) {
     removeLocalBranch(repository, workingBranch);
   }
 
@@ -869,7 +981,33 @@ export async function mergeReviewedBranch(
     }
 
     try {
-      runGit(repository.path, ["merge", "--ff-only", workingBranch]);
+      if (isSelfContainedWorkspace(worktreePath)) {
+        const importedRef = `refs/orchestrator/${workingBranch.replace(/[^A-Za-z0-9/_-]+/g, "-")}`;
+        try {
+          runGit(repository.path, [
+            "fetch",
+            "--quiet",
+            worktreePath,
+            `${workingBranch}:${importedRef}`,
+          ]);
+          const importedHead = runGit(repository.path, [
+            "rev-parse",
+            importedRef,
+          ]);
+          runGit(repository.path, ["merge", "--ff-only", importedHead]);
+          logs.push(
+            `Imported ${workingBranch} from the isolated ticket checkout for the final fast-forward merge`,
+          );
+        } finally {
+          try {
+            runGit(repository.path, ["update-ref", "-d", importedRef]);
+          } catch {
+            // Ignore temporary ref cleanup failures.
+          }
+        }
+      } else {
+        runGit(repository.path, ["merge", "--ff-only", workingBranch]);
+      }
       const targetHead = runGit(repository.path, ["rev-parse", "HEAD"]);
       logs.push(
         `Fast-forward merged ${workingBranch} into ${refreshedTarget.mergeBackBranch}`,

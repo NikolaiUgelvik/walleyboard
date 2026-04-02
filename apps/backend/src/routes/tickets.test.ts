@@ -101,6 +101,8 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       additionalInstruction?: string;
     }> = [];
     const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
+      cleanupExecutionEnvironment() {},
       startExecution(input: {
         session: { id: string; worktree_path: string | null };
         ticket: { id: number };
