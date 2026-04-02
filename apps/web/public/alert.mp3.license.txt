@@ -1,0 +1,12 @@
+Third-party asset notice for alert.mp3
+
+File: alert.mp3
+Title: New Notification 09
+Author: Universfield
+Source: https://pixabay.com/sound-effects/film-special-effects-new-notification-09-352705/
+License: Pixabay Content License
+License summary: https://pixabay.com/service/license-summary/
+
+This file is not covered by the repository root MIT license. See
+/home/nikolai/git/walleyboard/THIRD_PARTY_NOTICES.md for the repository-wide
+notice.

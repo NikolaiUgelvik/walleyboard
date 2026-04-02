@@ -81,3 +81,12 @@ Not yet implemented:
 - Add GitHub pull request creation and reconciliation when direct merge is not the right review path
 - Add richer validation configuration and override handling
 - Decide whether interrupted sessions should auto-resume or stay manual after restart
+
+## License
+
+The repository source code is available under the [MIT License](./LICENSE).
+
+`apps/web/public/alert.mp3` is a third-party audio asset, sourced from Pixabay,
+credited to `Universfield`, and excluded from the repository MIT license. See
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) and
+`apps/web/public/alert.mp3.license.txt`.
