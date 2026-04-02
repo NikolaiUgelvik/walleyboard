@@ -1,5 +1,6 @@
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import fastifyRateLimit from "fastify-rate-limit";
 
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
@@ -78,7 +79,7 @@ export async function createApp() {
   });
 
   await app.register(websocket);
-  await app.register(import("@fastify/rate-limit"), {
+  await app.register(fastifyRateLimit, {
     hook: "preHandler",
     max: rateLimitMax,
     timeWindow: rateLimitTimeWindow,

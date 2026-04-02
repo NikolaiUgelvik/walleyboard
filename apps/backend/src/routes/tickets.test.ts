@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
+import fastifyRateLimit from "fastify-rate-limit";
 
 import type { TicketFrontmatter } from "../../../../packages/contracts/src/index.js";
 
