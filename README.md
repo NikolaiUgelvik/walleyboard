@@ -1,5 +1,8 @@
 # WalleyBoard
 
+> [!WARNING]
+> Run it at your own peril.
+
 Pronounced `/ˈwɑːli bɔːrd/`.
 
 WalleyBoard is a vibe-coded, local-first workbench for handing the fiddly stuff to a tireless little helper while you stay planted in your chair and run the show from the board. This repo contains the current MVP plus the starter product documentation in [ai_walleyboard_prd.md](./ai_walleyboard_prd.md).
