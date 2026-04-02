@@ -90,23 +90,25 @@ State transitions:
   - Ticket ID
 - A ticket may begin as only a title and description draft.
 - Before execution starts, the ticket refinement flow must expand that draft into an execution-ready ticket with confirmed repository scope and acceptance criteria.
-- Tickets must be stored as Markdown files with YAML frontmatter.
-- The frontmatter stores machine-readable fields.
-- The Markdown body stores human-readable context and instructions.
+- Tickets must be stored as SQLite-backed application records rather than standalone Markdown files on disk.
+- Human-authored Markdown must be preserved literally in structured ticket fields such as title, description, and acceptance criteria.
+- Machine-readable orchestration fields must live alongside those Markdown-bearing fields in the same persisted ticket record.
 - Draft titles, descriptions, and acceptance criteria should preserve Markdown literally from the first draft through ready-ticket creation.
 - Drafts and ready tickets may reference walleyboard-managed local image artifacts using Markdown image syntax.
 - Each draft and ticket must carry a stable `artifact_scope_id` so pasted screenshot references stay valid across save, reload, refine, revert, and confirm actions.
-- Ticket IDs must be incremental per project.
+- Ticket IDs must be numeric, stable after creation, and monotonic within the local store.
 - Each ticket must map to exactly one repository.
 
-Required frontmatter fields:
+Required persisted ticket fields:
 - `id`
 - `title`
+- `description`
 - `project`
 - `repo`
 - `artifact_scope_id`
 - `status`
 - `ticket_type`
+- `acceptance_criteria`
 - `working_branch`
 - `target_branch`
 - `linked_pr`
@@ -114,12 +116,10 @@ Required frontmatter fields:
 - `created_at`
 - `updated_at`
 
-Required Markdown sections:
-- Context
-- Task
-- Acceptance Criteria
-- Notes
-- Event Summary / Status
+Storage constraints:
+- The system must not materialize per-ticket Markdown files under the walleyboard home directory.
+- The system must not require generated section headings such as `Context`, `Task`, or `Notes` inside persisted ticket content.
+- Rendering-specific grouping may be derived at read time without changing the stored Markdown fields.
 
 #### Epic Handling
 - During ticket creation or refinement, the system must allow an AI-assisted drafting flow.
@@ -575,20 +575,24 @@ Allowed execution session transitions:
 ### 8.2 Local Storage
 - Application state must persist locally in a dedicated application directory such as `~/.walleyboard/`.
 - Local state should include:
-  - Ticket Markdown files
-  - Session metadata
-  - Persisted raw logs
-  - Structured event logs
-  - Local database files and indexes
-  - Project and repository configuration
+  - A local SQLite database file that stores projects, repositories, drafts, tickets, sessions, structured events, review packages, requested change notes, and session logs
+  - Persisted diff artifacts, validation logs, agent summaries, and draft analysis outputs
+  - Project and repository configuration stored inside the database
+  - Walleyboard-managed image artifacts referenced from draft or ticket Markdown
   - Managed worktrees
 
 Suggested layout:
-- `~/.walleyboard/projects/<project-id>/tickets/`
-- `~/.walleyboard/projects/<project-id>/config.*`
-- `~/.walleyboard/sessions/<session-id>/`
-- `~/.walleyboard/worktrees/<project-slug>/<ticket-id>/`
-- `~/.walleyboard/state/`
+- `~/.walleyboard/walleyboard.sqlite`
+- `~/.walleyboard/ticket-artifacts/<project-slug>/<artifact-scope-id>/`
+- `~/.walleyboard/review-packages/<project-slug>/`
+- `~/.walleyboard/validation-logs/<project-slug>/ticket-<ticket-id>/`
+- `~/.walleyboard/agent-summaries/<project-slug>/`
+- `~/.walleyboard/draft-analyses/<project-slug>/`
+- `~/.walleyboard/worktrees/<project-slug>/`
+
+Storage rules:
+- Tickets and drafts must not be mirrored into standalone Markdown files on disk.
+- The SQLite database is the source of truth for ticket and draft content as well as orchestration metadata.
 
 #### Backend Runtime Components
 The local backend should be the single source of truth for ticket, session, and worktree state.
@@ -596,7 +600,7 @@ The local backend should be the single source of truth for ticket, session, and 
 Recommended backend components:
 - API server for user actions and CRUD operations
 - Realtime transport for PTY data, logs, structured events, and state updates
-- Ticket store for Markdown plus indexed metadata
+- Ticket store backed by SQLite records that preserve Markdown fields without creating per-ticket files
 - Session manager for lifecycle control and resume logic
 - PTY manager for interactive Codex processes
 - Scheduler for concurrency limits and queue release
@@ -843,10 +847,10 @@ Implementation guidance:
 - If a future runtime uses the Responses API directly, it should remain compatible with the same ticket, session, and review contracts defined in this PRD.
 
 ### 8.3 Ticket Storage
-- Tickets should remain human-readable and editable on disk.
-- YAML frontmatter should hold machine fields needed for orchestration.
-- The Markdown body should hold the narrative task description and acceptance criteria.
-- PR links and related metadata may be duplicated in both frontmatter and adjacent indexed storage for efficient lookup.
+- Tickets should remain human-readable and editable through the application while being persisted as SQLite records.
+- Markdown-bearing fields such as title, description, and acceptance criteria must remain readable without lossy transformation.
+- Machine fields needed for orchestration should live in explicit database columns or JSON fields on the same ticket record.
+- PR links and related metadata should live on the ticket record rather than being duplicated into a separate ticket file format.
 
 #### Core Persisted Models
 The following persisted models should be treated as v1 contracts.
@@ -937,13 +941,16 @@ RepositoryConfig:
 - `created_at: string`
 - `updated_at: string`
 
-Ticket frontmatter:
+Ticket record:
 - `id: number`
 - `project: string`
 - `repo: string`
+- `artifact_scope_id: string`
 - `status: "draft" | "ready" | "in_progress" | "review" | "done"`
 - `title: string`
+- `description: string`
 - `ticket_type: "feature" | "bugfix" | "chore" | "research"`
+- `acceptance_criteria: string[]`
 - `working_branch: string | null`
 - `target_branch: string`
 - `linked_pr: PullRequestRef | null`
@@ -998,7 +1005,7 @@ ReviewPackage:
 
 Notes on persisted ownership:
 - `DraftTicketState` is the persisted record used by the refinement drawer before a ticket becomes `ready`.
-- Ticket Markdown plus frontmatter is the canonical human-readable artifact once a draft becomes `ready`.
+- Ticket records in SQLite are the canonical persisted artifact once a draft becomes `ready`; no companion ticket Markdown file should be created on disk.
 - `RequestedChangeNote` records must remain available to the same logical execution session across retries and resumed attempts.
 
 ### 8.4 Planning Semantics
@@ -1101,7 +1108,7 @@ The recommended v1 stack is:
 - Interactive terminal backend: `node-pty`
 - Non-interactive process execution: Node.js `child_process`
 - Local database: SQLite
-- Ticket storage: Markdown files with YAML frontmatter on disk
+- Ticket storage: SQLite records with Markdown-preserving text fields
 - Validation and schema parsing: Zod
 - Formatting and linting: Biome
 - Git hooks: Husky
@@ -1125,10 +1132,9 @@ Forms and validation:
 - `@hookform/resolvers`
 - Use for ticket creation, ticket editing, repository configuration, and the refinement wizard
 
-Markdown and ticket file handling:
-- `gray-matter`
+Markdown rendering and authored text handling:
 - `react-markdown`
-- Use for YAML frontmatter parsing and rendering human-readable ticket bodies and summaries
+- Use for rendering human-authored draft and ticket Markdown plus related summaries
 
 Logs, events, and large lists:
 - `react-virtuoso`
@@ -1171,8 +1177,8 @@ Utilities:
 - `node-pty` should back all interactive Codex CLI sessions and any future manual terminal so the application gets real PTY behavior rather than a plain pipe-based subprocess.
 - `child_process` should handle simpler non-interactive commands such as status checks, git metadata reads, or hook execution when PTY behavior is not required.
 - SQLite is the right default for local-first indexed state such as projects, ticket metadata, session metadata, queue state, and structured events.
-- Markdown plus YAML frontmatter preserves human-readable tickets while still giving the application stable machine-readable fields.
-- Zod should validate ticket frontmatter, persisted configuration, IPC payloads, and session event payloads.
+- SQLite-backed ticket records preserve human-authored Markdown while keeping orchestration fields explicit and queryable.
+- Zod should validate ticket records, persisted configuration, IPC payloads, and session event payloads.
 - Biome keeps the JavaScript and TypeScript toolchain lean by covering formatting and linting in one tool.
 - Husky should enforce lightweight local quality gates such as formatting, linting, and fast tests before commit.
 
@@ -1209,7 +1215,7 @@ Before implementation begins, the v1 build should treat the following as frozen 
 - Ticket lifecycle states and allowed transitions
 - Execution session states and resume semantics
 - Codex adapter contract and autonomy policy
-- Ticket frontmatter schema
+- Ticket record schema
 - Repository configuration schema
 - Validation command schema
 - Review package schema

@@ -15,6 +15,7 @@ This document turns the PRD into the current module boundaries, workflow terms, 
 - `lib/sqlite-store`
   - shared SQLite bootstrap, schema setup, transaction helpers, and record mappers
   - focused repositories for projects, drafts, tickets, sessions, structured events, and review artifacts
+  - preserves draft and ticket Markdown inside SQLite records instead of creating standalone ticket files
   - workflow services for draft confirmation/refinement, ticket execution lifecycle, queue claiming, and project deletion
 - `lib/execution-runtime`
   - thin runtime facade over prompt building, Codex CLI argument assembly, validation runs, event publishing, and process/session wait helpers
@@ -140,6 +141,7 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 ## Current Implementation Notes
 
 - Project setup is real and persisted in SQLite, and repository validation commands can be configured during project setup.
+- Draft and ticket Markdown are persisted in SQLite-backed records, while filesystem writes are reserved for artifacts, logs, summaries, and worktrees.
 - Production source files are kept under a hard 1500-line cap through `scripts/check-production-file-sizes.mjs`, and the root lint workflow runs that gate before Biome.
 - Board-visible work now uses the `Draft`, `Ready`, `In progress`, `In review`, and `Done` flow, with websocket updates keeping drafts, tickets, sessions, and review packages current in the UI.
 - The draft workflow is real and persisted: edit Markdown drafts, run `Refine` or `Questions`, optionally `Revert Refine`, then `Create Ready` to promote the draft into a `ready` ticket.

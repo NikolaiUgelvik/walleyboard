@@ -4,7 +4,7 @@ Pronounced `/ˈwɑːli bɔːrd/`.
 
 WalleyBoard is a vibe-coded, local-first workbench for handing the fiddly stuff to a tireless little helper while you stay planted in your chair and run the show from the board. This repo contains the current MVP plus the starter product documentation in [ai_walleyboard_prd.md](./ai_walleyboard_prd.md).
 
-Runtime state lives under `~/.walleyboard/`, so the repo checkout stays focused on code instead of accumulating local app data.
+Runtime state lives under `~/.walleyboard/`, with `walleyboard.sqlite` as the source of truth for drafts, tickets, sessions, and review metadata so the repo checkout stays focused on code instead of accumulating local app data.
 
 ## Workspace Layout
 
@@ -63,7 +63,8 @@ Not yet implemented:
 
 ## Draft Markdown And Screenshots
 
-- Draft descriptions and acceptance criteria are authored and stored as Markdown, and the draft drawer previews that Markdown before refinement or promotion
+- Draft descriptions and acceptance criteria are authored as Markdown, stored in SQLite text fields, and previewed before refinement or promotion
+- Ready-ticket Markdown stays in SQLite-backed ticket records too; WalleyBoard does not create standalone ticket Markdown files on disk
 - Pasting a screenshot into the draft description stores the image under the backend's walleyboard-managed artifact path and inserts an artifact-backed Markdown image reference into the draft
 - The image reference stays attached to the same draft through save, reload, refine, revert, and promote-to-ready flows because drafts and ready tickets share a stable `artifact_scope_id`
 
