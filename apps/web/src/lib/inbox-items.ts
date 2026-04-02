@@ -25,6 +25,16 @@ export type InboxItem = {
   projectName: string;
 };
 
+function hasActiveLinkedPullRequest(
+  linkedPr: TicketFrontmatter["linked_pr"],
+): boolean {
+  return (
+    linkedPr !== null &&
+    linkedPr.state !== "closed" &&
+    linkedPr.state !== "merged"
+  );
+}
+
 function isAttentionNeededSessionStatus(
   status: ExecutionSession["status"],
 ): status is (typeof attentionNeededSessionStatuses)[number] {
@@ -73,15 +83,16 @@ export function deriveInboxItems(input: {
         ? null
         : (input.sessionsById.get(ticket.session_id) ?? null);
 
-    if (ticket.status === "review" && ticket.session_id) {
+    if (
+      ticket.status === "review" &&
+      ticket.session_id &&
+      !hasActiveLinkedPullRequest(ticket.linked_pr)
+    ) {
       items.push({
         key: `review-${ticket.id}`,
         color: "blue",
         title: `Review ready for ticket #${ticket.id}`,
-        message:
-          ticket.linked_pr === null
-            ? `${ticket.title} is ready for review and can be merged or sent back for changes.`
-            : `${ticket.title} is linked to PR #${ticket.linked_pr.number} and is waiting on GitHub review.`,
+        message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
         targetKind: "session",
         targetId: ticket.session_id,
         actionLabel: "Open Review",

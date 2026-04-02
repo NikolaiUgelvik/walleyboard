@@ -253,6 +253,123 @@ test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
   ]);
 });
 
+test("hides review tickets with active linked pull requests from the inbox", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 21,
+        status: "review",
+        session_id: "session-pr-open",
+        title: "Wait for GitHub review",
+        linked_pr: {
+          provider: "github",
+          repo_owner: "acme",
+          repo_name: "walleyboard",
+          number: 12,
+          url: "https://github.com/acme/walleyboard/pull/12",
+          head_branch: "codex/ticket-21",
+          base_branch: "main",
+          state: "open",
+          review_status: "pending",
+          head_sha: "abc123",
+          changes_requested_by: null,
+          last_changes_requested_head_sha: null,
+          last_reconciled_at: "2026-04-01T10:00:00.000Z",
+        },
+      }),
+      createTicket({
+        id: 22,
+        status: "in_progress",
+        session_id: "session-input",
+        title: "Needs operator input",
+        updated_at: "2026-04-01T11:00:00.000Z",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-pr-open",
+        createSession({
+          id: "session-pr-open",
+          ticket_id: 21,
+          status: "completed",
+          last_summary: "PR opened.",
+        }),
+      ],
+      [
+        "session-input",
+        createSession({
+          id: "session-input",
+          ticket_id: 22,
+          status: "awaiting_input",
+        }),
+      ],
+    ]),
+  });
+
+  assert.deepEqual(
+    items.map((item) => item.key),
+    ["session-22"],
+  );
+});
+
+test("keeps review tickets without an active linked pull request in the inbox", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 23,
+        status: "review",
+        session_id: "session-pr-closed",
+        title: "Resume closed PR review",
+        linked_pr: {
+          provider: "github",
+          repo_owner: "acme",
+          repo_name: "walleyboard",
+          number: 14,
+          url: "https://github.com/acme/walleyboard/pull/14",
+          head_branch: "codex/ticket-23",
+          base_branch: "main",
+          state: "closed",
+          review_status: "unknown",
+          head_sha: "def456",
+          changes_requested_by: null,
+          last_changes_requested_head_sha: null,
+          last_reconciled_at: "2026-04-01T10:00:00.000Z",
+        },
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-pr-closed",
+        createSession({
+          id: "session-pr-closed",
+          ticket_id: 23,
+          status: "completed",
+          last_summary: "Closed the old PR.",
+        }),
+      ],
+    ]),
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "review-23",
+      color: "blue",
+      title: "Review ready for ticket #23",
+      message:
+        "Resume closed PR review is ready for review and can be merged or sent back for changes.",
+      targetKind: "session",
+      targetId: "session-pr-closed",
+      actionLabel: "Open Review",
+      projectId: "project-1",
+      projectName: "Project One",
+    },
+  ]);
+});
+
 test("surfaces refined drafts in the inbox with a stable draft key", () => {
   const items = deriveInboxItems({
     drafts: [
