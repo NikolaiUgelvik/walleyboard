@@ -8,6 +8,7 @@ import {
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
+import { withRouteRateLimit } from "../lib/route-rate-limit.js";
 import type { Store } from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
 import {
@@ -92,6 +93,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/repository-branches",
+    withRouteRateLimit(),
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {
@@ -151,7 +153,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     }),
   );
 
-  app.post("/projects", async (request, reply) => {
+  app.post("/projects", withRouteRateLimit(), async (request, reply) => {
     const input = parseBody(reply, createProjectInputSchema, request.body);
     if (!input) {
       return;
@@ -176,18 +178,21 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.patch<{ Params: { projectId: string } }>(
     "/projects/:projectId",
+    withRouteRateLimit(),
     async (request, reply) =>
       handleProjectUpdate(request.params.projectId, request.body, reply),
   );
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/update",
+    withRouteRateLimit(),
     async (request, reply) =>
       handleProjectUpdate(request.params.projectId, request.body, reply),
   );
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/delete",
+    withRouteRateLimit(),
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {

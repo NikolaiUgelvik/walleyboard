@@ -21,6 +21,7 @@ import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
+import { withRouteRateLimit } from "../lib/route-rate-limit.js";
 import type { Store } from "../lib/store.js";
 import {
   buildTicketArtifactFilePath,
@@ -140,7 +141,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
   app,
   { eventHub, executionRuntime, store },
 ) => {
-  app.post("/drafts", async (request, reply) => {
+  app.post("/drafts", withRouteRateLimit(), async (request, reply) => {
     const input = parseBody(reply, createDraftInputSchema, request.body);
     if (!input) {
       return;
@@ -170,6 +171,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/draft-artifacts",
+    withRouteRateLimit(),
     async (request, reply) => {
       const input = parseBody(
         reply,
@@ -240,6 +242,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
     };
   }>(
     "/projects/:projectId/draft-artifacts/:artifactScopeId/:filename",
+    withRouteRateLimit(),
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {
@@ -299,6 +302,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.patch<{ Params: { draftId: string } }>(
     "/drafts/:draftId",
+    withRouteRateLimit(),
     async (request, reply) => {
       const input = parseBody(reply, updateDraftInputSchema, request.body);
       if (!input) {
@@ -331,6 +335,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.post<{ Params: { draftId: string } }>(
     "/drafts/:draftId/delete",
+    withRouteRateLimit(),
     async (request, reply) => {
       try {
         const draft = store.deleteDraft(request.params.draftId);
@@ -371,6 +376,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.post<{ Params: { draftId: string } }>(
     "/drafts/:draftId/refine",
+    withRouteRateLimit(),
     async (request, reply) => {
       const input = parseBody(reply, refineDraftInputSchema, request.body);
       if (!input) {
@@ -417,6 +423,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.post<{ Params: { draftId: string } }>(
     "/drafts/:draftId/refine/revert",
+    withRouteRateLimit(),
     async (request, reply) => {
       try {
         const draft = store.getDraft(request.params.draftId);
@@ -510,6 +517,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.post<{ Params: { draftId: string } }>(
     "/drafts/:draftId/questions",
+    withRouteRateLimit(),
     async (request, reply) => {
       const input = parseBody(reply, refineDraftInputSchema, request.body);
       if (!input) {
@@ -558,6 +566,7 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
   app.post<{ Params: { draftId: string } }>(
     "/drafts/:draftId/confirm",
+    withRouteRateLimit(),
     async (request, reply) => {
       const input = parseBody(reply, confirmDraftInputSchema, request.body);
       if (!input) {

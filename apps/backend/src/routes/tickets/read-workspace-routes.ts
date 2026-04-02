@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { parsePositiveInt } from "../../lib/http.js";
+import { withRouteRateLimit } from "../../lib/route-rate-limit.js";
 import type { TicketRouteDependencies } from "./shared.js";
 
 export function registerTicketReadWorkspaceRoutes(
@@ -62,6 +63,7 @@ export function registerTicketReadWorkspaceRoutes(
 
   app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/workspace/diff",
+    withRouteRateLimit(),
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -119,6 +121,7 @@ export function registerTicketReadWorkspaceRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/workspace/preview",
+    withRouteRateLimit(),
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
