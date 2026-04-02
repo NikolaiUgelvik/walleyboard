@@ -51,7 +51,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/terminal/takeover",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const session = store.getSession(request.params.sessionId);
       if (!session) {
@@ -165,7 +165,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/terminal/restore-agent",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const session = store.getSession(request.params.sessionId);
       if (!session) {
@@ -278,7 +278,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/checkpoint-response",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const input = parseBody(
         reply,
@@ -489,7 +489,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
   app.post<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId/input",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const input = parseBody(reply, sessionInputSchema, request.body);
       if (!input) {

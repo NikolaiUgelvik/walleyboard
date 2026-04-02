@@ -29,7 +29,7 @@ export function registerTicketReviewRoutes(
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/request-changes",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -125,7 +125,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/create-pr",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -145,7 +145,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/merge",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -362,7 +362,7 @@ export function registerTicketReviewRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/reconcile",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {

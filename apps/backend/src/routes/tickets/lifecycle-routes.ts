@@ -21,7 +21,7 @@ export function registerTicketLifecycleRoutes(
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/archive",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -66,7 +66,7 @@ export function registerTicketLifecycleRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/restore",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -109,7 +109,7 @@ export function registerTicketLifecycleRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/delete",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {

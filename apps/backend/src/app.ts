@@ -79,6 +79,7 @@ export async function createApp() {
 
   await app.register(websocket);
   await app.register(import("@fastify/rate-limit"), {
+    hook: "preHandler",
     max: rateLimitMax,
     timeWindow: rateLimitTimeWindow,
     enableDraftSpec: true,

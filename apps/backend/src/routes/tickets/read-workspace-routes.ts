@@ -62,7 +62,7 @@ export function registerTicketReadWorkspaceRoutes(
 
   app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/workspace/diff",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -120,7 +120,7 @@ export function registerTicketReadWorkspaceRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/workspace/preview",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {

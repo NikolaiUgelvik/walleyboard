@@ -92,7 +92,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/repository-branches",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {
@@ -154,7 +154,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.post(
     "/projects",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const input = parseBody(reply, createProjectInputSchema, request.body);
       if (!input) {
@@ -181,21 +181,21 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
   app.patch<{ Params: { projectId: string } }>(
     "/projects/:projectId",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) =>
       handleProjectUpdate(request.params.projectId, request.body, reply),
   );
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/update",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) =>
       handleProjectUpdate(request.params.projectId, request.body, reply),
   );
 
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/delete",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const project = store.getProject(request.params.projectId);
       if (!project) {

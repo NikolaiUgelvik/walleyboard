@@ -29,7 +29,7 @@ export function registerTicketExecutionRoutes(
 ) {
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/start",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -126,7 +126,7 @@ export function registerTicketExecutionRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/stop",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -204,7 +204,7 @@ export function registerTicketExecutionRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/resume",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
@@ -306,7 +306,7 @@ export function registerTicketExecutionRoutes(
 
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/restart",
-    { onRequest: app.rateLimit() },
+    { preHandler: app.rateLimit() },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
