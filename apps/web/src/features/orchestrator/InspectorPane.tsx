@@ -25,11 +25,12 @@ import {
   DraftQuestionsResultView,
   MarkdownListItems,
   formatTimestamp,
-  humanizePlanStatus,
   humanizeSessionStatus,
+  humanizeTicketStatus,
   isStoppableSessionStatus,
   parseDraftEventMeta,
   sessionStatusColor,
+  ticketStatusColor,
 } from "./shared.js";
 import type { OrchestratorController } from "./use-orchestrator-controller.js";
 
@@ -123,6 +124,12 @@ export function InspectorPane({
 
   const selectedDraft = controller.selectedDraft;
   const selectedSessionTicket = controller.selectedSessionTicket;
+  const selectedSessionRepository =
+    selectedSessionTicket === null
+      ? null
+      : (controller.repositories.find(
+          (repository) => repository.id === selectedSessionTicket.repo,
+        ) ?? null);
   const session = controller.session;
 
   return (
@@ -656,49 +663,45 @@ export function InspectorPane({
                   </Badge>
                 </Group>
 
-                <Box className="detail-meta-grid">
-                  <Box className="detail-meta-card">
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                      Session
-                    </Text>
-                    <Text fw={700}>{controller.session.id}</Text>
+                {controller.selectedSessionTicket ? (
+                  <Box className="detail-meta-grid">
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Repository
+                      </Text>
+                      <Text fw={700}>
+                        {selectedSessionRepository?.name ?? "Pending"}
+                      </Text>
+                    </Box>
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Type
+                      </Text>
+                      <Text fw={700}>
+                        {controller.selectedSessionTicket.ticket_type
+                          .charAt(0)
+                          .toUpperCase() +
+                          controller.selectedSessionTicket.ticket_type.slice(1)}
+                      </Text>
+                    </Box>
+                    <Box className="detail-meta-card">
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                        Status
+                      </Text>
+                      <Badge
+                        variant="light"
+                        color={ticketStatusColor(
+                          controller.selectedSessionTicket.status,
+                        )}
+                        style={{ alignSelf: "flex-start" }}
+                      >
+                        {humanizeTicketStatus(
+                          controller.selectedSessionTicket.status,
+                        )}
+                      </Badge>
+                    </Box>
                   </Box>
-                  <Box className="detail-meta-card">
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                      Planning
-                    </Text>
-                    <Text fw={700}>
-                      {controller.session.planning_enabled
-                        ? "Enabled"
-                        : "Disabled"}
-                    </Text>
-                  </Box>
-                  <Box className="detail-meta-card">
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                      Plan stage
-                    </Text>
-                    <Text fw={700}>
-                      {humanizePlanStatus(controller.session.plan_status)}
-                    </Text>
-                  </Box>
-                  <Box className="detail-meta-card">
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                      Branch
-                    </Text>
-                    <Text fw={700}>
-                      {controller.selectedSessionTicket?.working_branch ??
-                        "Pending"}
-                    </Text>
-                  </Box>
-                  <Box className="detail-meta-card">
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                      Worktree
-                    </Text>
-                    <Text className="inline-code">
-                      {controller.session.worktree_path ?? "Pending"}
-                    </Text>
-                  </Box>
-                </Box>
+                ) : null}
 
                 {controller.selectedSessionTicket ? (
                   <Stack gap="xs">
