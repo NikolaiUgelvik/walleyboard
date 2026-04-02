@@ -47,3 +47,14 @@ test("alerts when an item disappears and later reappears", () => {
     true,
   );
 });
+
+test("does not alert for newly added items that are explicitly ignored", () => {
+  assert.equal(
+    hasNewInboxItems(
+      ["session-1"],
+      ["session-1", "review-2"],
+      new Set(["review-2"]),
+    ),
+    false,
+  );
+});

@@ -155,6 +155,7 @@ export function useWalleyBoardController() {
   const [boardSearch, setBoardSearch] = useState("");
   const inboxAlertAudioRef = useRef<HTMLAudioElement | null>(null);
   const previousInboxItemKeysRef = useRef<string[] | null>(null);
+  const ignoredInboxItemKeysRef = useRef<Set<string>>(new Set());
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
@@ -524,6 +525,9 @@ export function useWalleyBoardController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
+  const silenceNextInboxItemKey = (key: string): void => {
+    ignoredInboxItemKeysRef.current.add(key);
+  };
   const mutations = useWalleyBoardMutations({
     queryClient,
     pendingDraftEditorSync,
@@ -545,6 +549,7 @@ export function useWalleyBoardController() {
     setRepositoryPath,
     setRequestedChangesBody,
     setResumeReason,
+    silenceNextInboxItemKey,
     setTerminalCommand,
     setValidationCommandsText,
     tickets,
@@ -757,8 +762,17 @@ export function useWalleyBoardController() {
     }
 
     const previousInboxItemKeys = previousInboxItemKeysRef.current;
+    const ignoredInboxItemKeys = ignoredInboxItemKeysRef.current;
     previousInboxItemKeysRef.current = actionItemKeys;
-    if (!hasNewInboxItems(previousInboxItemKeys, actionItemKeys)) {
+
+    const shouldPlayAlert = hasNewInboxItems(
+      previousInboxItemKeys,
+      actionItemKeys,
+      ignoredInboxItemKeys,
+    );
+    ignoredInboxItemKeys.clear();
+
+    if (!shouldPlayAlert) {
       return;
     }
 
