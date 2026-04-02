@@ -11,6 +11,7 @@
     "format": "biome format --write src"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/websocket": "^11.0.1",
     "@walleyboard/contracts": "0.0.0",
     "fastify": "^5.2.1",

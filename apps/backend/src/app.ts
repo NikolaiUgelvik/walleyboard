@@ -15,10 +15,18 @@ import { sessionRoutes } from "./routes/sessions.js";
 import { ticketRoutes } from "./routes/tickets.js";
 import { websocketRoutes } from "./routes/ws.js";
 
+function parseRateLimitMax(value: string | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 120;
+}
+
 export async function createApp() {
   const host = process.env.HOST ?? "127.0.0.1";
   const port = Number.parseInt(process.env.PORT ?? "4000", 10);
   const apiHost = host === "0.0.0.0" ? "127.0.0.1" : host;
+  const rateLimitMax = parseRateLimitMax(process.env.RATE_LIMIT_MAX);
+  const rateLimitTimeWindow =
+    process.env.RATE_LIMIT_TIME_WINDOW?.trim() || "1 minute";
   const app = Fastify({
     logger: true,
   });
@@ -70,6 +78,11 @@ export async function createApp() {
   });
 
   await app.register(websocket);
+  await app.register(import("@fastify/rate-limit"), {
+    max: rateLimitMax,
+    timeWindow: rateLimitTimeWindow,
+    enableDraftSpec: true,
+  });
   await app.register(healthRoutes, { dockerRuntime });
   await app.register(projectRoutes, { store, executionRuntime });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
