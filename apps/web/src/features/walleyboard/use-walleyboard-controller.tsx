@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ClipboardEvent, useEffect, useRef, useState } from "react";
+import { type ClipboardEvent, useEffect, useState } from "react";
 import type {
   AgentAdapter,
   DraftTicketState,
@@ -18,7 +18,6 @@ import {
   type PendingDraftEditorSync,
   resolveDraftEditorSync,
 } from "../../lib/draft-editor-sync.js";
-import { hasNewInboxItems } from "../../lib/inbox-alert.js";
 import { deriveInboxItems } from "../../lib/inbox-items.js";
 import {
   useDraftRefinementActivity,
@@ -65,6 +64,7 @@ import {
   ticketMatchesSearch,
   writeLastOpenProjectId,
 } from "./shared.js";
+import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
 
@@ -162,9 +162,6 @@ export function useWalleyBoardController() {
     "split" | "stacked"
   >(() => readDiffLayoutPreference());
   const [boardSearch, setBoardSearch] = useState("");
-  const inboxAlertAudioRef = useRef<HTMLAudioElement | null>(null);
-  const previousInboxItemKeysRef = useRef<string[] | null>(null);
-  const ignoredInboxItemKeysRef = useRef<Set<string>>(new Set());
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
@@ -222,7 +219,6 @@ export function useWalleyBoardController() {
         refetchInterval: 2_000,
       })),
   });
-
   const repositoriesQuery = useQuery({
     queryKey: ["projects", selectedProjectId, "repositories"],
     queryFn: () =>
@@ -446,24 +442,6 @@ export function useWalleyBoardController() {
   }, [ticketWorkspaceDiffLayout]);
 
   useEffect(() => {
-    if (typeof Audio === "undefined") {
-      return;
-    }
-
-    // Third-party asset notice: /alert.mp3 is "New Notification 09" by
-    // Universfield on Pixabay and is excluded from the repository MIT license.
-    // See THIRD_PARTY_NOTICES.md and apps/web/public/alert.mp3.license.txt.
-    const audio = new Audio("/alert.mp3");
-    audio.preload = "auto";
-    inboxAlertAudioRef.current = audio;
-
-    return () => {
-      audio.pause();
-      inboxAlertAudioRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     if (selectedSessionId !== null) {
       setTicketWorkspaceTab("diff");
     }
@@ -540,9 +518,28 @@ export function useWalleyBoardController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
-  const silenceNextInboxItemKey = (key: string): void => {
-    ignoredInboxItemKeysRef.current.add(key);
-  };
+  const globalSessionById = new Map(
+    globalSessionSummaries
+      .map((query) => query.data?.session)
+      .filter((value): value is ExecutionSession => value !== undefined)
+      .map((item) => [item.id, item]),
+  );
+  const actionItems = deriveInboxItems({
+    drafts: globalDrafts,
+    projects: projectsQuery.data?.projects ?? [],
+    tickets: globalTickets,
+    sessionsById: globalSessionById,
+  });
+  const actionItemKeys = actionItems.map((item) => item.key);
+  const inboxQueriesSettled =
+    projectsQuery.data !== undefined &&
+    globalDraftsQueries.every((query) => !query.isPending) &&
+    globalTicketsQueries.every((query) => !query.isPending) &&
+    globalSessionSummaries.every((query) => !query.isPending);
+  const { silenceNextInboxItemKey } = useInboxAlert({
+    actionItemKeys,
+    inboxQueriesSettled,
+  });
   const mutations = useWalleyBoardMutations({
     queryClient,
     pendingDraftEditorSync,
@@ -705,12 +702,6 @@ export function useWalleyBoardController() {
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
   );
-  const globalSessionById = new Map(
-    globalSessionSummaries
-      .map((query) => query.data?.session)
-      .filter((value): value is ExecutionSession => value !== undefined)
-      .map((item) => [item.id, item]),
-  );
 
   useEffect(() => {
     if (
@@ -762,48 +753,6 @@ export function useWalleyBoardController() {
   }
 
   const doneColumnTickets = groupedTickets.done;
-
-  const actionItems = deriveInboxItems({
-    drafts: globalDrafts,
-    projects: projectsQuery.data?.projects ?? [],
-    tickets: globalTickets,
-    sessionsById: globalSessionById,
-  });
-  const actionItemKeys = actionItems.map((item) => item.key);
-  const inboxQueriesSettled =
-    projectsQuery.data !== undefined &&
-    globalDraftsQueries.every((query) => !query.isPending) &&
-    globalTicketsQueries.every((query) => !query.isPending) &&
-    globalSessionSummaries.every((query) => !query.isPending);
-
-  useEffect(() => {
-    if (!inboxQueriesSettled) {
-      return;
-    }
-
-    const previousInboxItemKeys = previousInboxItemKeysRef.current;
-    const ignoredInboxItemKeys = ignoredInboxItemKeysRef.current;
-    previousInboxItemKeysRef.current = actionItemKeys;
-
-    const shouldPlayAlert = hasNewInboxItems(
-      previousInboxItemKeys,
-      actionItemKeys,
-      ignoredInboxItemKeys,
-    );
-    ignoredInboxItemKeys.clear();
-
-    if (!shouldPlayAlert) {
-      return;
-    }
-
-    const audio = inboxAlertAudioRef.current;
-    if (!audio) {
-      return;
-    }
-
-    audio.currentTime = 0;
-    void audio.play().catch(() => {});
-  }, [actionItemKeys, inboxQueriesSettled]);
 
   const selectedSessionTicketSession = selectedSessionTicket?.session_id
     ? (sessionById.get(selectedSessionTicket.session_id) ?? session)
@@ -1371,7 +1320,6 @@ export function useWalleyBoardController() {
     handleSaveNewDraft,
     healthQuery,
     hideInspector,
-    inboxAlertAudioRef,
     initializeNewDraftEditor,
     inspectorState,
     inspectorVisible,
