@@ -1,5 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import type { IPty } from "node-pty";
 
 import {
   type ExecutionSession,
@@ -22,7 +23,7 @@ import {
 } from "./helpers.js";
 
 export async function runTicketReviewSession(input: {
-  activeReviewRuns: Map<string, ChildProcessWithoutNullStreams>;
+  activeReviewRuns: Map<string, { kill(signal?: NodeJS.Signals): unknown }>;
   adapter: AgentCliAdapter;
   cleanupExecutionEnvironment: (sessionId: string) => void;
   dockerRuntime: DockerRuntimeManager;
@@ -61,7 +62,7 @@ export async function runTicketReviewSession(input: {
   const reviewSessionId = `review-${input.reviewRunId}`;
 
   return await new Promise((resolve, reject) => {
-    let child: ChildProcessWithoutNullStreams;
+    let child: ChildProcessWithoutNullStreams | IPty;
     try {
       if (useDockerRuntime) {
         if (!run.dockerSpec) {
@@ -76,13 +77,16 @@ export async function runTicketReviewSession(input: {
           ticketId: input.ticket.id,
           worktreePath,
         });
-        child = input.dockerRuntime.spawnProcessInSession(
+        child = input.dockerRuntime.spawnPtyInSession(
           reviewSessionId,
           run.command,
           run.args,
           {
+            cols: 120,
+            rows: 32,
             cwd: worktreePath,
             env: buildProcessEnv(),
+            name: "xterm-256color",
           },
         );
       } else {
@@ -100,11 +104,10 @@ export async function runTicketReviewSession(input: {
       return;
     }
 
-    input.activeReviewRuns.set(input.reviewRunId, child);
-
     let adapterSessionRef: string | null = null;
     let lastOutputContent: string | null = null;
     let rawOutput = "";
+    let settled = false;
 
     const finish = (
       handler: () => {
@@ -112,6 +115,10 @@ export async function runTicketReviewSession(input: {
         report: ReviewReport;
       },
     ) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       input.activeReviewRuns.delete(input.reviewRunId);
       if (useDockerRuntime) {
         input.cleanupExecutionEnvironment(reviewSessionId);
@@ -127,7 +134,7 @@ export async function runTicketReviewSession(input: {
       }
     };
 
-    streamLines(child.stdout, (line) => {
+    const handleLine = (line: string) => {
       rawOutput += `${line}\n`;
       const interpreted = input.adapter.interpretOutputLine(line);
       if (
@@ -139,24 +146,12 @@ export async function runTicketReviewSession(input: {
       if (hasMeaningfulContent(interpreted.outputContent)) {
         lastOutputContent = interpreted.outputContent;
       }
-    });
-    streamLines(child.stderr, (line) => {
-      rawOutput += `${line}\n`;
-    });
+    };
 
-    child.once("error", (error) => {
-      input.activeReviewRuns.delete(input.reviewRunId);
-      if (useDockerRuntime) {
-        input.cleanupExecutionEnvironment(reviewSessionId);
-      }
-      reject(
-        error instanceof Error
-          ? error
-          : new Error(`${input.adapter.label} review execution failed.`),
-      );
-    });
-
-    child.once("close", (exitCode, signal) => {
+    const handleExit = (
+      exitCode: number | null,
+      signal: NodeJS.Signals | null,
+    ) => {
       const outputFromFile = existsSync(outputPath)
         ? readFileSync(outputPath, "utf8").trim()
         : "";
@@ -187,6 +182,57 @@ export async function runTicketReviewSession(input: {
           reviewReportSchema,
         ),
       }));
+    };
+
+    if (useDockerRuntime) {
+      const dockerChild = child as IPty;
+      input.activeReviewRuns.set(input.reviewRunId, dockerChild);
+      let pendingBuffer = "";
+      dockerChild.onData((chunk: string) => {
+        pendingBuffer += chunk.replace(/\r\n/g, "\n");
+
+        while (pendingBuffer.includes("\n")) {
+          const newlineIndex = pendingBuffer.indexOf("\n");
+          const line = pendingBuffer.slice(0, newlineIndex);
+          pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
+          handleLine(line);
+        }
+      });
+      dockerChild.onExit(
+        ({
+          exitCode,
+          signal: _signal,
+        }: {
+          exitCode: number;
+          signal?: number;
+        }) => {
+          if (pendingBuffer.trim().length > 0) {
+            handleLine(pendingBuffer);
+            pendingBuffer = "";
+          }
+          handleExit(exitCode, null);
+        },
+      );
+      return;
+    }
+
+    const processChild = child as ChildProcessWithoutNullStreams;
+    input.activeReviewRuns.set(input.reviewRunId, processChild);
+    streamLines(processChild.stdout, handleLine);
+    streamLines(processChild.stderr, (line) => {
+      rawOutput += `${line}\n`;
+    });
+
+    processChild.once("error", (error: Error) => {
+      finish(() => {
+        throw error instanceof Error
+          ? error
+          : new Error(`${input.adapter.label} review execution failed.`);
+      });
+    });
+
+    processChild.once("close", (exitCode, signal) => {
+      handleExit(exitCode, signal);
     });
   });
 }

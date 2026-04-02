@@ -37,7 +37,13 @@ function configureGitIdentity(repoPath: string): void {
   runGit(repoPath, ["config", "user.email", "test@example.com"]);
 }
 
-function createTicketFixture(tempDir: string) {
+function createTicketFixture(
+  tempDir: string,
+  options?: {
+    executionBackend?: "host" | "docker";
+    targetBranch?: string;
+  },
+) {
   const remotePath = join(tempDir, "remote.git");
   const repoPath = join(tempDir, "repo");
 
@@ -56,14 +62,21 @@ function createTicketFixture(tempDir: string) {
   runGit(repoPath, ["push", "-u", "origin", "main"]);
 
   const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
-  const { project, repository } = store.createProject({
+  const created = store.createProject({
     name: "GitHub PR Project",
     repository: {
       name: "repo",
       path: repoPath,
-      target_branch: "main",
+      target_branch: options?.targetBranch ?? "main",
     },
   });
+  let project = created.project;
+  const repository = created.repository;
+  if (options?.executionBackend) {
+    project = store.updateProject(project.id, {
+      execution_backend: options.executionBackend,
+    });
+  }
   const draft = store.createDraft({
     project_id: project.id,
     title: "Ship the PR workflow",
@@ -75,7 +88,7 @@ function createTicketFixture(tempDir: string) {
     repo_id: repository.id,
     ticket_type: "feature",
     acceptance_criteria: ["Keep review automation on the same worktree."],
-    target_branch: "main",
+    target_branch: options?.targetBranch ?? "main",
   });
   const runtime = prepareWorktree(project, repository, ticket);
   const started = store.startTicket(ticket.id, false, runtime);
@@ -264,6 +277,154 @@ test("createPullRequest pushes the branch, creates the PR, and links it to the t
       true,
     );
     assert.equal(ghCalls.length, 2);
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createPullRequest uses the source repository GitHub remote for docker worktrees", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-create-pr-docker-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir, {
+      executionBackend: "docker",
+    });
+    assert.ok(fixture.ticket);
+    assert.equal(
+      runGit(fixture.runtime.worktreePath, ["remote", "get-url", "origin"]),
+      fixture.repository.path,
+    );
+
+    const { service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "pr");
+            assert.equal(args[1], "create");
+            assert.equal(args[5], "main");
+          },
+          output: "https://github.com/acme/repo/pull/22",
+        },
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_22: {
+                  number: 22,
+                  url: "https://github.com/acme/repo/pull/22",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: runGit(fixture.runtime.worktreePath, [
+                    "rev-parse",
+                    "HEAD",
+                  ]),
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    const updatedTicket = await service.createPullRequest(fixture.ticket.id);
+
+    assert.equal(
+      updatedTicket.linked_pr?.url,
+      "https://github.com/acme/repo/pull/22",
+    );
+    assert.equal(
+      runGit(fixture.runtime.worktreePath, ["remote", "get-url", "origin"]),
+      "git@github.com:acme/repo.git",
+    );
+    assert.equal(
+      runGit(fixture.runtime.worktreePath, [
+        "remote",
+        "get-url",
+        "--push",
+        "origin",
+      ]),
+      fixture.remotePath,
+    );
+    assert.equal(
+      runGit(fixture.remotePath, [
+        "rev-parse",
+        `refs/heads/${fixture.ticket.working_branch}`,
+      ]),
+      runGit(fixture.runtime.worktreePath, ["rev-parse", "HEAD"]),
+    );
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createPullRequest normalizes a remote-tracking target branch for GitHub", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-create-pr-origin-main-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir, {
+      targetBranch: "origin/main",
+    });
+    assert.ok(fixture.ticket);
+
+    const { service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "pr");
+            assert.equal(args[1], "create");
+            assert.equal(args[5], "main");
+          },
+          output: "https://github.com/acme/repo/pull/24",
+        },
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_24: {
+                  number: 24,
+                  url: "https://github.com/acme/repo/pull/24",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: "main",
+                  headRefOid: runGit(fixture.runtime.worktreePath, [
+                    "rev-parse",
+                    "HEAD",
+                  ]),
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    const updatedTicket = await service.createPullRequest(fixture.ticket.id);
+    assert.equal(updatedTicket.linked_pr?.base_branch, "main");
   } finally {
     restoreWalleyBoardHome();
     rmSync(tempDir, { recursive: true, force: true });

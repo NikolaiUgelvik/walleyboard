@@ -38,6 +38,8 @@ type GitHubRepositoryIdentity = {
   owner: string;
   name: string;
   remoteName: string;
+  remoteUrl?: string;
+  pushUrl?: string;
 };
 
 type PullRequestSnapshot = {
@@ -124,6 +126,15 @@ function runGit(repoPath: string, args: string[]): string {
   }
 }
 
+function gitRefExists(repoPath: string, refName: string): boolean {
+  try {
+    runGit(repoPath, ["show-ref", "--verify", "--quiet", refName]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseGitHubRemote(url: string): {
   owner: string;
   name: string;
@@ -152,20 +163,51 @@ function parseGitHubRemote(url: string): {
   return null;
 }
 
-function resolveGitHubRepositoryIdentity(
+function resolvePullRequestBaseBranch(
   repoPath: string,
-): GitHubRepositoryIdentity {
-  const remoteNames = runGit(repoPath, ["remote"])
+  targetBranch: string,
+): string {
+  if (gitRefExists(repoPath, `refs/remotes/${targetBranch}`)) {
+    const segments = targetBranch.split("/");
+    const remoteName = segments[0] ?? "";
+    const branchSegments = segments.slice(1);
+    if (remoteName.length > 0 && branchSegments.length > 0) {
+      return branchSegments.join("/");
+    }
+  }
+
+  return targetBranch;
+}
+
+function listGitRemoteNames(repoPath: string): string[] {
+  const output = runGit(repoPath, ["remote"]);
+  if (output.length === 0) {
+    return [];
+  }
+
+  return output
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function findGitHubRepositoryIdentity(
+  repoPath: string,
+): GitHubRepositoryIdentity | null {
+  const remoteNames = listGitRemoteNames(repoPath);
 
   for (const remoteName of [
     "origin",
     ...remoteNames.filter((remote) => remote !== "origin"),
   ]) {
     const remoteUrl = runGit(repoPath, ["remote", "get-url", remoteName]);
-    const identity = parseGitHubRemote(remoteUrl);
+    const pushUrl = runGit(repoPath, [
+      "remote",
+      "get-url",
+      "--push",
+      remoteName,
+    ]);
+    const identity = parseGitHubRemote(remoteUrl) ?? parseGitHubRemote(pushUrl);
     if (!identity) {
       continue;
     }
@@ -174,12 +216,73 @@ function resolveGitHubRepositoryIdentity(
       owner: identity.owner,
       name: identity.name,
       remoteName,
+      remoteUrl,
+      pushUrl,
     };
+  }
+
+  return null;
+}
+
+function resolveGitHubRepositoryIdentity(
+  repoPath: string,
+  fallbackRepoPath?: string,
+): GitHubRepositoryIdentity {
+  const primaryIdentity = findGitHubRepositoryIdentity(repoPath);
+  if (primaryIdentity) {
+    return primaryIdentity;
+  }
+
+  if (fallbackRepoPath && fallbackRepoPath !== repoPath) {
+    const fallbackIdentity = findGitHubRepositoryIdentity(fallbackRepoPath);
+    if (fallbackIdentity) {
+      return fallbackIdentity;
+    }
   }
 
   throw new Error(
     "Repository does not have a GitHub remote. Add a GitHub remote before creating or monitoring pull requests.",
   );
+}
+
+function syncGitRemote(
+  sourceRepoPath: string,
+  targetRepoPath: string,
+  remote: GitHubRepositoryIdentity,
+): void {
+  if (sourceRepoPath === targetRepoPath) {
+    return;
+  }
+  if (!remote.remoteUrl || !remote.pushUrl) {
+    throw new Error(
+      "GitHub remote synchronization requires both fetch and push URLs.",
+    );
+  }
+
+  const targetRemotes = new Set(listGitRemoteNames(targetRepoPath));
+  if (targetRemotes.has(remote.remoteName)) {
+    runGit(targetRepoPath, [
+      "remote",
+      "set-url",
+      remote.remoteName,
+      remote.remoteUrl,
+    ]);
+  } else {
+    runGit(targetRepoPath, [
+      "remote",
+      "add",
+      remote.remoteName,
+      remote.remoteUrl,
+    ]);
+  }
+
+  runGit(targetRepoPath, [
+    "remote",
+    "set-url",
+    "--push",
+    remote.remoteName,
+    remote.pushUrl,
+  ]);
 }
 
 function mapPullRequestState(value: unknown): PullRequestRef["state"] {
@@ -457,7 +560,7 @@ export class GitHubPullRequestService {
     const ticket = this.#requireTicket(ticketId);
     const session = this.#requireSession(ticket);
     const reviewPackage = this.#requireReviewPackage(ticketId);
-    this.#requireRepository(ticket.repo);
+    const repository = this.#requireRepository(ticket.repo);
 
     if (ticket.status !== "review") {
       throw new Error("Only review tickets can create pull requests");
@@ -474,7 +577,13 @@ export class GitHubPullRequestService {
 
     const githubRepository = resolveGitHubRepositoryIdentity(
       session.worktree_path,
+      repository.path,
     );
+    const baseBranch = resolvePullRequestBaseBranch(
+      repository.path,
+      ticket.target_branch,
+    );
+    syncGitRemote(repository.path, session.worktree_path, githubRepository);
     runGit(session.worktree_path, [
       "push",
       "--set-upstream",
@@ -489,7 +598,7 @@ export class GitHubPullRequestService {
         "--repo",
         `${githubRepository.owner}/${githubRepository.name}`,
         "--base",
-        ticket.target_branch,
+        baseBranch,
         "--head",
         ticket.working_branch,
         "--title",
@@ -585,6 +694,12 @@ export class GitHubPullRequestService {
 
     const githubRepository = resolveGitHubRepositoryIdentity(
       input.session.worktree_path,
+      input.repository.path,
+    );
+    syncGitRemote(
+      input.repository.path,
+      input.session.worktree_path,
+      githubRepository,
     );
 
     if (needsPush) {
@@ -723,7 +838,8 @@ export class GitHubPullRequestService {
       {
         owner: firstLinkedPr.repo_owner,
         name: firstLinkedPr.repo_name,
-        remoteName: resolveGitHubRepositoryIdentity(cwd).remoteName,
+        remoteName: resolveGitHubRepositoryIdentity(cwd, repository.path)
+          .remoteName,
       },
       tickets.flatMap((ticket) =>
         ticket.linked_pr ? [ticket.linked_pr.number] : [],
@@ -918,6 +1034,7 @@ export class GitHubPullRequestService {
         name: snapshot.repo,
         remoteName: resolveGitHubRepositoryIdentity(
           session.worktree_path ?? repository.path,
+          repository.path,
         ).remoteName,
       },
       snapshot.number,

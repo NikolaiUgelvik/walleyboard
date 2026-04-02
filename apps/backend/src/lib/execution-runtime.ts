@@ -82,7 +82,7 @@ export class ExecutionRuntime {
   readonly #activeDraftRuns = new Map<string, ChildProcessWithoutNullStreams>();
   readonly #activeReviewRuns = new Map<
     string,
-    ChildProcessWithoutNullStreams
+    { kill(signal?: NodeJS.Signals): unknown }
   >();
   readonly #manualTerminals = new Map<
     string,
