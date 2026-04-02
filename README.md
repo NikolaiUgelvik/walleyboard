@@ -10,6 +10,13 @@ This repository contains the current local-first orchestrator MVP implementation
 - `packages/db`: initial Drizzle + SQLite schema matching the PRD data model
 - `docs`: implementation notes that turn the PRD into module-level build guidance
 
+## Current Structure
+
+- `apps/backend/src/lib/sqlite-store`: SQLite bootstrap helpers plus focused repositories and workflow services for projects, drafts, tickets, sessions, events, and review artifacts
+- `apps/backend/src/lib/execution-runtime`: the `ExecutionRuntime` facade plus focused helpers for prompts, CLI args, validation, event publishing, and process/session coordination
+- `apps/backend/src/routes/tickets`: ticket route registration split by concern so read/workspace, execution, lifecycle, and review flows stay isolated
+- `apps/web/src/features/orchestrator`: single-screen UI composition, feature-scoped controllers, websocket cache syncing, and extracted board/inspector/modal view modules
+
 ## Current Status
 
 Implemented now:
@@ -42,6 +49,13 @@ Not yet implemented:
 2. Start the backend with `npm run dev:backend`.
 3. Start the frontend with `npm run dev:web`.
 4. Generate database artifacts later with `npm run db:generate`.
+
+## Quality Gates
+
+- `npm run sizecheck`: fails if any production source file under `apps/**/src` or `packages/**/src` exceeds 1500 lines
+- `npm run lint`: runs `sizecheck` first, then workspace Biome checks
+- `npm run typecheck`: runs TypeScript checks across all workspaces
+- `npm run test`: runs the backend and web `node:test` suites from the repo root
 
 ## Draft Markdown And Screenshots
 

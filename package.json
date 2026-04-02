@@ -9,8 +9,10 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "sizecheck": "node scripts/check-production-file-sizes.mjs",
+    "test": "node --import tsx --test apps/backend/src/lib/*.test.ts apps/backend/src/routes/*.test.ts apps/web/src/**/*.test.ts apps/web/src/**/*.test.tsx",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "npm run sizecheck && npm run lint --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",
     "prepare": "husky",
     "dev:backend": "npm --workspace @orchestrator/backend run dev",

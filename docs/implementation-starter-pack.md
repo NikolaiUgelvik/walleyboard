@@ -7,12 +7,17 @@ This document turns the PRD into the current module boundaries, workflow terms, 
 - `routes`
   - HTTP and WebSocket transport only
   - validate inputs with shared contract schemas
-  - delegate all state changes to services or stores
+  - delegate all state changes to focused services
+- `routes/tickets`
+  - split by concern into read/workspace, execution, lifecycle, and review registration modules
 - `lib/event-hub`
   - fan-out of backend events to WebSocket subscribers
 - `lib/sqlite-store`
-  - current local persistence layer for projects, repositories, drafts, tickets, sessions, attempts, logs, and ticket/session events
-  - should later be split into narrower repository/service modules as execution complexity grows
+  - shared SQLite bootstrap, schema setup, transaction helpers, and record mappers
+  - focused repositories for projects, drafts, tickets, sessions, structured events, and review artifacts
+  - workflow services for draft confirmation/refinement, ticket execution lifecycle, queue claiming, and project deletion
+- `lib/execution-runtime`
+  - thin runtime facade over prompt building, Codex CLI argument assembly, validation runs, event publishing, and process/session wait helpers
 
 ## Shared Package Boundaries
 
@@ -54,6 +59,17 @@ Not yet implemented:
 - Add GitHub pull request creation and reconciliation when direct merge is not the right review path.
 - Add richer validation configuration and override handling.
 - Decide whether interrupted sessions should auto-resume or stay manual after restart.
+
+## Quality Gates
+
+- `npm run sizecheck`
+  - enforces a 1500-line cap on non-test production source files in `apps/**/src` and `packages/**/src`
+- `npm run lint`
+  - runs the size gate first and then workspace Biome checks
+- `npm run typecheck`
+  - runs TypeScript checks across all workspaces
+- `npm run test`
+  - runs the backend and web `node:test` suites from the repo root
 
 ## Starter Endpoints
 
@@ -124,6 +140,7 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 ## Current Implementation Notes
 
 - Project setup is real and persisted in SQLite, and repository validation commands can be configured during project setup.
+- Production source files are kept under a hard 1500-line cap through `scripts/check-production-file-sizes.mjs`, and the root lint workflow runs that gate before Biome.
 - Board-visible work now uses the `Draft`, `Ready`, `In progress`, `In review`, and `Done` flow, with websocket updates keeping drafts, tickets, sessions, and review packages current in the UI.
 - The draft workflow is real and persisted: edit Markdown drafts, run `Refine` or `Questions`, optionally `Revert Refine`, then `Create Ready` to promote the draft into a `ready` ticket.
 - Pasted screenshots become artifact-backed Markdown image references stored under a stable `artifact_scope_id`, so they survive save, reload, refine, revert, and ready-ticket promotion.

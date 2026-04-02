@@ -1,757 +1,90 @@
-import {
-  type ChildProcessWithoutNullStreams,
-  execFileSync,
-  spawn,
-} from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import readline from "node:readline";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import { type IPty, spawn as spawnPty } from "node-pty";
-import { z } from "zod";
 
 import type {
   DraftTicketState,
   ExecutionSession,
   Project,
-  ReasoningEffort,
   RepositoryConfig,
   StructuredEvent,
   TicketFrontmatter,
-  ValidationCommand,
   ValidationResult,
 } from "../../../../packages/contracts/src/index.js";
-import { ticketTypeSchema } from "../../../../packages/contracts/src/index.js";
 
 import type { DockerRuntimeManager } from "./docker-runtime.js";
 import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
+import {
+  appendContextSections,
+  appendCriteriaSections,
+  appendMarkdownSection,
+  buildDraftAnalysisOutputPath,
+  buildMergeConflictSummaryPath,
+  buildOutputSummaryPath,
+  buildProcessEnv,
+  buildValidationLogPath,
+  buildWorkspaceOutputPath,
+  extractCodexSessionIdFromJsonLine,
+  extractPersistedAttemptGuidance,
+  formatCodexExitReason,
+  formatDraftAnalysisExitReason,
+  formatMarkdownLog,
+  hasMeaningfulContent,
+  normalizeOptionalModel,
+  normalizeOptionalReasoningEffort,
+  parseCodexJsonResult,
+  resolveValidationWorkingDirectory,
+  runGit,
+  streamLines,
+  summarizeCodexJsonLine,
+  summarizeDraftQuestions,
+  summarizeDraftRefinement,
+  truncate,
+  writeReviewDiff,
+} from "./execution-runtime/helpers.js";
+import {
+  appendCodexExecutionModeArgs,
+  appendCodexModelArgs,
+  appendDangerousDockerArgs,
+  buildCodexImplementationPrompt,
+  buildCodexPlanPrompt,
+  buildDraftQuestionsPrompt,
+  buildDraftRefinementPrompt,
+  buildMergeConflictResolutionPrompt,
+} from "./execution-runtime/prompts.js";
+import {
+  publishDraftUpdated,
+  publishSessionOutput,
+  publishSessionUpdated,
+  publishStructuredEvent,
+  publishTicketUpdated,
+} from "./execution-runtime/publishers.js";
+import type {
+  DraftAnalysisInput,
+  DraftAnalysisMode,
+  DraftFeasibilityResult,
+  DraftRefinementResult,
+  ExecutionMode,
+  ExecutionRuntimeOptions,
+  ForwardedInputTarget,
+  ManualTerminalStartInput,
+  PromptContextSection,
+  StartExecutionInput,
+} from "./execution-runtime/types.js";
+import {
+  draftAnalysisTimeoutMs,
+  draftFeasibilityResultSchema,
+  draftRefinementResultSchema,
+} from "./execution-runtime/types.js";
+import { runValidationProfile } from "./execution-runtime/validation.js";
+import {
+  resolveTrackedExit,
+  waitForTrackedExit,
+} from "./execution-runtime/waiters.js";
 import type { Store } from "./store.js";
 import { nowIso } from "./time.js";
-
-type ExecutionRuntimeOptions = {
-  dockerRuntime: DockerRuntimeManager;
-  eventHub: EventHub;
-  store: Store;
-};
-
-type StartExecutionInput = {
-  project: Project;
-  repository: RepositoryConfig;
-  ticket: TicketFrontmatter;
-  session: ExecutionSession;
-  additionalInstruction?: string;
-};
-
-type DraftAnalysisInput = {
-  draft: DraftTicketState;
-  project: Project;
-  repository: RepositoryConfig;
-  instruction?: string | undefined;
-};
-
-type DraftAnalysisMode = "refine" | "questions";
-
-type ManualTerminalStartInput = {
-  sessionId: string;
-  worktreePath: string;
-  attemptId: string | null;
-};
-
-type ForwardedInputTarget = "agent" | "terminal";
-type ExecutionMode = "plan" | "implementation";
-type PromptContextSection = {
-  label: string;
-  content: string;
-};
-
-const draftRefinementResultSchema = z.object({
-  title_draft: z.string().min(1),
-  description_draft: z.string().min(1),
-  proposed_ticket_type: ticketTypeSchema,
-  proposed_acceptance_criteria: z.array(z.string().min(1)),
-  split_proposal_summary: z.string().nullable().optional(),
-});
-
-const draftFeasibilityResultSchema = z.object({
-  verdict: z.string().min(1),
-  summary: z.string().min(1),
-  assumptions: z.array(z.string().min(1)).default([]),
-  open_questions: z.array(z.string().min(1)).default([]),
-  risks: z.array(z.string().min(1)).default([]),
-  suggested_draft_edits: z.array(z.string().min(1)).default([]),
-});
-
-type DraftRefinementResult = z.infer<typeof draftRefinementResultSchema>;
-type DraftFeasibilityResult = z.infer<typeof draftFeasibilityResultSchema>;
-
-const draftAnalysisTimeoutMs = 180_000;
-
-function truncate(value: string, maxLength = 600): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength - 1)}...`;
-}
-
-function hasMeaningfulContent(
-  value: string | null | undefined,
-): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function formatMarkdownLog(label: string, body: string): string {
-  return `${label}:\n${body}`;
-}
-
-function extractMarkdownLogBody(
-  summary: string | null | undefined,
-  label: string,
-): string | null {
-  if (!hasMeaningfulContent(summary)) {
-    return null;
-  }
-
-  const prefix = `${label}:\n`;
-  if (!summary.startsWith(prefix)) {
-    return null;
-  }
-
-  const body = summary.slice(prefix.length).trim();
-  return body.length > 0 ? body : null;
-}
-
-function extractPersistedAttemptGuidance(
-  summary: string | null | undefined,
-): string | null {
-  return (
-    extractMarkdownLogBody(summary, "Execution resume requested") ??
-    extractMarkdownLogBody(summary, "Execution restart requested")
-  );
-}
-
-function appendMarkdownSection(
-  sections: string[],
-  label: string,
-  content: string | null | undefined,
-): void {
-  sections.push(`${label}:`, hasMeaningfulContent(content) ? content : "None.");
-}
-
-function appendCriteriaSections(
-  sections: string[],
-  criteria: string[],
-  emptyFallback: string,
-): void {
-  sections.push("Acceptance criteria:");
-
-  if (criteria.length === 0) {
-    sections.push(emptyFallback);
-    return;
-  }
-
-  for (const [index, criterion] of criteria.entries()) {
-    sections.push(`Criterion ${index + 1}:`, criterion);
-    if (index < criteria.length - 1) {
-      sections.push("");
-    }
-  }
-}
-
-function appendContextSections(
-  sections: string[],
-  label: string,
-  items: PromptContextSection[],
-): void {
-  if (items.length === 0) {
-    return;
-  }
-
-  sections.push("", `${label}:`);
-  for (const [index, item] of items.entries()) {
-    sections.push(`${item.label}:`, item.content);
-    if (index < items.length - 1) {
-      sections.push("");
-    }
-  }
-}
-
-function ensureDirectory(path: string): void {
-  mkdirSync(path, { recursive: true });
-}
-
-function normalizeOptionalModel(model: string | null): string | null {
-  if (model === null) {
-    return null;
-  }
-
-  const trimmed = model.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeOptionalReasoningEffort(
-  effort: ReasoningEffort | null,
-): ReasoningEffort | null {
-  return effort ?? null;
-}
-
-function buildProcessEnv(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => {
-      return typeof entry[1] === "string";
-    }),
-  );
-}
-
-function runGit(repoPath: string, args: string[]): string {
-  return execFileSync("git", ["-C", repoPath, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
-}
-
-function writeReviewDiff(
-  project: Project,
-  ticketId: number,
-  diff: string,
-): string {
-  const reviewDir = join(
-    process.cwd(),
-    ".local",
-    "review-packages",
-    project.slug,
-  );
-  ensureDirectory(reviewDir);
-  const diffPath = join(reviewDir, `ticket-${ticketId}.patch`);
-  writeFileSync(diffPath, diff, "utf8");
-  return diffPath;
-}
-
-function buildValidationLogPath(
-  project: Project,
-  ticketId: number,
-  validationId: string,
-): string {
-  const validationDir = join(
-    process.cwd(),
-    ".local",
-    "validation-logs",
-    project.slug,
-    `ticket-${ticketId}`,
-  );
-  ensureDirectory(validationDir);
-  return join(validationDir, `${validationId}.log`);
-}
-
-function buildOutputSummaryPath(
-  project: Project,
-  ticketId: number,
-  sessionId: string,
-): string {
-  const summaryDir = join(
-    process.cwd(),
-    ".local",
-    "codex-summaries",
-    project.slug,
-  );
-  ensureDirectory(summaryDir);
-  return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
-}
-
-function buildWorkspaceOutputPath(
-  worktreePath: string,
-  sessionId: string,
-  suffix = "summary",
-): string {
-  const outputDir = join(worktreePath, ".orchestrator");
-  ensureDirectory(outputDir);
-  return join(outputDir, `${sessionId}-${suffix}.txt`);
-}
-
-function buildMergeConflictSummaryPath(
-  project: Project,
-  ticketId: number,
-  sessionId: string,
-): string {
-  const summaryDir = join(
-    process.cwd(),
-    ".local",
-    "codex-summaries",
-    project.slug,
-  );
-  ensureDirectory(summaryDir);
-  return join(summaryDir, `ticket-${ticketId}-${sessionId}-merge-conflict.txt`);
-}
-
-function buildDraftAnalysisOutputPath(
-  project: Project,
-  draftId: string,
-  runId: string,
-  mode: DraftAnalysisMode,
-): string {
-  const analysisDir = join(
-    process.cwd(),
-    ".local",
-    "draft-analyses",
-    project.slug,
-  );
-  ensureDirectory(analysisDir);
-  return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
-}
-
-function appendCodexModelArgs(
-  args: string[],
-  options: {
-    model: string | null;
-    reasoningEffort: ReasoningEffort | null;
-  },
-): void {
-  const model = normalizeOptionalModel(options.model);
-  const reasoningEffort = normalizeOptionalReasoningEffort(
-    options.reasoningEffort,
-  );
-
-  if (model) {
-    args.push("--model", model);
-  }
-
-  if (reasoningEffort) {
-    args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
-  }
-}
-
-function appendCodexExecutionModeArgs(
-  args: string[],
-  executionMode: ExecutionMode,
-): void {
-  const sandboxMode =
-    executionMode === "plan" ? "read-only" : "workspace-write";
-
-  args.push("--config", 'approval_policy="on-request"');
-  args.push("--config", `sandbox_mode="${sandboxMode}"`);
-}
-
-function appendDangerousDockerArgs(args: string[]): void {
-  args.push("--dangerously-bypass-approvals-and-sandbox");
-}
-
-function buildCodexImplementationPrompt(
-  ticket: TicketFrontmatter,
-  repository: RepositoryConfig,
-  extraInstructions: PromptContextSection[],
-  approvedPlanSummary?: string | null,
-): string {
-  const sections = [
-    `Implement ticket #${ticket.id} in the repository ${repository.name}.`,
-    "",
-  ];
-
-  appendMarkdownSection(sections, "Title", ticket.title);
-  sections.push("");
-  appendMarkdownSection(sections, "Description", ticket.description);
-  sections.push("");
-  appendCriteriaSections(
-    sections,
-    ticket.acceptance_criteria,
-    "Preserve the intended user workflow and keep the change small and focused.",
-  );
-  sections.push(
-    "",
-    "Execution rules:",
-    "- Make the smallest complete change that satisfies the ticket.",
-    "- Stay inside this repository worktree.",
-    "- Run lightweight validation when it is obvious and inexpensive.",
-    "- Create a git commit before finishing if you made code changes.",
-    "- End with a concise summary that includes changed files, validation run, and remaining risks.",
-  );
-
-  if (hasMeaningfulContent(approvedPlanSummary)) {
-    sections.push("");
-    appendMarkdownSection(sections, "Approved plan", approvedPlanSummary);
-  }
-
-  appendContextSections(sections, "Additional context", extraInstructions);
-
-  return sections.join("\n");
-}
-
-function buildCodexPlanPrompt(
-  ticket: TicketFrontmatter,
-  repository: RepositoryConfig,
-  extraInstructions: PromptContextSection[],
-): string {
-  const sections = [
-    `Plan ticket #${ticket.id} in the repository ${repository.name}.`,
-    "",
-  ];
-
-  appendMarkdownSection(sections, "Title", ticket.title);
-  sections.push("");
-  appendMarkdownSection(sections, "Description", ticket.description);
-  sections.push("");
-  appendCriteriaSections(
-    sections,
-    ticket.acceptance_criteria,
-    "Preserve the intended user workflow and keep the change small and focused.",
-  );
-  sections.push(
-    "",
-    "Execution rules:",
-    "- Stay inside this repository worktree.",
-    "- Read files and inspect the repository as needed.",
-    "- Do not modify files, create commits, or run write operations.",
-    "- Return a concise implementation plan only.",
-    "- End with a short plan summary that the user can approve or revise.",
-  );
-  appendContextSections(sections, "Additional context", extraInstructions);
-
-  return sections.join("\n");
-}
-
-function buildMergeConflictResolutionPrompt(input: {
-  ticket: TicketFrontmatter;
-  repository: RepositoryConfig;
-  targetBranch: string;
-  stage: "rebase" | "merge";
-  conflictedFiles: string[];
-  failureMessage: string;
-}): string {
-  const sections = [
-    `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository ${input.repository.name}.`,
-    "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
-    "",
-  ];
-
-  appendMarkdownSection(sections, "Title", input.ticket.title);
-  sections.push("");
-  appendMarkdownSection(sections, "Description", input.ticket.description);
-  sections.push("");
-  appendCriteriaSections(
-    sections,
-    input.ticket.acceptance_criteria,
-    "Preserve the ticket intent while resolving the git conflicts.",
-  );
-  sections.push("");
-  appendMarkdownSection(sections, "Target branch", input.targetBranch);
-  sections.push("");
-  appendMarkdownSection(sections, "Conflict stage", input.stage);
-  sections.push("");
-  appendMarkdownSection(
-    sections,
-    "Conflicted files",
-    input.conflictedFiles.length > 0
-      ? input.conflictedFiles.join("\n")
-      : "Git did not report individual conflicted files.",
-  );
-  sections.push("");
-  appendMarkdownSection(sections, "Git failure", input.failureMessage);
-  sections.push(
-    "",
-    "Requirements:",
-    "- Stay inside this repository worktree.",
-    "- Make the smallest safe conflict resolution that keeps the ticket intent and the latest target-branch behavior.",
-    "- If a rebase is in progress, resolve conflicts, stage the files, and run `git rebase --continue` until the rebase finishes.",
-    "- If a merge is in progress, resolve conflicts, stage the files, and finish the merge.",
-    "- Do not abort the rebase or merge unless it is impossible to resolve safely.",
-    "- Do not open a PR or change ticket metadata.",
-    "- End with a concise summary stating whether the git operation finished cleanly.",
-  );
-
-  return sections.join("\n");
-}
-
-function buildDraftRefinementPrompt(
-  draft: DraftTicketState,
-  repository: RepositoryConfig,
-  instruction?: string,
-): string {
-  const sections = [
-    `Refine the draft ticket for repository ${repository.name}.`,
-    "Inspect repository context as needed, but do not modify any files.",
-    "Scan the repository for relevant Markdown (.md) files and read their text when it helps infer the user's intent.",
-    "Return JSON only with no markdown fences or commentary.",
-    "",
-    "Current draft:",
-  ];
-
-  appendMarkdownSection(sections, "title_draft", draft.title_draft);
-  sections.push("");
-  appendMarkdownSection(sections, "description_draft", draft.description_draft);
-  sections.push("");
-  appendMarkdownSection(
-    sections,
-    "proposed_ticket_type",
-    draft.proposed_ticket_type ?? "feature",
-  );
-  sections.push("", "proposed_acceptance_criteria:");
-  if (draft.proposed_acceptance_criteria.length > 0) {
-    for (const [
-      index,
-      criterion,
-    ] of draft.proposed_acceptance_criteria.entries()) {
-      sections.push(`criterion_${index + 1}:`, criterion);
-      if (index < draft.proposed_acceptance_criteria.length - 1) {
-        sections.push("");
-      }
-    }
-  } else {
-    sections.push("None yet.");
-  }
-  sections.push(
-    "",
-    "Return strict JSON with this shape:",
-    '{"title_draft":"string","description_draft":"string","proposed_ticket_type":"feature|bugfix|chore|research","proposed_acceptance_criteria":["string"],"split_proposal_summary":"string|null"}',
-    "",
-    "Requirements:",
-    "- Correct grammar, wording, clarity, and readability.",
-    "- Preserve the original intent and overall scope unless the wording is clearly contradictory or confusing.",
-    "- Keep any existing draft artifact Markdown image references as Markdown images in the description; do not remove them or convert them to plain links.",
-    "- Use relevant repository context, especially Markdown documentation, to infer domain terms, existing workflows, and user intent.",
-    "- Keep the existing ticket type unless the draft text makes it obviously incorrect.",
-    "- Make acceptance criteria concrete, testable, and concise without expanding scope.",
-    '- Set "split_proposal_summary" to null unless the draft already clearly describes multiple separate tickets.',
-  );
-
-  if (hasMeaningfulContent(instruction)) {
-    sections.push("");
-    appendMarkdownSection(sections, "Additional instruction", instruction);
-  }
-
-  return sections.join("\n");
-}
-
-function buildDraftQuestionsPrompt(
-  draft: DraftTicketState,
-  repository: RepositoryConfig,
-  instruction?: string,
-): string {
-  const sections = [
-    `Assess feasibility for the draft ticket inside repository ${repository.name}.`,
-    "Read repository context as needed, but do not modify any files.",
-    "Return JSON only with no markdown fences or commentary.",
-    "",
-    "Draft under review:",
-  ];
-
-  appendMarkdownSection(sections, "title_draft", draft.title_draft);
-  sections.push("");
-  appendMarkdownSection(sections, "description_draft", draft.description_draft);
-  sections.push("");
-  appendMarkdownSection(
-    sections,
-    "proposed_ticket_type",
-    draft.proposed_ticket_type ?? "feature",
-  );
-  sections.push("", "proposed_acceptance_criteria:");
-  if (draft.proposed_acceptance_criteria.length > 0) {
-    for (const [
-      index,
-      criterion,
-    ] of draft.proposed_acceptance_criteria.entries()) {
-      sections.push(`criterion_${index + 1}:`, criterion);
-      if (index < draft.proposed_acceptance_criteria.length - 1) {
-        sections.push("");
-      }
-    }
-  } else {
-    sections.push("None yet.");
-  }
-  sections.push(
-    "",
-    "Return strict JSON with this shape:",
-    '{"verdict":"string","summary":"string","assumptions":["string"],"open_questions":["string"],"risks":["string"],"suggested_draft_edits":["string"]}',
-    "",
-    "Requirements:",
-    "- Focus on whether the draft is feasible and correctly scoped for this repository.",
-    "- Call out missing information, risky assumptions, and likely blockers.",
-    "- Keep suggested edits concrete and short.",
-  );
-
-  if (hasMeaningfulContent(instruction)) {
-    sections.push("");
-    appendMarkdownSection(sections, "Additional instruction", instruction);
-  }
-
-  return sections.join("\n");
-}
-
-function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
-  const trimmed = rawOutput.trim();
-  if (trimmed.length === 0) {
-    throw new Error("Codex returned no JSON output.");
-  }
-
-  const candidates = [trimmed];
-  if (trimmed.startsWith("```")) {
-    candidates.push(
-      trimmed
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```$/i, "")
-        .trim(),
-    );
-  }
-
-  for (const candidate of candidates) {
-    try {
-      return schema.parse(JSON.parse(candidate));
-    } catch {
-      // Try the next candidate shape.
-    }
-  }
-
-  throw new Error("Codex did not return valid JSON output.");
-}
-
-function summarizeDraftRefinement(result: DraftRefinementResult): string {
-  if (
-    result.split_proposal_summary &&
-    result.split_proposal_summary.trim().length > 0
-  ) {
-    return truncate(result.split_proposal_summary.trim(), 240);
-  }
-
-  return `Updated draft proposal with ${result.proposed_acceptance_criteria.length} acceptance criteria.`;
-}
-
-function summarizeDraftQuestions(result: DraftFeasibilityResult): string {
-  return truncate(result.summary, 240);
-}
-
-function formatDraftAnalysisExitReason(
-  exitCode: number | null,
-  signal: NodeJS.Signals | null,
-  rawOutput: string,
-): string {
-  const summary =
-    rawOutput.trim().length > 0
-      ? ` Final output: ${truncate(rawOutput.trim(), 240)}`
-      : "";
-  return `Codex exited with ${exitCode === null ? "unknown code" : `code ${exitCode}`}${
-    signal ? ` and signal ${signal}` : ""
-  }.${summary}`;
-}
-
-function formatCodexExitReason(
-  exitCode: number | null,
-  signal: NodeJS.Signals | null,
-  rawOutput: string,
-): string {
-  const summary =
-    rawOutput.trim().length > 0
-      ? ` Final output: ${truncate(rawOutput.trim(), 240)}`
-      : "";
-  return `Codex exited with ${exitCode === null ? "unknown code" : `code ${exitCode}`}${
-    signal ? ` and signal ${signal}` : ""
-  }.${summary}`;
-}
-
-function summarizeCodexJsonLine(line: string): string {
-  try {
-    const parsed = JSON.parse(line) as Record<string, unknown>;
-    const payload =
-      parsed.payload && typeof parsed.payload === "object"
-        ? (parsed.payload as Record<string, unknown>)
-        : null;
-
-    if (
-      parsed.type === "session_meta" &&
-      payload &&
-      typeof payload.id === "string"
-    ) {
-      return `[codex session] ${payload.id}`;
-    }
-
-    const eventType =
-      typeof parsed.type === "string"
-        ? parsed.type
-        : typeof parsed.event === "string"
-          ? parsed.event
-          : "event";
-
-    if (typeof parsed.message === "string") {
-      return `[codex ${eventType}] ${truncate(parsed.message)}`;
-    }
-
-    if (typeof parsed.text === "string") {
-      return `[codex ${eventType}] ${truncate(parsed.text)}`;
-    }
-
-    if (typeof parsed.output === "string") {
-      return `[codex ${eventType}] ${truncate(parsed.output)}`;
-    }
-
-    return `[codex ${eventType}] ${truncate(JSON.stringify(parsed))}`;
-  } catch {
-    return `[codex raw] ${truncate(line)}`;
-  }
-}
-
-function extractCodexSessionIdFromJsonLine(line: string): string | null {
-  try {
-    const parsed = JSON.parse(line) as Record<string, unknown>;
-    const payload =
-      parsed.payload && typeof parsed.payload === "object"
-        ? (parsed.payload as Record<string, unknown>)
-        : null;
-
-    if (
-      parsed.type === "session_meta" &&
-      payload &&
-      typeof payload.id === "string"
-    ) {
-      return payload.id;
-    }
-
-    if (typeof parsed.session_id === "string") {
-      return parsed.session_id;
-    }
-
-    if (payload && typeof payload.session_id === "string") {
-      return payload.session_id;
-    }
-
-    const thread =
-      payload?.thread && typeof payload.thread === "object"
-        ? (payload.thread as Record<string, unknown>)
-        : null;
-    if (thread && typeof thread.id === "string") {
-      return thread.id;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function streamLines(
-  stream: NodeJS.ReadableStream,
-  onLine: (line: string) => void,
-): void {
-  const lineReader = readline.createInterface({
-    input: stream,
-    crlfDelay: Number.POSITIVE_INFINITY,
-  });
-
-  lineReader.on("line", onLine);
-}
-
-function resolveValidationWorkingDirectory(
-  command: ValidationCommand,
-  repository: RepositoryConfig,
-  worktreePath: string,
-): string {
-  if (command.working_directory === repository.path) {
-    return worktreePath;
-  }
-
-  if (command.working_directory.startsWith(`${repository.path}/`)) {
-    return command.working_directory.replace(repository.path, worktreePath);
-  }
-
-  return worktreePath;
-}
 
 export class ExecutionRuntime {
   readonly #dockerRuntime: DockerRuntimeManager;
@@ -810,7 +143,9 @@ export class ExecutionRuntime {
     this.#stoppingSessions.set(sessionId, reason);
     child.kill("SIGTERM");
 
-    const exitedAfterTerm = await this.#waitForSessionExit(
+    const exitedAfterTerm = await waitForTrackedExit(
+      this.#activeSessions,
+      this.#exitWaiters,
       sessionId,
       timeoutMs,
     );
@@ -819,7 +154,12 @@ export class ExecutionRuntime {
     }
 
     child.kill("SIGKILL");
-    return this.#waitForSessionExit(sessionId, 1_000);
+    return waitForTrackedExit(
+      this.#activeSessions,
+      this.#exitWaiters,
+      sessionId,
+      1_000,
+    );
   }
 
   hasActiveExecution(sessionId: string): boolean {
@@ -859,23 +199,31 @@ export class ExecutionRuntime {
             status: "failed",
             end_reason: reason,
           });
-          this.#log(session.id, attemptId, `[runtime failure] ${reason}`);
+          publishSessionOutput(
+            this.#eventHub,
+            this.#store,
+            session.id,
+            attemptId,
+            `[runtime failure] ${reason}`,
+          );
         }
 
         const failedSession = this.#store.completeSession(session.id, {
           status: "failed",
           last_summary: reason,
         });
-        this.#emitSessionUpdated(failedSession);
+        publishSessionUpdated(this.#eventHub, failedSession);
         continue;
       }
 
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         "A project execution slot opened. Launching this queued session.",
       );
-      this.#emitSessionUpdated(session);
+      publishSessionUpdated(this.#eventHub, session);
 
       try {
         this.startExecution({
@@ -898,8 +246,14 @@ export class ExecutionRuntime {
           status: "failed",
           last_summary: reason,
         });
-        this.#log(session.id, attemptId, `[runtime failure] ${reason}`);
-        this.#emitSessionUpdated(failedSession);
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          session.id,
+          attemptId,
+          `[runtime failure] ${reason}`,
+        );
+        publishSessionUpdated(this.#eventHub, failedSession);
       }
     }
   }
@@ -1150,7 +504,9 @@ export class ExecutionRuntime {
       pty: child,
       attemptId,
     });
-    this.#log(
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       sessionId,
       logAttemptId,
       `Manual terminal opened in ${worktreePath}`,
@@ -1166,14 +522,22 @@ export class ExecutionRuntime {
         const line = pendingBuffer.slice(0, newlineIndex);
         pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
         if (line.length > 0) {
-          this.#log(sessionId, logAttemptId, `[terminal] ${line}`);
+          publishSessionOutput(
+            this.#eventHub,
+            this.#store,
+            sessionId,
+            logAttemptId,
+            `[terminal] ${line}`,
+          );
         }
       }
     });
 
     child.onExit(() => {
       if (pendingBuffer.trim().length > 0) {
-        this.#log(
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
           sessionId,
           logAttemptId,
           `[terminal] ${pendingBuffer.trim()}`,
@@ -1183,8 +547,14 @@ export class ExecutionRuntime {
 
       this.#stoppingManualTerminals.delete(sessionId);
       this.#manualTerminals.delete(sessionId);
-      this.#log(sessionId, logAttemptId, "Manual terminal closed.");
-      this.#resolveManualTerminalExitWaiters(sessionId, true);
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        sessionId,
+        logAttemptId,
+        "Manual terminal closed.",
+      );
+      resolveTrackedExit(this.#manualExitWaiters, sessionId, true);
     });
   }
 
@@ -1200,7 +570,9 @@ export class ExecutionRuntime {
     this.#stoppingManualTerminals.set(sessionId, "terminal_restore");
     terminal.pty.kill("SIGTERM");
 
-    const exitedAfterTerm = await this.#waitForManualTerminalExit(
+    const exitedAfterTerm = await waitForTrackedExit(
+      this.#manualTerminals,
+      this.#manualExitWaiters,
       sessionId,
       timeoutMs,
     );
@@ -1209,7 +581,12 @@ export class ExecutionRuntime {
     }
 
     terminal.pty.kill("SIGKILL");
-    return this.#waitForManualTerminalExit(sessionId, 1_000);
+    return waitForTrackedExit(
+      this.#manualTerminals,
+      this.#manualExitWaiters,
+      sessionId,
+      1_000,
+    );
   }
 
   forwardInput(sessionId: string, body: string): ForwardedInputTarget | null {
@@ -1220,7 +597,9 @@ export class ExecutionRuntime {
     const manualTerminal = this.#manualTerminals.get(sessionId);
     if (manualTerminal) {
       manualTerminal.pty.write(`${body}\r`);
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         sessionId,
         manualTerminal.attemptId ??
           this.#store.getSession(sessionId)?.current_attempt_id ??
@@ -1238,7 +617,13 @@ export class ExecutionRuntime {
     const attemptId =
       this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
     agentSession.write(`${body}\r`);
-    this.#log(sessionId, attemptId, `[agent input]\n${body}`);
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
+      sessionId,
+      attemptId,
+      `[agent input]\n${body}`,
+    );
     return "agent";
   }
 
@@ -1270,7 +655,7 @@ export class ExecutionRuntime {
             : `Codex is checking draft feasibility in ${repository.name}.`,
       },
     );
-    this.#emitStructuredEvent(startedEvent);
+    publishStructuredEvent(this.#eventHub, startedEvent);
 
     const prompt =
       mode === "refine"
@@ -1355,7 +740,7 @@ export class ExecutionRuntime {
           captured_output: capturedOutput,
         },
       );
-      this.#emitStructuredEvent(failedEvent);
+      publishStructuredEvent(this.#eventHub, failedEvent);
     };
 
     const timeoutId = setTimeout(() => {
@@ -1438,8 +823,8 @@ export class ExecutionRuntime {
               result: finalResult,
             },
           );
-          this.#emitStructuredEvent(completedEvent);
-          this.#emitDraftUpdated(updatedDraft);
+          publishStructuredEvent(this.#eventHub, completedEvent);
+          publishDraftUpdated(this.#eventHub, updatedDraft);
           return;
         }
 
@@ -1462,7 +847,7 @@ export class ExecutionRuntime {
             result,
           },
         );
-        this.#emitStructuredEvent(completedEvent);
+        publishStructuredEvent(this.#eventHub, completedEvent);
       } catch (error) {
         const message =
           error instanceof Error
@@ -1620,38 +1005,54 @@ export class ExecutionRuntime {
       "running",
       "Codex execution is running inside the prepared worktree.",
     );
-    this.#emitSessionUpdated(runningSession);
-    this.#log(
+    publishSessionUpdated(this.#eventHub, runningSession);
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       session.id,
       attemptId,
       useDockerRuntime
         ? `Launching Codex in Docker for ${session.worktree_path}`
         : `Launching Codex in ${session.worktree_path}`,
     );
-    this.#log(
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       session.id,
       attemptId,
       `Command: codex ${args.slice(0, -1).join(" ")} <prompt>`,
     );
     if (shouldResumeCodex) {
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         `Resuming Codex session: ${codexSessionId}`,
       );
     }
     if (model) {
-      this.#log(session.id, attemptId, `Model override: ${model}`);
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        session.id,
+        attemptId,
+        `Model override: ${model}`,
+      );
     }
     if (reasoningEffort) {
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         `Reasoning effort override: ${reasoningEffort}`,
       );
     }
     if (session.planning_enabled) {
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         executionMode === "plan"
@@ -1660,20 +1061,26 @@ export class ExecutionRuntime {
       );
     }
     if (requestedChangeNote) {
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         formatMarkdownLog("Latest requested changes", requestedChangeNote.body),
       );
     }
     if (hasMeaningfulContent(additionalInstruction)) {
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         formatMarkdownLog("Resume guidance", additionalInstruction),
       );
     } else if (persistedResumeGuidance) {
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         formatMarkdownLog("Resume guidance", persistedResumeGuidance),
@@ -1700,10 +1107,12 @@ export class ExecutionRuntime {
         discoveredSessionId,
       );
       if (updatedSession) {
-        this.#emitSessionUpdated(updatedSession);
+        publishSessionUpdated(this.#eventHub, updatedSession);
       }
 
-      this.#log(
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
         session.id,
         attemptId,
         previousSessionId
@@ -1720,7 +1129,13 @@ export class ExecutionRuntime {
         const line = pendingBuffer.slice(0, newlineIndex);
         pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
         persistCodexSessionId(line);
-        this.#log(session.id, attemptId, summarizeCodexJsonLine(line));
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          session.id,
+          attemptId,
+          summarizeCodexJsonLine(line),
+        );
       }
     });
 
@@ -1730,13 +1145,19 @@ export class ExecutionRuntime {
         this.#stoppingSessions.delete(session.id);
         this.#activeSessions.delete(session.id);
         this.cleanupExecutionEnvironment(session.id);
-        this.#resolveExitWaiters(session.id, true);
+        resolveTrackedExit(this.#exitWaiters, session.id, true);
         return;
       }
 
       if (pendingBuffer.trim().length > 0) {
         persistCodexSessionId(pendingBuffer);
-        this.#log(session.id, attemptId, summarizeCodexJsonLine(pendingBuffer));
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          session.id,
+          attemptId,
+          summarizeCodexJsonLine(pendingBuffer),
+        );
         pendingBuffer = "";
       }
 
@@ -1771,7 +1192,7 @@ export class ExecutionRuntime {
             summary,
           });
         }
-        this.#resolveExitWaiters(session.id, true);
+        resolveTrackedExit(this.#exitWaiters, session.id, true);
         return;
       }
 
@@ -1783,152 +1204,8 @@ export class ExecutionRuntime {
           signal ? ` and signal ${signal}` : ""
         }.${finalSummary ? ` Final summary: ${finalSummary}` : ""}`,
       });
-      this.#resolveExitWaiters(session.id, true);
+      resolveTrackedExit(this.#exitWaiters, session.id, true);
     });
-  }
-
-  #waitForSessionExit(sessionId: string, timeoutMs: number): Promise<boolean> {
-    if (!this.#activeSessions.has(sessionId)) {
-      return Promise.resolve(true);
-    }
-
-    return new Promise((resolve) => {
-      const resolver = (didExit: boolean) => {
-        clearTimeout(timeoutId);
-        const waiters = this.#exitWaiters.get(sessionId);
-        waiters?.delete(resolver);
-        if (waiters && waiters.size === 0) {
-          this.#exitWaiters.delete(sessionId);
-        }
-        resolve(didExit);
-      };
-
-      const waiters = this.#exitWaiters.get(sessionId) ?? new Set();
-      waiters.add(resolver);
-      this.#exitWaiters.set(sessionId, waiters);
-
-      const timeoutId = setTimeout(() => {
-        resolver(false);
-      }, timeoutMs);
-    });
-  }
-
-  #resolveExitWaiters(sessionId: string, didExit: boolean): void {
-    const waiters = this.#exitWaiters.get(sessionId);
-    if (!waiters) {
-      return;
-    }
-
-    this.#exitWaiters.delete(sessionId);
-    for (const resolve of waiters) {
-      resolve(didExit);
-    }
-  }
-
-  #waitForManualTerminalExit(
-    sessionId: string,
-    timeoutMs: number,
-  ): Promise<boolean> {
-    if (!this.#manualTerminals.has(sessionId)) {
-      return Promise.resolve(true);
-    }
-
-    return new Promise((resolve) => {
-      const resolver = (didExit: boolean) => {
-        clearTimeout(timeoutId);
-        const waiters = this.#manualExitWaiters.get(sessionId);
-        waiters?.delete(resolver);
-        if (waiters && waiters.size === 0) {
-          this.#manualExitWaiters.delete(sessionId);
-        }
-        resolve(didExit);
-      };
-
-      const waiters = this.#manualExitWaiters.get(sessionId) ?? new Set();
-      waiters.add(resolver);
-      this.#manualExitWaiters.set(sessionId, waiters);
-
-      const timeoutId = setTimeout(() => {
-        resolver(false);
-      }, timeoutMs);
-    });
-  }
-
-  #resolveManualTerminalExitWaiters(sessionId: string, didExit: boolean): void {
-    const waiters = this.#manualExitWaiters.get(sessionId);
-    if (!waiters) {
-      return;
-    }
-
-    this.#manualExitWaiters.delete(sessionId);
-    for (const resolve of waiters) {
-      resolve(didExit);
-    }
-  }
-
-  #emitSessionUpdated(session: ExecutionSession | undefined): void {
-    if (!session) {
-      return;
-    }
-
-    this.#eventHub.publish(
-      makeProtocolEvent("session.updated", "session", session.id, {
-        session,
-      }),
-    );
-  }
-
-  #emitDraftUpdated(draft: DraftTicketState | undefined): void {
-    if (!draft) {
-      return;
-    }
-
-    this.#eventHub.publish(
-      makeProtocolEvent("draft.updated", "draft", draft.id, {
-        draft,
-      }),
-    );
-  }
-
-  #emitStructuredEvent(event: StructuredEvent | undefined): void {
-    if (!event) {
-      return;
-    }
-
-    this.#eventHub.publish(
-      makeProtocolEvent(
-        "structured_event.created",
-        event.entity_type,
-        event.entity_id,
-        {
-          structured_event: event,
-        },
-      ),
-    );
-  }
-
-  #emitTicketUpdated(ticket: TicketFrontmatter | undefined): void {
-    if (!ticket) {
-      return;
-    }
-
-    this.#eventHub.publish(
-      makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
-        ticket,
-      }),
-    );
-  }
-
-  #log(sessionId: string, attemptId: string, line: string): void {
-    const sequence = this.#store.appendSessionLog(sessionId, line);
-    this.#eventHub.publish(
-      makeProtocolEvent("session.output", "session", sessionId, {
-        session_id: sessionId,
-        attempt_id: attemptId,
-        sequence,
-        chunk: line,
-      }),
-    );
   }
 
   async #finishSuccess(input: {
@@ -1998,7 +1275,9 @@ export class ExecutionRuntime {
       results: validationResults,
       blockingFailure,
       remainingRisks,
-    } = await this.#runValidationProfile({
+    } = await runValidationProfile({
+      eventHub: this.#eventHub,
+      store: this.#store,
       project: input.project,
       repository: input.repository,
       ticketId: input.ticketId,
@@ -2014,8 +1293,14 @@ export class ExecutionRuntime {
         status: "failed",
         last_summary: summary,
       });
-      this.#log(input.sessionId, input.attemptId, summary);
-      this.#emitSessionUpdated(failedSession);
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        input.sessionId,
+        input.attemptId,
+        summary,
+      );
+      publishSessionUpdated(this.#eventHub, failedSession);
       this.startQueuedSessions(input.project.id);
       return;
     }
@@ -2037,8 +1322,16 @@ export class ExecutionRuntime {
       latest_review_package_id: reviewPackage.id,
     });
 
-    this.#log(input.sessionId, input.attemptId, "Codex finished successfully.");
-    this.#log(
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
+      input.sessionId,
+      input.attemptId,
+      "Codex finished successfully.",
+    );
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       input.sessionId,
       input.attemptId,
       `Review package ready: ${reviewPackage.diff_ref}`,
@@ -2053,8 +1346,8 @@ export class ExecutionRuntime {
         },
       ),
     );
-    this.#emitTicketUpdated(ticket);
-    this.#emitSessionUpdated(completedSession);
+    publishTicketUpdated(this.#eventHub, ticket);
+    publishSessionUpdated(this.#eventHub, completedSession);
     this.startQueuedSessions(input.project.id);
   }
 
@@ -2078,163 +1371,22 @@ export class ExecutionRuntime {
         "Implementation plan ready. Confirm the plan to start execution or request changes to revise it.",
     });
 
-    this.#log(
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       input.sessionId,
       input.attemptId,
       formatMarkdownLog("Plan summary", input.summary),
     );
-    this.#log(
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       input.sessionId,
       input.attemptId,
       "Plan feedback requested: confirm the plan to continue or request changes to revise it.",
     );
-    this.#emitSessionUpdated(waitingSession);
+    publishSessionUpdated(this.#eventHub, waitingSession);
     this.startQueuedSessions(input.projectId);
-  }
-
-  async #runValidationProfile(input: {
-    project: Project;
-    repository: RepositoryConfig;
-    ticketId: number;
-    sessionId: string;
-    attemptId: string;
-    worktreePath: string;
-  }): Promise<{
-    results: ValidationResult[];
-    blockingFailure: boolean;
-    remainingRisks: string[];
-  }> {
-    if (input.repository.validation_profile.length === 0) {
-      return {
-        results: [],
-        blockingFailure: false,
-        remainingRisks: [
-          "No validation commands are configured for this repository.",
-        ],
-      };
-    }
-
-    const results: ValidationResult[] = [];
-    let blockingFailure = false;
-    const remainingRisks: string[] = [];
-
-    for (const command of input.repository.validation_profile) {
-      this.#log(
-        input.sessionId,
-        input.attemptId,
-        `Running validation: ${command.label} (${command.command})`,
-      );
-      const startedAt = nowIso();
-      const workingDirectory = resolveValidationWorkingDirectory(
-        command,
-        input.repository,
-        input.worktreePath,
-      );
-      const logLines: string[] = [];
-      const child = spawn(command.command, {
-        cwd: workingDirectory,
-        env: process.env,
-        shell: command.shell,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      const result = await new Promise<ValidationResult>((resolve) => {
-        let timedOut = false;
-        const timeout = setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGTERM");
-        }, command.timeout_ms);
-
-        streamLines(child.stdout, (line) => {
-          logLines.push(line);
-          this.#log(
-            input.sessionId,
-            input.attemptId,
-            `[validation ${command.label}] ${line}`,
-          );
-        });
-
-        streamLines(child.stderr, (line) => {
-          logLines.push(line);
-          this.#log(
-            input.sessionId,
-            input.attemptId,
-            `[validation ${command.label} stderr] ${line}`,
-          );
-        });
-
-        child.once("error", (error) => {
-          clearTimeout(timeout);
-          const endedAt = nowIso();
-          const logRef = buildValidationLogPath(
-            input.project,
-            input.ticketId,
-            command.id,
-          );
-          writeFileSync(logRef, logLines.join("\n"), "utf8");
-          resolve({
-            command_id: command.id,
-            label: command.label,
-            status: "failed",
-            started_at: startedAt,
-            ended_at: endedAt,
-            exit_code: null,
-            failure_overridden: false,
-            summary: `Validation failed to start: ${error.message}`,
-            log_ref: logRef,
-          });
-        });
-
-        child.once("close", (code) => {
-          clearTimeout(timeout);
-          const endedAt = nowIso();
-          const logRef = buildValidationLogPath(
-            input.project,
-            input.ticketId,
-            command.id,
-          );
-          writeFileSync(logRef, logLines.join("\n"), "utf8");
-          resolve({
-            command_id: command.id,
-            label: command.label,
-            status: code === 0 && !timedOut ? "passed" : "failed",
-            started_at: startedAt,
-            ended_at: endedAt,
-            exit_code: code === null ? null : code,
-            failure_overridden: false,
-            summary:
-              code === 0 && !timedOut
-                ? `${command.label} passed.`
-                : timedOut
-                  ? `${command.label} timed out after ${command.timeout_ms}ms.`
-                  : `${command.label} failed with exit code ${code === null ? "unknown" : code}.`,
-            log_ref: logRef,
-          });
-        });
-      });
-
-      results.push(result);
-      this.#eventHub.publish(
-        makeProtocolEvent("validation.updated", "session", input.sessionId, {
-          session_id: input.sessionId,
-          result,
-        }),
-      );
-
-      if (result.status === "failed") {
-        if (command.required_for_review) {
-          blockingFailure = true;
-        } else {
-          remainingRisks.push(`${command.label} failed during validation.`);
-        }
-      }
-    }
-
-    return {
-      results,
-      blockingFailure,
-      remainingRisks,
-    };
   }
 
   #finishFailure(input: {
@@ -2252,12 +1404,14 @@ export class ExecutionRuntime {
       status: "failed",
       last_summary: input.reason,
     });
-    this.#log(
+    publishSessionOutput(
+      this.#eventHub,
+      this.#store,
       input.sessionId,
       input.attemptId,
       `[runtime failure] ${input.reason}`,
     );
-    this.#emitSessionUpdated(failedSession);
+    publishSessionUpdated(this.#eventHub, failedSession);
     this.startQueuedSessions(input.ticket.project);
   }
 }

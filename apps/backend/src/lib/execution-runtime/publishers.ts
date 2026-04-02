@@ -1,0 +1,92 @@
+import type {
+  DraftTicketState,
+  ExecutionSession,
+  StructuredEvent,
+  TicketFrontmatter,
+} from "../../../../../packages/contracts/src/index.js";
+
+import { type EventHub, makeProtocolEvent } from "../event-hub.js";
+import type { Store } from "../store.js";
+
+export function publishSessionUpdated(
+  eventHub: EventHub,
+  session: ExecutionSession | undefined,
+): void {
+  if (!session) {
+    return;
+  }
+
+  eventHub.publish(
+    makeProtocolEvent("session.updated", "session", session.id, {
+      session,
+    }),
+  );
+}
+
+export function publishDraftUpdated(
+  eventHub: EventHub,
+  draft: DraftTicketState | undefined,
+): void {
+  if (!draft) {
+    return;
+  }
+
+  eventHub.publish(
+    makeProtocolEvent("draft.updated", "draft", draft.id, {
+      draft,
+    }),
+  );
+}
+
+export function publishStructuredEvent(
+  eventHub: EventHub,
+  event: StructuredEvent | undefined,
+): void {
+  if (!event) {
+    return;
+  }
+
+  eventHub.publish(
+    makeProtocolEvent(
+      "structured_event.created",
+      event.entity_type,
+      event.entity_id,
+      {
+        structured_event: event,
+      },
+    ),
+  );
+}
+
+export function publishTicketUpdated(
+  eventHub: EventHub,
+  ticket: TicketFrontmatter | undefined,
+): void {
+  if (!ticket) {
+    return;
+  }
+
+  eventHub.publish(
+    makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
+      ticket,
+    }),
+  );
+}
+
+export function publishSessionOutput(
+  eventHub: EventHub,
+  store: Store,
+  sessionId: string,
+  attemptId: string,
+  line: string,
+): void {
+  const sequence = store.appendSessionLog(sessionId, line);
+  eventHub.publish(
+    makeProtocolEvent("session.output", "session", sessionId, {
+      session_id: sessionId,
+      attempt_id: attemptId,
+      sequence,
+      chunk: line,
+    }),
+  );
+}
