@@ -32,12 +32,12 @@ import {
   sessionStatusColor,
   ticketStatusColor,
 } from "./shared.js";
-import type { OrchestratorController } from "./use-orchestrator-controller.js";
+import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
 function DraftEditorFields({
   controller,
 }: {
-  controller: OrchestratorController;
+  controller: WalleyBoardController;
 }) {
   return (
     <>
@@ -116,7 +116,7 @@ function DraftEditorFields({
 export function InspectorPane({
   controller,
 }: {
-  controller: OrchestratorController;
+  controller: WalleyBoardController;
 }) {
   if (!controller.inspectorVisible) {
     return null;
@@ -133,7 +133,7 @@ export function InspectorPane({
   const session = controller.session;
 
   return (
-    <Box className="orchestrator-detail">
+    <Box className="walleyboard-detail">
       <Stack gap="md">
         {controller.inspectorState.kind === "new_draft" &&
         controller.draftEditorProject ? (

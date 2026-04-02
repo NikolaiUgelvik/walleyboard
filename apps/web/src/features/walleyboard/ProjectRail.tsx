@@ -11,15 +11,15 @@ import {
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
-import type { OrchestratorController } from "./use-orchestrator-controller.js";
+import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
 export function ProjectRail({
   controller,
 }: {
-  controller: OrchestratorController;
+  controller: WalleyBoardController;
 }) {
   return (
-    <Box className="orchestrator-rail">
+    <Box className="walleyboard-rail">
       <Stack gap="md">
         <SectionCard title="Projects">
           {controller.projectsQuery.isPending ? (

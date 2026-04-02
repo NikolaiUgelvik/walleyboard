@@ -29,14 +29,14 @@ import {
   sessionStatusColor,
   ticketStatusColor,
 } from "./shared.js";
-import type { OrchestratorController } from "./use-orchestrator-controller.js";
+import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
 function TicketMenu({
   controller,
   ticket,
   ticketSession,
 }: {
-  controller: OrchestratorController;
+  controller: WalleyBoardController;
   ticket: TicketFrontmatter;
   ticketSession: ExecutionSession | null;
 }) {
@@ -114,10 +114,10 @@ function TicketMenu({
 export function BoardView({
   controller,
 }: {
-  controller: OrchestratorController;
+  controller: WalleyBoardController;
 }) {
   return (
-    <Box className="orchestrator-main">
+    <Box className="walleyboard-main">
       <Stack gap="md">
         <Box className="workbench-header">
           <Group justify="space-between" align="flex-start">

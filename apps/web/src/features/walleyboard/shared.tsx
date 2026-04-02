@@ -38,7 +38,7 @@ export const boardColumns = [
   "done",
 ] satisfies TicketFrontmatter["status"][];
 
-const lastOpenProjectStorageKey = "orchestrator:last-open-project-id";
+const lastOpenProjectStorageKey = "walleyboard:last-open-project-id";
 const stoppableSessionStatuses = [
   "queued",
   "running",
@@ -302,7 +302,7 @@ export function buildRepositoryBranchOptions(
     }));
 }
 
-export const diffLayoutStorageKey = "orchestrator.ticket-workspace.diff-layout";
+export const diffLayoutStorageKey = "walleyboard.ticket-workspace.diff-layout";
 
 export function readDiffLayoutPreference(): DiffLayout {
   if (typeof window === "undefined") {
@@ -1021,4 +1021,4 @@ export function ColorSchemeControl() {
   );
 }
 
-export type OrchestratorProtocolEvent = ProtocolEvent;
+export type WalleyBoardProtocolEvent = ProtocolEvent;

@@ -1,5 +1,5 @@
 {
-  "name": "orchestrator",
+  "name": "walleyboard",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,8 +15,8 @@
     "lint": "npm run sizecheck && npm run lint --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",
     "prepare": "husky",
-    "dev:backend": "npm --workspace @orchestrator/backend run dev",
-    "dev:web": "npm --workspace @orchestrator/web run dev",
+    "dev:backend": "npm --workspace @walleyboard/backend run dev",
+    "dev:web": "npm --workspace @walleyboard/web run dev",
     "db:generate": "drizzle-kit generate"
   },
   "devDependencies": {

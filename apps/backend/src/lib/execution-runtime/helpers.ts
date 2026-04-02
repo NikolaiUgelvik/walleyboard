@@ -189,7 +189,7 @@ export function buildWorkspaceOutputPath(
   sessionId: string,
   suffix = "summary",
 ): string {
-  const outputDir = join(worktreePath, ".orchestrator");
+  const outputDir = join(worktreePath, ".walleyboard");
   ensureDirectory(outputDir);
   return join(outputDir, `${sessionId}-${suffix}.txt`);
 }

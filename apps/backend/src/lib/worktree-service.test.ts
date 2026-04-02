@@ -106,7 +106,7 @@ function createTicket(targetBranch: string): TicketFrontmatter {
 }
 
 test("fetchRepositoryBranches returns local and remote branch names", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-repo-branches-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-repo-branches-"));
 
   try {
     const remotePath = join(tempDir, "remote.git");
@@ -155,7 +155,7 @@ test("fetchRepositoryBranches returns local and remote branch names", () => {
 
 test("prepareWorktree resolves a remote target branch to a local branch and pulls before creation", () => {
   const tempDir = mkdtempSync(
-    join(tmpdir(), "orchestrator-prepare-remote-target-"),
+    join(tmpdir(), "walleyboard-prepare-remote-target-"),
   );
   const previousCwd = process.cwd();
 
@@ -234,7 +234,7 @@ test("prepareWorktree resolves a remote target branch to a local branch and pull
 });
 
 test("resetPreparedWorktreeImmediately removes the worktree and branch even when post-worktree cleanup fails", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-reset-worktree-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-reset-worktree-"));
   const previousCwd = process.cwd();
 
   try {
@@ -290,7 +290,7 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
 });
 
 test("prepareWorktree creates a self-contained checkout for docker-backed projects", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-docker-worktree-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-worktree-"));
   const previousCwd = process.cwd();
 
   try {
@@ -330,7 +330,7 @@ test("prepareWorktree creates a self-contained checkout for docker-backed projec
         join(runtime.worktreePath, ".git", "info", "exclude"),
         "utf8",
       ),
-      /\.orchestrator\//,
+      /\.walleyboard\//,
     );
   } finally {
     process.chdir(previousCwd);
@@ -339,7 +339,7 @@ test("prepareWorktree creates a self-contained checkout for docker-backed projec
 });
 
 test("prepareWorktree fails clearly and does not create a worktree when the target pull fails", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-prepare-fail-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-prepare-fail-"));
   const previousCwd = process.cwd();
 
   try {
@@ -420,7 +420,7 @@ test("prepareWorktree fails clearly and does not create a worktree when the targ
 });
 
 test("mergeReviewedBranch refreshes the target branch before rebasing and merging", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-refresh-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-refresh-"));
 
   try {
     const remotePath = join(tempDir, "remote.git");
@@ -511,7 +511,7 @@ test("mergeReviewedBranch refreshes the target branch before rebasing and mergin
 
 test("mergeReviewedBranch refreshes a remote target ref inside the ticket worktree before merging back", async () => {
   const tempDir = mkdtempSync(
-    join(tmpdir(), "orchestrator-merge-remote-target-"),
+    join(tmpdir(), "walleyboard-merge-remote-target-"),
   );
 
   try {
@@ -627,7 +627,7 @@ test("mergeReviewedBranch refreshes a remote target ref inside the ticket worktr
 });
 
 test("mergeReviewedBranch uses the conflict resolver and completes the rebase before merging", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-conflict-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-conflict-"));
 
   try {
     const repoPath = join(tempDir, "repo");
@@ -706,7 +706,7 @@ test("mergeReviewedBranch uses the conflict resolver and completes the rebase be
 });
 
 test("mergeReviewedBranch invokes the conflict resolver only once across retry attempts", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-retry-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-retry-"));
 
   try {
     const repoPath = join(tempDir, "repo");
@@ -796,7 +796,7 @@ test("mergeReviewedBranch invokes the conflict resolver only once across retry a
 });
 
 test("mergeReviewedBranch surfaces an automatic-recovery error when conflicts remain unresolved", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-unresolved-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-unresolved-"));
 
   try {
     const repoPath = join(tempDir, "repo");

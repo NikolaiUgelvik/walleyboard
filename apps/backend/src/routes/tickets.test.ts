@@ -48,7 +48,7 @@ function createReadyTicket(
 }
 
 test("restart route recreates the worktree and launches a fresh attempt", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-ticket-route-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-route-"));
   const previousCwd = process.cwd();
 
   try {
@@ -65,7 +65,7 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
     runGit(repoPath, ["commit", "-m", "initial"]);
     runGit(repoPath, ["branch", "-M", "main"]);
 
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Route Restart Project",
       repository: {

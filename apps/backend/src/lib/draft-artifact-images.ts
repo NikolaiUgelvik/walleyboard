@@ -8,7 +8,7 @@ const markdownImagePattern = /!\[[^\]]*]\(([^)\s]+)\)/g;
 
 function normalizeHref(href: string): string {
   try {
-    return new URL(href, "http://orchestrator.local").pathname;
+    return new URL(href, "http://walleyboard.local").pathname;
   } catch {
     return href;
   }

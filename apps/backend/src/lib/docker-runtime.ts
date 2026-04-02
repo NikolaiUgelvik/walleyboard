@@ -13,11 +13,11 @@ import type { PreparedAgentRun } from "./agent-adapters/types.js";
 
 export const dockerWorkspacePath = "/workspace";
 
-const dockerManagedLabel = "com.orchestrator.managed";
-const dockerRepoRootHashLabel = "com.orchestrator.repo_root_hash";
-const dockerProjectIdLabel = "com.orchestrator.project_id";
-const dockerSessionIdLabel = "com.orchestrator.session_id";
-const dockerTicketIdLabel = "com.orchestrator.ticket_id";
+const dockerManagedLabel = "com.walleyboard.managed";
+const dockerRepoRootHashLabel = "com.walleyboard.repo_root_hash";
+const dockerProjectIdLabel = "com.walleyboard.project_id";
+const dockerSessionIdLabel = "com.walleyboard.session_id";
+const dockerTicketIdLabel = "com.walleyboard.ticket_id";
 
 type ExecFileSyncError = Error & {
   code?: string;
@@ -61,7 +61,7 @@ function toText(value: Buffer | string | undefined): string {
 }
 
 function buildContainerName(repoRootHash: string, sessionId: string): string {
-  return `orchestrator-${repoRootHash.slice(0, 12)}-${sessionId}`;
+  return `walleyboard-${repoRootHash.slice(0, 12)}-${sessionId}`;
 }
 
 export class DockerRuntimeManager {

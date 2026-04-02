@@ -60,10 +60,10 @@ import {
   ticketMatchesSearch,
   writeLastOpenProjectId,
 } from "./shared.js";
-import { useOrchestratorMutations } from "./use-orchestrator-mutations.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
+import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
 
-export function useOrchestratorController() {
+export function useWalleyBoardController() {
   const queryClient = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
@@ -524,7 +524,7 @@ export function useOrchestratorController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
-  const mutations = useOrchestratorMutations({
+  const mutations = useWalleyBoardMutations({
     queryClient,
     pendingDraftEditorSync,
     selectedDraftId,
@@ -1458,6 +1458,4 @@ export function useOrchestratorController() {
   };
 }
 
-export type OrchestratorController = ReturnType<
-  typeof useOrchestratorController
->;
+export type WalleyBoardController = ReturnType<typeof useWalleyBoardController>;

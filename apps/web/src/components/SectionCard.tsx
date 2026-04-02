@@ -19,9 +19,9 @@ export function SectionCard({
       padding="md"
       shadow="xs"
       style={{
-        background: "var(--orchestrator-panel)",
-        borderColor: "var(--orchestrator-border)",
-        boxShadow: "var(--orchestrator-shadow)",
+        background: "var(--walleyboard-panel)",
+        borderColor: "var(--walleyboard-border)",
+        boxShadow: "var(--walleyboard-shadow)",
       }}
     >
       <Stack gap="md">

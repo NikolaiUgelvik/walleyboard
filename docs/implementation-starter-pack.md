@@ -150,6 +150,6 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - Successful execution runs validation before review handoff, generates a local review package and persisted diff artifact, surfaces review-ready and waiting action cards, and moves the ticket to `review`.
 - The session workspace view combines diff, preview, interpreted activity, and a raw project terminal transcript for the prepared worktree.
 - From `review`, local direct merge to the target branch is implemented, including worktree and local-branch cleanup plus automatic merge-conflict fallback that moves work back to `in_progress` when recovery cannot finish the merge safely.
-- Ticket deletion stops active work when needed, removes persisted ticket/session metadata, and deletes orchestrator-owned local artifacts such as worktrees, local branches, summaries, and validation directories.
+- Ticket deletion stops active work when needed, removes persisted ticket/session metadata, and deletes walleyboard-owned local artifacts such as worktrees, local branches, summaries, and validation directories.
 - Backend startup marks active sessions and attempts `interrupted`, preserves the existing worktree and branch, and leaves resume manual instead of auto-restoring live execution.
 - GitHub PR creation and external reconciliation are scaffolded only and are not implemented yet.

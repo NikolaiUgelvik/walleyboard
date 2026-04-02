@@ -23,12 +23,12 @@ import {
   resolveRepositoryTargetBranch,
   slugify,
 } from "./shared.js";
-import type { OrchestratorController } from "./use-orchestrator-controller.js";
+import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
-export function OrchestratorModals({
+export function WalleyBoardModals({
   controller,
 }: {
-  controller: OrchestratorController;
+  controller: WalleyBoardController;
 }) {
   const projectOptionsProject = controller.projectOptionsProject;
 
@@ -520,7 +520,7 @@ export function OrchestratorModals({
                   </Text>
                   <Text size="sm" className="project-options-danger-copy">
                     Delete this project to remove its drafts, tickets, sessions,
-                    and orchestrator-managed local artifacts. The source
+                    and walleyboard-managed local artifacts. The source
                     repository directory stays on disk.
                   </Text>
                   <TextInput

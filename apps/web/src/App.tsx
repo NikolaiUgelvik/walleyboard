@@ -1,9 +1,9 @@
 import "./app-shell.css";
 
-import { OrchestratorView } from "./features/orchestrator/OrchestratorView.js";
-import { useOrchestratorController } from "./features/orchestrator/use-orchestrator-controller.js";
+import { WalleyBoardView } from "./features/walleyboard/WalleyBoardView.js";
+import { useWalleyBoardController } from "./features/walleyboard/use-walleyboard-controller.js";
 
 export function App() {
-  const controller = useOrchestratorController();
-  return <OrchestratorView controller={controller} />;
+  const controller = useWalleyBoardController();
+  return <WalleyBoardView controller={controller} />;
 }

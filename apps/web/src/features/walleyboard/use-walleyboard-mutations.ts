@@ -33,7 +33,7 @@ import {
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
-type UseOrchestratorMutationsInput = {
+type UseWalleyBoardMutationsInput = {
   queryClient: QueryClient;
   pendingDraftEditorSync: PendingDraftEditorSync | null;
   selectedDraftId: string | null;
@@ -61,7 +61,7 @@ type UseOrchestratorMutationsInput = {
   tickets: TicketFrontmatter[];
 };
 
-export function useOrchestratorMutations({
+export function useWalleyBoardMutations({
   queryClient,
   pendingDraftEditorSync,
   selectedDraftId,
@@ -85,7 +85,7 @@ export function useOrchestratorMutations({
   setTerminalCommand,
   setValidationCommandsText,
   tickets,
-}: UseOrchestratorMutationsInput) {
+}: UseWalleyBoardMutationsInput) {
   const createProjectMutation = useMutation({
     mutationFn: (input: {
       name: string;
@@ -866,4 +866,4 @@ export function useOrchestratorMutations({
   };
 }
 
-export type OrchestratorMutations = ReturnType<typeof useOrchestratorMutations>;
+export type WalleyBoardMutations = ReturnType<typeof useWalleyBoardMutations>;

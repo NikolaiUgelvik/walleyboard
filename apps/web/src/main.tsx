@@ -12,7 +12,7 @@ import { App } from "./App.js";
 
 const queryClient = new QueryClient();
 const colorSchemeManager = localStorageColorSchemeManager({
-  key: "orchestrator-color-scheme",
+  key: "walleyboard-color-scheme",
 });
 const theme = createTheme({
   primaryColor: "orange",

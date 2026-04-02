@@ -21,7 +21,7 @@ function configureGitIdentity(repoPath: string): void {
 }
 
 test("TicketWorkspaceService diffs the worktree and publishes live diff updates", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-workspace-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-workspace-"));
   const repoPath = join(tempDir, "repo");
   const worktreePath = join(tempDir, "ticket-worktree");
   const eventHub = new EventHub();

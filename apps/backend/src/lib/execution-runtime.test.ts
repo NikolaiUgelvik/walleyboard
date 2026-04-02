@@ -95,9 +95,7 @@ function createSession(worktreePath: string): ExecutionSession {
 }
 
 test("docker-backed execution launches the configured adapter command inside Docker", () => {
-  const tempDir = mkdtempSync(
-    join(tmpdir(), "orchestrator-execution-runtime-"),
-  );
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
   const worktreePath = join(tempDir, "workspace");
   mkdirSync(worktreePath, { recursive: true });
 
@@ -229,7 +227,7 @@ test("docker-backed execution launches the configured adapter command inside Doc
     const outputPath = dockerArgs[outputFlagIndex + 1];
     assert.ok(outputPath);
     assert.equal(outputPath.startsWith(worktreePath), true);
-    assert.match(outputPath, /\.orchestrator\//);
+    assert.match(outputPath, /\.walleyboard\//);
     assert.equal(dockerArgs[0], "exec");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

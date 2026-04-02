@@ -351,7 +351,7 @@ export class SqliteStoreContext {
 
   constructor(databasePath?: string) {
     const resolvedPath =
-      databasePath ?? join(process.cwd(), ".local", "orchestrator.sqlite");
+      databasePath ?? join(process.cwd(), ".local", "walleyboard.sqlite");
     mkdirSync(dirname(resolvedPath), { recursive: true });
     this.#db = new DatabaseSync(resolvedPath);
     this.#db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");

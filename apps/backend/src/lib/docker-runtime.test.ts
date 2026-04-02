@@ -29,7 +29,7 @@ test("getHealth reports Docker availability from docker version", () => {
 });
 
 test("ensureSessionContainer uses the adapter docker spec for image and config mounts", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-docker-runtime-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-runtime-"));
   const worktreePath = join(tempDir, "workspace");
   const configHomePath = join(tempDir, ".test-agent");
   const commands: Array<{ command: string; args: string[] }> = [];
@@ -100,7 +100,7 @@ test("ensureSessionContainer uses the adapter docker spec for image and config m
 });
 
 test("spawnPtyInSession runs docker exec in the workspace", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-docker-pty-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-pty-"));
   const commands: Array<{ command: string; args: string[] }> = [];
   let spawnedArgs: string[] | null = null;
 
@@ -182,7 +182,7 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
   }
 });
 
-test("cleanupStaleContainers removes matching orchestrator containers", () => {
+test("cleanupStaleContainers removes matching walleyboard containers", () => {
   const commands: Array<{ command: string; args: string[] }> = [];
   const runtime = new DockerRuntimeManager({
     execFileSyncImpl: ((command: string, args: string[]) => {
@@ -202,7 +202,7 @@ test("cleanupStaleContainers removes matching orchestrator containers", () => {
 
       throw new Error(`Unexpected docker command: ${args.join(" ")}`);
     }) as never,
-    repoRoot: "/tmp/orchestrator",
+    repoRoot: "/tmp/walleyboard",
   });
 
   runtime.cleanupStaleContainers();

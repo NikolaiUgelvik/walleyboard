@@ -1,5 +1,5 @@
 {
-  "name": "@orchestrator/backend",
+  "name": "@walleyboard/backend",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@fastify/websocket": "^11.0.1",
-    "@orchestrator/contracts": "0.0.0",
+    "@walleyboard/contracts": "0.0.0",
     "fastify": "^5.2.1",
     "nanoid": "^5.1.5",
     "node-pty": "^1.1.0"

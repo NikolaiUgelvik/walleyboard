@@ -1,4 +1,4 @@
-# PRD: AI Orchestrator Application
+# PRD: AI WalleyBoard Application
 
 ## 1. Overview
 Build a local-first single-page application for orchestrating AI-assisted software work across multiple repositories, Codex CLI instances, and git worktrees. The application should provide a Kanban-style workflow for drafting, refining, planning, executing, reviewing, and completing engineering tickets from one interface.
@@ -94,7 +94,7 @@ State transitions:
 - The frontmatter stores machine-readable fields.
 - The Markdown body stores human-readable context and instructions.
 - Draft titles, descriptions, and acceptance criteria should preserve Markdown literally from the first draft through ready-ticket creation.
-- Drafts and ready tickets may reference orchestrator-managed local image artifacts using Markdown image syntax.
+- Drafts and ready tickets may reference walleyboard-managed local image artifacts using Markdown image syntax.
 - Each draft and ticket must carry a stable `artifact_scope_id` so pasted screenshot references stay valid across save, reload, refine, revert, and confirm actions.
 - Ticket IDs must be incremental per project.
 - Each ticket must map to exactly one repository.
@@ -183,7 +183,7 @@ The intended v1 happy path is:
 9. In `Review`, the user inspects the diff, commits, summaries, and test results, then either requests changes, creates a PR, or merges directly.
 10. If the user requests changes, the same ticket, worktree, branch, and execution session return to `In Progress`.
 11. If the user stops an in-progress ticket, the active attempt is interrupted, the ticket remains in `In Progress`, and the worktree and working branch are preserved for explicit resume.
-12. If the user deletes a ticket, the system should stop any active execution first, remove orchestrator-managed local artifacts, remove the ticket from the board, and delete persisted orchestrator metadata.
+12. If the user deletes a ticket, the system should stop any active execution first, remove walleyboard-managed local artifacts, remove the ticket from the board, and delete persisted walleyboard metadata.
 13. If the user merges directly, the system merges into the target branch, marks the ticket `Done`, and cleans up the worktree and local working branch.
 14. If the user creates a PR, the ticket remains in `Review` until the PR is merged, after which the ticket becomes `Done` and cleanup runs.
 
@@ -195,7 +195,7 @@ The intended v1 happy path is:
   - A title
   - A description
 - The title, description, and acceptance criteria editors must accept Markdown authoring and show a preview using the same Markdown rendering rules used elsewhere in the board.
-- Pasting an image from the clipboard into the draft description must store the image under an orchestrator-managed artifact path scoped to the draft/ticket and insert a Markdown image reference at the current cursor position.
+- Pasting an image from the clipboard into the draft description must store the image under an walleyboard-managed artifact path scoped to the draft/ticket and insert a Markdown image reference at the current cursor position.
 - Non-image clipboard contents must retain normal text paste behavior.
 - The drawer may spawn a temporary refinement session to help the user:
   - Refine grammar and clarity
@@ -282,13 +282,13 @@ Before execution begins, the user should see an approval summary that includes:
 - Deleting a ticket should remove:
   - The persisted ticket record
   - Associated execution-session metadata, attempts, logs, requested-change notes, and review-package metadata
-  - Orchestrator-owned local artifacts for the ticket, including the worktree, local working branch, stored review diff, validation logs, and persisted session summary files when present
+  - WalleyBoard-owned local artifacts for the ticket, including the worktree, local working branch, stored review diff, validation logs, and persisted session summary files when present
 - Deleting a ticket must not revert or rewrite code that has already been merged into the target branch.
-- If some cleanup step fails, the system should still remove the orchestrator record and surface cleanup warnings to the user.
+- If some cleanup step fails, the system should still remove the walleyboard record and surface cleanup warnings to the user.
 
 ### 7.3 Worktree and Branch Management
 - Each ticket must execute in its own isolated worktree.
-- Worktrees must live under an application-managed directory, for example `~/.orchestrator/worktrees/<project-slug>/<ticket-id>/`.
+- Worktrees must live under an application-managed directory, for example `~/.walleyboard/worktrees/<project-slug>/<ticket-id>/`.
 - Worktrees must persist until the ticket reaches `Done`.
 - Worktrees must survive application restarts and machine restarts.
 - Worktrees become eligible for cleanup only after the ticket is `Done`.
@@ -500,7 +500,7 @@ Allowed ticket transitions:
 
 Deletion semantics:
 - User-driven deletion may remove a ticket entirely from any board-visible state instead of transitioning it to another ticket state.
-- Deletion must first stop active execution when present, then remove orchestrator-managed metadata and local artifacts.
+- Deletion must first stop active execution when present, then remove walleyboard-managed metadata and local artifacts.
 - Deletion of a `done` ticket must not modify already-merged target-branch code.
 
 #### Execution Session States
@@ -573,7 +573,7 @@ Allowed execution session transitions:
 - The system is local-first.
 
 ### 8.2 Local Storage
-- Application state must persist locally in a dedicated application directory such as `~/.orchestrator/`.
+- Application state must persist locally in a dedicated application directory such as `~/.walleyboard/`.
 - Local state should include:
   - Ticket Markdown files
   - Session metadata
@@ -584,11 +584,11 @@ Allowed execution session transitions:
   - Managed worktrees
 
 Suggested layout:
-- `~/.orchestrator/projects/<project-id>/tickets/`
-- `~/.orchestrator/projects/<project-id>/config.*`
-- `~/.orchestrator/sessions/<session-id>/`
-- `~/.orchestrator/worktrees/<project-slug>/<ticket-id>/`
-- `~/.orchestrator/state/`
+- `~/.walleyboard/projects/<project-id>/tickets/`
+- `~/.walleyboard/projects/<project-id>/config.*`
+- `~/.walleyboard/sessions/<session-id>/`
+- `~/.walleyboard/worktrees/<project-slug>/<ticket-id>/`
+- `~/.walleyboard/state/`
 
 #### Backend Runtime Components
 The local backend should be the single source of truth for ticket, session, and worktree state.
@@ -653,7 +653,7 @@ The backend should expose command-style mutation APIs for at least:
 - `POST /tickets/:ticketId/resume`
   - Resume a queued, interrupted, paused, or failed execution session when allowed
 - `POST /tickets/:ticketId/delete`
-  - Delete the ticket record and clean up orchestrator-owned local artifacts
+  - Delete the ticket record and clean up walleyboard-owned local artifacts
 - `POST /tickets/:ticketId/request-changes`
   - Move a review ticket back to `in_progress` with a `RequestedChangeNote`
 - `POST /tickets/:ticketId/create-pr`
@@ -740,14 +740,14 @@ Recommended snapshot event payloads:
 V1 should use a Codex CLI adapter as the primary execution runtime.
 
 Adapter scope:
-- The orchestrator should treat Codex CLI as the execution engine for both:
+- The walleyboard should treat Codex CLI as the execution engine for both:
   - AI-assisted ticket refinement
   - Autonomous ticket implementation
 - The internal backend architecture should still keep a narrow adapter boundary so alternate runtimes can be introduced later without changing ticket, session, or review semantics.
 
 Documented behavior alignment:
 - The adapter must assume Codex CLI runs locally and can read, modify, and run code on the user's machine.
-- The adapter must keep local execution under backend control rather than allowing the model to execute commands outside the orchestrator's runtime boundaries.
+- The adapter must keep local execution under backend control rather than allowing the model to execute commands outside the walleyboard's runtime boundaries.
 - The adapter must launch Codex with the intended execution mode, keep worktree and session control under backend ownership, capture logs and summaries, and enforce UI-level approvals around workflow actions.
 - The adapter must not rely on undocumented internal Codex behavior when a conservative backend-controlled alternative exists.
 
@@ -784,11 +784,11 @@ Autonomy policy:
   - Requesting direct merge
   - Creating a pull request if the product keeps that action user-initiated
   - Returning terminal ownership to the agent after manual takeover
-- The adapter must not merge code, create a PR, or bypass a required validation gate without an explicit user action through the orchestrator UI.
+- The adapter must not merge code, create a PR, or bypass a required validation gate without an explicit user action through the walleyboard UI.
 
 Checkpoint and input contract:
 - The backend must expose one unified session-control model even if Codex surfaces pauses in different ways across versions.
-- The adapter should map Codex execution into the orchestrator states:
+- The adapter should map Codex execution into the walleyboard states:
   - `paused_checkpoint`
   - `awaiting_input`
   - `paused_user_control`
@@ -798,7 +798,7 @@ Checkpoint and input contract:
   - `session.input_requested` for freeform user input requests
 - Emitting either `session.checkpoint_requested` or `session.input_requested` must also:
   - Persist the session in the corresponding waiting state
-  - Trigger a user-visible notification in the orchestrator UI
+  - Trigger a user-visible notification in the walleyboard UI
 - If Codex does not provide a strongly structured signal for a possible pause, the adapter should prefer conservative backend-controlled pauses rather than brittle text parsing when the transition would affect ticket state.
 
 Review handoff contract:
@@ -839,7 +839,7 @@ Safety and audit contract:
 
 Implementation guidance:
 - V1 should be CLI-first, not API-first.
-- The orchestrator should use Codex CLI as the primary documented execution path and avoid inventing a separate custom shell-agent loop unless a required Codex capability is unavailable through the CLI.
+- The walleyboard should use Codex CLI as the primary documented execution path and avoid inventing a separate custom shell-agent loop unless a required Codex capability is unavailable through the CLI.
 - If a future runtime uses the Responses API directly, it should remain compatible with the same ticket, session, and review contracts defined in this PRD.
 
 ### 8.3 Ticket Storage
@@ -1061,11 +1061,11 @@ Notes on persisted ownership:
 ### 8.7 Codex Execution Environment
 - Each execution session must run through Codex CLI as the execution runtime.
 - Codex should provide the execution sandbox and command policy boundary for autonomous work.
-- The orchestrator should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
+- The walleyboard should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
 - Planning-first runs should launch Codex with read-only behavior.
 - Implementation runs should launch Codex with workspace-write behavior against the prepared worktree.
 - Validation commands and hooks should continue to run as backend-owned subprocesses against that same worktree.
-- The orchestrator should not add a second OS-level sandbox layer in v1.
+- The walleyboard should not add a second OS-level sandbox layer in v1.
 
 #### Credential and Summary Safety
 - `gh` authentication should use the user's existing local GitHub CLI credentials rather than storing duplicate credentials inside the application.
@@ -1082,13 +1082,13 @@ Notes on persisted ownership:
 
 #### Approval and Control Boundaries
 - Codex execution policy is the safety boundary for autonomous work, not a replacement for workflow-level approvals
-- Codex may operate autonomously within its execution policy and repository policy, but the orchestrator must still require explicit user action for:
+- Codex may operate autonomously within its execution policy and repository policy, but the walleyboard must still require explicit user action for:
   - Starting execution
   - Validation override
   - Direct merge
   - PR creation if that action remains user-initiated
 - The backend must not assume it can inspect or veto every sub-command Codex executes inside the CLI runtime
-- Therefore the orchestrator must choose Codex execution settings that keep autonomous execution acceptable even when command-by-command mediation is unavailable
+- Therefore the walleyboard must choose Codex execution settings that keep autonomous execution acceptable even when command-by-command mediation is unavailable
 
 ### 8.8 Recommended Technical Stack
 The recommended v1 stack is:
@@ -1267,7 +1267,7 @@ The MVP should prove one reliable end-to-end workflow:
   - remaining risks
 - Request-changes loop back to the same ticket, worktree, branch, and session
 - Explicit stop action that preserves the in-progress ticket and existing worktree for manual resume
-- Ticket deletion with best-effort cleanup of orchestrator-owned local artifacts
+- Ticket deletion with best-effort cleanup of walleyboard-owned local artifacts
 - Direct merge flow with rebase-then-merge
 - Local worktree and local branch cleanup after successful merge
 - Ticket Markdown plus SQLite-backed indexed state

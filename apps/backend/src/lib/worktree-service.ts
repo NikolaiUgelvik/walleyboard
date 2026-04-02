@@ -327,7 +327,7 @@ export function prepareWorktree(
       ]);
       copyGitIdentity(repository.path, worktreeRoot);
       runGit(worktreeRoot, ["checkout", "-b", workingBranch]);
-      addWorkspaceExclude(worktreeRoot, ".orchestrator/");
+      addWorkspaceExclude(worktreeRoot, ".walleyboard/");
     } catch (error) {
       if (existsSync(worktreeRoot)) {
         removeStandaloneWorkspace(worktreeRoot);
@@ -982,7 +982,7 @@ export async function mergeReviewedBranch(
 
     try {
       if (isSelfContainedWorkspace(worktreePath)) {
-        const importedRef = `refs/orchestrator/${workingBranch.replace(/[^A-Za-z0-9/_-]+/g, "-")}`;
+        const importedRef = `refs/walleyboard/${workingBranch.replace(/[^A-Za-z0-9/_-]+/g, "-")}`;
         try {
           runGit(repository.path, [
             "fetch",

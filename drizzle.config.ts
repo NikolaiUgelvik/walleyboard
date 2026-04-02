@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {
-    url: "./.local/orchestrator.sqlite"
+    url: "./.local/walleyboard.sqlite"
   }
 });

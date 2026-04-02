@@ -31,10 +31,10 @@ function createReadyTicket(
 }
 
 test("parallel ticket sessions stay isolated across stop and resume", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-parallel-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-parallel-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Parallel Project",
       repository: {
@@ -107,8 +107,8 @@ test("parallel ticket sessions stay isolated across stop and resume", () => {
 });
 
 test("updateProject persists repository target branch changes", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-project-options-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-options-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
@@ -146,8 +146,8 @@ test("updateProject persists repository target branch changes", () => {
 });
 
 test("projects default to host execution and persist execution backend updates", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-project-backend-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-backend-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
@@ -179,10 +179,10 @@ test("projects default to host execution and persist execution backend updates",
 });
 
 test("started sessions snapshot the project's agent adapter", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-session-adapter-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-session-adapter-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Session Adapter Project",
       repository: {
@@ -206,8 +206,8 @@ test("started sessions snapshot the project's agent adapter", () => {
 });
 
 test("sqlite migration renames codex_session_id to adapter_session_ref", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-session-migrate-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-session-migrate-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const db = new DatabaseSync(databasePath);
@@ -290,10 +290,10 @@ test("sqlite migration renames codex_session_id to adapter_session_ref", () => {
 });
 
 test("starting beyond the running cap keeps the ticket in progress and queues the session", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-queue-start-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-queue-start-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Queued Start Project",
       repository: {
@@ -335,10 +335,10 @@ test("starting beyond the running cap keeps the ticket in progress and queues th
 });
 
 test("queued sessions are claimed in FIFO order when a slot opens", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-queue-order-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-queue-order-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Queued Order Project",
       repository: {
@@ -396,10 +396,10 @@ test("queued sessions are claimed in FIFO order when a slot opens", () => {
 });
 
 test("planning sessions keep plan approval state across retries", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-planning-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-planning-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Planning Project",
       repository: {
@@ -447,8 +447,8 @@ test("planning sessions keep plan approval state across retries", () => {
 });
 
 test("restartInterruptedTicket keeps ids but resets fresh-launch session state", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-fresh-restart-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-fresh-restart-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
@@ -513,8 +513,8 @@ test("restartInterruptedTicket keeps ids but resets fresh-launch session state",
 });
 
 test("adapter session refs persist across resume and reload", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-codex-session-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-codex-session-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
@@ -562,10 +562,10 @@ test("adapter session refs persist across resume and reload", () => {
 });
 
 test("restartInterruptedTicket preserves prior history and appends fresh restart logs", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-restart-logs-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-restart-logs-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Restart Log Project",
       repository: {
@@ -634,8 +634,8 @@ test("restartInterruptedTicket preserves prior history and appends fresh restart
 });
 
 test("archived tickets stay in storage but leave active project lists", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-archive-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-archive-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
@@ -682,8 +682,8 @@ test("archived tickets stay in storage but leave active project lists", () => {
 });
 
 test("restored tickets rejoin active project lists and persist after reload", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-restore-"));
-  const databasePath = join(tempDir, "orchestrator.sqlite");
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-restore-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
 
   try {
     const store = new SqliteStore(databasePath);
@@ -722,10 +722,10 @@ test("restored tickets rejoin active project lists and persist after reload", ()
 });
 
 test("markdown content is preserved across draft, ticket, and session note flows", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-markdown-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-markdown-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Markdown Project",
       repository: {
@@ -832,7 +832,7 @@ test("markdown content is preserved across draft, ticket, and session note flows
       `Resume instruction recorded:\n${resumeInstruction}`,
     );
 
-    const reopenedStore = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const reopenedStore = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     assert.equal(
       reopenedStore.getTicket(ticket.id)?.description,
       draftDescription,
@@ -843,10 +843,10 @@ test("markdown content is preserved across draft, ticket, and session note flows
 });
 
 test("recordMergeConflict moves the ticket back to in progress with a system note", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "orchestrator-merge-note-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-note-"));
 
   try {
-    const store = new SqliteStore(join(tempDir, "orchestrator.sqlite"));
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
     const { project, repository } = store.createProject({
       name: "Merge Conflict Project",
       repository: {

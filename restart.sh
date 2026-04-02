@@ -21,8 +21,8 @@ start_service() {
   echo "Starting $name..."
   : >"$log_file"
 
-  ORCHESTRATOR_ROOT="$ROOT_DIR" \
-    nohup setsid bash -lc "cd \"\$ORCHESTRATOR_ROOT\" && exec $command" \
+  WALLEYBOARD_ROOT="$ROOT_DIR" \
+    nohup setsid bash -lc "cd \"\$WALLEYBOARD_ROOT\" && exec $command" \
       >>"$log_file" 2>&1 &
   local pid=$!
   echo "$pid" >"$pid_file"
