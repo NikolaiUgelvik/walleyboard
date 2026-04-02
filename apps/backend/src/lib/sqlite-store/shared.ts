@@ -213,7 +213,12 @@ export function mapProject(row: Record<string, unknown>): Project {
     id: String(row.id),
     slug: String(row.slug),
     name: String(row.name),
-    agent_adapter: row.agent_adapter === "codex" ? "codex" : "codex",
+    agent_adapter:
+      row.agent_adapter === "codex"
+        ? "codex"
+        : row.agent_adapter === "claude-code"
+          ? "claude-code"
+          : "codex",
     execution_backend: row.execution_backend === "docker" ? "docker" : "host",
     default_review_action: normalizeReviewAction(
       row.default_review_action as ReviewAction | null | undefined,
@@ -347,7 +352,12 @@ export function mapExecutionSession(
     ticket_id: Number(row.ticket_id),
     project_id: String(row.project_id),
     repo_id: String(row.repo_id),
-    agent_adapter: row.agent_adapter === "codex" ? "codex" : "codex",
+    agent_adapter:
+      row.agent_adapter === "codex"
+        ? "codex"
+        : row.agent_adapter === "claude-code"
+          ? "claude-code"
+          : "codex",
     worktree_path:
       row.worktree_path === null ? null : String(row.worktree_path),
     adapter_session_ref:

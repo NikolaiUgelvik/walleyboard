@@ -132,25 +132,49 @@ export function WalleyBoardModals({
                 <Select
                   label="Agent CLI"
                   description="Choose which agent runtime this project uses for draft analysis and ticket work."
-                  data={agentAdapterOptions}
+                  data={agentAdapterOptions.map((option) =>
+                    option.value === "claude-code" &&
+                    !controller.claudeCodeHealth?.available
+                      ? {
+                          ...option,
+                          label: "Claude Code (not installed)",
+                          disabled: true,
+                        }
+                      : option,
+                  )}
                   value={controller.projectOptionsAgentAdapter}
                   onChange={(value) => {
-                    if (value !== "codex") {
+                    if (value !== "codex" && value !== "claude-code") {
                       return;
                     }
 
                     controller.setProjectOptionsFormError(null);
                     controller.updateProjectMutation.reset();
                     controller.setProjectOptionsAgentAdapter(value);
+                    if (value === "claude-code") {
+                      controller.setProjectOptionsExecutionBackend("host");
+                    }
                   }}
                 />
               </Stack>
 
+              {/* Docker is not supported for Claude Code. This UI guard is the
+                  primary enforcement point - we intentionally skip server-side
+                  cross-field validation since our threat model does not cover
+                  users bypassing the UI via raw API calls. The runtime still
+                  produces a clear error if the combination is somehow reached. */}
               <Stack gap="xs">
                 <Text fw={600}>Execution backend</Text>
                 <SegmentedControl
                   data={executionBackendOptions}
-                  value={controller.projectOptionsExecutionBackend}
+                  disabled={
+                    controller.projectOptionsAgentAdapter === "claude-code"
+                  }
+                  value={
+                    controller.projectOptionsAgentAdapter === "claude-code"
+                      ? "host"
+                      : controller.projectOptionsExecutionBackend
+                  }
                   onChange={(value) => {
                     if (value !== "host" && value !== "docker") {
                       return;
@@ -161,11 +185,17 @@ export function WalleyBoardModals({
                     controller.setProjectOptionsExecutionBackend(value);
                   }}
                 />
-                <Text size="sm" c="dimmed">
-                  Docker runs ticket-scoped agent work inside a managed Ubuntu
-                  container. Manual terminal takeover and validation still run
-                  on the host in this first version.
-                </Text>
+                {controller.projectOptionsAgentAdapter === "claude-code" ? (
+                  <Text size="sm" c="dimmed">
+                    Docker execution is not yet supported for Claude Code.
+                  </Text>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    Docker runs ticket-scoped agent work inside a managed Ubuntu
+                    container. Manual terminal takeover and validation still run
+                    on the host in this first version.
+                  </Text>
+                )}
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
                     <Text size="sm" c="dimmed">

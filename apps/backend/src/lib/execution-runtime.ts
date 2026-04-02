@@ -427,8 +427,12 @@ export class ExecutionRuntime {
         return;
       }
 
+      let lastOutputContent: string | undefined;
       const captureAdapterLine = (line: string) => {
         const interpreted = adapter.interpretOutputLine(line);
+        if (hasMeaningfulContent(interpreted.outputContent)) {
+          lastOutputContent = interpreted.outputContent;
+        }
         if (logs.length < 16) {
           logs.push(interpreted.logLine);
         }
@@ -456,9 +460,13 @@ export class ExecutionRuntime {
       });
 
       child.once("close", (exitCode, signal) => {
-        const summary = existsSync(outputSummaryPath)
+        let summary = existsSync(outputSummaryPath)
           ? readFileSync(outputSummaryPath, "utf8").trim()
           : "";
+        if (summary.length === 0 && lastOutputContent) {
+          writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
+          summary = lastOutputContent.trim();
+        }
         if (summary.length > 0) {
           logs.push(`Merge-conflict resolution summary: ${truncate(summary)}`);
         }
@@ -1086,36 +1094,39 @@ export class ExecutionRuntime {
 
     let pendingBuffer = "";
     let persistedSessionRef = activeSessionRef;
+    let lastOutputContent: string | undefined;
 
-    const persistAdapterSessionRef = (line: string) => {
+    const processAdapterLine = (line: string) => {
       const interpreted = adapter.interpretOutputLine(line);
-      if (!hasMeaningfulContent(interpreted.sessionRef)) {
-        return;
+      if (hasMeaningfulContent(interpreted.outputContent)) {
+        lastOutputContent = interpreted.outputContent;
       }
-      if (interpreted.sessionRef === persistedSessionRef) {
-        return;
+      if (
+        hasMeaningfulContent(interpreted.sessionRef) &&
+        interpreted.sessionRef !== persistedSessionRef
+      ) {
+        const previousSessionRef = persistedSessionRef;
+        persistedSessionRef = interpreted.sessionRef;
+
+        const updatedSession = this.#store.updateSessionAdapterSessionRef(
+          session.id,
+          interpreted.sessionRef,
+        );
+        if (updatedSession) {
+          publishSessionUpdated(this.#eventHub, updatedSession);
+        }
+
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          session.id,
+          attemptId,
+          previousSessionRef
+            ? `${adapter.label} session updated: ${previousSessionRef} -> ${interpreted.sessionRef}`
+            : `${adapter.label} session attached: ${interpreted.sessionRef}`,
+        );
       }
-
-      const previousSessionRef = persistedSessionRef;
-      persistedSessionRef = interpreted.sessionRef;
-
-      const updatedSession = this.#store.updateSessionAdapterSessionRef(
-        session.id,
-        interpreted.sessionRef,
-      );
-      if (updatedSession) {
-        publishSessionUpdated(this.#eventHub, updatedSession);
-      }
-
-      publishSessionOutput(
-        this.#eventHub,
-        this.#store,
-        session.id,
-        attemptId,
-        previousSessionRef
-          ? `${adapter.label} session updated: ${previousSessionRef} -> ${interpreted.sessionRef}`
-          : `${adapter.label} session attached: ${interpreted.sessionRef}`,
-      );
+      return interpreted;
     };
 
     child.onData((chunk) => {
@@ -1125,13 +1136,13 @@ export class ExecutionRuntime {
         const newlineIndex = pendingBuffer.indexOf("\n");
         const line = pendingBuffer.slice(0, newlineIndex);
         pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
-        persistAdapterSessionRef(line);
+        const interpreted = processAdapterLine(line);
         publishSessionOutput(
           this.#eventHub,
           this.#store,
           session.id,
           attemptId,
-          adapter.interpretOutputLine(line).logLine,
+          interpreted.logLine,
         );
       }
     });
@@ -1147,20 +1158,24 @@ export class ExecutionRuntime {
       }
 
       if (pendingBuffer.trim().length > 0) {
-        persistAdapterSessionRef(pendingBuffer);
+        const interpreted = processAdapterLine(pendingBuffer);
         publishSessionOutput(
           this.#eventHub,
           this.#store,
           session.id,
           attemptId,
-          adapter.interpretOutputLine(pendingBuffer).logLine,
+          interpreted.logLine,
         );
         pendingBuffer = "";
       }
 
-      const finalSummary = existsSync(outputSummaryPath)
+      let finalSummary = existsSync(outputSummaryPath)
         ? readFileSync(outputSummaryPath, "utf8").trim()
         : null;
+      if ((!finalSummary || finalSummary.length === 0) && lastOutputContent) {
+        writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
+        finalSummary = lastOutputContent.trim();
+      }
       this.cleanupExecutionEnvironment(session.id);
 
       if (exitCode === 0) {

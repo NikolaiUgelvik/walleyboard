@@ -108,6 +108,7 @@ export const reviewActionOptions = [
 ] satisfies Array<{ label: string; value: ReviewAction }>;
 export const agentAdapterOptions = [
   { label: "Codex", value: "codex" },
+  { label: "Claude Code", value: "claude-code" },
 ] satisfies Array<{ label: string; value: AgentAdapter }>;
 
 export function readLastOpenProjectId(): string | null {

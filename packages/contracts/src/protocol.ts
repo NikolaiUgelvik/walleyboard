@@ -147,6 +147,11 @@ export const healthResponseSchema = z.object({
     server_version: z.string().min(1).nullable(),
     error: z.string().min(1).nullable(),
   }),
+  claude_code: z.object({
+    available: z.boolean(),
+    configured_path: z.string().min(1).nullable(),
+    error: z.string().min(1).nullable(),
+  }),
 });
 
 export const projectsResponseSchema = z.object({

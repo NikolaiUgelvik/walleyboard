@@ -32,6 +32,7 @@ export type PreparedAgentRun = {
 export type InterpretedAdapterLine = {
   logLine: string;
   sessionRef?: string;
+  outputContent?: string;
 };
 
 export type DraftRunInput = {

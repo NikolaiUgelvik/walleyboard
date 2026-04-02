@@ -180,6 +180,7 @@ export function useWalleyBoardController() {
     retry: false,
   });
   const dockerHealth = healthQuery.data?.docker ?? null;
+  const claudeCodeHealth = healthQuery.data?.claude_code ?? null;
 
   const projectsQuery = useQuery({
     queryKey: ["projects"],
@@ -1129,7 +1130,10 @@ export function useWalleyBoardController() {
     mutations.updateProjectMutation.mutate({
       agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
-      executionBackend: projectOptionsExecutionBackend,
+      executionBackend:
+        projectOptionsAgentAdapter === "claude-code"
+          ? "host"
+          : projectOptionsExecutionBackend,
       defaultReviewAction: projectOptionsDefaultReviewAction,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
@@ -1290,6 +1294,7 @@ export function useWalleyBoardController() {
     closeProjectOptionsModal,
     defaultBranch,
     deleteTicket,
+    claudeCodeHealth,
     dockerHealth,
     doneColumnTickets,
     draftAnalysisActive,

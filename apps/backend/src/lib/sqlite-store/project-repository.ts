@@ -142,6 +142,12 @@ export class ProjectRepository {
     };
   }
 
+  // NOTE: We intentionally do NOT validate agent_adapter / execution_backend
+  // combinations here (e.g. rejecting claude-code + docker). Invalid combos
+  // are blocked in the UI and produce a clear runtime error if reached via
+  // direct API calls. Our threat model does not include users undermining
+  // their own UX through raw API manipulation, so server-side cross-field
+  // validation is not worth the coupling it introduces.
   updateProject(projectId: string, input: UpdateProjectInput): Project {
     const project = this.getProject(projectId);
     if (!project) {

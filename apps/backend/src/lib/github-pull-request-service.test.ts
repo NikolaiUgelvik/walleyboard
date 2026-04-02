@@ -17,7 +17,7 @@ function setWalleyBoardHome(path: string): () => void {
   process.env.WALLEYBOARD_HOME = path;
   return () => {
     if (previous === undefined) {
-      delete process.env.WALLEYBOARD_HOME;
+      process.env.WALLEYBOARD_HOME = undefined;
       return;
     }
 

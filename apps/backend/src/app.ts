@@ -2,6 +2,7 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
 
+import { ClaudeCodeAdapter } from "./lib/agent-adapters/claude-code-adapter.js";
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { DockerRuntimeManager } from "./lib/docker-runtime.js";
@@ -29,7 +30,10 @@ export async function createApp() {
   const eventHub = new EventHub();
   const store = new SqliteStore();
   const dockerRuntime = new DockerRuntimeManager();
-  const adapterRegistry = new AgentAdapterRegistry([new CodexCliAdapter()]);
+  const adapterRegistry = new AgentAdapterRegistry([
+    new CodexCliAdapter(),
+    new ClaudeCodeAdapter(),
+  ]);
   const executionRuntime = new ExecutionRuntime({
     adapterRegistry,
     dockerRuntime,
