@@ -18,6 +18,7 @@ import type {
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
+import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
 import {
   boardColumnMeta,
@@ -369,7 +370,13 @@ export function BoardView({
                                       />
                                     </Box>
                                     <Badge variant="light" color="gray">
-                                      {draft.wizard_status.replace(/_/g, " ")}
+                                      {formatDraftStatusLabel({
+                                        isRefining:
+                                          controller.isDraftRefinementActive(
+                                            draft.id,
+                                          ),
+                                        wizardStatus: draft.wizard_status,
+                                      })}
                                     </Badge>
                                   </Group>
                                   <MarkdownContent

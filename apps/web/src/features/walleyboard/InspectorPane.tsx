@@ -20,6 +20,7 @@ import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { SessionTerminalPanel } from "../../components/SessionTerminalPanel.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspacePreviewPanel } from "../../components/TicketWorkspacePreviewPanel.js";
+import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import {
   DraftEventResultView,
   DraftQuestionsResultView,
@@ -312,7 +313,12 @@ export function InspectorPane({
                     </Badge>
                   ) : null}
                   <Badge variant="light" color="gray">
-                    {controller.selectedDraft.wizard_status.replace(/_/g, " ")}
+                    {formatDraftStatusLabel({
+                      isRefining: controller.isDraftRefinementActive(
+                        controller.selectedDraft.id,
+                      ),
+                      wizardStatus: controller.selectedDraft.wizard_status,
+                    })}
                   </Badge>
                 </Group>
               </Group>

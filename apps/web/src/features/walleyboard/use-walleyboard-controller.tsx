@@ -20,6 +20,10 @@ import {
 import { hasNewInboxItems } from "../../lib/inbox-alert.js";
 import { deriveInboxItems } from "../../lib/inbox-items.js";
 import {
+  useDraftRefinementActivity,
+  useGlobalDrafts,
+} from "./draft-queries.js";
+import {
   type ArchiveActionFeedback,
   arraysEqual,
   blobToBase64,
@@ -192,6 +196,9 @@ export function useWalleyBoardController() {
 
   const globalTickets = globalTicketsQueries.flatMap(
     (query) => query.data?.tickets ?? [],
+  );
+  const { globalDrafts, globalDraftsQueries } = useGlobalDrafts(
+    projectsQuery.data?.projects ?? [],
   );
 
   const globalSessionSummaries = useQueries({
@@ -636,6 +643,7 @@ export function useWalleyBoardController() {
       : (draftEditorRepositoriesQuery.data?.repositories ?? []);
   const draftEditorRepository = draftEditorRepositories[0] ?? null;
   const drafts = draftsQuery.data?.drafts ?? [];
+  const { isDraftRefinementActive } = useDraftRefinementActivity(drafts);
   const selectedDraft =
     drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const selectedDraftRepository =
@@ -749,6 +757,7 @@ export function useWalleyBoardController() {
   const doneColumnTickets = groupedTickets.done;
 
   const actionItems = deriveInboxItems({
+    drafts: globalDrafts,
     projects: projectsQuery.data?.projects ?? [],
     tickets: globalTickets,
     sessionsById: globalSessionById,
@@ -756,6 +765,7 @@ export function useWalleyBoardController() {
   const actionItemKeys = actionItems.map((item) => item.key);
   const inboxQueriesSettled =
     projectsQuery.data !== undefined &&
+    globalDraftsQueries.every((query) => !query.isPending) &&
     globalTicketsQueries.every((query) => !query.isPending) &&
     globalSessionSummaries.every((query) => !query.isPending);
 
@@ -1355,6 +1365,7 @@ export function useWalleyBoardController() {
     initializeNewDraftEditor,
     inspectorState,
     inspectorVisible,
+    isDraftRefinementActive,
     latestDraftEventMeta,
     latestQuestionsResult,
     latestRevertableRefineEvent,

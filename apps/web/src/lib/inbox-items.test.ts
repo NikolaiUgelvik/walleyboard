@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  DraftTicketState,
   ExecutionSession,
   Project,
   TicketFrontmatter,
@@ -47,6 +48,27 @@ function createTicket(
     target_branch: "main",
     linked_pr: null,
     session_id: null,
+    created_at: "2026-04-01T10:00:00.000Z",
+    updated_at: "2026-04-01T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function createDraft(
+  overrides: Partial<DraftTicketState> = {},
+): DraftTicketState {
+  return {
+    id: "draft-1",
+    project_id: "project-1",
+    artifact_scope_id: "artifact-scope-1",
+    title_draft: "Draft title",
+    description_draft: "Draft description",
+    proposed_repo_id: "repo-1",
+    confirmed_repo_id: null,
+    proposed_ticket_type: "feature",
+    proposed_acceptance_criteria: ["First criterion"],
+    wizard_status: "editing",
+    split_proposal_summary: null,
     created_at: "2026-04-01T10:00:00.000Z",
     updated_at: "2026-04-01T10:00:00.000Z",
     ...overrides,
@@ -148,6 +170,7 @@ test("derives mixed-project inbox items with project context and newest-first or
   ]);
 
   const items = deriveInboxItems({
+    drafts: [],
     projects,
     tickets,
     sessionsById,
@@ -162,20 +185,23 @@ test("derives mixed-project inbox items with project context and newest-first or
       actionLabel: item.actionLabel,
       projectId: item.projectId,
       projectName: item.projectName,
-      sessionId: item.sessionId,
+      targetId: item.targetId,
+      targetKind: item.targetKind,
     })),
     [
       {
         actionLabel: "Open Session",
         projectId: "project-2",
         projectName: "Project Two",
-        sessionId: "session-input",
+        targetId: "session-input",
+        targetKind: "session",
       },
       {
         actionLabel: "Open Review",
         projectId: "project-1",
         projectName: "Project One",
-        sessionId: "session-review",
+        targetId: "session-review",
+        targetKind: "session",
       },
     ],
   );
@@ -187,6 +213,7 @@ test("derives mixed-project inbox items with project context and newest-first or
 
 test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
   const items = deriveInboxItems({
+    drafts: [],
     projects: [createProject()],
     tickets: [
       createTicket({
@@ -216,8 +243,40 @@ test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
       color: "yellow",
       title: "Plan feedback needed for ticket #14",
       message: "Confirm the cross-project switch before continuing.",
-      sessionId: "session-plan",
+      targetKind: "session",
+      targetId: "session-plan",
       actionLabel: "Open Session",
+      projectId: "project-1",
+      projectName: "Project One",
+    },
+  ]);
+});
+
+test("surfaces refined drafts in the inbox with a stable draft key", () => {
+  const items = deriveInboxItems({
+    drafts: [
+      createDraft({
+        id: "draft-42",
+        title_draft: "Notify when draft refinement completes",
+        wizard_status: "awaiting_confirmation",
+        updated_at: "2026-04-01T12:00:00.000Z",
+      }),
+    ],
+    projects: [createProject()],
+    tickets: [],
+    sessionsById: new Map(),
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "draft-draft-42",
+      color: "blue",
+      title: "Draft ready to review",
+      message:
+        "Review the refined draft for **Notify when draft refinement completes**.",
+      targetKind: "draft",
+      targetId: "draft-42",
+      actionLabel: "Open Draft",
       projectId: "project-1",
       projectName: "Project One",
     },
