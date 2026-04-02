@@ -14,6 +14,19 @@ import { SqliteStore } from "../lib/sqlite-store.js";
 import { prepareWorktree } from "../lib/worktree-service.js";
 import { ticketRoutes } from "./tickets.js";
 
+function setWalleyBoardHome(path: string): () => void {
+  const previous = process.env.WALLEYBOARD_HOME;
+  process.env.WALLEYBOARD_HOME = path;
+  return () => {
+    if (previous === undefined) {
+      process.env.WALLEYBOARD_HOME = undefined;
+      return;
+    }
+
+    process.env.WALLEYBOARD_HOME = previous;
+  };
+}
+
 function runGit(repoPath: string, args: string[]): string {
   return execFileSync("git", ["-C", repoPath, ...args], {
     encoding: "utf8",
@@ -50,6 +63,9 @@ function createReadyTicket(
 test("restart route recreates the worktree and launches a fresh attempt", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-route-"));
   const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
 
   try {
     process.chdir(tempDir);
@@ -166,6 +182,7 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
 
     await app.close();
   } finally {
+    restoreWalleyBoardHome();
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }

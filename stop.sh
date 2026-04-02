@@ -3,7 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUN_DIR="$ROOT_DIR/.local/dev"
+STATE_DIR="${WALLEYBOARD_HOME:-$HOME/.walleyboard}"
+RUN_DIR="$STATE_DIR/dev"
 BACKEND_PID_FILE="$RUN_DIR/backend.pid"
 FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 BACKEND_PORT=4000

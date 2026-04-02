@@ -10,6 +10,7 @@ import type {
   RepositoryConfig,
   ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
+import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 import type { DraftFeasibilityResult, DraftRefinementResult } from "./types.js";
 
 export function truncate(value: string, maxLength = 600): string {
@@ -141,12 +142,7 @@ export function writeReviewDiff(
   ticketId: number,
   diff: string,
 ): string {
-  const reviewDir = join(
-    process.cwd(),
-    ".local",
-    "review-packages",
-    project.slug,
-  );
+  const reviewDir = resolveWalleyBoardPath("review-packages", project.slug);
   ensureDirectory(reviewDir);
   const diffPath = join(reviewDir, `ticket-${ticketId}.patch`);
   writeFileSync(diffPath, diff, "utf8");
@@ -158,9 +154,7 @@ export function buildValidationLogPath(
   ticketId: number,
   commandId: string,
 ): string {
-  const validationDir = join(
-    process.cwd(),
-    ".local",
+  const validationDir = resolveWalleyBoardPath(
     "validation-logs",
     project.slug,
     `ticket-${ticketId}`,
@@ -174,12 +168,7 @@ export function buildOutputSummaryPath(
   ticketId: number,
   sessionId: string,
 ): string {
-  const summaryDir = join(
-    process.cwd(),
-    ".local",
-    "agent-summaries",
-    project.slug,
-  );
+  const summaryDir = resolveWalleyBoardPath("agent-summaries", project.slug);
   ensureDirectory(summaryDir);
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
@@ -199,12 +188,7 @@ export function buildMergeConflictSummaryPath(
   ticketId: number,
   sessionId: string,
 ): string {
-  const summaryDir = join(
-    process.cwd(),
-    ".local",
-    "agent-summaries",
-    project.slug,
-  );
+  const summaryDir = resolveWalleyBoardPath("agent-summaries", project.slug);
   ensureDirectory(summaryDir);
   return join(summaryDir, `ticket-${ticketId}-${sessionId}-merge-conflict.txt`);
 }
@@ -215,12 +199,7 @@ export function buildDraftAnalysisOutputPath(
   runId: string,
   mode: "refine" | "questions",
 ): string {
-  const analysisDir = join(
-    process.cwd(),
-    ".local",
-    "draft-analyses",
-    project.slug,
-  );
+  const analysisDir = resolveWalleyBoardPath("draft-analyses", project.slug);
   ensureDirectory(analysisDir);
   return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
 }

@@ -1,10 +1,12 @@
 import { defineConfig } from "drizzle-kit";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export default defineConfig({
   schema: "./packages/db/src/schema.ts",
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {
-    url: "./.local/walleyboard.sqlite"
-  }
+    url: join(homedir(), ".walleyboard", "walleyboard.sqlite"),
+  },
 });

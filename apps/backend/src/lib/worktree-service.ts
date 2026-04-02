@@ -17,6 +17,7 @@ import type {
 } from "../../../../packages/contracts/src/index.js";
 
 import type { PreparedExecutionRuntime } from "./store.js";
+import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
 
 function slugify(value: string): string {
   return value
@@ -291,16 +292,9 @@ export function prepareWorktree(
   }
 
   const workingBranch = deriveWorkingBranch(ticket);
-  const worktreeRoot = join(
-    process.cwd(),
-    ".local",
-    "worktrees",
-    project.slug,
-    `ticket-${ticket.id}`,
-  );
-  mkdirSync(join(process.cwd(), ".local", "worktrees", project.slug), {
-    recursive: true,
-  });
+  const projectWorktreeRoot = resolveWalleyBoardPath("worktrees", project.slug);
+  const worktreeRoot = join(projectWorktreeRoot, `ticket-${ticket.id}`);
+  mkdirSync(projectWorktreeRoot, { recursive: true });
 
   if (existsSync(worktreeRoot)) {
     throw new Error(`Worktree path already exists: ${worktreeRoot}`);

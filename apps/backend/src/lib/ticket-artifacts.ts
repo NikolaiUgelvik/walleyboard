@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 
+import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
+
 function removePathIfPresent(path: string): string | null {
   if (!existsSync(path)) {
     return null;
@@ -11,7 +13,7 @@ function removePathIfPresent(path: string): string | null {
 }
 
 function artifactRoot(projectSlug: string): string {
-  return join(process.cwd(), ".local", "ticket-artifacts", projectSlug);
+  return resolveWalleyBoardPath("ticket-artifacts", projectSlug);
 }
 
 export function ensureTicketArtifactScopeDir(
@@ -58,15 +60,13 @@ export function removeTicketArtifacts(
   const removedPaths: string[] = [];
 
   const diffPath = join(
-    process.cwd(),
-    ".local",
-    "review-packages",
-    projectSlug,
-    `ticket-${ticketId}.patch`,
+    resolveWalleyBoardPath(
+      "review-packages",
+      projectSlug,
+      `ticket-${ticketId}.patch`,
+    ),
   );
-  const validationDir = join(
-    process.cwd(),
-    ".local",
+  const validationDir = resolveWalleyBoardPath(
     "validation-logs",
     projectSlug,
     `ticket-${ticketId}`,
@@ -83,9 +83,7 @@ export function removeTicketArtifacts(
   }
 
   if (sessionId) {
-    const summaryPath = join(
-      process.cwd(),
-      ".local",
+    const summaryPath = resolveWalleyBoardPath(
       "agent-summaries",
       projectSlug,
       `ticket-${ticketId}-${sessionId}.txt`,
@@ -116,13 +114,11 @@ export function removeProjectArtifacts(
   const removedPaths: string[] = [];
   const includeWorktrees = options?.includeWorktrees ?? true;
   const paths = [
-    includeWorktrees
-      ? join(process.cwd(), ".local", "worktrees", projectSlug)
-      : null,
-    join(process.cwd(), ".local", "review-packages", projectSlug),
-    join(process.cwd(), ".local", "validation-logs", projectSlug),
-    join(process.cwd(), ".local", "agent-summaries", projectSlug),
-    join(process.cwd(), ".local", "draft-analyses", projectSlug),
+    includeWorktrees ? resolveWalleyBoardPath("worktrees", projectSlug) : null,
+    resolveWalleyBoardPath("review-packages", projectSlug),
+    resolveWalleyBoardPath("validation-logs", projectSlug),
+    resolveWalleyBoardPath("agent-summaries", projectSlug),
+    resolveWalleyBoardPath("draft-analyses", projectSlug),
     artifactRoot(projectSlug),
   ];
 

@@ -26,6 +26,19 @@ import {
   resetPreparedWorktreeImmediately,
 } from "./worktree-service.js";
 
+function setWalleyBoardHome(path: string): () => void {
+  const previous = process.env.WALLEYBOARD_HOME;
+  process.env.WALLEYBOARD_HOME = path;
+  return () => {
+    if (previous === undefined) {
+      process.env.WALLEYBOARD_HOME = undefined;
+      return;
+    }
+
+    process.env.WALLEYBOARD_HOME = previous;
+  };
+}
+
 function runGit(
   repoPath: string,
   args: string[],
@@ -158,6 +171,9 @@ test("prepareWorktree resolves a remote target branch to a local branch and pull
     join(tmpdir(), "walleyboard-prepare-remote-target-"),
   );
   const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
 
   try {
     process.chdir(tempDir);
@@ -228,6 +244,7 @@ test("prepareWorktree resolves a remote target branch to a local branch and pull
       "upstream change\n",
     );
   } finally {
+    restoreWalleyBoardHome();
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -236,6 +253,9 @@ test("prepareWorktree resolves a remote target branch to a local branch and pull
 test("resetPreparedWorktreeImmediately removes the worktree and branch even when post-worktree cleanup fails", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-reset-worktree-"));
   const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
 
   try {
     process.chdir(tempDir);
@@ -284,6 +304,7 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
       "",
     );
   } finally {
+    restoreWalleyBoardHome();
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -292,6 +313,9 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
 test("prepareWorktree creates a self-contained checkout for docker-backed projects", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-worktree-"));
   const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
 
   try {
     process.chdir(tempDir);
@@ -333,6 +357,7 @@ test("prepareWorktree creates a self-contained checkout for docker-backed projec
       /\.walleyboard\//,
     );
   } finally {
+    restoreWalleyBoardHome();
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -341,6 +366,8 @@ test("prepareWorktree creates a self-contained checkout for docker-backed projec
 test("prepareWorktree fails clearly and does not create a worktree when the target pull fails", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-prepare-fail-"));
   const previousCwd = process.cwd();
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
+  const restoreWalleyBoardHome = setWalleyBoardHome(walleyBoardHome);
 
   try {
     process.chdir(tempDir);
@@ -385,8 +412,7 @@ test("prepareWorktree fails clearly and does not create a worktree when the targ
 
     const project = createProject("remote-target-failure-project");
     const expectedWorktreePath = join(
-      tempDir,
-      ".local",
+      walleyBoardHome,
       "worktrees",
       project.slug,
       "ticket-38",
@@ -414,6 +440,7 @@ test("prepareWorktree fails clearly and does not create a worktree when the targ
     );
     assert.equal(existsSync(expectedWorktreePath), false);
   } finally {
+    restoreWalleyBoardHome();
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }
