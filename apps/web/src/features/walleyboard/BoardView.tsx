@@ -18,6 +18,7 @@ import {
   IconPlayerStop,
   IconTerminal2,
 } from "@tabler/icons-react";
+import React from "react";
 import type {
   ExecutionSession,
   TicketFrontmatter,
@@ -165,7 +166,13 @@ export function TicketWorkspaceActions({
 }: {
   controller: WalleyBoardController;
   ticket: TicketFrontmatter;
-}) {
+}): React.JSX.Element {
+  const ticketSession = ticket.session_id
+    ? (controller.sessionById.get(ticket.session_id) ??
+      (controller.session?.id === ticket.session_id
+        ? controller.session
+        : null))
+    : null;
   const preview = controller.ticketWorkspacePreviewByTicketId.get(ticket.id);
   const previewRunning = preview?.state === "ready";
   const previewBusy =
@@ -176,73 +183,75 @@ export function TicketWorkspaceActions({
       controller.stopTicketWorkspacePreviewMutation.variables === ticket.id);
   const previewError =
     controller.previewActionErrorByTicketId[ticket.id] ?? preview?.error;
-  const disabled = !ticket.session_id;
+  const disabled = ticketSession?.worktree_path == null;
   const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
 
   return (
-    <Stack gap={6}>
-      <ActionIcon.Group className="ticket-workspace-action-group">
-        <ActionIcon
-          aria-label="Open worktree diff"
-          disabled={disabled}
-          title="Diff"
-          variant="light"
-          onClick={(event) => {
-            event.stopPropagation();
-            controller.openTicketWorkspaceModal(ticket, "diff");
-          }}
-        >
-          <IconFileDiff size={16} />
-        </ActionIcon>
-        <ActionIcon
-          aria-label="Open worktree terminal"
-          disabled={disabled}
-          title="Terminal"
-          variant="light"
-          onClick={(event) => {
-            event.stopPropagation();
-            controller.openTicketWorkspaceModal(ticket, "terminal");
-          }}
-        >
-          <IconTerminal2 size={16} />
-        </ActionIcon>
-        <ActionIcon
-          aria-label={previewLabel}
-          disabled={disabled || previewBusy}
-          title={previewLabel}
-          variant="light"
-          onClick={(event) => {
-            event.stopPropagation();
-            controller.handleTicketPreviewAction(ticket);
-          }}
-        >
-          {previewBusy ? (
-            <Loader size={14} />
-          ) : previewRunning ? (
-            <IconPlayerStop size={16} />
-          ) : (
-            <IconBrowser size={16} />
-          )}
-        </ActionIcon>
-        <ActionIcon
-          aria-label="Open activity stream"
-          disabled={disabled}
-          title="Activity"
-          variant="light"
-          onClick={(event) => {
-            event.stopPropagation();
-            controller.openTicketWorkspaceModal(ticket, "activity");
-          }}
-        >
-          <IconActivityHeartbeat size={16} />
-        </ActionIcon>
-      </ActionIcon.Group>
-      {previewError ? (
-        <Text size="sm" c="red">
-          {previewError}
-        </Text>
-      ) : null}
-    </Stack>
+    <React.Fragment>
+      <Stack gap={6}>
+        <ActionIcon.Group className="ticket-workspace-action-group">
+          <ActionIcon
+            aria-label="Open worktree diff"
+            disabled={disabled}
+            title="Diff"
+            variant="light"
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.openTicketWorkspaceModal(ticket, "diff");
+            }}
+          >
+            <IconFileDiff size={16} />
+          </ActionIcon>
+          <ActionIcon
+            aria-label="Open worktree terminal"
+            disabled={disabled}
+            title="Terminal"
+            variant="light"
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.openTicketWorkspaceModal(ticket, "terminal");
+            }}
+          >
+            <IconTerminal2 size={16} />
+          </ActionIcon>
+          <ActionIcon
+            aria-label={previewLabel}
+            disabled={disabled || previewBusy}
+            title={previewLabel}
+            variant="light"
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.handleTicketPreviewAction(ticket);
+            }}
+          >
+            {previewBusy ? (
+              <Loader size={14} />
+            ) : previewRunning ? (
+              <IconPlayerStop size={16} />
+            ) : (
+              <IconBrowser size={16} />
+            )}
+          </ActionIcon>
+          <ActionIcon
+            aria-label="Open activity stream"
+            disabled={disabled}
+            title="Activity"
+            variant="light"
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.openTicketWorkspaceModal(ticket, "activity");
+            }}
+          >
+            <IconActivityHeartbeat size={16} />
+          </ActionIcon>
+        </ActionIcon.Group>
+        {previewError ? (
+          <Text size="sm" c="red">
+            {previewError}
+          </Text>
+        ) : null}
+      </Stack>
+    </React.Fragment>
   );
 }
 

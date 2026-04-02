@@ -181,6 +181,10 @@ export interface Store {
     status: ExecutionSessionStatus,
     lastSummary?: string | null,
   ): ExecutionSession | undefined;
+  updateSessionWorktreePath(
+    sessionId: string,
+    worktreePath: string | null,
+  ): ExecutionSession | undefined;
   updateSessionAdapterSessionRef(
     sessionId: string,
     adapterSessionRef: string,

@@ -251,6 +251,13 @@ export class SqliteStore implements Store {
     return this.#sessions.updateSessionStatus(sessionId, status, lastSummary);
   }
 
+  updateSessionWorktreePath(
+    sessionId: string,
+    worktreePath: string | null,
+  ): ExecutionSession | undefined {
+    return this.#sessions.updateSessionWorktreePath(sessionId, worktreePath);
+  }
+
   updateSessionAdapterSessionRef(
     sessionId: string,
     adapterSessionRef: string,

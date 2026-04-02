@@ -11,8 +11,8 @@ import {
   Text,
   Textarea,
   TextInput,
-  UnstyledButton,
 } from "@mantine/core";
+import React from "react";
 
 import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
@@ -42,32 +42,46 @@ export function TicketWorkspaceSummaryRow({
 }: {
   activitySummary: string | null;
   onOpenActivityStream: () => void;
-}) {
+}): React.JSX.Element {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    onOpenActivityStream();
+  };
+
   return (
-    <Stack gap="xs">
-      <Text fw={700}>Ticket workspace</Text>
-      <UnstyledButton
-        aria-label="Open activity stream"
-        className="ticket-workspace-summary-row"
-        onClick={onOpenActivityStream}
-      >
-        <Group justify="space-between" align="flex-start" wrap="nowrap">
-          <Stack gap={4} style={{ flex: 1 }}>
-            <Text fw={600}>Activity summary</Text>
-            <MarkdownContent
-              className="markdown-muted markdown-small"
-              content={
-                activitySummary ??
-                "No interpreted activity is available for this session yet."
-              }
-            />
-          </Stack>
-          <Badge variant="light" color="blue">
-            Open stream
-          </Badge>
-        </Group>
-      </UnstyledButton>
-    </Stack>
+    <React.Fragment>
+      <Stack gap="xs">
+        <Text fw={700}>Ticket workspace</Text>
+        <Box
+          aria-label="Open activity stream"
+          className="ticket-workspace-summary-row"
+          onClick={onOpenActivityStream}
+          onKeyDown={handleKeyDown}
+          role="button"
+          tabIndex={0}
+        >
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Stack gap={4} style={{ flex: 1 }}>
+              <Text fw={600}>Activity summary</Text>
+              <MarkdownContent
+                className="markdown-muted markdown-small"
+                content={
+                  activitySummary ??
+                  "No interpreted activity is available for this session yet."
+                }
+              />
+            </Stack>
+            <Badge variant="light" color="blue">
+              Open stream
+            </Badge>
+          </Group>
+        </Box>
+      </Stack>
+    </React.Fragment>
   );
 }
 

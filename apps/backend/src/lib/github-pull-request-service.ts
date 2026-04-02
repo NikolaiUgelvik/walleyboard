@@ -918,6 +918,7 @@ export class GitHubPullRequestService {
     ];
     let deferredWorktreeCleanup = false;
     let skipLocalBranchCleanup = false;
+    let workspaceRetired = false;
 
     try {
       await this.#dependencies.ticketWorkspaceService.stopPreviewAndWait(
@@ -943,6 +944,7 @@ export class GitHubPullRequestService {
           deferredWorktreeCleanup = true;
           skipLocalBranchCleanup = true;
         }
+        workspaceRetired = true;
         logLines.push(
           worktreeRemoval.status === "scheduled"
             ? `Scheduled worktree removal for ${session.worktree_path} after the post-worktree command finishes`
@@ -992,6 +994,13 @@ export class GitHubPullRequestService {
       "completed",
       summary,
     );
+    const finalSession =
+      workspaceRetired && completedSession
+        ? (this.#dependencies.store.updateSessionWorktreePath(
+            session.id,
+            null,
+          ) ?? completedSession)
+        : completedSession;
 
     this.#dependencies.store.recordTicketEvent(
       ticket.id,
@@ -1011,7 +1020,7 @@ export class GitHubPullRequestService {
       this.#publishSessionOutput(session.id, attemptId, line);
     }
 
-    publishSessionUpdated(this.#dependencies.eventHub, completedSession);
+    publishSessionUpdated(this.#dependencies.eventHub, finalSession);
     publishTicketUpdated(
       this.#dependencies.eventHub,
       finalTicket ?? doneTicket,

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -196,6 +202,127 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       ticketId: ticket.id,
       additionalInstruction: "Try again from a clean state",
     });
+
+    await app.close();
+  } finally {
+    restoreWalleyBoardHome();
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("merge route clears the persisted worktree path after cleanup", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-merge-"));
+  const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
+
+  try {
+    process.chdir(tempDir);
+
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Route Merge Project",
+      repository: {
+        name: "repo",
+        path: repoPath,
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    const runtime = prepareWorktree(project, repository, ticket);
+    const started = store.startTicket(ticket.id, false, runtime);
+
+    configureGitIdentity(runtime.worktreePath);
+    writeFileSync(join(runtime.worktreePath, "ticket.txt"), "ticket work\n");
+    runGit(runtime.worktreePath, ["add", "ticket.txt"]);
+    runGit(runtime.worktreePath, ["commit", "-m", "ticket change"]);
+
+    store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Ready to merge",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.updateSessionStatus(
+      started.session.id,
+      "completed",
+      "Review package ready.",
+    );
+
+    let previewStopped = false;
+    let workspaceDisposed = false;
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: {
+        resolveMergeConflicts() {
+          throw new Error("Merge conflicts are not expected in this test");
+        },
+      } as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          throw new Error("Not used in this test");
+        },
+        async reconcileTicket() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      ticketWorkspaceService: {
+        async disposeTicket() {
+          workspaceDisposed = true;
+        },
+        async stopPreviewAndWait() {
+          previewStopped = true;
+        },
+      } as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/tickets/${ticket.id}/merge`,
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().accepted, true);
+    assert.equal(previewStopped, true);
+    assert.equal(workspaceDisposed, true);
+    assert.equal(store.getTicket(ticket.id)?.status, "done");
+    assert.equal(store.getSession(started.session.id)?.status, "completed");
+    assert.equal(store.getSession(started.session.id)?.worktree_path, null);
+    assert.equal(existsSync(runtime.worktreePath), false);
+    assert.equal(
+      runGit(repoPath, ["branch", "--list", runtime.workingBranch]),
+      "",
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "ticket.txt"), "utf8"),
+      "ticket work\n",
+    );
 
     await app.close();
   } finally {

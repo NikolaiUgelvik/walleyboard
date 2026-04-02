@@ -173,6 +173,32 @@ export class SessionRepository {
     return this.getSession(sessionId);
   }
 
+  updateSessionWorktreePath(
+    sessionId: string,
+    worktreePath: string | null,
+  ): ExecutionSession | undefined {
+    const existingSession = this.getSession(sessionId);
+    if (!existingSession) {
+      return undefined;
+    }
+
+    if (existingSession.worktree_path === worktreePath) {
+      return existingSession;
+    }
+
+    this.context.db
+      .prepare(
+        `
+          UPDATE execution_sessions
+          SET worktree_path = ?, last_heartbeat_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(worktreePath, nowIso(), sessionId);
+
+    return this.getSession(sessionId);
+  }
+
   updateSessionAdapterSessionRef(
     sessionId: string,
     adapterSessionRef: string,

@@ -262,6 +262,7 @@ export function registerTicketReviewRoutes(
         const cleanupWarnings: string[] = [];
         let deferredWorktreeCleanup = false;
         let skipLocalBranchCleanup = false;
+        let workspaceRetired = false;
 
         try {
           const worktreeRemoval = removePreparedWorktree(
@@ -274,6 +275,7 @@ export function registerTicketReviewRoutes(
             deferredWorktreeCleanup = true;
             skipLocalBranchCleanup = true;
           }
+          workspaceRetired = true;
           logLines.push(
             worktreeRemoval.status === "scheduled"
               ? `Scheduled worktree removal for ${session.worktree_path} after the post-worktree command finishes`
@@ -314,6 +316,11 @@ export function registerTicketReviewRoutes(
           "completed",
           summary,
         );
+        const completedSession =
+          workspaceRetired && mergedSession
+            ? (store.updateSessionWorktreePath(sessionId, null) ??
+              mergedSession)
+            : mergedSession;
 
         store.recordTicketEvent(ticketId, "ticket.merged", {
           ticket_id: ticketId,
@@ -336,7 +343,7 @@ export function registerTicketReviewRoutes(
         );
         eventHub.publish(
           makeProtocolEvent("session.updated", "session", sessionId, {
-            session: mergedSession,
+            session: completedSession,
           }),
         );
         await ticketWorkspaceService.disposeTicket(ticketId);
