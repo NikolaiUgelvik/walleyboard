@@ -1,6 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 
-import { Box, Code, Stack, Text, useMantineColorScheme } from "@mantine/core";
+import { Box, Code, Stack, Text, useComputedColorScheme } from "@mantine/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
@@ -39,14 +39,14 @@ export function TicketWorkspaceTerminal({
   surfaceLabel,
   worktreePath,
 }: TicketWorkspaceTerminalProps) {
-  const { colorScheme } = useMantineColorScheme();
-  const terminalColorScheme = colorScheme === "dark" ? "dark" : "light";
+  const terminalColorScheme = useComputedColorScheme("light");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const terminalThemeRef = useRef(resolveTerminalTheme(terminalColorScheme));
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [error, setError] = useState<string | null>(null);
-  terminalThemeRef.current = resolveTerminalTheme(terminalColorScheme);
+  const terminalTheme = resolveTerminalTheme(terminalColorScheme);
+  terminalThemeRef.current = terminalTheme;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -195,7 +195,10 @@ export function TicketWorkspaceTerminal({
         </Text>
       ) : null}
 
-      <Box className="ticket-workspace-terminal-shell">
+      <Box
+        className="ticket-workspace-terminal-shell"
+        style={{ background: terminalTheme.background }}
+      >
         <div ref={containerRef} className="ticket-workspace-terminal-screen" />
       </Box>
     </Stack>
