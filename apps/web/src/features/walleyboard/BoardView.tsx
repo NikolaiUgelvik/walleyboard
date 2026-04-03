@@ -69,6 +69,9 @@ function TicketMenu({
   const isMerging =
     controller.mergeTicketMutation.isPending &&
     controller.mergeTicketMutation.variables === ticket.id;
+  const isEditing =
+    controller.editReadyTicketMutation.isPending &&
+    controller.editReadyTicketMutation.variables?.ticket.id === ticket.id;
 
   return (
     <Menu withinPortal position="bottom-end">
@@ -134,6 +137,17 @@ function TicketMenu({
             }}
           >
             {isRestarting ? "Restarting..." : "Restart"}
+          </Menu.Item>
+        ) : null}
+        {ticket.status === "ready" ? (
+          <Menu.Item
+            disabled={isEditing}
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.editReadyTicket(ticket);
+            }}
+          >
+            {isEditing ? "Editing..." : "Edit"}
           </Menu.Item>
         ) : null}
         {ticket.status === "done" ? (
@@ -641,6 +655,10 @@ export function BoardView({
                             controller.stopTicketMutation.isError &&
                             controller.stopTicketMutation.variables
                               ?.ticketId === ticket.id;
+                          const showEditError =
+                            controller.editReadyTicketMutation.isError &&
+                            controller.editReadyTicketMutation.variables?.ticket
+                              .id === ticket.id;
                           const showMergeError =
                             controller.mergeTicketMutation.isError &&
                             controller.mergeTicketMutation.variables ===
@@ -827,6 +845,14 @@ export function BoardView({
                                   <Text size="sm" c="red">
                                     {
                                       controller.stopTicketMutation.error
+                                        ?.message
+                                    }
+                                  </Text>
+                                ) : null}
+                                {showEditError ? (
+                                  <Text size="sm" c="red">
+                                    {
+                                      controller.editReadyTicketMutation.error
                                         ?.message
                                     }
                                   </Text>

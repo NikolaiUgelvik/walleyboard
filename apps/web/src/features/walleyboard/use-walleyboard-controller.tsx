@@ -1151,6 +1151,10 @@ export function useWalleyBoardController() {
     });
   };
 
+  const editReadyTicket = (ticket: TicketFrontmatter): void => {
+    mutations.editReadyTicketMutation.mutate({ ticket });
+  };
+
   const restartTicketFromScratch = (
     ticket: TicketFrontmatter,
     reason?: string,
@@ -1290,6 +1294,7 @@ export function useWalleyBoardController() {
     closeProjectOptionsModal,
     defaultBranch,
     deleteTicket,
+    editReadyTicket,
     claudeCodeHealth,
     dockerHealth,
     doneColumnTickets,

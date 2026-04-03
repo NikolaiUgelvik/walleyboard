@@ -21,6 +21,52 @@ export function registerTicketLifecycleRoutes(
   }: TicketRouteDependencies,
 ) {
   app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/edit",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      try {
+        const originalTicket = store.getTicket(ticketId);
+        const draft = store.editReadyTicket(ticketId);
+
+        eventHub.publish(
+          makeProtocolEvent("draft.updated", "draft", draft.id, {
+            draft,
+          }),
+        );
+        eventHub.publish(
+          makeProtocolEvent("ticket.deleted", "ticket", String(ticketId), {
+            ticket_id: ticketId,
+            project_id: originalTicket?.project ?? draft.project_id,
+            session_id: originalTicket?.session_id ?? null,
+          }),
+        );
+
+        reply.send(
+          makeCommandAck(true, "Ticket moved back to draft", {
+            draft_id: draft.id,
+            project_id: draft.project_id,
+            ticket_id: ticketId,
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to reopen ticket for editing";
+        reply.code(message === "Ticket not found" ? 404 : 409).send({
+          error: message,
+        });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/archive",
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);

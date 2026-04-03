@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { MantineProvider } from "@mantine/core";
-import React from "react";
+import { JSDOM } from "jsdom";
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type {
@@ -11,6 +13,7 @@ import type {
   HealthResponse,
   Project,
   RepositoryConfig,
+  TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
 import { BoardView } from "./BoardView.js";
@@ -25,6 +28,102 @@ const stylesheet = readFileSync(
   new URL("../../app-shell.css", import.meta.url),
   "utf8",
 );
+
+class ResizeObserverStub {
+  disconnect(): void {}
+  observe(): void {}
+  unobserve(): void {}
+}
+
+function installGlobal(name: string, value: unknown): () => void {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value,
+    writable: true,
+  });
+
+  return () => {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, name, originalDescriptor);
+      return;
+    }
+
+    Reflect.deleteProperty(globalThis, name);
+  };
+}
+
+function installDom() {
+  const dom = new JSDOM(
+    "<!doctype html><html><head></head><body></body></html>",
+    {
+      pretendToBeVisual: true,
+      url: "http://localhost/",
+    },
+  );
+  const { window } = dom;
+  const restoreGlobals = [
+    installGlobal("IS_REACT_ACT_ENVIRONMENT", true),
+    installGlobal("window", window),
+    installGlobal("document", window.document),
+    installGlobal("navigator", window.navigator),
+    installGlobal("Element", window.Element),
+    installGlobal("HTMLElement", window.HTMLElement),
+    installGlobal("MutationObserver", window.MutationObserver),
+    installGlobal("Node", window.Node),
+    installGlobal("ResizeObserver", ResizeObserverStub),
+    installGlobal("ShadowRoot", window.ShadowRoot),
+    installGlobal("SVGElement", window.SVGElement),
+  ];
+
+  window.matchMedia = () =>
+    ({
+      addEventListener() {},
+      addListener() {},
+      dispatchEvent() {
+        return false;
+      },
+      matches: false,
+      media: "(prefers-color-scheme: light)",
+      onchange: null,
+      removeEventListener() {},
+      removeListener() {},
+    }) as MediaQueryList;
+  window.requestAnimationFrame = ((callback: FrameRequestCallback) =>
+    window.setTimeout(
+      () => callback(Date.now()),
+      0,
+    )) as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((id: number) => {
+    window.clearTimeout(id);
+  }) as typeof window.cancelAnimationFrame;
+  restoreGlobals.push(
+    installGlobal("getComputedStyle", window.getComputedStyle.bind(window)),
+    installGlobal(
+      "requestAnimationFrame",
+      window.requestAnimationFrame.bind(window),
+    ),
+    installGlobal(
+      "cancelAnimationFrame",
+      window.cancelAnimationFrame.bind(window),
+    ),
+  );
+
+  const mountNode = window.document.createElement("div");
+  window.document.body.appendChild(mountNode);
+
+  return {
+    cleanup: () => {
+      mountNode.remove();
+      for (const restore of restoreGlobals.reverse()) {
+        restore();
+      }
+      dom.window.close();
+    },
+    mountNode,
+    window,
+  };
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -156,6 +255,29 @@ function createHealth(): HealthResponse {
       configured_path: null,
       error: null,
     },
+  };
+}
+
+function createTicket(
+  overrides: Partial<TicketFrontmatter> = {},
+): TicketFrontmatter {
+  return {
+    acceptance_criteria: ["Keep the ticket editable before start."],
+    artifact_scope_id: "artifact-ticket-24",
+    created_at: "2026-04-03T00:00:00.000Z",
+    description: "Move a ready ticket back into the draft editor.",
+    id: 24,
+    linked_pr: null,
+    project: "project-1",
+    repo: "repo-1",
+    session_id: null,
+    status: "ready",
+    target_branch: "main",
+    ticket_type: "feature",
+    title: "Allow editing ready tickets",
+    updated_at: "2026-04-03T00:00:00.000Z",
+    working_branch: null,
+    ...overrides,
   };
 }
 
@@ -326,4 +448,94 @@ test("board header keeps the selected project and repository summary without sta
   assert.doesNotMatch(markup, />0 running</);
   assert.doesNotMatch(markup, />0 queued</);
   assert.doesNotMatch(markup, />0 in review</);
+});
+
+test("ready tickets expose an edit action in the overflow menu", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicket: () => undefined,
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [createTicket()],
+      in_progress: [],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const menuButton = harness.mountNode.querySelector(
+      '[aria-label="More actions for ticket 24"]',
+    );
+    assert.ok(menuButton, "Expected the ready ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let hasEditAction = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if ((harness.window.document.body.textContent ?? "").includes("Edit")) {
+        hasEditAction = true;
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      hasEditAction,
+      "Expected the ready ticket menu to include an Edit action",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
 });

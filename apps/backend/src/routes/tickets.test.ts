@@ -288,6 +288,114 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
   }
 });
 
+test("edit route reopens a ready ticket as a draft without losing its content", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-edit-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Route Edit Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const description = [
+      "Revise the ready ticket before execution.",
+      "",
+      "![Artifact](/projects/project-1/draft-artifacts/artifact-edit/screenshot.png)",
+    ].join("\n");
+    const draft = store.createDraft({
+      project_id: project.id,
+      artifact_scope_id: "artifact-edit",
+      title: "Edit a ready ticket",
+      description,
+      proposed_ticket_type: "bugfix",
+      proposed_acceptance_criteria: [
+        "Keep the current title and description.",
+        "Keep the current artifact references.",
+      ],
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: "Edit a ready ticket",
+      description,
+      repo_id: repository.id,
+      ticket_type: "bugfix",
+      acceptance_criteria: [
+        "Keep the current title and description.",
+        "Keep the current artifact references.",
+      ],
+      target_branch: "main",
+    });
+
+    const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
+      cleanupExecutionEnvironment() {},
+      closeWorkspaceTerminals() {},
+      hasActiveExecution() {
+        return false;
+      },
+      startExecution() {},
+    };
+    const ticketWorkspaceService = {
+      async disposeTicket() {},
+      async stopPreviewAndWait() {},
+    };
+    const githubPullRequestService = {
+      async createPullRequest() {
+        throw new Error("Not used in this test");
+      },
+      async reconcileTicket() {
+        throw new Error("Not used in this test");
+      },
+    };
+    const agentReviewService = {
+      startReviewLoop() {
+        throw new Error("Not used in this test");
+      },
+    };
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: agentReviewService as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: executionRuntime as never,
+      githubPullRequestService: githubPullRequestService as never,
+      ticketWorkspaceService: ticketWorkspaceService as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/tickets/${ticket.id}/edit`,
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(store.getTicket(ticket.id), undefined);
+    assert.deepEqual(store.listProjectTickets(project.id), []);
+
+    const reopenedDrafts = store.listProjectDrafts(project.id);
+    assert.equal(reopenedDrafts.length, 1);
+    assert.equal(reopenedDrafts[0]?.artifact_scope_id, "artifact-edit");
+    assert.equal(reopenedDrafts[0]?.title_draft, "Edit a ready ticket");
+    assert.equal(reopenedDrafts[0]?.description_draft, description);
+    assert.equal(reopenedDrafts[0]?.proposed_repo_id, repository.id);
+    assert.equal(reopenedDrafts[0]?.confirmed_repo_id, repository.id);
+    assert.equal(reopenedDrafts[0]?.proposed_ticket_type, "bugfix");
+    assert.deepEqual(reopenedDrafts[0]?.proposed_acceptance_criteria, [
+      "Keep the current title and description.",
+      "Keep the current artifact references.",
+    ]);
+    assert.equal(reopenedDrafts[0]?.wizard_status, "editing");
+
+    await app.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("merge route clears the persisted worktree path after cleanup", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-merge-"));
   const previousCwd = process.cwd();

@@ -15,6 +15,7 @@ import type {
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import type {
   ArchiveActionFeedback,
+  DraftsResponse,
   InspectorState,
   ProjectsResponse,
   ReviewRunResponse,
@@ -28,6 +29,7 @@ import {
   saveProjectOptionsRequest,
   slugify,
   uploadDraftArtifactRequest,
+  upsertById,
 } from "./shared.js";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
@@ -74,6 +76,12 @@ export async function saveDraftRequest(input: {
     proposed_ticket_type: input.proposedTicketType,
     proposed_acceptance_criteria: input.proposedAcceptanceCriteria,
   });
+}
+
+export async function editReadyTicketRequest(
+  ticketId: number,
+): Promise<CommandAck> {
+  return await postJson<CommandAck>(`/tickets/${ticketId}/edit`, {});
 }
 
 export function setOptimisticRunningReviewRun(input: {
@@ -492,6 +500,59 @@ export function useWalleyBoardMutations({
         }),
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "drafts"],
+        }),
+      ]);
+    },
+  });
+
+  const editReadyTicketMutation = useMutation({
+    mutationFn: (input: { ticket: TicketFrontmatter }) =>
+      editReadyTicketRequest(input.ticket.id),
+    onSuccess: async (ack, { ticket }) => {
+      const draftId = ack.resource_refs.draft_id;
+      const timestamp = ack.issued_at ?? new Date().toISOString();
+
+      if (draftId) {
+        queryClient.setQueryData<DraftsResponse>(
+          ["projects", ticket.project, "drafts"],
+          (previous) => ({
+            drafts: upsertById(previous?.drafts ?? [], {
+              id: draftId,
+              project_id: ticket.project,
+              artifact_scope_id: ticket.artifact_scope_id,
+              title_draft: ticket.title,
+              description_draft: ticket.description,
+              proposed_repo_id: ticket.repo,
+              confirmed_repo_id: ticket.repo,
+              proposed_ticket_type: ticket.ticket_type,
+              proposed_acceptance_criteria: ticket.acceptance_criteria,
+              wizard_status: "editing",
+              split_proposal_summary: null,
+              created_at: timestamp,
+              updated_at: timestamp,
+            }),
+          }),
+        );
+        setInspectorState({ kind: "draft", draftId });
+      } else {
+        setInspectorState({ kind: "hidden" });
+      }
+
+      queryClient.setQueryData<TicketsResponse>(
+        ["projects", ticket.project, "tickets"],
+        (previous) => ({
+          tickets: (previous?.tickets ?? []).filter(
+            (currentTicket) => currentTicket.id !== ticket.id,
+          ),
+        }),
+      );
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", ticket.project, "drafts"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", ticket.project, "tickets"],
         }),
       ]);
     },
@@ -949,6 +1010,7 @@ export function useWalleyBoardMutations({
     createDraftMutation,
     createProjectMutation,
     createPullRequestMutation,
+    editReadyTicketMutation,
     deleteDraftMutation,
     deleteProjectMutation,
     deleteTicketMutation,

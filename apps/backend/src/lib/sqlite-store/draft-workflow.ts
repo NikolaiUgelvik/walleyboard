@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
 import type { ConfirmDraftInput } from "../store.js";
@@ -78,6 +79,53 @@ export class DraftWorkflowService {
     return requireValue(
       this.tickets.getTicket(ticketId),
       "Ticket not found after creation",
+    );
+  }
+
+  editReadyTicket(ticketId: number) {
+    const ticket = this.tickets.getTicket(ticketId);
+    if (!ticket) {
+      throw new Error("Ticket not found");
+    }
+
+    if (ticket.status !== "ready") {
+      throw new Error("Only ready tickets can be edited");
+    }
+
+    const timestamp = nowIso();
+    const draftId = nanoid();
+
+    this.context.db
+      .prepare(
+        `
+          INSERT INTO draft_ticket_states (
+            id, project_id, artifact_scope_id, title_draft, description_draft, proposed_repo_id, confirmed_repo_id,
+            proposed_ticket_type, proposed_acceptance_criteria, wizard_status, split_proposal_summary,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        draftId,
+        ticket.project,
+        ticket.artifact_scope_id,
+        normalizeTitle(ticket.title),
+        preserveMarkdown(ticket.description),
+        ticket.repo,
+        ticket.repo,
+        ticket.ticket_type,
+        stringifyJson(preserveMarkdownList(ticket.acceptance_criteria)),
+        "editing",
+        null,
+        timestamp,
+        timestamp,
+      );
+
+    this.tickets.deleteTicket(ticketId);
+
+    return requireValue(
+      this.drafts.getDraft(draftId),
+      "Draft not found after reopening ready ticket",
     );
   }
 }

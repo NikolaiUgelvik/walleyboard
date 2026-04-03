@@ -172,6 +172,10 @@ export class SqliteStore implements Store {
     return this.#draftWorkflow.confirmDraft(draftId, input);
   }
 
+  editReadyTicket(draftId: number): DraftTicketState {
+    return this.#draftWorkflow.editReadyTicket(draftId);
+  }
+
   getTicket(ticketId: number): TicketFrontmatter | undefined {
     return this.#tickets.getTicket(ticketId);
   }

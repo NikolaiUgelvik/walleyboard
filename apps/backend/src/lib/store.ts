@@ -150,6 +150,7 @@ export interface Store {
     payload: Record<string, unknown>,
   ): StructuredEvent;
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
+  editReadyTicket(ticketId: number): DraftTicketState;
   getTicket(ticketId: number): TicketFrontmatter | undefined;
   getReviewPackage(ticketId: number): ReviewPackage | undefined;
   getLatestReviewRun(ticketId: number): ReviewRun | undefined;
