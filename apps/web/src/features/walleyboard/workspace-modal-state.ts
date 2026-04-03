@@ -1,5 +1,9 @@
 import type { WorkspaceModalKind } from "./shared.js";
 
+type TerminalSessionSnapshot = {
+  worktree_path: string | null;
+} | null;
+
 export function resolveWorkspaceDiffPanelState(input: {
   ticketWorkspaceDiffQuery: {
     error: { message: string } | null;
@@ -13,6 +17,44 @@ export function resolveWorkspaceDiffPanelState(input: {
         "Unable to load the current diff")
       : null,
     isLoading: input.ticketWorkspaceDiffQuery.isPending,
+  };
+}
+
+export function resolveWorkspaceTerminalPanelState(input: {
+  selectedSessionTicket: { id: number } | null;
+  selectedSessionTicketSession: TerminalSessionSnapshot;
+  session: TerminalSessionSnapshot;
+  sessionQuery: {
+    isPending: boolean;
+  };
+}) {
+  const terminalSession =
+    input.selectedSessionTicketSession ?? input.session ?? null;
+
+  if (!input.selectedSessionTicket) {
+    return {
+      state: "preparing" as const,
+      worktreePath: null,
+    };
+  }
+
+  if (terminalSession?.worktree_path) {
+    return {
+      state: "ready" as const,
+      worktreePath: terminalSession.worktree_path,
+    };
+  }
+
+  if (input.sessionQuery.isPending) {
+    return {
+      state: "loading" as const,
+      worktreePath: null,
+    };
+  }
+
+  return {
+    state: "missing_worktree" as const,
+    worktreePath: null,
   };
 }
 

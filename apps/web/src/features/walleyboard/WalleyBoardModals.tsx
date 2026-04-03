@@ -29,7 +29,10 @@ import {
   slugify,
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
-import { resolveWorkspaceDiffPanelState } from "./workspace-modal-state.js";
+import {
+  resolveWorkspaceDiffPanelState,
+  resolveWorkspaceTerminalPanelState,
+} from "./workspace-modal-state.js";
 
 type WorkspaceModalContentController = Pick<
   WalleyBoardController,
@@ -38,6 +41,7 @@ type WorkspaceModalContentController = Pick<
   | "sessionLogsQuery"
   | "sessionQuery"
   | "selectedSessionTicket"
+  | "selectedSessionTicketSession"
   | "setTicketWorkspaceDiffLayout"
   | "ticketWorkspaceDiff"
   | "ticketWorkspaceDiffLayout"
@@ -53,6 +57,12 @@ export function WorkspaceModalContent({
   const workspaceDiffPanelState = resolveWorkspaceDiffPanelState({
     ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,
   });
+  const workspaceTerminalPanelState = resolveWorkspaceTerminalPanelState({
+    selectedSessionTicket: controller.selectedSessionTicket,
+    selectedSessionTicketSession: controller.selectedSessionTicketSession,
+    session: controller.session,
+    sessionQuery: controller.sessionQuery,
+  });
 
   return (
     <Box className="ticket-workspace-modal-body">
@@ -65,17 +75,18 @@ export function WorkspaceModalContent({
           onLayoutChange={controller.setTicketWorkspaceDiffLayout}
         />
       ) : controller.workspaceModal === "terminal" ? (
+        workspaceTerminalPanelState.state === "ready" &&
         controller.selectedSessionTicket ? (
-          controller.session?.worktree_path ? (
-            <TicketWorkspaceTerminal
-              ticketId={controller.selectedSessionTicket.id}
-              worktreePath={controller.session.worktree_path}
-            />
-          ) : (
-            <Text size="sm" c="dimmed">
-              This ticket does not have a prepared worktree.
-            </Text>
-          )
+          <TicketWorkspaceTerminal
+            ticketId={controller.selectedSessionTicket.id}
+            worktreePath={workspaceTerminalPanelState.worktreePath}
+          />
+        ) : workspaceTerminalPanelState.state === "loading" ? (
+          <Loader size="sm" />
+        ) : workspaceTerminalPanelState.state === "missing_worktree" ? (
+          <Text size="sm" c="dimmed">
+            This ticket does not have a prepared worktree.
+          </Text>
         ) : (
           <Text size="sm" c="dimmed">
             The ticket worktree is still being prepared.

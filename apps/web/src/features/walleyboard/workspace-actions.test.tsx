@@ -16,7 +16,10 @@ import type {
 import { TicketWorkspaceActions } from "./BoardView.js";
 import { TicketWorkspaceSummaryRow } from "./InspectorPane.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
-import { resolveWorkspaceDiffPanelState } from "./workspace-modal-state.js";
+import {
+  resolveWorkspaceDiffPanelState,
+  resolveWorkspaceTerminalPanelState,
+} from "./workspace-modal-state.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
 
@@ -94,7 +97,10 @@ function createController(input?: {
   preview?: TicketWorkspacePreview | null;
   previewError?: string;
   session?: Partial<ExecutionSession> | null;
+  selectedSessionTicketSession?: Partial<ExecutionSession> | null;
+  sessionQueryPending?: boolean;
   selectedTicket?: TicketFrontmatter;
+  workspaceModal?: "activity" | "diff" | "terminal" | null;
 }) {
   const openCalls: Array<{ kind: string; ticketId: number }> = [];
   const previewActionCalls: number[] = [];
@@ -125,6 +131,34 @@ function createController(input?: {
           worktree_path: "/tmp/worktree-9",
           ...input?.session,
         } satisfies ExecutionSession);
+  const selectedSessionTicketSession =
+    input?.selectedSessionTicketSession === null
+      ? null
+      : session || input?.selectedSessionTicketSession
+        ? ({
+            ...(session ?? {}),
+            adapter_session_ref: null,
+            agent_adapter: "codex",
+            completed_at: null,
+            current_attempt_id: null,
+            id: ticket.session_id ?? "session-9",
+            last_heartbeat_at: "2026-04-02T00:00:00.000Z",
+            last_summary: null,
+            latest_requested_change_note_id: null,
+            latest_review_package_id: null,
+            plan_status: "not_requested",
+            plan_summary: null,
+            planning_enabled: false,
+            project_id: ticket.project,
+            queue_entered_at: null,
+            repo_id: ticket.repo,
+            started_at: "2026-04-02T00:00:00.000Z",
+            status: "running",
+            ticket_id: ticket.id,
+            worktree_path: "/tmp/worktree-9",
+            ...input?.selectedSessionTicketSession,
+          } satisfies ExecutionSession)
+        : null;
   const controller = {
     handleTicketPreviewAction(selected: TicketFrontmatter) {
       previewActionCalls.push(selected.id);
@@ -135,6 +169,8 @@ function createController(input?: {
     previewActionErrorByTicketId: input?.previewError
       ? { [ticket.id]: input.previewError }
       : {},
+    selectedSessionTicket: input?.selectedTicket ?? ticket,
+    selectedSessionTicketSession,
     startTicketWorkspacePreviewMutation: {
       isPending: false,
       variables: null,
@@ -148,6 +184,16 @@ function createController(input?: {
       ticket.session_id && session
         ? new Map([[ticket.session_id, input?.agentControlsWorktree ?? false]])
         : new Map(),
+    sessionLogs: [],
+    sessionLogsQuery: {
+      isPending: false,
+      isError: false,
+    },
+    sessionQuery: {
+      error: null,
+      isError: false,
+      isPending: input?.sessionQueryPending ?? false,
+    },
     stopTicketWorkspacePreviewMutation: {
       isPending: false,
       variables: null,
@@ -155,6 +201,15 @@ function createController(input?: {
     ticketWorkspacePreviewByTicketId: preview
       ? new Map([[ticket.id, preview]])
       : new Map(),
+    ticketWorkspaceDiff: null,
+    ticketWorkspaceDiffLayout: "split",
+    ticketWorkspaceDiffQuery: {
+      error: null,
+      isError: false,
+      isPending: false,
+    },
+    setTicketWorkspaceDiffLayout() {},
+    workspaceModal: input?.workspaceModal ?? null,
   } as unknown as WalleyBoardController;
 
   return { controller, openCalls, previewActionCalls, ticket };
@@ -235,6 +290,31 @@ test("ticket workspace terminal action stays available while the agent owns the 
   assert.equal(
     (terminalAction.props as { disabled?: boolean }).disabled,
     false,
+  );
+});
+
+test("workspace terminal modal uses the selected ticket session while session details are still loading", () => {
+  const { controller } = createController({
+    selectedSessionTicketSession: {
+      status: "awaiting_input",
+      worktree_path: "/tmp/worktree-9",
+    },
+    session: null,
+    sessionQueryPending: true,
+    workspaceModal: "terminal",
+  });
+
+  assert.deepEqual(
+    resolveWorkspaceTerminalPanelState({
+      selectedSessionTicket: controller.selectedSessionTicket,
+      selectedSessionTicketSession: controller.selectedSessionTicketSession,
+      session: controller.session,
+      sessionQuery: controller.sessionQuery,
+    }),
+    {
+      state: "ready",
+      worktreePath: "/tmp/worktree-9",
+    },
   );
 });
 

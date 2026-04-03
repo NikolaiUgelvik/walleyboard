@@ -934,6 +934,10 @@ export class GitHubPullRequestService {
 
     if (session.worktree_path) {
       try {
+        this.#dependencies.executionRuntime.closeWorkspaceTerminals(
+          session.id,
+          "This workspace terminal closed because the ticket worktree was cleaned up after merge.",
+        );
         const worktreeRemoval = removePreparedWorktree(
           repository,
           session.worktree_path,
