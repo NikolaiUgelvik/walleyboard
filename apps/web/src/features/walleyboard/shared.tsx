@@ -3,10 +3,11 @@ import {
   Box,
   Group,
   List,
-  Select,
   SegmentedControl,
+  Select,
   Stack,
   Text,
+  useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
 import type {
@@ -132,8 +133,8 @@ export type AgentAdapterSelectOption = (typeof agentAdapterOptions)[number] & {
   disabled?: boolean;
 };
 
-// These remain repo-owned SVGs until trademark clearance is documented for
-// any third-party brand marks shown in the selector.
+// These are vendored third-party SVG assets so the selector can use stable,
+// local brand marks without pulling icons from a remote CDN at runtime.
 const agentAdapterIconPaths: Record<AgentAdapter, string> = {
   codex: "/agent-icons/codex.svg",
   "claude-code": "/agent-icons/claude-code.svg",
@@ -144,13 +145,21 @@ export function getAgentAdapterIconPath(adapter: AgentAdapter): string {
 }
 
 export function AgentAdapterIcon({ adapter }: { adapter: AgentAdapter }) {
+  const colorScheme = useComputedColorScheme("light", {
+    getInitialValueInEffect: false,
+  });
+
   return (
     <img
       alt=""
       aria-hidden="true"
       height={16}
       src={getAgentAdapterIconPath(adapter)}
-      style={{ display: "block", flex: "none" }}
+      style={{
+        display: "block",
+        filter: colorScheme === "dark" ? "brightness(0) invert(1)" : "none",
+        flex: "none",
+      }}
       width={16}
     />
   );

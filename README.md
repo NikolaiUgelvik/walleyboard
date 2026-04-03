@@ -135,3 +135,8 @@ The repository source code is available under the [MIT License](./LICENSE).
 credited to `Universfield`, and excluded from the repository MIT license. See
 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) and
 `apps/web/public/alert.mp3.license.txt`.
+
+`apps/web/public/agent-icons/codex.svg` and
+`apps/web/public/agent-icons/claude-code.svg` are vendored third-party SVG
+assets with their own upstream licensing and brand ownership notes. See
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

@@ -195,6 +195,22 @@ test("AgentAdapter icon helpers point to the local SVG assets", () => {
   assert.match(iconMarkup, /\/agent-icons\/claude-code\.svg/);
 });
 
+test("AgentAdapterIcon uses black icons in light mode and white icons in dark mode", () => {
+  const lightMarkup = renderToStaticMarkup(
+    <MantineProvider forceColorScheme="light">
+      <AgentAdapterIcon adapter="codex" />
+    </MantineProvider>,
+  );
+  const darkMarkup = renderToStaticMarkup(
+    <MantineProvider forceColorScheme="dark">
+      <AgentAdapterIcon adapter="codex" />
+    </MantineProvider>,
+  );
+
+  assert.match(lightMarkup, /filter:none/);
+  assert.match(darkMarkup, /filter:brightness\(0\) invert\(1\)/);
+});
+
 test("AgentAdapter option label renders the matching icon without changing text", () => {
   const markup = renderToStaticMarkup(
     <MantineProvider>
