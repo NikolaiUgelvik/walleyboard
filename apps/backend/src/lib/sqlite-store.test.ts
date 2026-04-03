@@ -255,6 +255,43 @@ test("updateProject persists automatic agent review changes", () => {
   }
 });
 
+test("updateProject persists preview start command changes", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-preview-command-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Preview Command",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(store.getProject(project.id)?.preview_start_command, null);
+
+    store.updateProject(project.id, {
+      preview_start_command: "pnpm dev --host $HOST --port $PORT",
+    });
+
+    assert.equal(
+      store.getProject(project.id)?.preview_start_command,
+      "pnpm dev --host $HOST --port $PORT",
+    );
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(
+      reloadedStore.getProject(project.id)?.preview_start_command,
+      "pnpm dev --host $HOST --port $PORT",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("projects default to host execution and persist execution backend updates", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-backend-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

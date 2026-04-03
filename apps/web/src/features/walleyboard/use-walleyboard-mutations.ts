@@ -170,6 +170,7 @@ export function useWalleyBoardMutations({
       executionBackend: ExecutionBackend;
       automaticAgentReview: boolean;
       defaultReviewAction: ReviewAction;
+      previewStartCommand: string | null;
       preWorktreeCommand: string | null;
       postWorktreeCommand: string | null;
       draftAnalysisModel: string | null;
@@ -186,6 +187,7 @@ export function useWalleyBoardMutations({
         execution_backend: input.executionBackend,
         automatic_agent_review: input.automaticAgentReview,
         default_review_action: input.defaultReviewAction,
+        preview_start_command: input.previewStartCommand,
         pre_worktree_command: input.preWorktreeCommand,
         post_worktree_command: input.postWorktreeCommand,
         draft_analysis_model: input.draftAnalysisModel,

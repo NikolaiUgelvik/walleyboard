@@ -410,6 +410,20 @@ export function WalleyBoardModals({
 
               <Stack gap="sm">
                 <Textarea
+                  label="Project preview start command"
+                  description="Runs from the board header preview action. The command receives HOST, PORT, and VITE_API_URL environment variables."
+                  placeholder="npm run dev -- --host $HOST --port $PORT"
+                  value={controller.projectOptionsPreviewStartCommand}
+                  onChange={(event) => {
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsPreviewStartCommand(
+                      event.currentTarget.value,
+                    );
+                  }}
+                  minRows={2}
+                />
+                <Textarea
                   label="Pre-worktree command"
                   description="Runs inside each new worktree without blocking agent startup."
                   placeholder="npm install"

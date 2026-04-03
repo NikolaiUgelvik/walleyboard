@@ -9,6 +9,7 @@ export const projectsTable = sqliteTable("projects", {
     .notNull()
     .default("direct_merge"),
   defaultTargetBranch: text("default_target_branch"),
+  previewStartCommand: text("preview_start_command"),
   preWorktreeCommand: text("pre_worktree_command"),
   postWorktreeCommand: text("post_worktree_command"),
   draftAnalysisModel: text("draft_analysis_model"),

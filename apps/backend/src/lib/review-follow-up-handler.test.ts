@@ -17,6 +17,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     automatic_agent_review: false,
     default_review_action: "direct_merge",
     default_target_branch: "main",
+    preview_start_command: null,
     pre_worktree_command: null,
     post_worktree_command: null,
     draft_analysis_model: null,

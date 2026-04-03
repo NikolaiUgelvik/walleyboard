@@ -172,6 +172,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         );
         const preview = await ticketWorkspaceService.ensureRepositoryPreview({
           repositoryId: repository.id,
+          previewStartCommand: project.preview_start_command,
           worktreePath,
         });
         reply.send(buildRepositoryPreviewResponse(repository.id, preview));

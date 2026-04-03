@@ -42,6 +42,7 @@ type PreviewRuntime = {
   ticketId: number | null;
   backendUrl: string | null;
   error: string | null;
+  previewStartCommand: string | null;
   previewUrl: string | null;
   processes: PreviewProcess[];
   startedAt: string | null;
@@ -209,13 +210,16 @@ async function findAvailablePort(): Promise<number> {
 async function waitForPort(
   port: number,
   child: ChildProcess,
+  processDescription: string,
   timeoutMs = 20_000,
 ): Promise<void> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
     if (child.exitCode !== null) {
-      throw new Error(`Preview process exited before port ${port} was ready`);
+      throw new Error(
+        `${processDescription} exited before port ${port} was ready`,
+      );
     }
 
     const connected = await new Promise<boolean>((resolve) => {
@@ -359,6 +363,7 @@ export class TicketWorkspaceService {
       key: getTicketPreviewKey(input.ticketId),
       repositoryId: null,
       ticketId: input.ticketId,
+      previewStartCommand: null,
       worktreePath: input.worktreePath,
     });
     return makeTicketPreviewSnapshot(runtime);
@@ -367,11 +372,13 @@ export class TicketWorkspaceService {
   async ensureRepositoryPreview(input: {
     repositoryId: string;
     worktreePath: string;
+    previewStartCommand: string | null;
   }): Promise<RepositoryWorkspacePreview> {
     const runtime = await this.#ensurePreviewRuntime({
       key: getRepositoryPreviewKey(input.repositoryId),
       repositoryId: input.repositoryId,
       ticketId: null,
+      previewStartCommand: input.previewStartCommand,
       worktreePath: input.worktreePath,
     });
     return makeRepositoryPreviewSnapshot(runtime);
@@ -416,6 +423,7 @@ export class TicketWorkspaceService {
     key: string;
     repositoryId: string | null;
     ticketId: number | null;
+    previewStartCommand: string | null;
     worktreePath: string;
   }): Promise<PreviewRuntime> {
     const existing = this.#previews.get(input.key);
@@ -436,6 +444,7 @@ export class TicketWorkspaceService {
       ticketId: input.ticketId,
       backendUrl: null,
       error: null,
+      previewStartCommand: input.previewStartCommand,
       previewUrl: null,
       processes: [],
       startedAt: null,
@@ -516,6 +525,47 @@ export class TicketWorkspaceService {
   }
 
   async #startPreview(runtime: PreviewRuntime): Promise<void> {
+    if (runtime.repositoryId !== null && runtime.previewStartCommand) {
+      try {
+        const previewPort = await findAvailablePort();
+        const previewUrl = `http://127.0.0.1:${previewPort}`;
+
+        const preview = this.#spawnPreviewProcess(runtime, {
+          command: runtime.previewStartCommand,
+          env: {
+            HOST: "127.0.0.1",
+            PORT: String(previewPort),
+            VITE_API_URL: this.#apiBaseUrl,
+          },
+          exitErrorMessage: `Preview command "${runtime.previewStartCommand}" exited`,
+          label: "preview",
+        });
+        await waitForPort(
+          previewPort,
+          preview.child,
+          `Preview command "${runtime.previewStartCommand}"`,
+        );
+
+        runtime.previewUrl = previewUrl;
+        runtime.state = "ready";
+        runtime.startedAt = nowIso();
+        runtime.error = null;
+        this.#publishPreviewUpdate(runtime);
+        return;
+      } catch (error) {
+        runtime.state = "failed";
+        runtime.error =
+          error instanceof Error ? error.message : "Unable to start preview";
+        runtime.previewUrl = null;
+        runtime.backendUrl = null;
+        runtime.startedAt = null;
+        await this.#stopPreviewAndWaitByKey(runtime.key);
+        this.#previews.set(runtime.key, runtime);
+        this.#publishPreviewUpdate(runtime);
+        return;
+      }
+    }
+
     const scripts = parsePackageScripts(runtime.worktreePath);
     if (!scripts) {
       runtime.state = "failed";
@@ -538,9 +588,14 @@ export class TicketWorkspaceService {
             HOST: "127.0.0.1",
             PORT: String(backendPort),
           },
+          exitErrorMessage: "backend preview exited",
           label: "backend",
         });
-        await waitForPort(backendPort, backend.child);
+        await waitForPort(
+          backendPort,
+          backend.child,
+          "Backend preview process",
+        );
 
         runtime.backendUrl = backendUrl;
 
@@ -551,9 +606,14 @@ export class TicketWorkspaceService {
             PORT: String(frontendPort),
             VITE_API_URL: backendUrl,
           },
+          exitErrorMessage: "frontend preview exited",
           label: "frontend",
         });
-        await waitForPort(frontendPort, frontend.child);
+        await waitForPort(
+          frontendPort,
+          frontend.child,
+          "Frontend preview process",
+        );
 
         runtime.previewUrl = previewUrl;
       } else if (scripts.dev) {
@@ -566,9 +626,10 @@ export class TicketWorkspaceService {
             HOST: "127.0.0.1",
             PORT: String(previewPort),
           },
+          exitErrorMessage: "preview exited",
           label: "preview",
         });
-        await waitForPort(previewPort, preview.child);
+        await waitForPort(previewPort, preview.child, "Preview process");
 
         runtime.previewUrl = previewUrl;
       } else if (scripts["dev:web"]) {
@@ -582,9 +643,14 @@ export class TicketWorkspaceService {
             PORT: String(frontendPort),
             VITE_API_URL: this.#apiBaseUrl,
           },
+          exitErrorMessage: "frontend preview exited",
           label: "frontend",
         });
-        await waitForPort(frontendPort, frontend.child);
+        await waitForPort(
+          frontendPort,
+          frontend.child,
+          "Frontend preview process",
+        );
 
         runtime.backendUrl = this.#apiBaseUrl;
         runtime.previewUrl = previewUrl;
@@ -617,6 +683,7 @@ export class TicketWorkspaceService {
     input: {
       command: string;
       env: Record<string, string>;
+      exitErrorMessage: string;
       label: PreviewProcess["label"];
     },
   ): PreviewProcess {
@@ -664,7 +731,7 @@ export class TicketWorkspaceService {
       }
 
       runtime.state = "failed";
-      runtime.error = `${input.label} preview exited (${signal ?? code ?? "unknown"})`;
+      runtime.error = `${input.exitErrorMessage} (${signal ?? code ?? "unknown"})`;
       runtime.previewUrl = null;
       runtime.backendUrl = null;
       this.#stopPreviewByKey(runtime.key);

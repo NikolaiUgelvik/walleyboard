@@ -70,10 +70,11 @@ export class ProjectRepository {
         `
           INSERT INTO projects (
             id, slug, name, agent_adapter, execution_backend, automatic_agent_review, default_target_branch, pre_worktree_command,
-            post_worktree_command, default_review_action, draft_analysis_model,
-            draft_analysis_reasoning_effort, ticket_work_model,
-            ticket_work_reasoning_effort, max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            post_worktree_command, preview_start_command, default_review_action,
+            draft_analysis_model, draft_analysis_reasoning_effort,
+            ticket_work_model, ticket_work_reasoning_effort,
+            max_concurrent_sessions, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -84,6 +85,7 @@ export class ProjectRepository {
         "host",
         0,
         defaultTargetBranch,
+        null,
         null,
         null,
         "direct_merge",
@@ -171,6 +173,10 @@ export class ProjectRepository {
       input.automatic_agent_review === undefined
         ? project.automatic_agent_review
         : input.automatic_agent_review;
+    const previewStartCommand =
+      input.preview_start_command === undefined
+        ? project.preview_start_command
+        : normalizeOptionalCommand(input.preview_start_command);
     const preWorktreeCommand =
       input.pre_worktree_command === undefined
         ? project.pre_worktree_command
@@ -216,6 +222,7 @@ export class ProjectRepository {
               execution_backend = ?,
               automatic_agent_review = ?,
               default_review_action = ?,
+              preview_start_command = ?,
               pre_worktree_command = ?,
               post_worktree_command = ?,
               draft_analysis_model = ?,
@@ -231,6 +238,7 @@ export class ProjectRepository {
         executionBackend,
         automaticAgentReview ? 1 : 0,
         defaultReviewAction,
+        previewStartCommand,
         preWorktreeCommand,
         postWorktreeCommand,
         draftAnalysisModel,

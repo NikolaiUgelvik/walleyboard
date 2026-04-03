@@ -235,6 +235,10 @@ export function mapProject(row: Record<string, unknown>): Project {
       row.default_target_branch === null
         ? null
         : String(row.default_target_branch),
+    preview_start_command:
+      row.preview_start_command === null
+        ? null
+        : String(row.preview_start_command),
     pre_worktree_command:
       row.pre_worktree_command === null
         ? null
@@ -565,6 +569,7 @@ export class SqliteStoreContext {
         automatic_agent_review INTEGER NOT NULL DEFAULT 0,
         default_review_action TEXT NOT NULL DEFAULT 'direct_merge',
         default_target_branch TEXT,
+        preview_start_command TEXT,
         pre_worktree_command TEXT,
         post_worktree_command TEXT,
         draft_analysis_model TEXT,
@@ -757,6 +762,7 @@ export class SqliteStoreContext {
     this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "ticket_work_model", "TEXT");
     this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
+    this.#ensureColumn("projects", "preview_start_command", "TEXT");
     this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
     this.#ensureColumn("projects", "post_worktree_command", "TEXT");
     this.#ensureColumn(

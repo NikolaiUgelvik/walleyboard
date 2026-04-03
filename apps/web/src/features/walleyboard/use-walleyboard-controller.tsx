@@ -29,12 +29,14 @@ import {
   arraysEqual,
   blobToBase64,
   buildMarkdownImageInsertion,
+  collectRepositoryTargetBranchUpdates,
   type DraftEventsResponse,
   type DraftsResponse,
   diffLayoutStorageKey,
   draftMatchesSearch,
   fetchJson,
   findLatestRevertableRefineEvent,
+  hasRepositoryTargetBranchChanges,
   type InspectorState,
   mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
@@ -124,6 +126,10 @@ export function useWalleyBoardController() {
   const [
     projectOptionsPreWorktreeCommand,
     setProjectOptionsPreWorktreeCommand,
+  ] = useState("");
+  const [
+    projectOptionsPreviewStartCommand,
+    setProjectOptionsPreviewStartCommand,
   ] = useState("");
   const [
     projectOptionsPostWorktreeCommand,
@@ -618,19 +624,15 @@ export function useWalleyBoardController() {
     resolveProjectReasoningEffortValue(projectOptionsTicketReasoningEffort);
   const projectOptionsPreWorktreeCommandValue =
     resolveOptionalProjectCommandValue(projectOptionsPreWorktreeCommand);
+  const projectOptionsPreviewStartCommandValue =
+    resolveOptionalProjectCommandValue(projectOptionsPreviewStartCommand);
   const projectOptionsPostWorktreeCommandValue =
     resolveOptionalProjectCommandValue(projectOptionsPostWorktreeCommand);
   const projectOptionsRepositoryBranchesDirty =
-    projectOptionsProject !== null &&
-    projectOptionsRepositories.some((repository) => {
-      const currentTargetBranch =
-        repository.target_branch ??
-        projectOptionsProject.default_target_branch ??
-        "";
-      const selectedTargetBranch =
-        projectOptionsRepositoryTargetBranches[repository.id] ??
-        currentTargetBranch;
-      return selectedTargetBranch !== currentTargetBranch;
+    hasRepositoryTargetBranchChanges({
+      project: projectOptionsProject,
+      repositories: projectOptionsRepositories,
+      repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
   const projectOptionsDirty =
     projectOptionsProject !== null &&
@@ -641,6 +643,8 @@ export function useWalleyBoardController() {
         projectOptionsProject.automatic_agent_review ||
       projectOptionsDefaultReviewAction !==
         projectOptionsProject.default_review_action ||
+      projectOptionsPreviewStartCommandValue !==
+        projectOptionsProject.preview_start_command ||
       projectOptionsPreWorktreeCommandValue !==
         projectOptionsProject.pre_worktree_command ||
       projectOptionsPostWorktreeCommandValue !==
@@ -1015,6 +1019,7 @@ export function useWalleyBoardController() {
     setProjectOptionsExecutionBackend("host");
     setProjectOptionsAutomaticAgentReview(false);
     setProjectOptionsDefaultReviewAction("direct_merge");
+    setProjectOptionsPreviewStartCommand("");
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
@@ -1057,6 +1062,7 @@ export function useWalleyBoardController() {
         project.ticket_work_reasoning_effort,
       ),
     );
+    setProjectOptionsPreviewStartCommand(project.preview_start_command ?? "");
     setProjectOptionsPreWorktreeCommand(project.pre_worktree_command ?? "");
     setProjectOptionsPostWorktreeCommand(project.post_worktree_command ?? "");
     setProjectOptionsRepositoryTargetBranches(
@@ -1104,31 +1110,11 @@ export function useWalleyBoardController() {
       return;
     }
 
-    const repositoryTargetBranches = projectOptionsRepositories.flatMap(
-      (repository) => {
-        const currentTargetBranch =
-          repository.target_branch ??
-          projectOptionsProject.default_target_branch ??
-          "";
-        const selectedTargetBranch =
-          projectOptionsRepositoryTargetBranches[repository.id] ??
-          currentTargetBranch;
-
-        if (
-          selectedTargetBranch.trim().length === 0 ||
-          selectedTargetBranch === currentTargetBranch
-        ) {
-          return [];
-        }
-
-        return [
-          {
-            repositoryId: repository.id,
-            targetBranch: selectedTargetBranch,
-          },
-        ];
-      },
-    );
+    const repositoryTargetBranches = collectRepositoryTargetBranchUpdates({
+      project: projectOptionsProject,
+      repositories: projectOptionsRepositories,
+      repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
+    });
 
     setProjectOptionsFormError(null);
     mutations.updateProjectMutation.mutate({
@@ -1140,6 +1126,7 @@ export function useWalleyBoardController() {
           : projectOptionsExecutionBackend,
       automaticAgentReview: projectOptionsAutomaticAgentReview,
       defaultReviewAction: projectOptionsDefaultReviewAction,
+      previewStartCommand: projectOptionsPreviewStartCommandValue,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
       postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
       draftAnalysisModel: projectOptionsDraftModelValue,
@@ -1375,6 +1362,8 @@ export function useWalleyBoardController() {
     projectOptionsPostWorktreeCommandValue,
     projectOptionsPreWorktreeCommand,
     projectOptionsPreWorktreeCommandValue,
+    projectOptionsPreviewStartCommand,
+    projectOptionsPreviewStartCommandValue,
     projectOptionsProject,
     projectOptionsProjectId,
     projectOptionsRepositories,
@@ -1448,6 +1437,7 @@ export function useWalleyBoardController() {
     setProjectOptionsFormError,
     setProjectOptionsPostWorktreeCommand,
     setProjectOptionsPreWorktreeCommand,
+    setProjectOptionsPreviewStartCommand,
     setProjectOptionsRepositoryTargetBranches,
     setProjectOptionsTicketModelCustom,
     setProjectOptionsTicketModelPreset,

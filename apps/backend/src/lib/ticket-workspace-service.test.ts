@@ -183,3 +183,99 @@ test("TicketWorkspaceService starts and stops previews for ticket worktrees", as
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("TicketWorkspaceService starts repository previews with a configured command", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-repository-preview-"),
+  );
+  const worktreePath = join(tempDir, "preview-app");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  mkdirSync(worktreePath, { recursive: true });
+  writeFileSync(
+    join(worktreePath, "preview-server.cjs"),
+    [
+      'const http = require("node:http");',
+      "",
+      'const port = Number.parseInt(process.env.PORT ?? "0", 10);',
+      "const server = http.createServer((_request, response) => {",
+      '  response.end(process.env.VITE_API_URL ? "preview ok" : "missing api url");',
+      "});",
+      'server.listen(port, "127.0.0.1");',
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const preview = await workspaceService.ensureRepositoryPreview({
+      repositoryId: "repo-41",
+      previewStartCommand: "node preview-server.cjs",
+      worktreePath,
+    });
+
+    assert.equal(preview.state, "ready");
+    assert.ok(preview.preview_url);
+
+    const previewResponse = await fetch(preview.preview_url);
+    assert.equal(await previewResponse.text(), "preview ok");
+
+    const previewPort = Number.parseInt(new URL(preview.preview_url).port, 10);
+    assert.equal(await canConnect(previewPort), true);
+
+    await workspaceService.stopRepositoryPreviewAndWait("repo-41");
+
+    assert.deepEqual(workspaceService.getRepositoryPreview("repo-41"), {
+      repository_id: "repo-41",
+      state: "idle",
+      preview_url: null,
+      backend_url: null,
+      started_at: null,
+      error: null,
+    });
+    assert.equal(await canConnect(previewPort), false);
+  } finally {
+    await workspaceService.stopRepositoryPreviewAndWait("repo-41");
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("TicketWorkspaceService reports configured preview command failures clearly", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-repository-preview-fail-"),
+  );
+  const worktreePath = join(tempDir, "preview-app");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  mkdirSync(worktreePath, { recursive: true });
+  writeFileSync(
+    join(worktreePath, "exit-immediately.cjs"),
+    "process.exit(1);\n",
+    "utf8",
+  );
+
+  try {
+    const preview = await workspaceService.ensureRepositoryPreview({
+      repositoryId: "repo-42",
+      previewStartCommand: "node exit-immediately.cjs",
+      worktreePath,
+    });
+
+    assert.equal(preview.state, "failed");
+    assert.equal(preview.preview_url, null);
+    assert.match(
+      preview.error ?? "",
+      /^Preview command "node exit-immediately\.cjs" exited before port \d+ was ready$/,
+    );
+  } finally {
+    await workspaceService.stopRepositoryPreviewAndWait("repo-42");
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

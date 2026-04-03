@@ -144,6 +144,7 @@ export const projectSchema = z.object({
   automatic_agent_review: z.boolean(),
   default_review_action: reviewActionSchema,
   default_target_branch: z.string().min(1).nullable(),
+  preview_start_command: z.string().min(1).nullable(),
   pre_worktree_command: z.string().min(1).nullable(),
   post_worktree_command: z.string().min(1).nullable(),
   draft_analysis_model: z.string().min(1).nullable(),

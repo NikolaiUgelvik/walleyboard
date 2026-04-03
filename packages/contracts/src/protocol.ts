@@ -38,6 +38,7 @@ export const updateProjectInputSchema = z.object({
   execution_backend: executionBackendSchema.optional(),
   automatic_agent_review: z.boolean().optional(),
   default_review_action: reviewActionSchema.optional(),
+  preview_start_command: z.string().min(1).nullable().optional(),
   pre_worktree_command: z.string().min(1).nullable().optional(),
   post_worktree_command: z.string().min(1).nullable().optional(),
   draft_analysis_model: z.string().min(1).nullable().optional(),

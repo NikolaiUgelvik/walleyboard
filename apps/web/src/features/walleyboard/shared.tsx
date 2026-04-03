@@ -601,6 +601,7 @@ export async function saveProjectOptionsRequest(
     execution_backend: ExecutionBackend;
     automatic_agent_review: boolean;
     default_review_action: ReviewAction;
+    preview_start_command: string | null;
     pre_worktree_command: string | null;
     post_worktree_command: string | null;
     draft_analysis_model: string | null;
@@ -657,6 +658,51 @@ export function upsertById<T extends { id: string | number }>(
   return items.map((item, index) =>
     index === existingIndex ? nextItem : item,
   );
+}
+
+export function hasRepositoryTargetBranchChanges(input: {
+  project: Project | null;
+  repositories: RepositoryConfig[];
+  repositoryTargetBranches: Record<string, string>;
+}): boolean {
+  if (input.project === null) {
+    return false;
+  }
+
+  return input.repositories.some((repository) => {
+    const currentTargetBranch =
+      repository.target_branch ?? input.project?.default_target_branch ?? "";
+    const selectedTargetBranch =
+      input.repositoryTargetBranches[repository.id] ?? currentTargetBranch;
+    return selectedTargetBranch !== currentTargetBranch;
+  });
+}
+
+export function collectRepositoryTargetBranchUpdates(input: {
+  project: Project;
+  repositories: RepositoryConfig[];
+  repositoryTargetBranches: Record<string, string>;
+}): Array<{ repositoryId: string; targetBranch: string }> {
+  return input.repositories.flatMap((repository) => {
+    const currentTargetBranch =
+      repository.target_branch ?? input.project.default_target_branch ?? "";
+    const selectedTargetBranch =
+      input.repositoryTargetBranches[repository.id] ?? currentTargetBranch;
+
+    if (
+      selectedTargetBranch.trim().length === 0 ||
+      selectedTargetBranch === currentTargetBranch
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        repositoryId: repository.id,
+        targetBranch: selectedTargetBranch,
+      },
+    ];
+  });
 }
 
 export function ticketStatusColor(status: TicketFrontmatter["status"]): string {
