@@ -65,6 +65,7 @@ import {
 } from "./shared.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
+import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
@@ -482,6 +483,7 @@ export function useWalleyBoardController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
+  const ticketAiReviewActiveById = useTicketAiReviewStatus(tickets);
   const selectedSessionTicketId =
     tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
     null;
@@ -1469,6 +1471,7 @@ export function useWalleyBoardController() {
     sessionSummaries,
     terminalCommand,
     handleTicketPreviewAction,
+    ticketAiReviewActiveById,
     ticketWorkspaceDiff,
     ticketWorkspaceDiffLayout,
     ticketWorkspaceDiffQuery,

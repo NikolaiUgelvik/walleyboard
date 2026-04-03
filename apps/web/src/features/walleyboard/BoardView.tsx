@@ -618,6 +618,13 @@ export function BoardView({
                               ?.ticketId === ticket.id &&
                             !controller.startTicketMutation.variables
                               .planningEnabled;
+                          const aiReviewActive =
+                            controller.ticketAiReviewActiveById.get(
+                              ticket.id,
+                            ) ??
+                            (controller.startAgentReviewMutation.isPending &&
+                              controller.startAgentReviewMutation.variables ===
+                                ticket.id);
 
                           return (
                             <Box
@@ -654,6 +661,11 @@ export function BoardView({
                                     </Text>
                                   </Stack>
                                   <Group gap={6} align="center">
+                                    {aiReviewActive ? (
+                                      <Badge variant="light" color="violet">
+                                        AI review in progress
+                                      </Badge>
+                                    ) : null}
                                     <Badge
                                       variant="light"
                                       color={ticketStatusColor(ticket.status)}
