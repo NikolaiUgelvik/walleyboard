@@ -134,6 +134,54 @@ function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
   throw new Error("Codex did not return valid JSON output.");
 }
 
+function summarizeCodexCommandEvent(
+  eventType: string,
+  item: Record<string, unknown>,
+): string | null {
+  const command = typeof item.command === "string" ? item.command.trim() : null;
+  if (!command) {
+    return null;
+  }
+
+  if (eventType === "item.started") {
+    return `[codex command.started] ${truncate(command, 180)}`;
+  }
+
+  const exitCode =
+    typeof item.exit_code === "number" ? item.exit_code : undefined;
+  if (eventType === "item.completed" && exitCode !== 0) {
+    return `[codex command.failed] ${truncate(command, 180)}`;
+  }
+
+  return `[codex command.completed] ${truncate(command, 180)}`;
+}
+
+function summarizeCodexItemEvent(
+  eventType: string,
+  item: Record<string, unknown>,
+): string | null {
+  const itemType = typeof item.type === "string" ? item.type : null;
+  if (!itemType) {
+    return null;
+  }
+
+  if (itemType === "agent_message") {
+    const text =
+      typeof item.text === "string"
+        ? item.text
+        : typeof item.message === "string"
+          ? item.message
+          : null;
+    return text ? `[codex agent_message] ${truncate(text)}` : null;
+  }
+
+  if (itemType === "command_execution") {
+    return summarizeCodexCommandEvent(eventType, item);
+  }
+
+  return null;
+}
+
 function formatCodexExitReason(
   exitCode: number | null,
   signal: NodeJS.Signals | null,
@@ -196,6 +244,24 @@ function interpretCodexJsonLine(line: string): InterpretedAdapterLine {
         : typeof parsed.event === "string"
           ? parsed.event
           : "event";
+
+    const item =
+      parsed.item && typeof parsed.item === "object"
+        ? (parsed.item as Record<string, unknown>)
+        : null;
+    if (item) {
+      const summarizedItem = summarizeCodexItemEvent(eventType, item);
+      if (summarizedItem) {
+        return sessionRef
+          ? {
+              logLine: summarizedItem,
+              sessionRef,
+            }
+          : {
+              logLine: summarizedItem,
+            };
+      }
+    }
 
     if (typeof parsed.message === "string") {
       return sessionRef

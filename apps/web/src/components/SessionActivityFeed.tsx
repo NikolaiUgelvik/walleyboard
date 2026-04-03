@@ -1,4 +1,5 @@
 import { Badge, Code, Group, List, Stack, Text } from "@mantine/core";
+import React from "react";
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 import { agentLabel as agentLabelForAdapter } from "../features/walleyboard/shared.js";
 import { MarkdownContent } from "./MarkdownContent.js";
@@ -26,7 +27,8 @@ type SessionActivity = {
 
 type ParsedCodexEvent = {
   eventType: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> | null;
+  rawPayload: string;
 };
 
 type ParsedExecutionSummary = {
@@ -87,24 +89,133 @@ function truncate(value: string, maxLength = 240): string {
 
 function parseCodexEvent(line: string): ParsedCodexEvent | null {
   const match = line.match(/^\[codex ([^\]]+)\] (.+)$/);
-  if (!match) {
-    return null;
+  if (match) {
+    const [, eventType, rawPayload] = match;
+    if (!eventType || !rawPayload) {
+      return null;
+    }
+
+    try {
+      const payload = JSON.parse(rawPayload) as Record<string, unknown>;
+      return {
+        eventType,
+        payload,
+        rawPayload,
+      };
+    } catch {
+      return {
+        eventType,
+        payload: null,
+        rawPayload,
+      };
+    }
   }
 
-  const [, eventType, rawPayload] = match;
-  if (!eventType || !rawPayload) {
+  const normalized = line.trim();
+  if (!normalized.startsWith("{")) {
     return null;
   }
 
   try {
-    const payload = JSON.parse(rawPayload) as Record<string, unknown>;
+    const payload = JSON.parse(normalized) as Record<string, unknown>;
+    const eventType =
+      typeof payload.type === "string"
+        ? payload.type
+        : typeof payload.event === "string"
+          ? payload.event
+          : null;
+    if (!eventType) {
+      return null;
+    }
     return {
-      eventType,
       payload,
+      eventType,
+      rawPayload: normalized,
     };
   } catch {
     return null;
   }
+}
+
+function stripOuterQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function unescapeShellString(value: string): string {
+  return value.replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\\/g, "\\");
+}
+
+function unwrapShellCommand(command: string): string {
+  const trimmed = command.trim();
+  const wrappedMatch = trimmed.match(/^(?:\/bin\/)?(?:bash|sh)\s+-lc\s+(.+)$/s);
+  if (!wrappedMatch) {
+    return trimmed;
+  }
+
+  const wrappedCommand = wrappedMatch[1];
+  if (!wrappedCommand) {
+    return trimmed;
+  }
+
+  return unescapeShellString(stripOuterQuotes(wrappedCommand)).trim();
+}
+
+function normalizeLoggedPath(value: string): string {
+  return value.replace(/^\/workspace\//, "");
+}
+
+function normalizeCommandPathList(paths: string): string {
+  return paths
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => normalizeLoggedPath(stripOuterQuotes(part)))
+    .join(", ");
+}
+
+function formatCommandTargetSummary(targets: string): string {
+  const normalizedTargets = normalizeCommandPathList(targets);
+  if (normalizedTargets.length === 0) {
+    return "the repository";
+  }
+
+  return normalizedTargets;
+}
+
+function extractCodexRawItemStringField(
+  rawPayload: string,
+  fieldName: string,
+): string | null {
+  const match = rawPayload.match(
+    new RegExp(
+      `"item"\\s*:\\s*\\{[\\s\\S]*?"${fieldName}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,
+      "s",
+    ),
+  );
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return unescapeShellString(match[1]);
+}
+
+function extractCodexRawNumberField(
+  rawPayload: string,
+  fieldName: string,
+): number | null {
+  const match = rawPayload.match(new RegExp(`"${fieldName}"\\s*:\\s*(-?\\d+)`));
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function describeCommandExecution(
@@ -114,28 +225,102 @@ function describeCommandExecution(
   label: string;
   detail: string;
 } {
-  if (command.includes(".github/workflows")) {
+  const resolvedCommand = unwrapShellCommand(command);
+  const quotedSearchCommand = stripOuterQuotes(resolvedCommand);
+
+  const rgMatch = quotedSearchCommand.match(
+    /^rg(?:\s+--files)?\s+-n\s+["']([^"']+)["']\s+(.+)$/,
+  );
+  if (rgMatch) {
+    const [, pattern, targets] = rgMatch;
+    return {
+      label: "Searched code",
+      detail: `${label} searched for \`${pattern}\` in ${formatCommandTargetSummary(targets ?? "")}.`,
+    };
+  }
+
+  const rgFilesMatch = quotedSearchCommand.match(/^rg\s+--files\s+(.+)$/);
+  if (rgFilesMatch) {
+    return {
+      label: "Listed matching files",
+      detail: `${label} listed files under ${formatCommandTargetSummary(rgFilesMatch[1] ?? "")}.`,
+    };
+  }
+
+  const grepMatch = quotedSearchCommand.match(
+    /^grep(?:\s+-\S+)*\s+["']([^"']+)["']\s+(.+)$/,
+  );
+  if (grepMatch) {
+    const [, pattern, targets] = grepMatch;
+    return {
+      label: "Searched code",
+      detail: `${label} searched for \`${pattern}\` in ${formatCommandTargetSummary(targets ?? "")}.`,
+    };
+  }
+
+  const findMatch = quotedSearchCommand.match(/^find\s+(.+)$/);
+  if (findMatch) {
+    return {
+      label: "Scanned files",
+      detail: `${label} scanned ${formatCommandTargetSummary(findMatch[1] ?? "")} for relevant files.`,
+    };
+  }
+
+  const sedMatch = resolvedCommand.match(
+    /^sed -n ['"]?(\d+),(\d+)p['"]?\s+(.+)$/,
+  );
+  if (sedMatch) {
+    const [, startLine, endLine, path] = sedMatch;
+    return {
+      label: "Read file excerpt",
+      detail: `${label} reviewed \`${normalizeLoggedPath(path ?? "")}\` lines ${startLine}-${endLine}.`,
+    };
+  }
+
+  const catMatch = resolvedCommand.match(/^cat\s+(.+)$/);
+  if (catMatch) {
+    return {
+      label: "Read file",
+      detail: `${label} opened \`${normalizeLoggedPath(catMatch[1] ?? "")}\`.`,
+    };
+  }
+
+  const listMatch = resolvedCommand.match(/^ls(?:\s+-\S+)*\s+(.+)$/);
+  if (listMatch) {
+    return {
+      label: "Listed directory",
+      detail: `${label} inspected \`${normalizeLoggedPath(listMatch[1] ?? "")}\`.`,
+    };
+  }
+
+  if (resolvedCommand.includes(".github/workflows")) {
     return {
       label: "Inspected CI workflow",
       detail: `${label} reviewed the CI workflow configuration.`,
     };
   }
 
-  if (command.includes(".gitignore")) {
+  if (resolvedCommand.includes(".gitignore")) {
     return {
       label: "Checked ignore rules",
       detail: `${label} inspected \`.gitignore\`.`,
     };
   }
 
-  if (command.includes("npm run typecheck") || command.includes("tsc -p")) {
+  if (
+    resolvedCommand.includes("npm run typecheck") ||
+    resolvedCommand.includes("tsc -p")
+  ) {
     return {
       label: "Checked types",
       detail: `${label} ran the project's type checks.`,
     };
   }
 
-  if (command.includes("npm run build") || command.includes("vite build")) {
+  if (
+    resolvedCommand.includes("npm run build") ||
+    resolvedCommand.includes("vite build")
+  ) {
     return {
       label: "Built project",
       detail: `${label} ran the build to verify the current changes.`,
@@ -143,9 +328,9 @@ function describeCommandExecution(
   }
 
   if (
-    command.includes("npm run test") ||
-    command.includes("npm test") ||
-    command.includes("pytest")
+    resolvedCommand.includes("npm run test") ||
+    resolvedCommand.includes("npm test") ||
+    resolvedCommand.includes("pytest")
   ) {
     return {
       label: "Ran tests",
@@ -153,14 +338,14 @@ function describeCommandExecution(
     };
   }
 
-  if (command.includes("git status")) {
+  if (resolvedCommand.includes("git status")) {
     return {
       label: "Checked git status",
       detail: `${label} verified the repository status.`,
     };
   }
 
-  if (command.includes("git diff")) {
+  if (resolvedCommand.includes("git diff")) {
     return {
       label: "Reviewed changes",
       detail: `${label} inspected the current diff.`,
@@ -168,12 +353,12 @@ function describeCommandExecution(
   }
 
   if (
-    command.includes("rg ") ||
-    command.includes("grep ") ||
-    command.includes("sed -n") ||
-    command.includes("cat ") ||
-    command.includes("ls ") ||
-    command.includes("find ")
+    resolvedCommand.includes("rg ") ||
+    resolvedCommand.includes("grep ") ||
+    resolvedCommand.includes("sed -n") ||
+    resolvedCommand.includes("cat ") ||
+    resolvedCommand.includes("ls ") ||
+    resolvedCommand.includes("find ")
   ) {
     return {
       label: "Inspected project files",
@@ -183,7 +368,7 @@ function describeCommandExecution(
 
   return {
     label: "Ran command",
-    detail: truncate(command, 160),
+    detail: `Ran \`${truncate(resolvedCommand, 160)}\`.`,
   };
 }
 
@@ -196,12 +381,96 @@ function interpretCodexEvent(
     return null;
   }
 
-  const item = event.payload.item;
-  if (!item || typeof item !== "object") {
+  if (
+    event.eventType === "agent_message" &&
+    event.payload === null &&
+    event.rawPayload.trim().length > 0
+  ) {
+    return createActivity(
+      `codex-message-${index}`,
+      "blue",
+      "Codex update",
+      event.rawPayload,
+    );
+  }
+
+  if (event.payload === null && event.eventType.startsWith("item.")) {
+    const rawItemType = extractCodexRawItemStringField(
+      event.rawPayload,
+      "type",
+    );
+    if (rawItemType === "agent_message") {
+      const text =
+        extractCodexRawItemStringField(event.rawPayload, "text") ??
+        extractCodexRawItemStringField(event.rawPayload, "message");
+      if (text) {
+        return createActivity(
+          `codex-message-raw-${index}`,
+          "blue",
+          "Codex update",
+          text.trim(),
+        );
+      }
+    }
+
+    if (rawItemType === "command_execution") {
+      if (event.eventType === "item.started") {
+        return null;
+      }
+
+      const command = extractCodexRawItemStringField(
+        event.rawPayload,
+        "command",
+      );
+      if (!command) {
+        return null;
+      }
+
+      const description = describeCommandExecution(command, "Codex");
+      const exitCode = extractCodexRawNumberField(
+        event.rawPayload,
+        "exit_code",
+      );
+      return createActivity(
+        `codex-command-raw-${index}`,
+        exitCode !== null && exitCode !== 0 ? "red" : "gray",
+        exitCode !== null && exitCode !== 0
+          ? "Command failed"
+          : description.label,
+        exitCode !== null && exitCode !== 0
+          ? `\`${truncate(unwrapShellCommand(command), 160)}\``
+          : description.detail,
+      );
+    }
+  }
+
+  if (
+    event.eventType === "command.completed" ||
+    event.eventType === "command.failed"
+  ) {
+    const description = describeCommandExecution(event.rawPayload, "Codex");
+    return createActivity(
+      `codex-command-text-${index}`,
+      event.eventType === "command.failed" ? "red" : "gray",
+      event.eventType === "command.failed"
+        ? "Command failed"
+        : description.label,
+      event.eventType === "command.failed"
+        ? `\`${truncate(unwrapShellCommand(event.rawPayload), 160)}\``
+        : description.detail,
+    );
+  }
+
+  if (
+    !event.payload ||
+    !("item" in event.payload) ||
+    !event.payload.item ||
+    typeof event.payload.item !== "object"
+  ) {
     return null;
   }
 
-  const itemRecord = item as Record<string, unknown>;
+  const itemRecord = event.payload.item as Record<string, unknown>;
   const itemType = typeof itemRecord.type === "string" ? itemRecord.type : null;
 
   if (event.eventType === "item.started") {
@@ -224,7 +493,7 @@ function interpretCodexEvent(
       `codex-message-${index}`,
       "blue",
       "Codex update",
-      text,
+      text.trim(),
     );
   }
 
@@ -829,6 +1098,21 @@ export function SessionActivityFeed({
   const parsedSummary = parseExecutionSummary(
     session.last_summary ?? fallbackSummary(session),
   );
+  const activityRows = React.Children.toArray(
+    visibleActivities.map((activity) => (
+      <Group key={activity.key} align="flex-start" wrap="nowrap">
+        <Badge color={activity.tone} variant="light" mt={2}>
+          {activity.label}
+        </Badge>
+        <div style={{ flex: 1 }}>
+          <MarkdownContent
+            className="markdown-small"
+            content={activity.detail}
+          />
+        </div>
+      </Group>
+    )),
+  );
 
   return (
     <Stack gap="md">
@@ -916,21 +1200,7 @@ export function SessionActivityFeed({
             No interpreted activity is available for this session yet.
           </Text>
         ) : (
-          <Stack gap="xs">
-            {visibleActivities.map((activity) => (
-              <Group key={activity.key} align="flex-start" wrap="nowrap">
-                <Badge color={activity.tone} variant="light" mt={2}>
-                  {activity.label}
-                </Badge>
-                <div style={{ flex: 1 }}>
-                  <MarkdownContent
-                    className="markdown-small"
-                    content={activity.detail}
-                  />
-                </div>
-              </Group>
-            ))}
-          </Stack>
+          <Stack gap="xs">{activityRows}</Stack>
         )}
       </Stack>
     </Stack>

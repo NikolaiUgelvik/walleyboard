@@ -242,3 +242,45 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
   assert.equal(run.outputPath, "/workspace/.walleyboard/review.json");
   assert.ok(run.dockerSpec);
 });
+
+test("CodexCliAdapter.interpretOutputLine summarizes command execution events", () => {
+  const adapter = new CodexCliAdapter();
+
+  const interpreted = adapter.interpretOutputLine(
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "item_54",
+        type: "command_execution",
+        command: `/bin/bash -lc "sed -n '240,360p' /workspace/apps/web/src/features/walleyboard/use-protocol-event-sync.ts"`,
+        exit_code: 0,
+        status: "completed",
+      },
+    }),
+  );
+
+  assert.equal(
+    interpreted.logLine,
+    `[codex command.completed] /bin/bash -lc "sed -n '240,360p' /workspace/apps/web/src/features/walleyboard/use-protocol-event-sync.ts"`,
+  );
+});
+
+test("CodexCliAdapter.interpretOutputLine preserves readable agent messages", () => {
+  const adapter = new CodexCliAdapter();
+
+  const interpreted = adapter.interpretOutputLine(
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "item_55",
+        type: "agent_message",
+        text: "I found the relevant files and I am preparing a patch.",
+      },
+    }),
+  );
+
+  assert.equal(
+    interpreted.logLine,
+    "[codex agent_message] I found the relevant files and I am preparing a patch.",
+  );
+});
