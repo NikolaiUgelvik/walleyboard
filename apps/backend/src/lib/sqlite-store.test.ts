@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { collectTicketReferenceIds } from "../../../../packages/contracts/src/index.js";
+
 import { SqliteStore } from "./sqlite-store.js";
 
 function createReadyTicket(
@@ -1269,7 +1271,7 @@ test("ticket references resolve across drafts, reloads, and ready tickets", () =
   }
 });
 
-test("ticket reference validation ignores markdown literals and links", () => {
+test("ticket reference validation ignores markdown literals, urls, and links", () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-ticket-ref-literals-"),
   );
@@ -1301,8 +1303,13 @@ test("ticket reference validation ignores markdown literals and links", () => {
 
     const literalDraft = store.createDraft({
       project_id: project.id,
-      title: `Keep \`#999\`, \\#998, and [#997](https://example.com) literal`,
-      description: `Real dependency stays #${referencedTicket.id}, but \`#996\`, \\#995, and [#994](https://example.com) stay literal.`,
+      title:
+        "Keep `#999`, \\#998, [#997](https://example.com), and https://example.com/#996 literal",
+      description: [
+        `Real dependency stays #${referencedTicket.id}, but \`#995\`, \\#994, and [#993](https://example.com) stay literal.`,
+        "Autolink <https://example.com/#992> also stays literal.",
+        "[#991]: https://example.com",
+      ].join("\n"),
     });
 
     const confirmedTicket = store.confirmDraft(literalDraft.id, {
@@ -1323,6 +1330,75 @@ test("ticket reference validation ignores markdown literals and links", () => {
         status: "ready",
       },
     ]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("ticket reference parser ignores urls, autolinks, and reference definitions", () => {
+  assert.deepEqual(
+    collectTicketReferenceIds([
+      "https://example.com/#33",
+      "<https://example.com/#44>",
+      "[#55]: https://example.com",
+      "Real dependency stays #66.",
+    ]),
+    [66],
+  );
+});
+
+test("archived tickets are not treated as valid references", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-ticket-ref-archived-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Archived Ticket References",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const referencedDraft = store.createDraft({
+      project_id: project.id,
+      title: "Archived dependency",
+      description: "This ticket will be archived.",
+    });
+    const archivedTicket = store.confirmDraft(referencedDraft.id, {
+      title: referencedDraft.title_draft,
+      description: referencedDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Archive this dependency after completion."],
+      target_branch: "main",
+    });
+
+    store.updateTicketStatus(archivedTicket.id, "done");
+    store.archiveTicket(archivedTicket.id);
+
+    const dependentDraft = store.createDraft({
+      project_id: project.id,
+      title: `Follow-up for #${archivedTicket.id}`,
+      description: `This should not resolve #${archivedTicket.id}.`,
+    });
+
+    assert.deepEqual(dependentDraft.ticket_references, []);
+    assert.throws(
+      () =>
+        store.confirmDraft(dependentDraft.id, {
+          title: dependentDraft.title_draft,
+          description: dependentDraft.description_draft,
+          repo_id: repository.id,
+          ticket_type: "feature",
+          acceptance_criteria: ["Reject archived ticket references."],
+          target_branch: "main",
+        }),
+      /Ticket reference #\d+ does not exist\./,
+    );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

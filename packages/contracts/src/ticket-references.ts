@@ -206,6 +206,69 @@ function consumeMarkdownLinkOrImage(
   return null;
 }
 
+function consumeAutolink(text: string, index: number): number | null {
+  if (text[index] !== "<") {
+    return null;
+  }
+
+  const closingIndex = text.indexOf(">", index + 1);
+  if (closingIndex === -1) {
+    return null;
+  }
+
+  const content = text.slice(index + 1, closingIndex);
+  if (!/^(https?:\/\/|mailto:)[^\s<>]+$/i.test(content)) {
+    return null;
+  }
+
+  return closingIndex + 1;
+}
+
+function consumeBareUrl(text: string, index: number): number | null {
+  if (
+    !text.startsWith("http://", index) &&
+    !text.startsWith("https://", index)
+  ) {
+    return null;
+  }
+
+  const match = /^https?:\/\/[^\s<]+/i.exec(text.slice(index));
+  return match ? index + match[0].length : null;
+}
+
+function consumeMarkdownReferenceDefinition(
+  text: string,
+  index: number,
+): number | null {
+  if (!isLineStart(text, index)) {
+    return null;
+  }
+
+  let cursor = index;
+  let indent = 0;
+  while (indent < 3 && text[cursor] === " ") {
+    cursor += 1;
+    indent += 1;
+  }
+
+  const label = parseBracketSequence(text, cursor);
+  if (!label) {
+    return null;
+  }
+
+  cursor = label.end;
+  while (text[cursor] === " " || text[cursor] === "\t") {
+    cursor += 1;
+  }
+
+  if (text[cursor] !== ":") {
+    return null;
+  }
+
+  const lineEndIndex = text.indexOf("\n", cursor);
+  return lineEndIndex === -1 ? text.length : lineEndIndex + 1;
+}
+
 function consumeTicketReference(
   text: string,
   index: number,
@@ -248,9 +311,30 @@ export function findTicketReferenceMatches(
       continue;
     }
 
+    const referenceDefinitionEnd = consumeMarkdownReferenceDefinition(
+      text,
+      cursor,
+    );
+    if (referenceDefinitionEnd !== null) {
+      cursor = referenceDefinitionEnd;
+      continue;
+    }
+
     const markdownLinkEnd = consumeMarkdownLinkOrImage(text, cursor);
     if (markdownLinkEnd !== null) {
       cursor = markdownLinkEnd;
+      continue;
+    }
+
+    const autolinkEnd = consumeAutolink(text, cursor);
+    if (autolinkEnd !== null) {
+      cursor = autolinkEnd;
+      continue;
+    }
+
+    const bareUrlEnd = consumeBareUrl(text, cursor);
+    if (bareUrlEnd !== null) {
+      cursor = bareUrlEnd;
       continue;
     }
 

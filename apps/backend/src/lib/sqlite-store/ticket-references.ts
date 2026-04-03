@@ -23,6 +23,7 @@ export function resolveTicketReferences(
         SELECT id, title, status
         FROM tickets
         WHERE id IN (${placeholders})
+          AND archived_at IS NULL
       `,
     )
     .all(...referenceIds) as Array<{

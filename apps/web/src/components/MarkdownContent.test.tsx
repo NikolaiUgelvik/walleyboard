@@ -132,3 +132,36 @@ test("ignores ticket references inside markdown links, code spans, and escapes",
     1,
   );
 });
+
+test("ignores ticket references inside bare urls, autolinks, and reference definitions", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(MarkdownContent, {
+      content: [
+        "Bare URL https://example.com/#33",
+        "Autolink <https://example.com/#33>",
+        "[#33]: https://example.com",
+        "",
+        "Real dependency #33.",
+      ].join("\n"),
+      ticketReferences: [
+        {
+          ticket_id: 33,
+          title: "Finish the API contract",
+          status: "in_progress",
+        },
+      ],
+    }),
+  );
+
+  assert.match(html, /https:\/\/example\.com\/#33/);
+  assert.match(html, /&lt;https:\/\/example\.com\/#33&gt;/);
+  assert.match(html, /\[#33\]: https:\/\/example\.com/);
+  assert.equal(
+    [...html.matchAll(/class="markdown-ticket-reference"/g)].length,
+    1,
+  );
+  assert.match(
+    html,
+    /Real dependency <a class="markdown-ticket-reference" href="#ticket-33">#33<\/a><span class="markdown-ticket-reference-meta"> \(Finish the API contract • In progress\)<\/span>\./,
+  );
+});
