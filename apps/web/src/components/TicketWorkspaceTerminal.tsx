@@ -39,7 +39,9 @@ export function TicketWorkspaceTerminal({
   surfaceLabel,
   worktreePath,
 }: TicketWorkspaceTerminalProps) {
-  const terminalColorScheme = useComputedColorScheme("light");
+  const terminalColorScheme = useComputedColorScheme("light", {
+    getInitialValueInEffect: false,
+  });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const terminalThemeRef = useRef(resolveTerminalTheme(terminalColorScheme));
