@@ -23,6 +23,7 @@ import type {
 } from "./shared.js";
 import {
   deriveRepositoryName,
+  patchJson,
   postJson,
   saveProjectOptionsRequest,
   slugify,
@@ -59,6 +60,21 @@ type UseWalleyBoardMutationsInput = {
   setValidationCommandsText: StateSetter<string>;
   tickets: TicketFrontmatter[];
 };
+
+export async function saveDraftRequest(input: {
+  draftId: string;
+  titleDraft: string;
+  descriptionDraft: string;
+  proposedTicketType: string | null;
+  proposedAcceptanceCriteria: string[];
+}): Promise<CommandAck> {
+  return await patchJson<CommandAck>(`/drafts/${input.draftId}`, {
+    title_draft: input.titleDraft,
+    description_draft: input.descriptionDraft,
+    proposed_ticket_type: input.proposedTicketType,
+    proposed_acceptance_criteria: input.proposedAcceptanceCriteria,
+  });
+}
 
 export function setOptimisticRunningReviewRun(input: {
   implementationSessionId: string | null;
@@ -270,19 +286,7 @@ export function useWalleyBoardMutations({
   });
 
   const saveDraftMutation = useMutation({
-    mutationFn: (input: {
-      draftId: string;
-      titleDraft: string;
-      descriptionDraft: string;
-      proposedTicketType: string | null;
-      proposedAcceptanceCriteria: string[];
-    }) =>
-      postJson<CommandAck>(`/drafts/${input.draftId}`, {
-        title_draft: input.titleDraft,
-        description_draft: input.descriptionDraft,
-        proposed_ticket_type: input.proposedTicketType,
-        proposed_acceptance_criteria: input.proposedAcceptanceCriteria,
-      }),
+    mutationFn: saveDraftRequest,
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
