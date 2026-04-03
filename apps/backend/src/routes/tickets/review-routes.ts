@@ -4,6 +4,7 @@ import { requestChangesInputSchema } from "../../../../../packages/contracts/src
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
+import { resolveTargetBranch } from "../../lib/execution-runtime/helpers.js";
 import {
   publishSessionUpdated,
   shouldPublishPreExecutionSessionUpdate,
@@ -269,13 +270,17 @@ export function registerTicketReviewRoutes(
             }
 
             await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+            const effectiveTargetBranch = resolveTargetBranch(
+              repository,
+              lockedTicket.target_branch,
+            );
 
             try {
               const mergeResult = await mergeReviewedBranch(
                 repository,
                 lockedSession.worktree_path,
                 lockedTicket.working_branch,
-                lockedTicket.target_branch,
+                effectiveTargetBranch,
                 {
                   resolveConflicts: (input) =>
                     executionRuntime.resolveMergeConflicts({
@@ -284,7 +289,7 @@ export function registerTicketReviewRoutes(
                       repository,
                       ticket: lockedTicket,
                       session: lockedSession,
-                      targetBranch: lockedTicket.target_branch,
+                      targetBranch: effectiveTargetBranch,
                       stage: input.stage,
                       conflictedFiles: input.conflictedFiles,
                       failureMessage: input.failureMessage,
@@ -346,9 +351,9 @@ export function registerTicketReviewRoutes(
               const summary =
                 cleanupWarnings.length === 0
                   ? deferredWorktreeCleanup
-                    ? `Merged ${lockedTicket.working_branch} into ${lockedTicket.target_branch}. Worktree cleanup is continuing in the background.`
-                    : `Merged ${lockedTicket.working_branch} into ${lockedTicket.target_branch} and cleaned up local artifacts.`
-                  : `Merged ${lockedTicket.working_branch} into ${lockedTicket.target_branch}, but cleanup needs attention: ${cleanupWarnings.join(
+                    ? `Merged ${lockedTicket.working_branch} into ${effectiveTargetBranch}. Worktree cleanup is continuing in the background.`
+                    : `Merged ${lockedTicket.working_branch} into ${effectiveTargetBranch} and cleaned up local artifacts.`
+                  : `Merged ${lockedTicket.working_branch} into ${effectiveTargetBranch}, but cleanup needs attention: ${cleanupWarnings.join(
                       " | ",
                     )}`;
               const mergedSession = store.updateSessionStatus(
@@ -364,7 +369,7 @@ export function registerTicketReviewRoutes(
 
               store.recordTicketEvent(ticketId, "ticket.merged", {
                 ticket_id: ticketId,
-                target_branch: lockedTicket.target_branch,
+                target_branch: effectiveTargetBranch,
                 target_head: mergeResult.targetHead,
                 cleanup_warnings: cleanupWarnings,
               });

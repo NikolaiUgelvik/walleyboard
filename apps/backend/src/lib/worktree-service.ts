@@ -16,6 +16,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
+import { resolveTargetBranch } from "./execution-runtime/helpers.js";
 import type { PreparedExecutionRuntime } from "./store.js";
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
 
@@ -27,8 +28,18 @@ function slugify(value: string): string {
     .slice(0, 40);
 }
 
-function deriveWorkingBranch(ticket: TicketFrontmatter): string {
-  return `codex/ticket-${ticket.id}-${slugify(ticket.title).slice(0, 24)}`;
+function branchPrefixForAdapter(adapter: string): string {
+  if (adapter === "claude-code") {
+    return "claude";
+  }
+  return "codex";
+}
+
+function deriveWorkingBranch(
+  ticket: TicketFrontmatter,
+  agentAdapter: string,
+): string {
+  return `${branchPrefixForAdapter(agentAdapter)}/ticket-${ticket.id}-${slugify(ticket.title).slice(0, 24)}`;
 }
 
 type GitExecError = Error & {
@@ -387,7 +398,7 @@ export function prepareWorktree(
     throw new Error("Ticket already has a working branch");
   }
 
-  const workingBranch = deriveWorkingBranch(ticket);
+  const workingBranch = deriveWorkingBranch(ticket, project.agent_adapter);
   const projectWorktreeRoot = resolveWalleyBoardPath("worktrees", project.slug);
   const worktreeRoot = join(projectWorktreeRoot, `ticket-${ticket.id}`);
   mkdirSync(projectWorktreeRoot, { recursive: true });
@@ -396,7 +407,7 @@ export function prepareWorktree(
     throw new Error(`Worktree path already exists: ${worktreeRoot}`);
   }
 
-  const targetBranch = repository.target_branch ?? ticket.target_branch;
+  const targetBranch = resolveTargetBranch(repository, ticket.target_branch);
   runGit(repository.path, ["rev-parse", "--is-inside-work-tree"]);
   const refreshedTarget = refreshTargetBranch(
     repository.path,

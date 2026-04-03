@@ -34,6 +34,10 @@ export type InterpretedAdapterLine = {
   logLine: string;
   sessionRef?: string;
   outputContent?: string;
+  /** Set only for ExitPlanMode tool_use blocks. Takes priority over
+   *  outputContent when capturing plan summaries, so later assistant
+   *  text messages cannot overwrite the actual plan. */
+  planContent?: string;
 };
 
 export type DraftRunInput = {

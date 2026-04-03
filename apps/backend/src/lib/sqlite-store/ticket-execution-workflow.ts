@@ -391,7 +391,7 @@ export class TicketExecutionWorkflowService {
     const logs = [
       formatMarkdownLog("Requested changes recorded", body),
       `Reusing worktree at: ${session.worktree_path}`,
-      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
+      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.agent_adapter)}`,
       shouldQueue
         ? `Queued execution attempt ${attemptNumber} until a project running slot opens.`
         : `Starting execution attempt ${attemptNumber}.`,
@@ -465,6 +465,10 @@ export class TicketExecutionWorkflowService {
     if (!session.worktree_path) {
       throw new Error("Execution session has no prepared worktree");
     }
+    const project = this.projects.getProject(ticket.project);
+    if (!project) {
+      throw new Error("Project not found");
+    }
 
     const reviewPackage = this.reviews.getReviewPackage(ticketId);
     const noteId = nanoid();
@@ -515,7 +519,7 @@ export class TicketExecutionWorkflowService {
     const logs = [
       formatMarkdownLog("Merge conflict note recorded", body),
       `Worktree preserved at: ${session.worktree_path}`,
-      `Working branch preserved: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
+      `Working branch preserved: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.agent_adapter)}`,
       "Ticket returned to in-progress so the merge conflict can be resolved on the existing branch.",
     ];
 
@@ -665,7 +669,7 @@ export class TicketExecutionWorkflowService {
         ? formatMarkdownLog("Resume instruction recorded", reasonBody)
         : "Resume requested without additional instruction.",
       `Reusing worktree at: ${session.worktree_path}`,
-      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title)}`,
+      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.agent_adapter)}`,
       shouldQueue
         ? `Queued execution attempt ${attemptNumber} until a project running slot opens.`
         : `Starting execution attempt ${attemptNumber}.`,

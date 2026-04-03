@@ -154,6 +154,33 @@ function stripMarkdownFences(value: string): string {
     .trim();
 }
 
+/**
+ * Find the start of the last top-level JSON object in a string. Scans
+ * backwards from the last `}` and counts balanced braces to locate
+ * the matching `{`. Returns -1 if no balanced pair is found.
+ *
+ * This avoids the bug where `lastIndexOf("{")` would match a nested
+ * sub-object instead of the intended top-level JSON.
+ */
+export function findLastTopLevelJsonStart(text: string): number {
+  const lastClose = text.lastIndexOf("}");
+  if (lastClose < 0) {
+    return -1;
+  }
+  let depth = 0;
+  for (let i = lastClose; i >= 0; i--) {
+    if (text[i] === "}") {
+      depth++;
+    } else if (text[i] === "{") {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
 export function parseClaudeCodeJsonResult<T>(
   rawOutput: string,
   schema: z.ZodType<T>,
@@ -177,6 +204,13 @@ export function parseClaudeCodeJsonResult<T>(
       const unfenced = stripMarkdownFences(resultText);
       if (unfenced !== resultText) {
         candidates.push(unfenced);
+      }
+      // The model may emit reasoning text before the JSON object.
+      // Use balanced-brace scanning to find the last complete top-level
+      // JSON object, avoiding accidental extraction of nested sub-objects.
+      const braceIndex = findLastTopLevelJsonStart(resultText);
+      if (braceIndex > 0) {
+        candidates.push(resultText.slice(braceIndex));
       }
     }
   } catch {
@@ -207,6 +241,11 @@ export function parseClaudeCodeJsonResult<T>(
         const unfenced = stripMarkdownFences(resultText);
         if (unfenced !== resultText) {
           candidates.push(unfenced);
+        }
+        // Try extracting embedded JSON from reasoning text.
+        const braceIndex = findLastTopLevelJsonStart(resultText);
+        if (braceIndex > 0) {
+          candidates.push(resultText.slice(braceIndex));
         }
       }
     } catch {
@@ -283,7 +322,10 @@ export function interpretClaudeCodeStreamJsonLine(
       return withSession(base);
     }
 
-    // Handle assistant messages.
+    // Handle assistant messages. We set outputContent so the execution
+    // runtime can capture the last meaningful text as a fallback summary.
+    // For plan mode specifically, we extract the `plan` field from
+    // ExitPlanMode tool_use blocks, which contains the actual plan content.
     if (eventType === "assistant") {
       const message = parsed.message;
       if (message && typeof message === "object") {
@@ -291,12 +333,43 @@ export function interpretClaudeCodeStreamJsonLine(
         if (typeof messageRecord.content === "string") {
           return withSession({
             logLine: `[claude-code assistant] ${truncate(messageRecord.content)}`,
+            outputContent: messageRecord.content,
           });
         }
 
         // Content can be an array of content blocks.
         if (Array.isArray(messageRecord.content)) {
-          const textParts = (messageRecord.content as unknown[])
+          const blocks = messageRecord.content as unknown[];
+
+          // Check for ExitPlanMode tool_use with a plan field. This is
+          // the authoritative plan content. We set planContent (not
+          // outputContent) so the runtime can track it separately and
+          // prevent later assistant text messages from overwriting it.
+          for (const block of blocks) {
+            if (
+              typeof block === "object" &&
+              block !== null &&
+              (block as Record<string, unknown>).type === "tool_use" &&
+              (block as Record<string, unknown>).name === "ExitPlanMode"
+            ) {
+              const input = (block as Record<string, unknown>).input;
+              if (
+                typeof input === "object" &&
+                input !== null &&
+                typeof (input as Record<string, unknown>).plan === "string"
+              ) {
+                const plan = (input as Record<string, unknown>).plan as string;
+                if (plan.trim().length > 0) {
+                  return withSession({
+                    logLine: `[claude-code assistant] ${truncate(plan)}`,
+                    planContent: plan,
+                  });
+                }
+              }
+            }
+          }
+
+          const textParts = blocks
             .filter(
               (block): block is Record<string, unknown> =>
                 typeof block === "object" &&
@@ -306,8 +379,10 @@ export function interpretClaudeCodeStreamJsonLine(
             .map((block) => String(block.text ?? ""))
             .filter((text) => text.length > 0);
           if (textParts.length > 0) {
+            const fullText = textParts.join("\n\n");
             return withSession({
-              logLine: `[claude-code assistant] ${truncate(textParts.join(" "))}`,
+              logLine: `[claude-code assistant] ${truncate(fullText)}`,
+              outputContent: fullText,
             });
           }
         }
@@ -316,6 +391,7 @@ export function interpretClaudeCodeStreamJsonLine(
       if (typeof parsed.message === "string") {
         return withSession({
           logLine: `[claude-code assistant] ${truncate(parsed.message)}`,
+          outputContent: parsed.message,
         });
       }
 
@@ -443,7 +519,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     if (resumeRef) {
       args.push("--resume", resumeRef);
     }
-    args.push("-p", prompt, "--output-format", "stream-json");
+    args.push("-p", prompt, "--output-format", "stream-json", "--verbose");
     appendClaudePermissionArgs(
       args,
       input.executionMode === "plan" ? "read-only" : "full-access",
@@ -490,7 +566,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     if (resumeRef) {
       args.push("--resume", resumeRef);
     }
-    args.push("-p", prompt, "--output-format", "stream-json");
+    args.push("-p", prompt, "--output-format", "stream-json", "--verbose");
     appendClaudePermissionArgs(args, "full-access");
 
     appendClaudeCodeModelArgs(args, model);

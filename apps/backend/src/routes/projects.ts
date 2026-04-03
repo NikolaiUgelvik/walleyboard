@@ -266,39 +266,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         return;
       }
 
-      socket.on("message", (message: Buffer) => {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(message.toString("utf8"));
-        } catch {
-          return;
-        }
-
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          (parsed as { type?: string }).type === "terminal.input" &&
-          typeof (parsed as { data?: string }).data === "string"
-        ) {
-          terminal.write((parsed as { data: string }).data);
-          return;
-        }
-
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          (parsed as { type?: string }).type === "terminal.resize" &&
-          typeof (parsed as { cols?: number }).cols === "number" &&
-          typeof (parsed as { rows?: number }).rows === "number"
-        ) {
-          terminal.resize(
-            (parsed as { cols: number }).cols,
-            (parsed as { rows: number }).rows,
-          );
-        }
-      });
-
-      terminal.onData((data) => {
+      terminal.pty.onData((data) => {
         socket.send(
           JSON.stringify({
             type: "terminal.output",
@@ -307,19 +275,66 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         );
       });
 
-      terminal.onExit(({ exitCode }) => {
+      terminal.pty.onExit(({ exitCode, signal }) => {
+        if (terminal.exitMessage) {
+          socket.send(
+            JSON.stringify({
+              type: "terminal.error",
+              message: terminal.exitMessage,
+            }),
+          );
+        }
         socket.send(
           JSON.stringify({
             type: "terminal.exit",
-            exitCode,
+            exit_code: exitCode,
+            signal,
           }),
         );
         socket.close();
       });
 
+      socket.on("message", (rawMessage: unknown) => {
+        try {
+          const message = JSON.parse(String(rawMessage)) as unknown;
+
+          if (
+            message &&
+            typeof message === "object" &&
+            (message as { type?: string }).type === "terminal.input" &&
+            typeof (message as { data?: string }).data === "string"
+          ) {
+            if ((message as { data: string }).data.length > 0) {
+              terminal.pty.write((message as { data: string }).data);
+            }
+            return;
+          }
+
+          if (
+            message &&
+            typeof message === "object" &&
+            (message as { type?: string }).type === "terminal.resize" &&
+            typeof (message as { cols?: number }).cols === "number" &&
+            typeof (message as { rows?: number }).rows === "number"
+          ) {
+            terminal.pty.resize(
+              Math.max(1, Math.floor((message as { cols: number }).cols)),
+              Math.max(1, Math.floor((message as { rows: number }).rows)),
+            );
+          }
+        } catch {
+          socket.send(
+            JSON.stringify({
+              type: "terminal.error",
+              message: "Unable to parse terminal message",
+            }),
+          );
+        }
+      });
+
       socket.on("close", () => {
         try {
-          terminal.kill("SIGTERM");
+          terminal.pty.kill();
         } catch {
           // Ignore already-exited repository terminals.
         }
