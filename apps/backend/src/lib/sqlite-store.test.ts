@@ -292,6 +292,71 @@ test("updateProject persists preview start command changes", () => {
   }
 });
 
+test("editing a ready ticket preserves its id and target branch when re-promoted", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-reedit-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Ready Ticket Edit",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+        target_branch: "main",
+      },
+    });
+
+    const draft = store.createDraft({
+      project_id: project.id,
+      artifact_scope_id: "artifact-scope-edit",
+      title: "Original ready ticket",
+      description: "Keep the same ticket identity after editing.",
+      proposed_ticket_type: "bugfix",
+      proposed_acceptance_criteria: ["Preserve the original branch."],
+    });
+    const originalTicket = store.confirmDraft(draft.id, {
+      title: "Original ready ticket",
+      description: "Keep the same ticket identity after editing.",
+      repo_id: repository.id,
+      ticket_type: "bugfix",
+      acceptance_criteria: ["Preserve the original branch."],
+      target_branch: "release/1.0",
+    });
+
+    const reopenedDraft = store.editReadyTicket(originalTicket.id);
+    assert.equal(reopenedDraft.source_ticket_id, originalTicket.id);
+    assert.equal(reopenedDraft.target_branch, "release/1.0");
+
+    const reproTicket = store.confirmDraft(reopenedDraft.id, {
+      title: "Original ready ticket, revised",
+      description: "Edited content should still keep the same ticket number.",
+      repo_id: repository.id,
+      ticket_type: "bugfix",
+      acceptance_criteria: [
+        "Preserve the original branch.",
+        "Require promotion again after editing.",
+      ],
+      target_branch: "main",
+    });
+
+    assert.equal(reproTicket.id, originalTicket.id);
+    assert.equal(reproTicket.target_branch, "release/1.0");
+    assert.equal(reproTicket.artifact_scope_id, "artifact-scope-edit");
+    assert.equal(reproTicket.title, "Original ready ticket, revised");
+    assert.equal(
+      reproTicket.description,
+      "Edited content should still keep the same ticket number.",
+    );
+    assert.deepEqual(reproTicket.acceptance_criteria, [
+      "Preserve the original branch.",
+      "Require promotion again after editing.",
+    ]);
+    assert.equal(store.getDraft(reopenedDraft.id), undefined);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("projects default to host execution and persist execution backend updates", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-backend-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

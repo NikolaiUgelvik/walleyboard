@@ -317,6 +317,14 @@ export function mapDraft(row: Record<string, unknown>): DraftTicketState {
       row.split_proposal_summary === null
         ? null
         : String(row.split_proposal_summary),
+    source_ticket_id:
+      row.source_ticket_id === null || row.source_ticket_id === undefined
+        ? null
+        : Number(row.source_ticket_id),
+    target_branch:
+      row.target_branch === null || row.target_branch === undefined
+        ? null
+        : String(row.target_branch),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -608,6 +616,8 @@ export class SqliteStoreContext {
         proposed_acceptance_criteria TEXT NOT NULL,
         wizard_status TEXT NOT NULL,
         split_proposal_summary TEXT,
+        source_ticket_id INTEGER,
+        target_branch TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -757,6 +767,8 @@ export class SqliteStoreContext {
     );
     this.#ensureColumn("tickets", "archived_at", "TEXT");
     this.#ensureColumn("draft_ticket_states", "artifact_scope_id", "TEXT");
+    this.#ensureColumn("draft_ticket_states", "source_ticket_id", "INTEGER");
+    this.#ensureColumn("draft_ticket_states", "target_branch", "TEXT");
     this.#ensureColumn("tickets", "artifact_scope_id", "TEXT");
     this.#ensureColumn("projects", "draft_analysis_model", "TEXT");
     this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");

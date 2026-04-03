@@ -389,6 +389,8 @@ test("edit route reopens a ready ticket as a draft without losing its content", 
       "Keep the current artifact references.",
     ]);
     assert.equal(reopenedDrafts[0]?.wizard_status, "editing");
+    assert.equal(reopenedDrafts[0]?.source_ticket_id, ticket.id);
+    assert.equal(reopenedDrafts[0]?.target_branch, "main");
 
     await app.close();
   } finally {

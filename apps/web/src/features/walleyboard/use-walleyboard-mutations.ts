@@ -528,6 +528,8 @@ export function useWalleyBoardMutations({
               proposed_acceptance_criteria: ticket.acceptance_criteria,
               wizard_status: "editing",
               split_proposal_summary: null,
+              source_ticket_id: ticket.id,
+              target_branch: ticket.target_branch,
               created_at: timestamp,
               updated_at: timestamp,
             }),

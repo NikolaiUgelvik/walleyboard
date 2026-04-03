@@ -51,6 +51,8 @@ export const draftTicketStatesTable = sqliteTable("draft_ticket_states", {
   }).notNull(),
   wizardStatus: text("wizard_status").notNull(),
   splitProposalSummary: text("split_proposal_summary"),
+  sourceTicketId: integer("source_ticket_id"),
+  targetBranch: text("target_branch"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

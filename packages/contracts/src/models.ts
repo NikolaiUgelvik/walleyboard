@@ -131,6 +131,8 @@ export const draftTicketStateSchema = z.object({
     "ready_to_create",
   ]),
   split_proposal_summary: z.string().nullable(),
+  source_ticket_id: z.number().int().positive().nullable().optional(),
+  target_branch: z.string().min(1).nullable().optional(),
   created_at: timestampSchema,
   updated_at: timestampSchema,
 });

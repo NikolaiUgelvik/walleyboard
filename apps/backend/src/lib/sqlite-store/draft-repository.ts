@@ -65,8 +65,8 @@ export class DraftRepository {
           INSERT INTO draft_ticket_states (
             id, project_id, artifact_scope_id, title_draft, description_draft, proposed_repo_id, confirmed_repo_id,
             proposed_ticket_type, proposed_acceptance_criteria, wizard_status, split_proposal_summary,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            source_ticket_id, target_branch, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -80,6 +80,8 @@ export class DraftRepository {
         proposedTicketType,
         stringifyJson(proposedAcceptanceCriteria),
         "editing",
+        null,
+        null,
         null,
         timestamp,
         timestamp,
