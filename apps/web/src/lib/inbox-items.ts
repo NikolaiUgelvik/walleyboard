@@ -49,11 +49,14 @@ export function deriveInboxItems(input: {
   tickets: TicketFrontmatter[];
   sessionsById: Map<string, ExecutionSession>;
   ticketAiReviewActiveById?: Map<number, boolean>;
+  ticketAiReviewResolvedById?: Map<number, boolean>;
 }): InboxItem[] {
   const projectNameById = new Map(
     input.projects.map((project) => [project.id, project.name]),
   );
   const ticketAiReviewActiveById = input.ticketAiReviewActiveById ?? new Map();
+  const ticketAiReviewResolvedById =
+    input.ticketAiReviewResolvedById ?? new Map();
   const items = [] as Array<InboxItem & { updatedAt: string }>;
 
   for (const draft of input.drafts) {
@@ -88,10 +91,13 @@ export function deriveInboxItems(input: {
       ticket.session_id === null
         ? null
         : (input.sessionsById.get(ticket.session_id) ?? null);
+    const ticketAiReviewResolved =
+      ticketAiReviewResolvedById.get(ticket.id) === true;
 
     if (
       ticket.status === "review" &&
       ticket.session_id &&
+      ticketAiReviewResolved &&
       !hasActiveLinkedPullRequest(ticket.linked_pr)
     ) {
       items.push({

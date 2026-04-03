@@ -15,9 +15,42 @@ export function getTicketsWithAiReviewSessions(
   );
 }
 
+type TicketAiReviewStatus = {
+  ticketAiReviewActiveById: Map<number, boolean>;
+  ticketAiReviewResolvedById: Map<number, boolean>;
+  reviewRunQueriesSettled: boolean;
+};
+
+export function deriveTicketAiReviewStatus(input: {
+  reviewRunQueries: Array<{
+    data: ReviewRunResponse | null | undefined;
+    status: "pending" | "error" | "success";
+  }>;
+  reviewTickets: Array<TicketFrontmatter & { session_id: string }>;
+}): TicketAiReviewStatus {
+  const ticketAiReviewActiveById = new Map<number, boolean>();
+  const ticketAiReviewResolvedById = new Map<number, boolean>();
+
+  for (const [index, ticket] of input.reviewTickets.entries()) {
+    const query = input.reviewRunQueries[index];
+    const reviewRun = query?.data?.review_run ?? null;
+
+    ticketAiReviewActiveById.set(ticket.id, reviewRun?.status === "running");
+    ticketAiReviewResolvedById.set(ticket.id, query?.status === "success");
+  }
+
+  return {
+    ticketAiReviewActiveById,
+    ticketAiReviewResolvedById,
+    reviewRunQueriesSettled: input.reviewRunQueries.every(
+      (query) => query.status === "success",
+    ),
+  };
+}
+
 export function useTicketAiReviewStatus(
   tickets: TicketFrontmatter[],
-): Map<number, boolean> {
+): TicketAiReviewStatus {
   const reviewTickets = getTicketsWithAiReviewSessions(tickets);
   const reviewRunQueries = useQueries({
     queries: reviewTickets.map((ticket) => ({
@@ -31,10 +64,8 @@ export function useTicketAiReviewStatus(
     })),
   });
 
-  return new Map(
-    reviewTickets.map((ticket, index) => [
-      ticket.id,
-      reviewRunQueries[index]?.data?.review_run?.status === "running",
-    ]),
-  );
+  return deriveTicketAiReviewStatus({
+    reviewRunQueries,
+    reviewTickets,
+  });
 }

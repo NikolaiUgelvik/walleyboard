@@ -1,0 +1,179 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import type {
+  ExecutionSession,
+  HealthResponse,
+  Project,
+  TicketFrontmatter,
+} from "../../../../../packages/contracts/src/index.js";
+
+import { useWalleyBoardController } from "./use-walleyboard-controller.js";
+
+(globalThis as typeof globalThis & { React?: typeof React }).React = React;
+
+function createHealth(): HealthResponse {
+  return {
+    ok: true,
+    service: "backend",
+    timestamp: "2026-04-03T00:00:00.000Z",
+    docker: {
+      installed: true,
+      available: true,
+      client_version: "1.0.0",
+      server_version: "1.0.0",
+      error: null,
+    },
+    claude_code: {
+      available: false,
+      configured_path: null,
+      error: null,
+    },
+  };
+}
+
+function createProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: "project-1",
+    slug: "project-1",
+    name: "Project One",
+    agent_adapter: "codex",
+    execution_backend: "host",
+    automatic_agent_review: false,
+    default_review_action: "direct_merge",
+    default_target_branch: "main",
+    pre_worktree_command: null,
+    post_worktree_command: null,
+    draft_analysis_model: null,
+    draft_analysis_reasoning_effort: null,
+    ticket_work_model: null,
+    ticket_work_reasoning_effort: null,
+    max_concurrent_sessions: 1,
+    created_at: "2026-04-03T00:00:00.000Z",
+    updated_at: "2026-04-03T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function createTicket(
+  overrides: Partial<TicketFrontmatter> = {},
+): TicketFrontmatter {
+  return {
+    acceptance_criteria: [],
+    artifact_scope_id: "artifact-scope-31",
+    created_at: "2026-04-03T00:00:00.000Z",
+    description: "Hide cross-project review tickets while AI review runs.",
+    id: 31,
+    linked_pr: null,
+    project: "project-2",
+    repo: "repo-2",
+    session_id: "session-31",
+    status: "review",
+    target_branch: "main",
+    ticket_type: "feature",
+    title: "Hide AI review from the global inbox",
+    updated_at: "2026-04-03T00:00:00.000Z",
+    working_branch: "ticket-31",
+    ...overrides,
+  };
+}
+
+function createSession(
+  overrides: Partial<ExecutionSession> = {},
+): ExecutionSession {
+  return {
+    adapter_session_ref: null,
+    agent_adapter: "codex",
+    completed_at: "2026-04-03T00:05:00.000Z",
+    current_attempt_id: null,
+    id: "session-31",
+    last_heartbeat_at: "2026-04-03T00:05:00.000Z",
+    last_summary: "Implementation completed and AI review is running.",
+    latest_requested_change_note_id: null,
+    latest_review_package_id: null,
+    plan_status: "not_requested",
+    plan_summary: null,
+    planning_enabled: false,
+    project_id: "project-2",
+    queue_entered_at: null,
+    repo_id: "repo-2",
+    started_at: "2026-04-03T00:00:00.000Z",
+    status: "completed",
+    ticket_id: 31,
+    worktree_path: "/tmp/worktree-31",
+    ...overrides,
+  };
+}
+
+function ActionItemsProbe() {
+  const controller = useWalleyBoardController();
+  return (
+    <pre>{JSON.stringify(controller.actionItems.map((item) => item.key))}</pre>
+  );
+}
+
+test("keeps cross-project running AI reviews out of the inbox", () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+
+  queryClient.setQueryData(["health"], createHealth());
+  queryClient.setQueryData(["projects"], {
+    projects: [
+      createProject(),
+      createProject({
+        id: "project-2",
+        slug: "project-2",
+        name: "Project Two",
+      }),
+    ],
+  });
+  queryClient.setQueryData(["projects", "project-1", "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", "project-2", "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", "project-1", "tickets"], {
+    tickets: [],
+  });
+
+  const projectTwoTicket = createTicket();
+  queryClient.setQueryData(["projects", "project-2", "tickets"], {
+    tickets: [projectTwoTicket],
+  });
+  queryClient.setQueryData(["sessions", projectTwoTicket.session_id], {
+    session: createSession(),
+  });
+  queryClient.setQueryData(["tickets", projectTwoTicket.id, "review-run"], {
+    review_run: {
+      id: "review-run-31",
+      ticket_id: 31,
+      review_package_id: "review-package-31",
+      implementation_session_id: "session-31",
+      status: "running",
+      adapter_session_ref: null,
+      report: null,
+      failure_message: null,
+      created_at: "2026-04-03T00:05:00.000Z",
+      updated_at: "2026-04-03T00:05:00.000Z",
+      completed_at: null,
+    },
+  });
+
+  const markup = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <ActionItemsProbe />
+    </QueryClientProvider>,
+  );
+
+  assert.doesNotMatch(markup, /review-31/);
+});

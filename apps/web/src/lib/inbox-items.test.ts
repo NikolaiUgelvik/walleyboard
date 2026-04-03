@@ -177,6 +177,7 @@ test("derives mixed-project inbox items with project context and newest-first or
     tickets,
     sessionsById,
     ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[7, true]]),
   });
 
   assert.deepEqual(
@@ -239,6 +240,7 @@ test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
       ],
     ]),
     ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[23, true]]),
   });
 
   assert.deepEqual(items, [
@@ -310,6 +312,7 @@ test("hides review tickets with active linked pull requests from the inbox", () 
       ],
     ]),
     ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[23, true]]),
   });
 
   assert.deepEqual(
@@ -357,6 +360,7 @@ test("keeps review tickets without an active linked pull request in the inbox", 
       ],
     ]),
     ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[23, true]]),
   });
 
   assert.deepEqual(items, [
@@ -431,6 +435,38 @@ test("hides tickets from the inbox while an AI review run is running", () => {
       ],
     ]),
     ticketAiReviewActiveById: new Map([[24, true]]),
+    ticketAiReviewResolvedById: new Map([[24, true]]),
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("keeps review tickets out of the inbox until AI review status resolves", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 26,
+        status: "review",
+        session_id: "session-review-pending",
+        title: "Wait for AI review status before showing this",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-pending",
+        createSession({
+          id: "session-review-pending",
+          ticket_id: 26,
+          status: "completed",
+          last_summary:
+            "Implementation completed and AI review lookup is pending.",
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[26, false]]),
+    ticketAiReviewResolvedById: new Map([[26, false]]),
   });
 
   assert.deepEqual(items, []);
@@ -460,6 +496,7 @@ test("shows tickets in the inbox again after AI review completes when inbox rule
       ],
     ]),
     ticketAiReviewActiveById: new Map([[25, false]]),
+    ticketAiReviewResolvedById: new Map([[25, true]]),
   });
 
   assert.deepEqual(items, [

@@ -493,7 +493,11 @@ export function useWalleyBoardController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
-  const ticketAiReviewActiveById = useTicketAiReviewStatus(tickets);
+  const {
+    reviewRunQueriesSettled,
+    ticketAiReviewActiveById,
+    ticketAiReviewResolvedById,
+  } = useTicketAiReviewStatus(globalTickets);
   const selectedSessionTicketId =
     tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
     null;
@@ -530,13 +534,15 @@ export function useWalleyBoardController() {
     tickets: globalTickets,
     sessionsById: globalSessionById,
     ticketAiReviewActiveById,
+    ticketAiReviewResolvedById,
   });
   const actionItemKeys = actionItems.map((item) => item.key);
   const inboxQueriesSettled =
     projectsQuery.data !== undefined &&
     globalDraftsQueries.every((query) => !query.isPending) &&
     globalTicketsQueries.every((query) => !query.isPending) &&
-    globalSessionSummaries.every((query) => !query.isPending);
+    globalSessionSummaries.every((query) => !query.isPending) &&
+    reviewRunQueriesSettled;
   const { silenceNextInboxItemKey } = useInboxAlert({
     actionItemKeys,
     inboxQueriesSettled,
