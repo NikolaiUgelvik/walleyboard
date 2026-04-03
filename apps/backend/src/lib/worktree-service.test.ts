@@ -655,6 +655,91 @@ test("mergeReviewedBranch refreshes a remote target ref inside the ticket worktr
   }
 });
 
+test("mergeReviewedBranch imports the refreshed target branch into a self-contained workspace before merging", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-merge-self-contained-"),
+  );
+
+  try {
+    const remotePath = join(tempDir, "remote.git");
+    const repoPath = join(tempDir, "repo");
+    const worktreePath = join(tempDir, "ticket-worktree");
+    const updaterPath = join(tempDir, "updater");
+
+    execFileSync("git", ["init", "--bare", remotePath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    execFileSync("git", ["clone", remotePath, repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+    runGit(repoPath, ["push", "-u", "origin", "main"]);
+    execFileSync(
+      "git",
+      ["--git-dir", remotePath, "symbolic-ref", "HEAD", "refs/heads/main"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    execFileSync("git", ["clone", remotePath, worktreePath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(worktreePath);
+    runGit(worktreePath, ["checkout", "-b", "ticket-branch", "origin/main"]);
+    writeFileSync(join(worktreePath, "ticket.txt"), "ticket work\n", "utf8");
+    runGit(worktreePath, ["add", "ticket.txt"]);
+    runGit(worktreePath, ["commit", "-m", "ticket change"]);
+
+    execFileSync("git", ["clone", remotePath, updaterPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(updaterPath);
+    writeFileSync(
+      join(updaterPath, "upstream.txt"),
+      "upstream change\n",
+      "utf8",
+    );
+    runGit(updaterPath, ["add", "upstream.txt"]);
+    runGit(updaterPath, ["commit", "-m", "upstream change"]);
+    runGit(updaterPath, ["push", "origin", "main"]);
+
+    const result = await mergeReviewedBranch(
+      createRepositoryConfig(repoPath),
+      worktreePath,
+      "ticket-branch",
+      "origin/main",
+    );
+
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes(
+          `Imported refreshed main into ${worktreePath} as refs/walleyboard/merge-target/ticket-branch`,
+        ),
+      ),
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "upstream.txt"), "utf8"),
+      "upstream change\n",
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "ticket.txt"), "utf8"),
+      "ticket work\n",
+    );
+    assert.equal(
+      runGit(repoPath, ["log", "--format=%s", "-1"]),
+      "ticket change",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("mergeReviewedBranch uses the conflict resolver and completes the rebase before merging", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-conflict-"));
 
@@ -734,7 +819,112 @@ test("mergeReviewedBranch uses the conflict resolver and completes the rebase be
   }
 });
 
-test("mergeReviewedBranch lets the resolver catch up with an advancing target branch and finish the merge", async () => {
+test("mergeReviewedBranch catches up with a cleanly advancing target branch in backend git code", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-merge-clean-catchup-"),
+  );
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    const worktreePath = join(tempDir, "ticket-worktree");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "story.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "story.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "ticket-branch",
+      worktreePath,
+      "main",
+    ]);
+    configureGitIdentity(worktreePath);
+    writeFileSync(join(worktreePath, "story.txt"), "ticket change\n", "utf8");
+    runGit(worktreePath, ["add", "story.txt"]);
+    runGit(worktreePath, ["commit", "-m", "ticket change"]);
+
+    writeFileSync(join(repoPath, "story.txt"), "main change\n", "utf8");
+    runGit(repoPath, ["add", "story.txt"]);
+    runGit(repoPath, ["commit", "-m", "main change"]);
+
+    let resolverCalls = 0;
+
+    const result = await mergeReviewedBranch(
+      createRepositoryConfig(repoPath),
+      worktreePath,
+      "ticket-branch",
+      "main",
+      {
+        resolveConflicts: ({ recoveryKind, stage, conflictedFiles }) => {
+          resolverCalls += 1;
+
+          assert.equal(recoveryKind, "conflicts");
+          assert.equal(stage, "rebase");
+          assert.deepEqual(conflictedFiles, ["story.txt"]);
+          writeFileSync(
+            join(worktreePath, "story.txt"),
+            "main change\nticket change\n",
+            "utf8",
+          );
+          runGit(worktreePath, ["add", "story.txt"]);
+          runGit(
+            worktreePath,
+            ["-c", "core.editor=true", "rebase", "--continue"],
+            { GIT_EDITOR: "true" },
+          );
+
+          writeFileSync(
+            join(repoPath, "upstream.txt"),
+            "main follow-up\n",
+            "utf8",
+          );
+          runGit(repoPath, ["add", "upstream.txt"]);
+          runGit(repoPath, ["commit", "-m", "main follow-up"]);
+
+          return {
+            resolved: true,
+            logs: ["AI-assisted conflict resolution completed."],
+          };
+        },
+      },
+    );
+
+    assert.equal(resolverCalls, 1);
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes(
+          "Merged refreshed main changes from main into ticket-branch inside the ticket worktree",
+        ),
+      ),
+    );
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes(
+          "Retrying the final merge after updating ticket-branch with the latest main changes.",
+        ),
+      ),
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "story.txt"), "utf8"),
+      "main change\nticket change\n",
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "upstream.txt"), "utf8"),
+      "main follow-up\n",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("mergeReviewedBranch lets the resolver finish a target-branch catch-up only after backend git hits conflicts", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-retry-"));
 
   try {
@@ -811,23 +1001,19 @@ test("mergeReviewedBranch lets the resolver catch up with an advancing target br
           assert.equal(recoveryKind, "target_branch_advanced");
           assert.equal(resolverCalls, 2);
           assert.equal(stage, "merge");
-          assert.deepEqual(conflictedFiles, []);
+          assert.deepEqual(conflictedFiles, ["story.txt"]);
 
-          try {
-            runGit(worktreePath, ["merge", "main"]);
-          } catch {
-            writeFileSync(
-              join(worktreePath, "story.txt"),
-              "main rewrite\nticket change\n",
-              "utf8",
-            );
-            runGit(worktreePath, ["add", "story.txt"]);
-            runGit(
-              worktreePath,
-              ["-c", "core.editor=true", "merge", "--continue"],
-              { GIT_EDITOR: "true" },
-            );
-          }
+          writeFileSync(
+            join(worktreePath, "story.txt"),
+            "main rewrite\nticket change\n",
+            "utf8",
+          );
+          runGit(worktreePath, ["add", "story.txt"]);
+          runGit(
+            worktreePath,
+            ["-c", "core.editor=true", "merge", "--continue"],
+            { GIT_EDITOR: "true" },
+          );
 
           return {
             resolved: true,
@@ -841,6 +1027,13 @@ test("mergeReviewedBranch lets the resolver catch up with an advancing target br
     assert.ok(
       result.logs.some((line) =>
         line.includes("AI-assisted target-branch catch-up completed."),
+      ),
+    );
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes(
+          "Merging refreshed main into ticket-branch reported conflicts in story.txt",
+        ),
       ),
     );
     assert.ok(

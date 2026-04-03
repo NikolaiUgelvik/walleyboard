@@ -662,6 +662,11 @@ type RefreshedTargetBranch = {
   remoteTrackingRef: RemoteTrackingRef | null;
 };
 
+type WorktreeSyncedTargetBranch = {
+  logs: string[];
+  syncRef: string;
+};
+
 function refreshTargetBranch(
   repositoryPath: string,
   repository: RepositoryConfig,
@@ -743,6 +748,37 @@ function refreshTargetBranch(
     syncRef: normalizedTarget.localBranchName,
     mergeBackBranch: normalizedTarget.localBranchName,
     remoteTrackingRef: normalizedTarget.remoteTrackingRef,
+  };
+}
+
+function syncTargetBranchIntoWorktree(
+  repositoryPath: string,
+  worktreePath: string,
+  refreshedTarget: RefreshedTargetBranch,
+  workingBranch: string,
+): WorktreeSyncedTargetBranch {
+  if (!isSelfContainedWorkspace(worktreePath)) {
+    return {
+      logs: [],
+      syncRef: refreshedTarget.syncRef,
+    };
+  }
+
+  const importedRef = `refs/walleyboard/merge-target/${workingBranch.replace(/[^A-Za-z0-9/_-]+/g, "-")}`;
+  runGit(worktreePath, [
+    "fetch",
+    "--quiet",
+    repositoryPath,
+    `+${refreshedTarget.mergeBackBranch}:${importedRef}`,
+  ]);
+  const importedHead = runGit(worktreePath, ["rev-parse", importedRef]);
+
+  return {
+    logs: [
+      `Imported refreshed ${refreshedTarget.mergeBackBranch} into ${worktreePath} as ${importedRef}`,
+      `Worktree target sync ref after import: ${importedHead}`,
+    ],
+    syncRef: importedRef,
   };
 }
 
@@ -913,42 +949,61 @@ async function attemptTargetBranchCatchupWithRecovery(
   worktreePath: string,
   workingBranch: string,
   targetBranch: string,
+  targetSyncRef: string,
   resolveConflicts: MergeReviewedBranchOptions["resolveConflicts"] | undefined,
   failureMessage: string,
 ): Promise<{ logs: string[] }> {
   const logs: string[] = [];
 
-  if (!resolveConflicts) {
-    throw new AutomaticMergeRecoveryError(
-      "Direct merge could not keep up with target-branch updates.",
-      {
-        logs,
-        note: `The target branch ${targetBranch} kept advancing while merging ${workingBranch}. Continue from the existing worktree and branch.`,
-      },
+  try {
+    runGit(worktreePath, ["merge", "--no-edit", targetSyncRef]);
+    logs.push(
+      `Merged refreshed ${targetBranch} changes from ${targetSyncRef} into ${workingBranch} inside the ticket worktree`,
     );
-  }
+  } catch (error) {
+    const conflictedFiles = findConflictedFiles(worktreePath);
+    if (conflictedFiles.length === 0) {
+      throw error;
+    }
 
-  const resolution = await resolveConflicts({
-    worktreePath,
-    workingBranch,
-    targetBranch,
-    recoveryKind: "target_branch_advanced",
-    stage: "merge",
-    failureMessage,
-    conflictedFiles: [],
-  });
-  logs.push(...resolution.logs);
-
-  if (!resolution.resolved) {
-    throw new AutomaticMergeRecoveryError(
-      "Automatic merge recovery could not update the ticket branch to the latest target branch.",
-      {
-        logs,
-        note:
-          resolution.note ??
-          `Automatic merge recovery could not update ${workingBranch} with the latest ${targetBranch} changes.`,
-      },
+    logs.push(
+      `Merging refreshed ${targetBranch} into ${workingBranch} reported conflicts in ${formatFileList(
+        conflictedFiles,
+      )}`,
     );
+
+    if (!resolveConflicts) {
+      throw new AutomaticMergeRecoveryError(
+        "Direct merge could not keep up with target-branch updates.",
+        {
+          logs,
+          note: `The target branch ${targetBranch} kept advancing while merging ${workingBranch}. Continue from the existing worktree and branch.`,
+        },
+      );
+    }
+
+    const resolution = await resolveConflicts({
+      worktreePath,
+      workingBranch,
+      targetBranch,
+      recoveryKind: "target_branch_advanced",
+      stage: "merge",
+      failureMessage,
+      conflictedFiles,
+    });
+    logs.push(...resolution.logs);
+
+    if (!resolution.resolved) {
+      throw new AutomaticMergeRecoveryError(
+        "Automatic merge recovery could not update the ticket branch to the latest target branch.",
+        {
+          logs,
+          note:
+            resolution.note ??
+            `Automatic merge recovery could not update ${workingBranch} with the latest ${targetBranch} changes.`,
+        },
+      );
+    }
   }
 
   if (isRebaseInProgress(worktreePath) || isMergeInProgress(worktreePath)) {
@@ -1036,6 +1091,13 @@ export async function mergeReviewedBranch(
       targetBranch,
     );
     logs.push(...refreshedTarget.logs);
+    const worktreeTarget = syncTargetBranchIntoWorktree(
+      repository.path,
+      worktreePath,
+      refreshedTarget,
+      workingBranch,
+    );
+    logs.push(...worktreeTarget.logs);
 
     let rebaseResult: {
       logs: string[];
@@ -1043,11 +1105,11 @@ export async function mergeReviewedBranch(
     };
     if (
       skipRebaseOnNextAttempt &&
-      branchContainsRef(worktreePath, refreshedTarget.syncRef, workingBranch)
+      branchContainsRef(worktreePath, worktreeTarget.syncRef, workingBranch)
     ) {
       rebaseResult = {
         logs: [
-          `${workingBranch} already includes the refreshed ${refreshedTarget.syncRef} head. Skipping rebase before retrying the final merge.`,
+          `${workingBranch} already includes the refreshed ${worktreeTarget.syncRef} head. Skipping rebase before retrying the final merge.`,
         ],
         usedConflictResolution: false,
       };
@@ -1058,7 +1120,7 @@ export async function mergeReviewedBranch(
         rebaseResult = await attemptRebaseWithRecovery(
           worktreePath,
           workingBranch,
-          refreshedTarget.syncRef,
+          worktreeTarget.syncRef,
           targetBranch,
           conflictRecoveryUsed ? undefined : options.resolveConflicts,
           conflictRecoveryUsed,
@@ -1155,10 +1217,24 @@ export async function mergeReviewedBranch(
 
       if (isFastForwardFailure(error)) {
         if (!targetAdvanceRecoveryUsed) {
+          const refreshedTargetAfterAdvance = refreshTargetBranch(
+            repository.path,
+            repository,
+            targetBranch,
+          );
+          logs.push(...refreshedTargetAfterAdvance.logs);
+          const worktreeTargetAfterAdvance = syncTargetBranchIntoWorktree(
+            repository.path,
+            worktreePath,
+            refreshedTargetAfterAdvance,
+            workingBranch,
+          );
+          logs.push(...worktreeTargetAfterAdvance.logs);
           const recovery = await attemptTargetBranchCatchupWithRecovery(
             worktreePath,
             workingBranch,
-            refreshedTarget.syncRef,
+            targetBranch,
+            worktreeTargetAfterAdvance.syncRef,
             options.resolveConflicts,
             error instanceof Error
               ? error.message
