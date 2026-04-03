@@ -1014,6 +1014,7 @@ export function InspectorPane({
                           latestReviewRunPending={
                             controller.latestReviewRunQuery.isPending
                           }
+                          onOpenHistory={controller.openAgentReviewHistoryModal}
                           onStart={() => {
                             if (!selectedSessionTicket) {
                               return;

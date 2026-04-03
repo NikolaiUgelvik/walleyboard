@@ -12,13 +12,14 @@ import type {
 import { deriveInboxItems } from "./inbox-items.js";
 
 function createProject(overrides: Partial<Project> = {}): Project {
-  return {
+  const project: Project = {
     id: "project-1",
     slug: "project-1",
     name: "Project One",
     agent_adapter: "codex",
     execution_backend: "host",
     automatic_agent_review: false,
+    automatic_agent_review_run_limit: 1,
     default_review_action: "direct_merge",
     default_target_branch: "main",
     preview_start_command: null,
@@ -33,6 +34,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     updated_at: "2026-04-01T10:00:00.000Z",
     ...overrides,
   };
+  return project;
 }
 
 function createTicket(

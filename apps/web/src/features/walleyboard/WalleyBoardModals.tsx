@@ -5,6 +5,7 @@ import {
   Group,
   Loader,
   Modal,
+  NumberInput,
   SegmentedControl,
   Select,
   Stack,
@@ -13,7 +14,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-
+import { AgentReviewHistoryModal } from "../../components/AgentReviewHistoryModal.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
@@ -247,6 +248,19 @@ export function WalleyBoardModals({
         </Stack>
       </Modal>
 
+      <AgentReviewHistoryModal
+        opened={controller.agentReviewHistoryModalOpen}
+        onClose={controller.closeAgentReviewHistoryModal}
+        ticketId={controller.selectedSessionTicket?.id ?? null}
+        reviewRuns={controller.reviewRuns}
+        reviewRunsError={
+          controller.reviewRunsQuery.isError
+            ? controller.reviewRunsQuery.error.message
+            : null
+        }
+        reviewRunsPending={controller.reviewRunsQuery.isPending}
+      />
+
       <Modal
         opened={projectOptionsProject !== null}
         onClose={controller.closeProjectOptionsModal}
@@ -381,6 +395,28 @@ export function WalleyBoardModals({
                     controller.updateProjectMutation.reset();
                     controller.setProjectOptionsAutomaticAgentReview(
                       event.currentTarget.checked,
+                    );
+                  }}
+                />
+                <NumberInput
+                  label="Automatic AI review run limit"
+                  description="When this many automatic review runs have been launched for a ticket, further review runs require a manual start."
+                  min={1}
+                  allowDecimal={false}
+                  value={controller.projectOptionsAutomaticAgentReviewRunLimit}
+                  onChange={(value) => {
+                    if (
+                      typeof value !== "number" ||
+                      !Number.isFinite(value) ||
+                      value < 1
+                    ) {
+                      return;
+                    }
+
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsAutomaticAgentReviewRunLimit(
+                      Math.trunc(value),
                     );
                   }}
                 />

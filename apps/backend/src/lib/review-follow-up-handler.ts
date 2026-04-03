@@ -1,4 +1,7 @@
-import type { AgentReviewService } from "./agent-review-service.js";
+import {
+  type AgentReviewService,
+  AutomaticReviewRunLimitReachedError,
+} from "./agent-review-service.js";
 import type { GitHubPullRequestService } from "./github-pull-request-service.js";
 
 type ReviewFollowUpInput = Parameters<
@@ -26,15 +29,23 @@ export async function runReviewFollowUp(
   if (input.project.automatic_agent_review) {
     try {
       if (!agentReviewService.hasActiveReviewLoop(input.ticket.id)) {
-        agentReviewService.startReviewLoop(input.ticket.id);
+        agentReviewService.startReviewLoop(input.ticket.id, {
+          trigger: "automatic",
+        });
       }
     } catch (error) {
-      failures.push(
-        `Automatic agent review could not start: ${toErrorMessage(
-          error,
-          "Unknown error",
-        )}`,
-      );
+      if (error instanceof AutomaticReviewRunLimitReachedError) {
+        // Reaching the cap is an expected stop condition. The review remains in
+        // the ticket detail, where the user can continue manually.
+        // Keep the rest of the follow-up path running.
+      } else {
+        failures.push(
+          `Automatic agent review could not start: ${toErrorMessage(
+            error,
+            "Unknown error",
+          )}`,
+        );
+      }
     }
   }
 

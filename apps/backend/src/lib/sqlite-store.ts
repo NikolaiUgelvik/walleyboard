@@ -188,6 +188,14 @@ export class SqliteStore implements Store {
     return this.#reviews.getLatestReviewRun(ticketId);
   }
 
+  listReviewRuns(ticketId: number): ReviewRun[] {
+    return this.#reviews.listReviewRuns(ticketId);
+  }
+
+  countAutomaticReviewRuns(ticketId: number): number {
+    return this.#reviews.countAutomaticReviewRuns(ticketId);
+  }
+
   startTicket(
     ticketId: number,
     planningEnabled: boolean,

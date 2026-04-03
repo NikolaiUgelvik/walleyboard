@@ -7,6 +7,7 @@ import { MarkdownContent } from "./MarkdownContent.js";
 type AgentReviewPanelProps = {
   latestReviewRun: ReviewRun | null;
   latestReviewRunPending: boolean;
+  onOpenHistory: () => void;
   onStart: () => void;
   startError: string | null;
   startPending: boolean;
@@ -15,6 +16,7 @@ type AgentReviewPanelProps = {
 export function AgentReviewPanel({
   latestReviewRun,
   latestReviewRunPending,
+  onOpenHistory,
   onStart,
   startError,
   startPending,
@@ -23,17 +25,22 @@ export function AgentReviewPanel({
     <Stack gap="xs">
       <Group justify="space-between" align="center">
         <Text fw={700}>Agent review</Text>
-        <Button
-          size="xs"
-          variant="light"
-          loading={startPending}
-          disabled={latestReviewRun?.status === "running"}
-          onClick={onStart}
-        >
-          {latestReviewRun?.status === "running"
-            ? "Review running"
-            : "Run agent review"}
-        </Button>
+        <Group gap="xs">
+          <Button size="xs" variant="default" onClick={onOpenHistory}>
+            Review history
+          </Button>
+          <Button
+            size="xs"
+            variant="light"
+            loading={startPending}
+            disabled={latestReviewRun?.status === "running"}
+            onClick={onStart}
+          >
+            {latestReviewRun?.status === "running"
+              ? "Review running"
+              : "Run agent review"}
+          </Button>
+        </Group>
       </Group>
       {latestReviewRunPending && !latestReviewRun ? <Loader size="sm" /> : null}
       {latestReviewRun ? (

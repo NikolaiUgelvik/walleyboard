@@ -104,6 +104,9 @@ async function createApp(
     getLatestReviewRun() {
       return null;
     },
+    listReviewRuns() {
+      return [];
+    },
     getReviewPackage() {
       return null;
     },
@@ -167,6 +170,7 @@ function createProject(): Project {
     agent_adapter: "codex",
     execution_backend: "host",
     automatic_agent_review: false,
+    automatic_agent_review_run_limit: 1,
     default_review_action: "direct_merge",
     default_target_branch: "main",
     preview_start_command: null,
@@ -248,6 +252,96 @@ function createSession(
     ...overrides,
   };
 }
+
+test("review-runs route returns the full review history for a ticket", async () => {
+  const app = await createApp({
+    store: {
+      listReviewRuns(ticketId: number) {
+        if (ticketId !== 9) {
+          return [];
+        }
+
+        return [
+          {
+            id: "review-run-1",
+            ticket_id: 9,
+            review_package_id: "review-package-1",
+            implementation_session_id: "session-9",
+            status: "completed",
+            adapter_session_ref: "adapter-session-1",
+            report: {
+              summary: "The first review summary stays available.",
+              strengths: [],
+              actionable_findings: [],
+            },
+            failure_message: null,
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:01:00.000Z",
+            completed_at: "2026-04-02T00:01:00.000Z",
+          },
+          {
+            id: "review-run-2",
+            ticket_id: 9,
+            review_package_id: "review-package-2",
+            implementation_session_id: "session-9",
+            status: "running",
+            adapter_session_ref: null,
+            report: null,
+            failure_message: null,
+            created_at: "2026-04-02T00:02:00.000Z",
+            updated_at: "2026-04-02T00:02:00.000Z",
+            completed_at: null,
+          },
+        ];
+      },
+    } as never,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/tickets/9/review-runs",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), {
+      review_runs: [
+        {
+          id: "review-run-1",
+          ticket_id: 9,
+          review_package_id: "review-package-1",
+          implementation_session_id: "session-9",
+          status: "completed",
+          adapter_session_ref: "adapter-session-1",
+          report: {
+            summary: "The first review summary stays available.",
+            strengths: [],
+            actionable_findings: [],
+          },
+          failure_message: null,
+          created_at: "2026-04-02T00:00:00.000Z",
+          updated_at: "2026-04-02T00:01:00.000Z",
+          completed_at: "2026-04-02T00:01:00.000Z",
+        },
+        {
+          id: "review-run-2",
+          ticket_id: 9,
+          review_package_id: "review-package-2",
+          implementation_session_id: "session-9",
+          status: "running",
+          adapter_session_ref: null,
+          report: null,
+          failure_message: null,
+          created_at: "2026-04-02T00:02:00.000Z",
+          updated_at: "2026-04-02T00:02:00.000Z",
+          completed_at: null,
+        },
+      ],
+    });
+  } finally {
+    await app.close();
+  }
+});
 
 test("workspace preview stop waits for preview shutdown before returning idle", async () => {
   const callOrder: string[] = [];

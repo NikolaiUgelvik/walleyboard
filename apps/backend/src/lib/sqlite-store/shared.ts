@@ -228,6 +228,10 @@ export function mapProject(row: Record<string, unknown>): Project {
           : "codex",
     execution_backend: row.execution_backend === "docker" ? "docker" : "host",
     automatic_agent_review: Number(row.automatic_agent_review) === 1,
+    automatic_agent_review_run_limit: Math.max(
+      1,
+      Number(row.automatic_agent_review_run_limit ?? 1),
+    ),
     default_review_action: normalizeReviewAction(
       row.default_review_action as ReviewAction | null | undefined,
     ),
@@ -575,6 +579,7 @@ export class SqliteStoreContext {
         agent_adapter TEXT NOT NULL DEFAULT 'codex',
         execution_backend TEXT NOT NULL DEFAULT 'host',
         automatic_agent_review INTEGER NOT NULL DEFAULT 0,
+        automatic_agent_review_run_limit INTEGER NOT NULL DEFAULT 1,
         default_review_action TEXT NOT NULL DEFAULT 'direct_merge',
         default_target_branch TEXT,
         preview_start_command TEXT,
@@ -703,6 +708,7 @@ export class SqliteStoreContext {
         ticket_id INTEGER NOT NULL,
         review_package_id TEXT NOT NULL,
         implementation_session_id TEXT NOT NULL,
+        trigger_source TEXT NOT NULL DEFAULT 'manual',
         status TEXT NOT NULL,
         adapter_session_ref TEXT,
         report TEXT,
@@ -792,11 +798,22 @@ export class SqliteStoreContext {
       "automatic_agent_review",
       "INTEGER NOT NULL DEFAULT 0",
     );
+    this.#ensureColumn(
+      "projects",
+      "automatic_agent_review_run_limit",
+      "INTEGER NOT NULL DEFAULT 1",
+    );
+    this.#ensureColumn(
+      "review_runs",
+      "trigger_source",
+      "TEXT NOT NULL DEFAULT 'manual'",
+    );
     this.#backfillArtifactScopes();
     this.#backfillAgentAdapterDefaults();
     this.#backfillProjectConcurrencyDefaults();
     this.#backfillProjectExecutionBackendDefaults();
     this.#backfillProjectAutomaticAgentReviewDefaults();
+    this.#backfillProjectAutomaticAgentReviewRunLimitDefaults();
     this.#backfillProjectReviewActionDefaults();
     this.#backfillTicketContext();
   }
@@ -942,6 +959,19 @@ export class SqliteStoreContext {
           UPDATE projects
           SET automatic_agent_review = 0
           WHERE automatic_agent_review IS NULL
+        `,
+      )
+      .run();
+  }
+
+  #backfillProjectAutomaticAgentReviewRunLimitDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET automatic_agent_review_run_limit = 1
+          WHERE automatic_agent_review_run_limit IS NULL
+             OR automatic_agent_review_run_limit < 1
         `,
       )
       .run();

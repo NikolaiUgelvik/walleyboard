@@ -140,6 +140,21 @@ export function registerTicketReadWorkspaceRoutes(
   );
 
   app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/review-runs",
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      return {
+        review_runs: store.listReviewRuns(ticketId),
+      };
+    },
+  );
+
+  app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/events",
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);

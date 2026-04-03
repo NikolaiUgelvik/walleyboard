@@ -70,11 +70,11 @@ export class ProjectRepository {
         `
           INSERT INTO projects (
             id, slug, name, agent_adapter, execution_backend, automatic_agent_review, default_target_branch, pre_worktree_command,
-            post_worktree_command, preview_start_command, default_review_action,
+            automatic_agent_review_run_limit, post_worktree_command, preview_start_command, default_review_action,
             draft_analysis_model, draft_analysis_reasoning_effort,
             ticket_work_model, ticket_work_reasoning_effort,
             max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -86,6 +86,7 @@ export class ProjectRepository {
         0,
         defaultTargetBranch,
         null,
+        1,
         null,
         null,
         "direct_merge",
@@ -173,6 +174,10 @@ export class ProjectRepository {
       input.automatic_agent_review === undefined
         ? project.automatic_agent_review
         : input.automatic_agent_review;
+    const automaticAgentReviewRunLimit =
+      input.automatic_agent_review_run_limit === undefined
+        ? project.automatic_agent_review_run_limit
+        : Math.max(1, input.automatic_agent_review_run_limit);
     const previewStartCommand =
       input.preview_start_command === undefined
         ? project.preview_start_command
@@ -221,6 +226,7 @@ export class ProjectRepository {
           SET agent_adapter = ?,
               execution_backend = ?,
               automatic_agent_review = ?,
+              automatic_agent_review_run_limit = ?,
               default_review_action = ?,
               preview_start_command = ?,
               pre_worktree_command = ?,
@@ -237,6 +243,7 @@ export class ProjectRepository {
         agentAdapter,
         executionBackend,
         automaticAgentReview ? 1 : 0,
+        automaticAgentReviewRunLimit,
         defaultReviewAction,
         previewStartCommand,
         preWorktreeCommand,

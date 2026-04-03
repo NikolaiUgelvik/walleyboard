@@ -177,6 +177,7 @@ export function useWalleyBoardMutations({
       projectId: string;
       executionBackend: ExecutionBackend;
       automaticAgentReview: boolean;
+      automaticAgentReviewRunLimit: number;
       defaultReviewAction: ReviewAction;
       previewStartCommand: string | null;
       preWorktreeCommand: string | null;
@@ -194,6 +195,7 @@ export function useWalleyBoardMutations({
         agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
         automatic_agent_review: input.automaticAgentReview,
+        automatic_agent_review_run_limit: input.automaticAgentReviewRunLimit,
         default_review_action: input.defaultReviewAction,
         preview_start_command: input.previewStartCommand,
         pre_worktree_command: input.preWorktreeCommand,
@@ -874,6 +876,9 @@ export function useWalleyBoardMutations({
         }),
         queryClient.invalidateQueries({
           queryKey: ["tickets", ticketId, "review-run"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-runs"],
         }),
       ]);
     },

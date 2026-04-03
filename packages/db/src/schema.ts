@@ -8,6 +8,9 @@ export const projectsTable = sqliteTable("projects", {
   defaultReviewAction: text("default_review_action")
     .notNull()
     .default("direct_merge"),
+  automaticAgentReviewRunLimit: integer("automatic_agent_review_run_limit")
+    .notNull()
+    .default(1),
   defaultTargetBranch: text("default_target_branch"),
   previewStartCommand: text("preview_start_command"),
   preWorktreeCommand: text("pre_worktree_command"),
@@ -134,6 +137,7 @@ export const reviewRunsTable = sqliteTable("review_runs", {
   ticketId: integer("ticket_id").notNull(),
   reviewPackageId: text("review_package_id").notNull(),
   implementationSessionId: text("implementation_session_id").notNull(),
+  triggerSource: text("trigger_source").notNull().default("manual"),
   status: text("status").notNull(),
   adapterSessionRef: text("adapter_session_ref"),
   report: text("report", { mode: "json" }),

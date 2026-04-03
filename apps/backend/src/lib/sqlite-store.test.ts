@@ -255,6 +255,96 @@ test("updateProject persists automatic agent review changes", () => {
   }
 });
 
+test("review run history persists across reloads in chronological order", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runs-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Review Runs",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started review history session"],
+    });
+
+    const firstPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket-1.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Initial implementation",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    const firstRun = store.createReviewRun({
+      ticket_id: ticket.id,
+      review_package_id: firstPackage.id,
+      implementation_session_id: started.session.id,
+      trigger_source: "automatic",
+    });
+    store.updateReviewRun(firstRun.id, {
+      status: "completed",
+      report: {
+        summary: "The first review finished with one finding.",
+        strengths: [],
+        actionable_findings: [],
+      },
+    });
+
+    const secondPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket-2.patch",
+      commit_refs: ["def456"],
+      change_summary: "Follow-up implementation",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    const secondRun = store.createReviewRun({
+      ticket_id: ticket.id,
+      review_package_id: secondPackage.id,
+      implementation_session_id: started.session.id,
+    });
+    store.updateReviewRun(secondRun.id, {
+      status: "completed",
+      report: {
+        summary: "The second review finished cleanly.",
+        strengths: [],
+        actionable_findings: [],
+      },
+    });
+
+    const reloadedStore = new SqliteStore(databasePath);
+    const reviewRuns = reloadedStore.listReviewRuns(ticket.id);
+
+    assert.equal(reviewRuns.length, 2);
+    assert.deepEqual(
+      reviewRuns.map((reviewRun) => reviewRun.id),
+      [firstRun.id, secondRun.id],
+    );
+    assert.equal(
+      reviewRuns[0]?.report?.summary,
+      "The first review finished with one finding.",
+    );
+    assert.equal(
+      reviewRuns[1]?.report?.summary,
+      "The second review finished cleanly.",
+    );
+    assert.equal(reloadedStore.countAutomaticReviewRuns(ticket.id), 1);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("updateProject persists preview start command changes", () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-project-preview-command-"),

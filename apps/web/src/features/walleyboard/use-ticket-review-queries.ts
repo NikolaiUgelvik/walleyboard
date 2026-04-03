@@ -6,6 +6,7 @@ import {
   fetchOptionalJson,
   type ReviewPackageResponse,
   type ReviewRunResponse,
+  type ReviewRunsResponse,
   type TicketWorkspaceDiffResponse,
   type WorkspaceModalKind,
 } from "./shared.js";
@@ -44,6 +45,22 @@ export function useTicketReviewQueries(input: {
     retry: false,
   });
 
+  const reviewRunsQuery = useQuery({
+    queryKey: ["tickets", input.selectedSessionTicketId, "review-runs"],
+    queryFn: () =>
+      fetchJson<ReviewRunsResponse>(
+        `/tickets/${input.selectedSessionTicketId}/review-runs`,
+      ),
+    enabled:
+      input.selectedSessionTicketId !== null &&
+      input.selectedSessionTicketStatus === "review",
+    refetchInterval:
+      input.selectedSessionTicketId !== null &&
+      input.selectedSessionTicketStatus === "review"
+        ? 2_000
+        : false,
+  });
+
   const ticketWorkspaceDiffQuery = useQuery({
     queryKey: ["tickets", input.selectedWorkspaceTicketId, "workspace", "diff"],
     queryFn: () =>
@@ -58,6 +75,7 @@ export function useTicketReviewQueries(input: {
 
   return {
     latestReviewRunQuery,
+    reviewRunsQuery,
     reviewPackageQuery,
     ticketWorkspaceDiffQuery,
   };

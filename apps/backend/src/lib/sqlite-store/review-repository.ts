@@ -85,7 +85,34 @@ export class ReviewRepository {
     return row ? mapReviewRun(row) : undefined;
   }
 
-  createReviewRun(input: CreateReviewRunInput): ReviewRun {
+  listReviewRuns(ticketId: number): ReviewRun[] {
+    const rows = this.context.db
+      .prepare(
+        "SELECT * FROM review_runs WHERE ticket_id = ? ORDER BY created_at ASC, id ASC",
+      )
+      .all(ticketId) as Record<string, unknown>[];
+    return rows.map(mapReviewRun);
+  }
+
+  countAutomaticReviewRuns(ticketId: number): number {
+    const row = this.context.db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM review_runs
+          WHERE ticket_id = ?
+            AND trigger_source = 'automatic'
+        `,
+      )
+      .get(ticketId) as { count: number };
+    return Number(row.count);
+  }
+
+  createReviewRun(
+    input: CreateReviewRunInput & {
+      trigger_source?: "automatic" | "manual";
+    },
+  ): ReviewRun {
     const id = nanoid();
     const timestamp = nowIso();
 
@@ -93,9 +120,9 @@ export class ReviewRepository {
       .prepare(
         `
           INSERT INTO review_runs (
-            id, ticket_id, review_package_id, implementation_session_id, status,
+            id, ticket_id, review_package_id, implementation_session_id, trigger_source, status,
             adapter_session_ref, report, failure_message, created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -103,6 +130,7 @@ export class ReviewRepository {
         input.ticket_id,
         input.review_package_id,
         input.implementation_session_id,
+        input.trigger_source ?? "manual",
         "running",
         null,
         null,

@@ -144,6 +144,7 @@ export const projectSchema = z.object({
   agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
   automatic_agent_review: z.boolean(),
+  automatic_agent_review_run_limit: z.number().int().positive(),
   default_review_action: reviewActionSchema,
   default_target_branch: z.string().min(1).nullable(),
   preview_start_command: z.string().min(1).nullable(),

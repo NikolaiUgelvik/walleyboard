@@ -84,6 +84,7 @@ export type CreateReviewRunInput = {
   ticket_id: number;
   review_package_id: string;
   implementation_session_id: string;
+  trigger_source?: "automatic" | "manual";
 };
 
 export type UpdateReviewRunInput = {
@@ -154,6 +155,8 @@ export interface Store {
   getTicket(ticketId: number): TicketFrontmatter | undefined;
   getReviewPackage(ticketId: number): ReviewPackage | undefined;
   getLatestReviewRun(ticketId: number): ReviewRun | undefined;
+  listReviewRuns(ticketId: number): ReviewRun[];
+  countAutomaticReviewRuns(ticketId: number): number;
   startTicket(
     ticketId: number,
     planningEnabled: boolean,

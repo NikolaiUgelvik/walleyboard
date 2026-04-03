@@ -19,6 +19,7 @@ import {
   resolveDraftEditorSync,
 } from "../../lib/draft-editor-sync.js";
 import { deriveInboxItems } from "../../lib/inbox-items.js";
+import { useAgentReviewHistoryModalState } from "./agent-review-history-modal-state.js";
 import {
   useDraftRefinementActivity,
   useGlobalDrafts,
@@ -103,6 +104,10 @@ export function useWalleyBoardController() {
     projectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReview,
   ] = useState(false);
+  const [
+    projectOptionsAutomaticAgentReviewRunLimit,
+    setProjectOptionsAutomaticAgentReviewRunLimit,
+  ] = useState(1);
   const [
     projectOptionsDefaultReviewAction,
     setProjectOptionsDefaultReviewAction,
@@ -519,14 +524,26 @@ export function useWalleyBoardController() {
     projectsQuery.data?.projects.find(
       (project) => project.id === projectOptionsProjectId,
     ) ?? null;
+  const {
+    agentReviewHistoryModalOpen,
+    closeAgentReviewHistoryModal,
+    openAgentReviewHistoryModal,
+  } = useAgentReviewHistoryModalState({
+    inspectorKind: inspectorState.kind,
+    selectedSessionTicketStatus,
+  });
 
-  const { reviewPackageQuery, latestReviewRunQuery, ticketWorkspaceDiffQuery } =
-    useTicketReviewQueries({
-      selectedSessionTicketId,
-      selectedSessionTicketStatus,
-      selectedWorkspaceTicketId,
-      workspaceModal,
-    });
+  const {
+    reviewPackageQuery,
+    latestReviewRunQuery,
+    reviewRunsQuery,
+    ticketWorkspaceDiffQuery,
+  } = useTicketReviewQueries({
+    selectedSessionTicketId,
+    selectedSessionTicketStatus,
+    selectedWorkspaceTicketId,
+    workspaceModal,
+  });
 
   const globalSessionById = new Map(
     globalSessionSummaries
@@ -641,6 +658,8 @@ export function useWalleyBoardController() {
         projectOptionsProject.execution_backend ||
       projectOptionsAutomaticAgentReview !==
         projectOptionsProject.automatic_agent_review ||
+      projectOptionsAutomaticAgentReviewRunLimit !==
+        projectOptionsProject.automatic_agent_review_run_limit ||
       projectOptionsDefaultReviewAction !==
         projectOptionsProject.default_review_action ||
       projectOptionsPreviewStartCommandValue !==
@@ -730,6 +749,7 @@ export function useWalleyBoardController() {
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
   const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
+  const reviewRuns = reviewRunsQuery.data?.review_runs ?? [];
   const ticketWorkspaceDiff =
     ticketWorkspaceDiffQuery.data?.workspace_diff ?? null;
   const sessionById = new Map(
@@ -1018,6 +1038,7 @@ export function useWalleyBoardController() {
     setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
     setProjectOptionsAutomaticAgentReview(false);
+    setProjectOptionsAutomaticAgentReviewRunLimit(1);
     setProjectOptionsDefaultReviewAction("direct_merge");
     setProjectOptionsPreviewStartCommand("");
     setProjectOptionsRepositoryTargetBranches({});
@@ -1039,6 +1060,9 @@ export function useWalleyBoardController() {
     setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
     setProjectOptionsAutomaticAgentReview(project.automatic_agent_review);
+    setProjectOptionsAutomaticAgentReviewRunLimit(
+      project.automatic_agent_review_run_limit,
+    );
     setProjectOptionsDefaultReviewAction(project.default_review_action);
     setProjectOptionsDraftModelPreset(
       resolveProjectModelPreset(project.draft_analysis_model),
@@ -1125,6 +1149,7 @@ export function useWalleyBoardController() {
           ? "host"
           : projectOptionsExecutionBackend,
       automaticAgentReview: projectOptionsAutomaticAgentReview,
+      automaticAgentReviewRunLimit: projectOptionsAutomaticAgentReviewRunLimit,
       defaultReviewAction: projectOptionsDefaultReviewAction,
       previewStartCommand: projectOptionsPreviewStartCommandValue,
       preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
@@ -1279,6 +1304,7 @@ export function useWalleyBoardController() {
   return {
     ...mutations,
     actionItems,
+    agentReviewHistoryModalOpen,
     archiveActionFeedback,
     archiveModalOpen,
     archiveDoneTickets,
@@ -1291,6 +1317,7 @@ export function useWalleyBoardController() {
     canDeleteProject,
     capturePendingDraftEditorSync,
     closeArchiveModal,
+    closeAgentReviewHistoryModal,
     closeProjectOptionsModal,
     defaultBranch,
     deleteTicket,
@@ -1335,6 +1362,7 @@ export function useWalleyBoardController() {
     latestQuestionsResult,
     latestRevertableRefineEvent,
     openArchiveModal,
+    openAgentReviewHistoryModal,
     openArchivedTicketDiff,
     openSelectedRepositoryWorkspaceTerminal,
     openTicketWorkspaceModal,
@@ -1353,6 +1381,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchesByRepositoryId,
     projectOptionsBranchesQuery,
     projectOptionsAutomaticAgentReview,
+    projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsDefaultReviewAction,
     projectOptionsDirty,
     projectOptionsAgentAdapter,
@@ -1397,6 +1426,8 @@ export function useWalleyBoardController() {
     latestReviewRunQuery,
     reviewPackage,
     reviewPackageQuery,
+    reviewRuns,
+    reviewRunsQuery,
     saveProjectOptions,
     selectProject,
     selectedDraft,
@@ -1434,6 +1465,7 @@ export function useWalleyBoardController() {
     setProjectName,
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
+    setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsDefaultReviewAction,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,

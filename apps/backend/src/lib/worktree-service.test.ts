@@ -86,6 +86,7 @@ function createProject(slug: string): Project {
     agent_adapter: "codex",
     execution_backend: "host",
     automatic_agent_review: false,
+    automatic_agent_review_run_limit: 1,
     default_review_action: "direct_merge",
     default_target_branch: "main",
     preview_start_command: null,

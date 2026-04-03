@@ -239,6 +239,10 @@ export type ReviewRunResponse = {
   review_run: ReviewRun;
 };
 
+export type ReviewRunsResponse = {
+  review_runs: ReviewRun[];
+};
+
 export type NewDraftAction = "save" | "refine" | "questions" | "confirm";
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
@@ -600,6 +604,7 @@ export async function saveProjectOptionsRequest(
     agent_adapter: AgentAdapter;
     execution_backend: ExecutionBackend;
     automatic_agent_review: boolean;
+    automatic_agent_review_run_limit: number;
     default_review_action: ReviewAction;
     preview_start_command: string | null;
     pre_worktree_command: string | null;

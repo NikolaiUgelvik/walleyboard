@@ -30,6 +30,17 @@ type ReviewLoopContext = {
   ticket: TicketFrontmatter;
 };
 
+type ReviewLoopTrigger = "automatic" | "manual";
+
+export class AutomaticReviewRunLimitReachedError extends Error {
+  constructor(limit: number) {
+    super(
+      `Automatic agent review run limit (${limit}) reached for this ticket.`,
+    );
+    this.name = "AutomaticReviewRunLimitReachedError";
+  }
+}
+
 export class AgentReviewService {
   readonly #eventHub: EventHub;
   readonly #executionRuntime: ExecutionRuntime;
@@ -50,7 +61,12 @@ export class AgentReviewService {
     return this.#activeTicketIds.has(ticketId);
   }
 
-  startReviewLoop(ticketId: number): ReviewRun {
+  startReviewLoop(
+    ticketId: number,
+    options?: {
+      trigger?: ReviewLoopTrigger;
+    },
+  ): ReviewRun {
     if (this.#activeTicketIds.has(ticketId)) {
       throw new Error("Agent review is already running for this ticket");
     }
@@ -65,11 +81,8 @@ export class AgentReviewService {
     }
 
     const context = this.#loadReviewLoopContext(ticketId);
-    const reviewRun = this.#store.createReviewRun({
-      ticket_id: ticketId,
-      review_package_id: context.reviewPackage.id,
-      implementation_session_id: context.session.id,
-    });
+    const trigger = options?.trigger ?? "manual";
+    const reviewRun = this.#createReviewRun(context, trigger);
 
     this.#activeTicketIds.add(ticketId);
     this.#appendSessionOutput(
@@ -78,7 +91,7 @@ export class AgentReviewService {
       `Starting separate agent review session for review package ${context.reviewPackage.id}.`,
     );
 
-    void this.#runLoop(ticketId, context, reviewRun).finally(() => {
+    void this.#runLoop(ticketId, context, reviewRun, trigger).finally(() => {
       this.#activeTicketIds.delete(ticketId);
     });
 
@@ -89,6 +102,7 @@ export class AgentReviewService {
     ticketId: number,
     initialContext: ReviewLoopContext,
     initialReviewRun: ReviewRun,
+    trigger: ReviewLoopTrigger,
   ): Promise<void> {
     let context = initialContext;
     let reviewRun = initialReviewRun;
@@ -152,17 +166,17 @@ export class AgentReviewService {
         }
 
         context = nextContext;
-        reviewRun = this.#store.createReviewRun({
-          ticket_id: ticketId,
-          review_package_id: context.reviewPackage.id,
-          implementation_session_id: context.session.id,
-        });
+        reviewRun = this.#createReviewRun(context, trigger);
         this.#appendSessionOutput(
           context.session.id,
           context.session.current_attempt_id,
           `Starting separate agent review session for review package ${context.reviewPackage.id}.`,
         );
       } catch (error) {
+        if (error instanceof AutomaticReviewRunLimitReachedError) {
+          return;
+        }
+
         const message =
           error instanceof Error
             ? error.message
@@ -261,6 +275,36 @@ export class AgentReviewService {
     }
 
     return null;
+  }
+
+  #createReviewRun(
+    context: ReviewLoopContext,
+    trigger: ReviewLoopTrigger,
+  ): ReviewRun {
+    if (trigger === "automatic") {
+      const automaticRunCount = this.#store.countAutomaticReviewRuns(
+        context.ticket.id,
+      );
+      if (
+        automaticRunCount >= context.project.automatic_agent_review_run_limit
+      ) {
+        this.#appendSessionOutput(
+          context.session.id,
+          context.session.current_attempt_id,
+          `Automatic agent review run limit reached (${context.project.automatic_agent_review_run_limit}). Start agent review manually to continue.`,
+        );
+        throw new AutomaticReviewRunLimitReachedError(
+          context.project.automatic_agent_review_run_limit,
+        );
+      }
+    }
+
+    return this.#store.createReviewRun({
+      ticket_id: context.ticket.id,
+      review_package_id: context.reviewPackage.id,
+      implementation_session_id: context.session.id,
+      trigger_source: trigger,
+    });
   }
 
   #formatRequestedChanges(report: ReviewReport): string {

@@ -37,6 +37,7 @@ export const updateProjectInputSchema = z.object({
   agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),
   automatic_agent_review: z.boolean().optional(),
+  automatic_agent_review_run_limit: z.number().int().positive().optional(),
   default_review_action: reviewActionSchema.optional(),
   preview_start_command: z.string().min(1).nullable().optional(),
   pre_worktree_command: z.string().min(1).nullable().optional(),
@@ -204,6 +205,10 @@ export const reviewPackageResponseSchema = z.object({
 
 export const reviewRunResponseSchema = z.object({
   review_run: reviewRunSchema,
+});
+
+export const reviewRunsResponseSchema = z.object({
+  review_runs: z.array(reviewRunSchema),
 });
 
 export const ticketEventsResponseSchema = z.object({
