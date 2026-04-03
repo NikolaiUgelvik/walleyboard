@@ -780,16 +780,6 @@ export function useWalleyBoardController() {
       ? ticketsQuery.error.message
       : null;
 
-  const runningSessionCount = Array.from(sessionById.values()).filter(
-    (activeSession) => activeSession.status === "running",
-  ).length;
-  const queuedSessionCount = Array.from(sessionById.values()).filter(
-    (activeSession) => activeSession.status === "queued",
-  ).length;
-  const reviewCount = tickets.filter(
-    (ticket) => ticket.status === "review",
-  ).length;
-
   const capturePendingDraftEditorSync = (input: {
     draftId: string;
     sourceUpdatedAt: string | null;
@@ -1397,7 +1387,6 @@ export function useWalleyBoardController() {
     projectOptionsTicketReasoningEffort,
     projectOptionsTicketReasoningEffortValue,
     projectsQuery,
-    queuedSessionCount,
     refreshProjectOptionsBranches,
     repositories,
     repositoriesQuery,
@@ -1412,10 +1401,8 @@ export function useWalleyBoardController() {
     resumeReason,
     latestReviewRun,
     latestReviewRunQuery,
-    reviewCount,
     reviewPackage,
     reviewPackageQuery,
-    runningSessionCount,
     saveProjectOptions,
     selectProject,
     selectedDraft,
