@@ -10,7 +10,6 @@ import {
   Select,
   Stack,
   Switch,
-  Tabs,
   Text,
   Textarea,
   TextInput,
@@ -32,6 +31,7 @@ import {
   slugify,
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import { WorkspaceTerminalContent } from "./WorkspaceTerminalContent.js";
 import {
   resolveWorkspaceDiffPanelState,
   resolveWorkspaceTerminalPanelState,
@@ -52,126 +52,6 @@ type WorkspaceModalContentController = Pick<
   | "workspaceModal"
   | "workspaceTerminalContext"
 >;
-
-function WorkspaceTerminalContent({
-  controller,
-  workspaceTerminalPanelState,
-}: {
-  controller: WorkspaceModalContentController;
-  workspaceTerminalPanelState: ReturnType<
-    typeof resolveWorkspaceTerminalPanelState
-  >;
-}) {
-  if (controller.workspaceTerminalContext?.kind === "repository_tabs") {
-    const repositories = controller.workspaceTerminalContext.repositories;
-    const defaultRepository = repositories[0] ?? null;
-    if (!defaultRepository) {
-      return (
-        <Text size="sm" c="dimmed">
-          This project does not have any configured repositories.
-        </Text>
-      );
-    }
-
-    if (repositories.length === 1) {
-      return (
-        <TicketWorkspaceTerminal
-          key={defaultRepository.socketPath}
-          socketPath={defaultRepository.socketPath}
-          surfaceLabel="repository"
-          worktreePath={defaultRepository.worktreePath}
-        />
-      );
-    }
-
-    return (
-      <Tabs
-        defaultValue={defaultRepository.id}
-        keepMounted={false}
-        styles={{
-          root: {
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-          },
-          panel: {
-            flex: 1,
-            minHeight: 0,
-            paddingTop: "var(--mantine-spacing-sm)",
-          },
-        }}
-      >
-        <Tabs.List>
-          {repositories.map((repository) => (
-            <Tabs.Tab key={repository.id} value={repository.id}>
-              {repository.label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
-
-        {repositories.map((repository) => (
-          <Tabs.Panel key={repository.id} value={repository.id}>
-            <TicketWorkspaceTerminal
-              key={repository.socketPath}
-              socketPath={repository.socketPath}
-              surfaceLabel="repository"
-              worktreePath={repository.worktreePath}
-            />
-          </Tabs.Panel>
-        ))}
-      </Tabs>
-    );
-  }
-
-  if (controller.workspaceTerminalContext?.kind === "single") {
-    return (
-      <TicketWorkspaceTerminal
-        socketPath={controller.workspaceTerminalContext.socketPath}
-        surfaceLabel={controller.workspaceTerminalContext.surfaceLabel}
-        worktreePath={controller.workspaceTerminalContext.worktreePath}
-      />
-    );
-  }
-
-  if (
-    workspaceTerminalPanelState.state === "ready" &&
-    controller.selectedSessionTicket
-  ) {
-    return (
-      <TicketWorkspaceTerminal
-        socketPath={`/tickets/${controller.selectedSessionTicket.id}/workspace/terminal`}
-        surfaceLabel="ticket"
-        worktreePath={workspaceTerminalPanelState.worktreePath}
-      />
-    );
-  }
-
-  if (workspaceTerminalPanelState.state === "loading") {
-    return <Loader size="sm" />;
-  }
-
-  if (workspaceTerminalPanelState.state === "error") {
-    return (
-      <Text size="sm" c="red">
-        {workspaceTerminalPanelState.error}
-      </Text>
-    );
-  }
-
-  if (workspaceTerminalPanelState.state === "missing_worktree") {
-    return (
-      <Text size="sm" c="dimmed">
-        This ticket does not have a prepared worktree.
-      </Text>
-    );
-  }
-
-  return (
-    <Text size="sm" c="dimmed">
-      The workspace terminal is still being prepared.
-    </Text>
-  );
-}
 
 export function WorkspaceModalContent({
   controller,
@@ -200,8 +80,10 @@ export function WorkspaceModalContent({
         />
       ) : controller.workspaceModal === "terminal" ? (
         <WorkspaceTerminalContent
-          controller={controller}
+          selectedSessionTicket={controller.selectedSessionTicket}
+          workspaceTerminalContext={controller.workspaceTerminalContext}
           workspaceTerminalPanelState={workspaceTerminalPanelState}
+          TerminalComponent={TicketWorkspaceTerminal}
         />
       ) : controller.workspaceModal === "activity" ? (
         controller.sessionQuery.isPending ||
