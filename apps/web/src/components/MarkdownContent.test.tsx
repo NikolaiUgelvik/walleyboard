@@ -101,3 +101,34 @@ test("renders resolved ticket references as linked summaries", () => {
     /Depends on <a class="markdown-ticket-reference" href="#ticket-33">#33<\/a><span class="markdown-ticket-reference-meta"> \(Finish the API contract • In progress\)<\/span> before merge\./,
   );
 });
+
+test("ignores ticket references inside markdown links, code spans, and escapes", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(MarkdownContent, {
+      inline: true,
+      content:
+        "Use `#33`, \\#33, [#33](https://example.com), and #33 in plain text.",
+      ticketReferences: [
+        {
+          ticket_id: 33,
+          title: "Finish the API contract",
+          status: "in_progress",
+        },
+      ],
+    }),
+  );
+
+  assert.match(html, /<code>#33<\/code>/);
+  assert.match(
+    html,
+    /<a href="https:\/\/example\.com" rel="noreferrer" target="_blank">#33<\/a>/,
+  );
+  assert.doesNotMatch(
+    html,
+    /<a href="https:\/\/example\.com"[^>]*><a class="markdown-ticket-reference"/,
+  );
+  assert.equal(
+    [...html.matchAll(/class="markdown-ticket-reference"/g)].length,
+    1,
+  );
+});

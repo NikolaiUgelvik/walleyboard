@@ -1350,16 +1350,15 @@ export function ticketMatchesSearch(
 }
 
 export function focusElementById(id: string): void {
-  const element = document.getElementById(id) as
-    | HTMLInputElement
-    | HTMLTextAreaElement
-    | null;
+  const element = document.getElementById(id);
   if (!element) {
     return;
   }
 
   element.scrollIntoView({ behavior: "smooth", block: "center" });
-  element.focus();
+  if (element instanceof HTMLElement) {
+    element.focus();
+  }
 }
 
 export function ColorSchemeControl() {

@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import React from "react";
-import type { TicketReference } from "../../../../packages/contracts/src/index.js";
+import {
+  findTicketReferenceMatches,
+  type TicketReference,
+} from "../../../../packages/contracts/src/index.js";
 
 import { resolveProjectArtifactHref } from "../lib/api-base-url.js";
 
@@ -9,6 +12,7 @@ type MarkdownContentProps = {
   inline?: boolean;
   className?: string;
   ticketReferences?: TicketReference[];
+  onTicketReferenceNavigate?: (ticketId: number) => void;
 };
 
 type MarkdownBlock =
@@ -37,9 +41,9 @@ type MarkdownBlock =
 
 const inlineTokenPattern =
   /!\[(?<imageText>[^\]]*)\]\((?<imageHref>[^)\s]+)\)|\[(?<linkText>[^\]]+)\]\((?<linkHref>[^)\s]+)\)|`(?<code>[^`]+)`|(?<!\*)\*\*(?<strongA>[\s\S]+?)\*\*(?!\*)|(?<![A-Za-z0-9_])__(?<strongB>[\s\S]+?)__(?![A-Za-z0-9_])|(?<!\*)\*(?<emA>[^*\n]+)\*(?!\*)|(?<![A-Za-z0-9_])_(?<emB>[^_\n]+)_(?![A-Za-z0-9_])/g;
-const ticketReferencePattern = /(?<![A-Za-z0-9_])#(?<ticketId>[1-9]\d*)\b/g;
 
 type MarkdownRenderContext = {
+  onTicketReferenceNavigate?: (ticketId: number) => void;
   ticketReferencesById: Map<number, TicketReference>;
 };
 
@@ -256,19 +260,15 @@ function renderTextWithTicketReferences(
   let lastIndex = 0;
   let matchIndex = 0;
 
-  for (const match of text.matchAll(ticketReferencePattern)) {
-    if (match.index === undefined) {
-      continue;
-    }
-
-    const ticketId = Number(match.groups?.ticketId ?? "");
+  for (const match of findTicketReferenceMatches(text)) {
+    const ticketId = match.ticketId;
     const ticketReference = renderContext.ticketReferencesById.get(ticketId);
     if (!ticketReference) {
       continue;
     }
 
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
+    if (match.start > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.start));
     }
 
     const key = `${keyPrefix}-ticket-reference-${matchIndex}`;
@@ -277,6 +277,12 @@ function renderTextWithTicketReferences(
         <a
           className="markdown-ticket-reference"
           href={`#ticket-${ticketReference.ticket_id}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            renderContext.onTicketReferenceNavigate?.(
+              ticketReference.ticket_id,
+            );
+          }}
         >
           #{ticketReference.ticket_id}
         </a>
@@ -288,7 +294,7 @@ function renderTextWithTicketReferences(
       </React.Fragment>,
     );
 
-    lastIndex = match.index + match[0].length;
+    lastIndex = match.end;
     matchIndex += 1;
   }
 
@@ -303,6 +309,7 @@ function renderInlineSegments(
   content: string,
   keyPrefix: string,
   renderContext: MarkdownRenderContext,
+  resolveTicketReferences = true,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   let lastIndex = 0;
@@ -314,12 +321,15 @@ function renderInlineSegments(
     }
 
     if (match.index > lastIndex) {
+      const textBefore = content.slice(lastIndex, match.index);
       nodes.push(
-        ...renderTextWithTicketReferences(
-          content.slice(lastIndex, match.index),
-          `${keyPrefix}-${matchIndex}-text-before`,
-          renderContext,
-        ),
+        ...(resolveTicketReferences
+          ? renderTextWithTicketReferences(
+              textBefore,
+              `${keyPrefix}-${matchIndex}-text-before`,
+              renderContext,
+            )
+          : [textBefore]),
       );
     }
 
@@ -366,7 +376,7 @@ function renderInlineSegments(
             rel={isExternalHref(resolvedHref) ? "noreferrer" : undefined}
             target={isExternalHref(resolvedHref) ? "_blank" : undefined}
           >
-            {renderInline(groups.linkText, `${key}-link`, renderContext)}
+            {renderInline(groups.linkText, `${key}-link`, renderContext, false)}
           </a>,
         );
       }
@@ -407,12 +417,15 @@ function renderInlineSegments(
   }
 
   if (lastIndex < content.length) {
+    const textTail = content.slice(lastIndex);
     nodes.push(
-      ...renderTextWithTicketReferences(
-        content.slice(lastIndex),
-        `${keyPrefix}-text-tail`,
-        renderContext,
-      ),
+      ...(resolveTicketReferences
+        ? renderTextWithTicketReferences(
+            textTail,
+            `${keyPrefix}-text-tail`,
+            renderContext,
+          )
+        : [textTail]),
     );
   }
 
@@ -423,6 +436,7 @@ function renderInline(
   content: string,
   keyPrefix: string,
   renderContext: MarkdownRenderContext,
+  resolveTicketReferences = true,
 ): ReactNode[] {
   const lines = content.split("\n");
   const nodes: ReactNode[] = [];
@@ -438,6 +452,7 @@ function renderInline(
           line,
           `${keyPrefix}-line-${index}`,
           renderContext,
+          resolveTicketReferences,
         )}
       </React.Fragment>,
     );
@@ -548,6 +563,7 @@ export function MarkdownContent({
   inline = false,
   className,
   ticketReferences = [],
+  onTicketReferenceNavigate,
 }: MarkdownContentProps) {
   if (content.length === 0) {
     return null;
@@ -557,6 +573,7 @@ export function MarkdownContent({
     ticketReferencesById: new Map(
       ticketReferences.map((reference) => [reference.ticket_id, reference]),
     ),
+    ...(onTicketReferenceNavigate ? { onTicketReferenceNavigate } : {}),
   };
 
   const classes = ["markdown-content", inline ? "markdown-content--inline" : ""]

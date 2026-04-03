@@ -1,33 +1,11 @@
-import type { TicketReference } from "../../../../../packages/contracts/src/index.js";
+import {
+  collectTicketReferenceIds,
+  type TicketReference,
+} from "../../../../../packages/contracts/src/index.js";
 
 import type { SqliteStoreContext } from "./shared.js";
 
-const ticketReferencePattern = /(?<![A-Za-z0-9_])#(?<ticketId>[1-9]\d*)\b/g;
-
 export class TicketReferenceValidationError extends Error {}
-
-export function collectTicketReferenceIds(texts: string[]): number[] {
-  const seenIds = new Set<number>();
-  const referenceIds: number[] = [];
-
-  for (const text of texts) {
-    for (const match of text.matchAll(ticketReferencePattern)) {
-      const ticketId = Number(match.groups?.ticketId ?? "");
-      if (
-        !Number.isInteger(ticketId) ||
-        ticketId <= 0 ||
-        seenIds.has(ticketId)
-      ) {
-        continue;
-      }
-
-      seenIds.add(ticketId);
-      referenceIds.push(ticketId);
-    }
-  }
-
-  return referenceIds;
-}
 
 export function resolveTicketReferences(
   context: SqliteStoreContext,

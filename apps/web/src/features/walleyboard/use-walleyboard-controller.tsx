@@ -14,6 +14,7 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import {
+  buildPendingDraftEditorSync,
   emptyDraftEditorFields,
   type PendingDraftEditorSync,
   resolveDraftEditorSync,
@@ -67,6 +68,7 @@ import {
   type WorkspaceTerminalContext,
   writeLastOpenProjectId,
 } from "./shared.js";
+import { navigateToTicketReference } from "./ticket-reference-navigation.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useSelectedRepositoryWorkspace } from "./use-selected-repository-workspace.js";
@@ -796,18 +798,6 @@ export function useWalleyBoardController() {
       ? ticketsQuery.error.message
       : null;
 
-  const capturePendingDraftEditorSync = (input: {
-    draftId: string;
-    sourceUpdatedAt: string | null;
-  }): PendingDraftEditorSync => ({
-    draftId: input.draftId,
-    sourceUpdatedAt: input.sourceUpdatedAt,
-    title: draftEditorTitle,
-    description: draftEditorDescription,
-    ticketType: draftEditorTicketType,
-    acceptanceCriteria: draftEditorAcceptanceCriteria,
-  });
-
   const initializeNewDraftEditor = (projectId: string | null): void => {
     setDraftEditorProjectId(projectId);
     setDraftEditorSourceId(emptyDraftEditorFields.sourceId);
@@ -852,9 +842,13 @@ export function useWalleyBoardController() {
           ])
           ?.drafts.find((draft) => draft.id === draftId);
         setPendingDraftEditorSync(
-          capturePendingDraftEditorSync({
+          buildPendingDraftEditorSync({
+            acceptanceCriteria: draftEditorAcceptanceCriteria,
+            description: draftEditorDescription,
             draftId,
             sourceUpdatedAt: createdDraft?.updated_at ?? null,
+            ticketType: draftEditorTicketType,
+            title: draftEditorTitle,
           }),
         );
       }
@@ -1307,7 +1301,6 @@ export function useWalleyBoardController() {
     boardLoading,
     boardSearch,
     canDeleteProject,
-    capturePendingDraftEditorSync,
     closeArchiveModal,
     closeAgentReviewHistoryModal,
     closeProjectOptionsModal,
@@ -1416,6 +1409,16 @@ export function useWalleyBoardController() {
     resumeReason,
     latestReviewRun,
     latestReviewRunQuery,
+    navigateToTicketReference: (ticketId: number) =>
+      navigateToTicketReference({
+        globalTickets,
+        selectProject,
+        selectedProjectId,
+        setBoardSearch,
+        setInspectorState,
+        ticketId,
+        tickets,
+      }),
     reviewPackage,
     reviewPackageQuery,
     reviewRuns,

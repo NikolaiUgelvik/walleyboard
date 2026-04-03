@@ -1269,6 +1269,65 @@ test("ticket references resolve across drafts, reloads, and ready tickets", () =
   }
 });
 
+test("ticket reference validation ignores markdown literals and links", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-ticket-ref-literals-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Ticket Reference Literals",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const referencedDraft = store.createDraft({
+      project_id: project.id,
+      title: "Real dependency",
+      description: "This one exists.",
+    });
+    const referencedTicket = store.confirmDraft(referencedDraft.id, {
+      title: referencedDraft.title_draft,
+      description: referencedDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Keep a real ticket available for lookup."],
+      target_branch: "main",
+    });
+
+    const literalDraft = store.createDraft({
+      project_id: project.id,
+      title: `Keep \`#999\`, \\#998, and [#997](https://example.com) literal`,
+      description: `Real dependency stays #${referencedTicket.id}, but \`#996\`, \\#995, and [#994](https://example.com) stay literal.`,
+    });
+
+    const confirmedTicket = store.confirmDraft(literalDraft.id, {
+      title: literalDraft.title_draft,
+      description: literalDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: [
+        "Literal markdown references do not block confirmation.",
+      ],
+      target_branch: "main",
+    });
+
+    assert.deepEqual(confirmedTicket.ticket_references, [
+      {
+        ticket_id: referencedTicket.id,
+        title: referencedTicket.title,
+        status: "ready",
+      },
+    ]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("drafts and tickets keep markdown in SQLite instead of creating ticket files", {
   concurrency: false,
 }, () => {

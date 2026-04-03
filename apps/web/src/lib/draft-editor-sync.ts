@@ -30,6 +30,24 @@ export const emptyDraftEditorFields: DraftEditorFields = {
   acceptanceCriteria: "",
 };
 
+export function buildPendingDraftEditorSync(input: {
+  acceptanceCriteria: string;
+  description: string;
+  draftId: string;
+  sourceUpdatedAt: string | null;
+  ticketType: DraftTicketState["proposed_ticket_type"];
+  title: string;
+}): PendingDraftEditorSync {
+  return {
+    draftId: input.draftId,
+    sourceUpdatedAt: input.sourceUpdatedAt,
+    title: input.title,
+    description: input.description,
+    ticketType: input.ticketType,
+    acceptanceCriteria: input.acceptanceCriteria,
+  };
+}
+
 export function resolveDraftEditorSync(input: {
   draftFormDirty: boolean;
   editor: DraftEditorFields;

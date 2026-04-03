@@ -587,6 +587,9 @@ export function BoardView({
                                       <MarkdownContent
                                         content={draft.title_draft}
                                         inline
+                                        onTicketReferenceNavigate={
+                                          controller.navigateToTicketReference
+                                        }
                                         ticketReferences={
                                           draft.ticket_references ?? []
                                         }
@@ -605,6 +608,9 @@ export function BoardView({
                                   <MarkdownContent
                                     className="markdown-muted markdown-small"
                                     content={draft.description_draft}
+                                    onTicketReferenceNavigate={
+                                      controller.navigateToTicketReference
+                                    }
                                     ticketReferences={
                                       draft.ticket_references ?? []
                                     }
@@ -696,6 +702,8 @@ export function BoardView({
                           return (
                             <Box
                               key={ticket.id}
+                              id={`ticket-${ticket.id}`}
+                              tabIndex={-1}
                               className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -720,6 +728,9 @@ export function BoardView({
                                       <MarkdownContent
                                         content={ticket.title}
                                         inline
+                                        onTicketReferenceNavigate={
+                                          controller.navigateToTicketReference
+                                        }
                                         ticketReferences={
                                           ticket.ticket_references ?? []
                                         }
@@ -755,6 +766,9 @@ export function BoardView({
                                   content={getBoardTicketDescriptionPreview(
                                     ticket.description,
                                   )}
+                                  onTicketReferenceNavigate={
+                                    controller.navigateToTicketReference
+                                  }
                                   ticketReferences={
                                     ticket.ticket_references ?? []
                                   }

@@ -18,6 +18,7 @@ import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
 import { summarizeSessionActivity } from "../../components/SessionActivityFeed.js";
+import { buildPendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import {
   agentLabel,
@@ -356,6 +357,9 @@ export function InspectorPane({
                     <MarkdownContent
                       content={controller.selectedDraft.title_draft}
                       inline
+                      onTicketReferenceNavigate={
+                        controller.navigateToTicketReference
+                      }
                       ticketReferences={
                         controller.selectedDraft.ticket_references ?? []
                       }
@@ -522,9 +526,14 @@ export function InspectorPane({
                       }
 
                       controller.setPendingDraftEditorSync(
-                        controller.capturePendingDraftEditorSync({
+                        buildPendingDraftEditorSync({
+                          acceptanceCriteria:
+                            controller.draftEditorAcceptanceCriteria,
+                          description: controller.draftEditorDescription,
                           draftId: selectedDraft.id,
                           sourceUpdatedAt: selectedDraft.updated_at,
+                          ticketType: controller.draftEditorTicketType,
+                          title: controller.draftEditorTitle,
                         }),
                       );
                       controller.refineDraftMutation.mutate(selectedDraft.id);
@@ -550,9 +559,14 @@ export function InspectorPane({
                       }
 
                       controller.setPendingDraftEditorSync(
-                        controller.capturePendingDraftEditorSync({
+                        buildPendingDraftEditorSync({
+                          acceptanceCriteria:
+                            controller.draftEditorAcceptanceCriteria,
+                          description: controller.draftEditorDescription,
                           draftId: selectedDraft.id,
                           sourceUpdatedAt: selectedDraft.updated_at,
+                          ticketType: controller.draftEditorTicketType,
+                          title: controller.draftEditorTitle,
                         }),
                       );
                       controller.revertDraftRefineMutation.mutate(
@@ -729,6 +743,9 @@ export function InspectorPane({
                             <MarkdownContent
                               content={controller.selectedSessionTicket.title}
                               inline
+                              onTicketReferenceNavigate={
+                                controller.navigateToTicketReference
+                              }
                               ticketReferences={
                                 controller.selectedSessionTicket
                                   .ticket_references ?? []
@@ -842,6 +859,9 @@ export function InspectorPane({
                       <MarkdownContent
                         className="markdown-muted markdown-small"
                         content={controller.selectedSessionTicket.description}
+                        onTicketReferenceNavigate={
+                          controller.navigateToTicketReference
+                        }
                         ticketReferences={
                           controller.selectedSessionTicket.ticket_references ??
                           []
