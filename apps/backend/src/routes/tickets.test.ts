@@ -667,6 +667,20 @@ test("delete route closes an open workspace terminal before cleaning up the work
           message.data.includes(runtime.worktreePath),
       );
 
+      socket.send(
+        JSON.stringify({
+          type: "terminal.input",
+          data: "echo terminal-busy; trap '' HUP; sleep 30\r",
+        }),
+      );
+      await waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "terminal.output" &&
+          typeof message.data === "string" &&
+          message.data.includes("terminal-busy"),
+      );
+
       const errorPromise = waitForSocketMessage(
         socket,
         (message) => message.type === "terminal.error",
@@ -697,6 +711,7 @@ test("delete route closes an open workspace terminal before cleaning up the work
       assert.equal(store.getTicket(ticket.id), undefined);
       assert.equal(existsSync(runtime.worktreePath), false);
       assert.equal(store.getSession(started.session.id), undefined);
+      assert.equal(workspaceTerminals.has(started.session.id), false);
     } finally {
       socket?.close();
       await app.close();

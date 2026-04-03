@@ -33,7 +33,7 @@ export function closeTrackedWorkspaceTerminals(
 
   for (const terminal of sessionTerminals) {
     terminal.exitMessage = exitMessage;
-    terminal.pty.kill();
+    terminal.pty.kill("SIGKILL");
   }
 }
 
