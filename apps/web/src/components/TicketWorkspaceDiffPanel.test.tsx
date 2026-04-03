@@ -41,6 +41,7 @@ const sampleDiff: TicketWorkspaceDiff = {
 
 type DomHarness = {
   cleanup: () => void;
+  flushAsyncWork: () => Promise<void>;
   mountNode: HTMLElement;
 };
 
@@ -81,12 +82,62 @@ function createDiffStylesheet(): string {
   ].join("\n");
 }
 
-function installGlobal(name: string, value: unknown): void {
+function installGlobal(name: string, value: unknown): () => void {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, name);
   Object.defineProperty(globalThis, name, {
     configurable: true,
     value,
     writable: true,
   });
+
+  return () => {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, name, originalDescriptor);
+      return;
+    }
+
+    Reflect.deleteProperty(globalThis, name);
+  };
+}
+
+async function flushAsyncWork(
+  pendingCallbacks: Map<number, () => void>,
+): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  while (pendingCallbacks.size > 0) {
+    const callbacks = Array.from(pendingCallbacks.values());
+    pendingCallbacks.clear();
+
+    await act(async () => {
+      for (const callback of callbacks) {
+        callback();
+      }
+
+      await Promise.resolve();
+    });
+  }
+}
+
+async function waitForElement<T>(
+  selectElement: () => T | null,
+  flushWork: () => Promise<void>,
+  message: string,
+): Promise<T> {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const element = selectElement();
+    if (element) {
+      return element;
+    }
+
+    await flushWork();
+  }
+
+  const element = selectElement();
+  assert.ok(element, message);
+  return element;
 }
 
 function installDom(): DomHarness {
@@ -98,16 +149,40 @@ function installDom(): DomHarness {
     },
   );
   const { window } = dom;
+  const restoreGlobals = [
+    installGlobal("window", window),
+    installGlobal("document", window.document),
+    installGlobal("navigator", window.navigator),
+    installGlobal("HTMLElement", window.HTMLElement),
+    installGlobal("MutationObserver", window.MutationObserver),
+    installGlobal("Node", window.Node),
+    installGlobal("ResizeObserver", ResizeObserverStub),
+    installGlobal("ShadowRoot", window.ShadowRoot),
+    installGlobal("SVGElement", window.SVGElement),
+  ];
+  const pendingCallbacks = new Map<number, () => void>();
+  let nextAsyncId = 1;
+  const scheduleCallback = (
+    callback: TimerHandler,
+    args: unknown[],
+  ): number => {
+    const id = nextAsyncId;
+    nextAsyncId += 1;
+    pendingCallbacks.set(id, () => {
+      if (typeof callback === "function") {
+        callback(...args);
+        return;
+      }
 
-  installGlobal("window", window);
-  installGlobal("document", window.document);
-  installGlobal("navigator", window.navigator);
-  installGlobal("HTMLElement", window.HTMLElement);
-  installGlobal("MutationObserver", window.MutationObserver);
-  installGlobal("Node", window.Node);
-  installGlobal("ResizeObserver", ResizeObserverStub);
-  installGlobal("ShadowRoot", window.ShadowRoot);
-  installGlobal("SVGElement", window.SVGElement);
+      throw new TypeError(
+        "String timers are not supported in this test harness",
+      );
+    });
+    return id;
+  };
+  const clearScheduledCallback = (id: number): void => {
+    pendingCallbacks.delete(id);
+  };
 
   window.matchMedia = () =>
     ({
@@ -122,14 +197,46 @@ function installDom(): DomHarness {
       removeEventListener() {},
       removeListener() {},
     }) as MediaQueryList;
-  installGlobal("getComputedStyle", window.getComputedStyle.bind(window));
-  installGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
-    window.setTimeout(() => callback(Date.now()), 0),
+  window.setTimeout = ((
+    callback: TimerHandler,
+    _delay?: number,
+    ...args: unknown[]
+  ) => scheduleCallback(callback, args)) as typeof window.setTimeout;
+  window.clearTimeout = ((id: number) => {
+    clearScheduledCallback(id);
+  }) as typeof window.clearTimeout;
+  window.requestAnimationFrame = ((callback: FrameRequestCallback) =>
+    scheduleCallback(
+      () => callback(Date.now()),
+      [],
+    )) as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((id: number) => {
+    clearScheduledCallback(id);
+  }) as typeof window.cancelAnimationFrame;
+  restoreGlobals.push(
+    installGlobal("getComputedStyle", window.getComputedStyle.bind(window)),
+    installGlobal(
+      "setTimeout",
+      window.setTimeout.bind(window) as typeof globalThis.setTimeout,
+    ),
+    installGlobal(
+      "clearTimeout",
+      window.clearTimeout.bind(window) as typeof globalThis.clearTimeout,
+    ),
+    installGlobal(
+      "requestAnimationFrame",
+      window.requestAnimationFrame.bind(
+        window,
+      ) as typeof globalThis.requestAnimationFrame,
+    ),
+    installGlobal(
+      "cancelAnimationFrame",
+      window.cancelAnimationFrame.bind(
+        window,
+      ) as typeof globalThis.cancelAnimationFrame,
+    ),
+    installGlobal("IS_REACT_ACT_ENVIRONMENT", true),
   );
-  installGlobal("cancelAnimationFrame", (handle: number) =>
-    window.clearTimeout(handle),
-  );
-  installGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
   const styleTag = window.document.createElement("style");
   styleTag.textContent = createDiffStylesheet();
@@ -142,7 +249,11 @@ function installDom(): DomHarness {
     cleanup: () => {
       mountNode.remove();
       dom.window.close();
+      for (const restore of restoreGlobals.reverse()) {
+        restore();
+      }
     },
+    flushAsyncWork: () => flushAsyncWork(pendingCallbacks),
     mountNode,
   };
 }
@@ -150,19 +261,26 @@ function installDom(): DomHarness {
 async function waitForRenderer(
   mountNode: HTMLElement,
   layout: "split" | "stacked",
+  flushWork: () => Promise<void>,
 ): Promise<HTMLDivElement> {
   const diffSelector =
     layout === "split"
       ? '[data-diff-type="split"]'
       : '[data-diff-type="single"][data-overflow="scroll"]';
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  const renderer = mountNode.querySelector<HTMLDivElement>(
-    ".ticket-workspace-diff-renderer",
+  const renderer = await waitForElement(
+    () =>
+      mountNode.querySelector<HTMLDivElement>(
+        ".ticket-workspace-diff-renderer",
+      ),
+    flushWork,
+    `Expected ${layout} diff renderer host`,
   );
-  const renderedDiff = renderer?.shadowRoot?.querySelector(diffSelector);
-  assert.ok(renderer, `Expected ${layout} diff renderer host`);
-  assert.ok(renderedDiff, `Expected ${layout} diff render after settle`);
+  const renderedDiff = await waitForElement(
+    () => renderer.shadowRoot?.querySelector(diffSelector),
+    flushWork,
+    `Expected ${layout} diff render after settle`,
+  );
+  assert.ok(renderedDiff);
 
   return renderer;
 }
@@ -185,10 +303,13 @@ async function renderPanel(input: {
         />
       </MantineProvider>,
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  const renderer = await waitForRenderer(harness.mountNode, input.layout);
+  const renderer = await waitForRenderer(
+    harness.mountNode,
+    input.layout,
+    harness.flushAsyncWork,
+  );
 
   return {
     cleanup: async () => {

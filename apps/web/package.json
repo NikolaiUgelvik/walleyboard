@@ -24,11 +24,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
-    "@types/jsdom": "^28.0.1",
+    "@types/jsdom": "27.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "jsdom": "^29.0.1",
+    "jsdom": "27.0.1",
     "typescript": "^6.0.2",
     "vite": "^8.0.3"
   }
