@@ -127,6 +127,60 @@ export const agentAdapterOptions = [
   { label: "Codex", value: "codex" },
   { label: "Claude Code", value: "claude-code" },
 ] satisfies Array<{ label: string; value: AgentAdapter }>;
+export type AgentAdapterSelectOption = (typeof agentAdapterOptions)[number] & {
+  disabled?: boolean;
+};
+
+const agentAdapterIconPaths: Record<AgentAdapter, string> = {
+  codex: "/agent-icons/openai.svg",
+  "claude-code": "/agent-icons/claude.svg",
+};
+
+export function getAgentAdapterIconPath(adapter: AgentAdapter): string {
+  return agentAdapterIconPaths[adapter];
+}
+
+export function AgentAdapterIcon({ adapter }: { adapter: AgentAdapter }) {
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      height={16}
+      src={getAgentAdapterIconPath(adapter)}
+      style={{ display: "block", flex: "none" }}
+      width={16}
+    />
+  );
+}
+
+export function AgentAdapterOptionLabel({
+  adapter,
+  label,
+}: {
+  adapter: AgentAdapter;
+  label: string;
+}) {
+  return (
+    <Group gap="xs" wrap="nowrap">
+      <AgentAdapterIcon adapter={adapter} />
+      <span>{label}</span>
+    </Group>
+  );
+}
+
+export function getProjectAgentAdapterOptions(
+  claudeCodeAvailable: boolean,
+): AgentAdapterSelectOption[] {
+  return agentAdapterOptions.map((option) =>
+    option.value === "claude-code" && !claudeCodeAvailable
+      ? {
+          ...option,
+          label: "Claude Code (not installed)",
+          disabled: true,
+        }
+      : option,
+  );
+}
 
 export function agentLabel(adapter: AgentAdapter): string {
   switch (adapter) {

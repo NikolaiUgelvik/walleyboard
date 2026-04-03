@@ -20,10 +20,12 @@ import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspaceTerminal } from "../../components/TicketWorkspaceTerminal.js";
 import {
-  agentAdapterOptions,
+  AgentAdapterIcon,
+  AgentAdapterOptionLabel,
   buildRepositoryBranchOptions,
   executionBackendOptions,
   getModelPresetOptions,
+  getProjectAgentAdapterOptions,
   modelPlaceholder,
   reasoningEffortOptions,
   resolveRepositoryTargetBranch,
@@ -289,15 +291,21 @@ export function WalleyBoardModals({
                 <Select
                   label="Agent CLI"
                   description="Choose which agent runtime this project uses for draft analysis and ticket work."
-                  data={agentAdapterOptions.map((option) =>
-                    option.value === "claude-code" &&
-                    !controller.claudeCodeHealth?.available
-                      ? {
-                          ...option,
-                          label: "Claude Code (not installed)",
-                          disabled: true,
-                        }
-                      : option,
+                  data={getProjectAgentAdapterOptions(
+                    Boolean(controller.claudeCodeHealth?.available),
+                  )}
+                  leftSection={
+                    <AgentAdapterIcon
+                      adapter={controller.projectOptionsAgentAdapter}
+                    />
+                  }
+                  renderOption={({ option }) => (
+                    <AgentAdapterOptionLabel
+                      adapter={
+                        option.value === "claude-code" ? "claude-code" : "codex"
+                      }
+                      label={option.label}
+                    />
                   )}
                   value={controller.projectOptionsAgentAdapter}
                   onChange={(value) => {
