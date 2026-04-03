@@ -698,13 +698,12 @@ body {
 
   .walleyboard-shell {
     height: 100dvh;
-    min-height: 100vh;
     overflow-x: hidden;
     overflow-y: auto;
   }
 
   .walleyboard-layout {
-    height: auto;
+    height: 100%;
     min-height: 100%;
   }
 
@@ -712,6 +711,11 @@ body {
   .walleyboard-main,
   .walleyboard-detail {
     min-height: 0;
+  }
+
+  .walleyboard-rail,
+  .walleyboard-detail {
+    overflow-y: visible;
   }
 
   .walleyboard-main {

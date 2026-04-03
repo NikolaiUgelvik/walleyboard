@@ -410,8 +410,13 @@ test("board shell keeps scroll ownership at the shell and stretches empty column
 
   assertRuleIncludes(stylesheet, ".board-empty", ["flex: 1"]);
   assertRuleIncludes(desktopRules, ".walleyboard-shell", [
+    "height: 100dvh",
     "overflow-y: auto",
     "overflow-x: hidden",
+  ]);
+  assertRuleIncludes(desktopRules, ".walleyboard-layout", [
+    "height: 100%",
+    "min-height: 100%",
   ]);
   assertRuleIncludes(desktopRules, ".walleyboard-main", [
     "display: flex",
@@ -432,6 +437,10 @@ test("board shell keeps scroll ownership at the shell and stretches empty column
   assert.match(
     desktopRules,
     /\.walleyboard-rail,\s*\.walleyboard-main,\s*\.walleyboard-detail\s*\{[^}]*min-height:\s*0\s*;/,
+  );
+  assert.match(
+    desktopRules,
+    /\.walleyboard-rail,\s*\.walleyboard-detail\s*\{[^}]*overflow-y:\s*visible\s*;/,
   );
 });
 
