@@ -161,10 +161,14 @@ export function TicketWorkspaceDiffPanel({
         : "Changes refresh automatically as files change in the ticket worktree.";
 
   return (
-    <Stack gap="sm">
-      <Group justify="space-between" align="flex-start">
+    <Stack gap="md" className="ticket-workspace-diff-shell">
+      <Group
+        justify="space-between"
+        align="flex-start"
+        className="ticket-workspace-diff-toolbar"
+      >
         <Stack gap={4}>
-          <Group gap="xs">
+          <Group gap="xs" className="ticket-workspace-diff-toolbar-badges">
             <Badge variant="light" color="gray">
               {sourceLabel}
             </Badge>
@@ -190,7 +194,7 @@ export function TicketWorkspaceDiffPanel({
       </Group>
 
       {diff && parsedDiff.files.length > 0 ? (
-        <Group gap="xs">
+        <Group gap="xs" className="ticket-workspace-diff-stats">
           <Badge variant="outline" color="gray">
             {diffStats.files} {diffStats.files === 1 ? "file" : "files"}
           </Badge>
