@@ -42,6 +42,7 @@ import {
 } from "./execution-runtime/publishers.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
 import {
+  closeTrackedWorkspaceTerminals,
   disposeTrackedWorkspaceTerminals,
   startTrackedManualTerminal,
   startTrackedWorkspaceTerminal,
@@ -196,12 +197,20 @@ export class ExecutionRuntime {
   startWorkspaceTerminal(input: {
     sessionId: string;
     worktreePath: string;
-  }): IPty {
+  }): WorkspaceTerminalRuntime {
     return startTrackedWorkspaceTerminal({
       sessionId: input.sessionId,
       worktreePath: input.worktreePath,
       workspaceTerminals: this.#workspaceTerminals,
     });
+  }
+
+  closeWorkspaceTerminals(sessionId: string, exitMessage: string): void {
+    closeTrackedWorkspaceTerminals(
+      this.#workspaceTerminals,
+      sessionId,
+      exitMessage,
+    );
   }
 
   startQueuedSessions(projectId: string): void {

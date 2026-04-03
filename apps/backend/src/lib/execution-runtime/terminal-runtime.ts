@@ -8,6 +8,7 @@ import { resolveTrackedExit } from "./waiters.js";
 
 export type WorkspaceTerminalRuntime = {
   pty: IPty;
+  exitMessage: string | null;
 };
 
 export function disposeTrackedWorkspaceTerminals(
@@ -20,11 +21,27 @@ export function disposeTrackedWorkspaceTerminals(
   }
 }
 
+export function closeTrackedWorkspaceTerminals(
+  workspaceTerminals: Map<string, Set<WorkspaceTerminalRuntime>>,
+  sessionId: string,
+  exitMessage: string,
+): void {
+  const sessionTerminals = workspaceTerminals.get(sessionId);
+  if (!sessionTerminals) {
+    return;
+  }
+
+  for (const terminal of sessionTerminals) {
+    terminal.exitMessage = exitMessage;
+    terminal.pty.kill();
+  }
+}
+
 export function startTrackedWorkspaceTerminal(input: {
   sessionId: string;
   worktreePath: string;
   workspaceTerminals: Map<string, Set<WorkspaceTerminalRuntime>>;
-}): IPty {
+}): WorkspaceTerminalRuntime {
   let child: IPty;
 
   try {
@@ -47,6 +64,7 @@ export function startTrackedWorkspaceTerminal(input: {
   }
 
   const runtime: WorkspaceTerminalRuntime = {
+    exitMessage: null,
     pty: child,
   };
   const existingTerminals = input.workspaceTerminals.get(input.sessionId);
@@ -67,7 +85,7 @@ export function startTrackedWorkspaceTerminal(input: {
     }
   });
 
-  return child;
+  return runtime;
 }
 
 export function startTrackedManualTerminal(input: {

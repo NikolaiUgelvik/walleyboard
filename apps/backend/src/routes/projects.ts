@@ -260,6 +260,10 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
         if (repository && session?.worktree_path) {
           try {
+            executionRuntime.closeWorkspaceTerminals(
+              session.id,
+              "This workspace terminal closed because the project worktree was cleaned up.",
+            );
             const worktreeRemoval = removePreparedWorktree(
               repository,
               session.worktree_path,

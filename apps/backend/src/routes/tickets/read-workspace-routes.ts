@@ -359,7 +359,7 @@ export function registerTicketReadWorkspaceRoutes(
         return;
       }
 
-      terminal.onData((data) => {
+      terminal.pty.onData((data) => {
         socket.send(
           JSON.stringify({
             type: "terminal.output",
@@ -368,7 +368,15 @@ export function registerTicketReadWorkspaceRoutes(
         );
       });
 
-      terminal.onExit(({ exitCode, signal }) => {
+      terminal.pty.onExit(({ exitCode, signal }) => {
+        if (terminal.exitMessage) {
+          socket.send(
+            JSON.stringify({
+              type: "terminal.error",
+              message: terminal.exitMessage,
+            }),
+          );
+        }
         socket.send(
           JSON.stringify({
             type: "terminal.exit",
@@ -385,13 +393,13 @@ export function registerTicketReadWorkspaceRoutes(
 
           if (isTerminalInputMessage(message)) {
             if (message.data.length > 0) {
-              terminal.write(message.data);
+              terminal.pty.write(message.data);
             }
             return;
           }
 
           if (isTerminalResizeMessage(message)) {
-            terminal.resize(
+            terminal.pty.resize(
               Math.max(1, Math.floor(message.cols)),
               Math.max(1, Math.floor(message.rows)),
             );
@@ -407,7 +415,7 @@ export function registerTicketReadWorkspaceRoutes(
       });
 
       socket.on("close", () => {
-        terminal.kill();
+        terminal.pty.kill();
       });
     },
   );

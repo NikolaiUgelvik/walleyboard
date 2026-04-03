@@ -366,6 +366,10 @@ export function registerTicketExecutionRoutes(
         );
 
         await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+        executionRuntime.closeWorkspaceTerminals(
+          session.id,
+          "This workspace terminal closed because the ticket worktree was reset for a fresh restart.",
+        );
         await ticketWorkspaceService.disposeTicket(ticketId);
         executionRuntime.cleanupExecutionEnvironment(session.id);
 

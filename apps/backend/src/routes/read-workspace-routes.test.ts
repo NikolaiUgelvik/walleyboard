@@ -19,6 +19,7 @@ import type {
 
 import { AgentAdapterRegistry } from "../lib/agent-adapters/registry.js";
 import { EventHub } from "../lib/event-hub.js";
+import type { WorkspaceTerminalRuntime } from "../lib/execution-runtime/terminal-runtime.js";
 import { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { registerTicketReadWorkspaceRoutes } from "./tickets/read-workspace-routes.js";
 import type { TicketRouteDependencies } from "./tickets/shared.js";
@@ -126,17 +127,20 @@ async function createApp(
     }: {
       sessionId: string;
       worktreePath: string;
-    }) {
-      return spawnPty("bash", ["--noprofile", "--norc"], {
-        cwd: worktreePath,
-        env: {
-          ...process.env,
-          TERM: "xterm-256color",
-        },
-        cols: 120,
-        rows: 32,
-        name: "xterm-256color",
-      });
+    }): WorkspaceTerminalRuntime {
+      return {
+        exitMessage: null,
+        pty: spawnPty("bash", ["--noprofile", "--norc"], {
+          cwd: worktreePath,
+          env: {
+            ...process.env,
+            TERM: "xterm-256color",
+          },
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        }),
+      };
     },
     ...(dependencies.executionRuntime ?? {}),
   };
