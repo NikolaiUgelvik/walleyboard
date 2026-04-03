@@ -13,6 +13,7 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { useWalleyBoardController } from "./use-walleyboard-controller.js";
+import { setOptimisticRunningReviewRun } from "./use-walleyboard-mutations.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
 
@@ -176,4 +177,71 @@ test("keeps cross-project running AI reviews out of the inbox", () => {
   );
 
   assert.doesNotMatch(markup, /review-31/);
+});
+
+test("hides a review inbox item immediately after agent review starts from cached null state", () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+
+  queryClient.setQueryData(["health"], createHealth());
+  queryClient.setQueryData(["projects"], {
+    projects: [
+      createProject(),
+      createProject({
+        id: "project-2",
+        slug: "project-2",
+        name: "Project Two",
+      }),
+    ],
+  });
+  queryClient.setQueryData(["projects", "project-1", "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", "project-2", "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", "project-1", "tickets"], {
+    tickets: [],
+  });
+
+  const projectTwoTicket = createTicket();
+  queryClient.setQueryData(["projects", "project-2", "tickets"], {
+    tickets: [projectTwoTicket],
+  });
+  queryClient.setQueryData(["sessions", projectTwoTicket.session_id], {
+    session: createSession({
+      last_summary: "Implementation completed and is waiting for review.",
+    }),
+  });
+  queryClient.setQueryData(
+    ["tickets", projectTwoTicket.id, "review-run"],
+    null,
+  );
+
+  const visibleMarkup = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <ActionItemsProbe />
+    </QueryClientProvider>,
+  );
+
+  assert.match(visibleMarkup, /review-31/);
+
+  setOptimisticRunningReviewRun({
+    queryClient,
+    ticketId: projectTwoTicket.id,
+    implementationSessionId: projectTwoTicket.session_id,
+  });
+
+  const hiddenMarkup = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <ActionItemsProbe />
+    </QueryClientProvider>,
+  );
+
+  assert.doesNotMatch(hiddenMarkup, /review-31/);
 });
