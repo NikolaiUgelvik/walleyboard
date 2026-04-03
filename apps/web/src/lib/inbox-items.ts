@@ -48,10 +48,12 @@ export function deriveInboxItems(input: {
   projects: Project[];
   tickets: TicketFrontmatter[];
   sessionsById: Map<string, ExecutionSession>;
+  ticketAiReviewActiveById?: Map<number, boolean>;
 }): InboxItem[] {
   const projectNameById = new Map(
     input.projects.map((project) => [project.id, project.name]),
   );
+  const ticketAiReviewActiveById = input.ticketAiReviewActiveById ?? new Map();
   const items = [] as Array<InboxItem & { updatedAt: string }>;
 
   for (const draft of input.drafts) {
@@ -76,6 +78,10 @@ export function deriveInboxItems(input: {
   }
 
   for (const ticket of input.tickets) {
+    if (ticketAiReviewActiveById.get(ticket.id) === true) {
+      continue;
+    }
+
     const projectName =
       projectNameById.get(ticket.project) ?? "Unknown project";
     const session =

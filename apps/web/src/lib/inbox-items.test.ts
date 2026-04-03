@@ -176,6 +176,7 @@ test("derives mixed-project inbox items with project context and newest-first or
     projects,
     tickets,
     sessionsById,
+    ticketAiReviewActiveById: new Map(),
   });
 
   assert.deepEqual(
@@ -237,6 +238,7 @@ test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
         }),
       ],
     ]),
+    ticketAiReviewActiveById: new Map(),
   });
 
   assert.deepEqual(items, [
@@ -307,6 +309,7 @@ test("hides review tickets with active linked pull requests from the inbox", () 
         }),
       ],
     ]),
+    ticketAiReviewActiveById: new Map(),
   });
 
   assert.deepEqual(
@@ -353,6 +356,7 @@ test("keeps review tickets without an active linked pull request in the inbox", 
         }),
       ],
     ]),
+    ticketAiReviewActiveById: new Map(),
   });
 
   assert.deepEqual(items, [
@@ -384,6 +388,7 @@ test("surfaces refined drafts in the inbox with a stable draft key", () => {
     projects: [createProject()],
     tickets: [],
     sessionsById: new Map(),
+    ticketAiReviewActiveById: new Map(),
   });
 
   assert.deepEqual(items, [
@@ -396,6 +401,77 @@ test("surfaces refined drafts in the inbox with a stable draft key", () => {
       targetKind: "draft",
       targetId: "draft-42",
       actionLabel: "Open Draft",
+      projectId: "project-1",
+      projectName: "Project One",
+    },
+  ]);
+});
+
+test("hides tickets from the inbox while an AI review run is running", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 24,
+        status: "review",
+        session_id: "session-review-running",
+        title: "Hide this until AI review finishes",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-running",
+        createSession({
+          id: "session-review-running",
+          ticket_id: 24,
+          status: "completed",
+          last_summary: "Implementation completed and review started.",
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[24, true]]),
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("shows tickets in the inbox again after AI review completes when inbox rules still match", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 25,
+        status: "review",
+        session_id: "session-review-complete",
+        title: "Show this after AI review completes",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-complete",
+        createSession({
+          id: "session-review-complete",
+          ticket_id: 25,
+          status: "completed",
+          last_summary: "AI review finished without blocking merge.",
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[25, false]]),
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "review-25",
+      color: "blue",
+      title: "Review ready for ticket #25",
+      message:
+        "Show this after AI review completes is ready for review and can be merged or sent back for changes.",
+      targetKind: "session",
+      targetId: "session-review-complete",
+      actionLabel: "Open Review",
       projectId: "project-1",
       projectName: "Project One",
     },

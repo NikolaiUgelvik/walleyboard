@@ -529,6 +529,7 @@ export function useWalleyBoardController() {
     projects: projectsQuery.data?.projects ?? [],
     tickets: globalTickets,
     sessionsById: globalSessionById,
+    ticketAiReviewActiveById,
   });
   const actionItemKeys = actionItems.map((item) => item.key);
   const inboxQueriesSettled =
