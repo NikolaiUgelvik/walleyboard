@@ -23,6 +23,7 @@ import {
   useDraftRefinementActivity,
   useGlobalDrafts,
 } from "./draft-queries.js";
+import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
   type ArchiveActionFeedback,
   arraysEqual,
@@ -699,6 +700,10 @@ export function useWalleyBoardController() {
       .filter((value): value is ExecutionSession => value !== undefined)
       .map((item) => [item.id, item]),
   );
+  const sessionSummaryStateById = buildSessionSummaryStateById({
+    sessionSummaries,
+    tickets: ticketsQuery.data?.tickets ?? [],
+  });
   const agentControlsWorktreeBySessionId = new Map(
     sessionSummaries
       .map((query) => query.data)
@@ -1421,6 +1426,7 @@ export function useWalleyBoardController() {
     selectedSessionTicketSession,
     session,
     sessionById,
+    sessionSummaryStateById,
     sessionLogs,
     sessionLogsQuery,
     sessionQuery,

@@ -96,6 +96,8 @@ function createController(input?: {
   agentControlsWorktree?: boolean;
   preview?: TicketWorkspacePreview | null;
   previewError?: string;
+  sessionSummaryError?: string;
+  sessionSummaryPending?: boolean;
   sessionQueryError?: string;
   session?: Partial<ExecutionSession> | null;
   selectedSessionTicketSession?: Partial<ExecutionSession> | null;
@@ -181,6 +183,18 @@ function createController(input?: {
       ticket.session_id && session
         ? new Map([[ticket.session_id, session]])
         : new Map(),
+    sessionSummaryStateById: ticket.session_id
+      ? new Map([
+          [
+            ticket.session_id,
+            {
+              error: input?.sessionSummaryError ?? null,
+              isError: input?.sessionSummaryError != null,
+              isPending: input?.sessionSummaryPending ?? false,
+            },
+          ],
+        ])
+      : new Map(),
     agentControlsWorktreeBySessionId:
       ticket.session_id && session
         ? new Map([[ticket.session_id, input?.agentControlsWorktree ?? false]])
@@ -293,6 +307,54 @@ test("ticket workspace terminal action stays available while the agent owns the 
   assert.equal(
     (terminalAction.props as { disabled?: boolean }).disabled,
     false,
+  );
+});
+
+test("ticket workspace terminal action stays available while session details are still loading", () => {
+  const { controller, ticket } = createController({
+    session: null,
+    sessionSummaryPending: true,
+  });
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+  const terminalAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open worktree terminal",
+  );
+
+  assert.ok(terminalAction);
+  assert.equal(
+    (terminalAction.props as { disabled?: boolean; title?: string }).disabled,
+    false,
+  );
+  assert.equal(
+    (terminalAction.props as { disabled?: boolean; title?: string }).title,
+    "Terminal status is still loading",
+  );
+});
+
+test("ticket workspace terminal action stays available when session details fail to load", () => {
+  const { controller, ticket } = createController({
+    session: null,
+    sessionSummaryError: "Session details could not be loaded.",
+  });
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+  const terminalAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open worktree terminal",
+  );
+
+  assert.ok(terminalAction);
+  assert.equal(
+    (terminalAction.props as { disabled?: boolean; title?: string }).disabled,
+    false,
+  );
+  assert.equal(
+    (terminalAction.props as { disabled?: boolean; title?: string }).title,
+    "Terminal status could not be loaded. Open to view the error.",
   );
 });
 

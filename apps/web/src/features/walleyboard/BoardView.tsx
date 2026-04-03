@@ -173,6 +173,9 @@ export function TicketWorkspaceActions({
         ? controller.session
         : null))
     : null;
+  const ticketSessionSummaryState = ticket.session_id
+    ? (controller.sessionSummaryStateById.get(ticket.session_id) ?? null)
+    : null;
   const preview = controller.ticketWorkspacePreviewByTicketId.get(ticket.id);
   const previewRunning = preview?.state === "ready";
   const previewBusy =
@@ -187,13 +190,23 @@ export function TicketWorkspaceActions({
   const diffDisabled =
     ticket.session_id === null ||
     (!hasPreparedWorktree && ticket.status !== "done");
-  const terminalDisabled = !hasPreparedWorktree;
+  const terminalWorktreeUnavailable =
+    ticket.session_id === null ||
+    (!hasPreparedWorktree &&
+      ticketSessionSummaryState !== null &&
+      !ticketSessionSummaryState.isPending &&
+      !ticketSessionSummaryState.isError);
+  const terminalDisabled = terminalWorktreeUnavailable;
   const previewDisabled = !hasPreparedWorktree || previewBusy;
   const activityDisabled = ticket.session_id == null;
   const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
-  const terminalTitle = hasPreparedWorktree
-    ? "Terminal"
-    : "Terminal unavailable until this ticket has a prepared worktree";
+  const terminalTitle = terminalDisabled
+    ? "Terminal unavailable until this ticket has a prepared worktree"
+    : ticketSessionSummaryState?.isPending && !hasPreparedWorktree
+      ? "Terminal status is still loading"
+      : ticketSessionSummaryState?.isError && !hasPreparedWorktree
+        ? "Terminal status could not be loaded. Open to view the error."
+        : "Terminal";
 
   return (
     <Stack gap={6}>
