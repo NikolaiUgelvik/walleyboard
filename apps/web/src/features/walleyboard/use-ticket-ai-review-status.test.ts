@@ -45,7 +45,7 @@ test("includes any ticket with an implementation session when checking AI review
   );
 });
 
-test("marks review-run status as unresolved until the query succeeds", () => {
+test("keeps pending review-run lookups unresolved until they finish", () => {
   const reviewTickets = getTicketsWithAiReviewSessions([
     createTicket({ id: 21, session_id: "session-21" }),
     createTicket({ id: 22, session_id: "session-22" }),
@@ -84,4 +84,45 @@ test("marks review-run status as unresolved until the query succeeds", () => {
   assert.equal(status.ticketAiReviewActiveById.get(22), false);
   assert.equal(status.ticketAiReviewResolvedById.get(22), true);
   assert.equal(status.reviewRunQueriesSettled, false);
+});
+
+test("treats errored review-run lookups as settled and uses last known data", () => {
+  const reviewTickets = getTicketsWithAiReviewSessions([
+    createTicket({ id: 31, session_id: "session-31" }),
+    createTicket({ id: 32, session_id: "session-32" }),
+  ]);
+
+  const status = deriveTicketAiReviewStatus({
+    reviewRunQueries: [
+      {
+        data: undefined,
+        status: "error",
+      },
+      {
+        data: {
+          review_run: {
+            id: "review-run-32",
+            ticket_id: 32,
+            review_package_id: "review-package-32",
+            implementation_session_id: "session-32",
+            status: "completed",
+            adapter_session_ref: null,
+            report: null,
+            failure_message: null,
+            created_at: "2026-04-03T00:00:00.000Z",
+            updated_at: "2026-04-03T00:00:00.000Z",
+            completed_at: "2026-04-03T00:01:00.000Z",
+          },
+        },
+        status: "error",
+      },
+    ],
+    reviewTickets,
+  });
+
+  assert.equal(status.ticketAiReviewActiveById.get(31), false);
+  assert.equal(status.ticketAiReviewResolvedById.get(31), true);
+  assert.equal(status.ticketAiReviewActiveById.get(32), false);
+  assert.equal(status.ticketAiReviewResolvedById.get(32), true);
+  assert.equal(status.reviewRunQueriesSettled, true);
 });

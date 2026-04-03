@@ -36,14 +36,14 @@ export function deriveTicketAiReviewStatus(input: {
     const reviewRun = query?.data?.review_run ?? null;
 
     ticketAiReviewActiveById.set(ticket.id, reviewRun?.status === "running");
-    ticketAiReviewResolvedById.set(ticket.id, query?.status === "success");
+    ticketAiReviewResolvedById.set(ticket.id, query?.status !== "pending");
   }
 
   return {
     ticketAiReviewActiveById,
     ticketAiReviewResolvedById,
     reviewRunQueriesSettled: input.reviewRunQueries.every(
-      (query) => query.status === "success",
+      (query) => query.status !== "pending",
     ),
   };
 }

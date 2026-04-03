@@ -514,3 +514,46 @@ test("shows tickets in the inbox again after AI review completes when inbox rule
     },
   ]);
 });
+
+test("shows review tickets when the AI review lookup errors after completion", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 27,
+        status: "review",
+        session_id: "session-review-error",
+        title: "Do not hide this when the lookup errors",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-error",
+        createSession({
+          id: "session-review-error",
+          ticket_id: 27,
+          status: "completed",
+          last_summary: "AI review finished but the status refresh failed.",
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[27, false]]),
+    ticketAiReviewResolvedById: new Map([[27, true]]),
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "review-27",
+      color: "blue",
+      title: "Review ready for ticket #27",
+      message:
+        "Do not hide this when the lookup errors is ready for review and can be merged or sent back for changes.",
+      targetKind: "session",
+      targetId: "session-review-error",
+      actionLabel: "Open Review",
+      projectId: "project-1",
+      projectName: "Project One",
+    },
+  ]);
+});
