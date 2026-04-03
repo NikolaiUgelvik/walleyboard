@@ -21,7 +21,6 @@ import { InspectorPane } from "./InspectorPane.js";
 import { ProjectRail } from "./ProjectRail.js";
 import { boardColumns } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
-import { WalleyBoardView } from "./WalleyBoardView.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
 
@@ -147,6 +146,19 @@ function countClass(markup: string, className: string): number {
 }
 
 function extractBlock(source: string, marker: string): string {
+  const { blockEnd, blockStart } = findBlockRange(source, marker);
+
+  return source.slice(blockStart + 1, blockEnd);
+}
+
+function findBlockRange(
+  source: string,
+  marker: string,
+): {
+  blockEnd: number;
+  blockStart: number;
+  markerIndex: number;
+} {
   const markerIndex = source.indexOf(marker);
   assert.notEqual(markerIndex, -1, `Missing CSS block for ${marker}`);
 
@@ -161,12 +173,28 @@ function extractBlock(source: string, marker: string): string {
     } else if (character === "}") {
       depth -= 1;
       if (depth === 0) {
-        return source.slice(blockStart + 1, index);
+        return {
+          blockEnd: index,
+          blockStart,
+          markerIndex,
+        };
       }
     }
   }
 
   throw new Error(`Missing closing brace for ${marker}`);
+}
+
+function installDesktopStylesheet(document: Document): () => void {
+  const desktopMarker = "@media (min-width: 901px)";
+  const { blockEnd, markerIndex } = findBlockRange(stylesheet, desktopMarker);
+  const desktopBlock = extractBlock(stylesheet, desktopMarker);
+  const desktopStylesheet =
+    stylesheet.slice(0, markerIndex) +
+    desktopBlock +
+    stylesheet.slice(blockEnd + 1);
+
+  return installStylesheet(document, desktopStylesheet);
 }
 
 function assertRuleIncludes(
@@ -568,17 +596,20 @@ test("inspector-open layout keeps the shell as the only vertical scroll owner", 
     inspectorState: { kind: "session" },
     inspectorVisible: true,
   });
-  const cleanupStylesheet = installStylesheet(
-    harness.window.document,
-    extractBlock(stylesheet, "@media (min-width: 901px)"),
-  );
+  const cleanupStylesheet = installDesktopStylesheet(harness.window.document);
   const root = createRoot(harness.mountNode);
 
   try {
     await act(async () => {
       root.render(
         <MantineProvider>
-          <WalleyBoardView controller={controller} />
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout walleyboard-layout--with-detail">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
         </MantineProvider>,
       );
       await Promise.resolve();
