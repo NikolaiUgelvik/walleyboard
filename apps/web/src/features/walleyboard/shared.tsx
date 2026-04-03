@@ -132,9 +132,11 @@ export type AgentAdapterSelectOption = (typeof agentAdapterOptions)[number] & {
   disabled?: boolean;
 };
 
+// These remain repo-owned SVGs until trademark clearance is documented for
+// any third-party brand marks shown in the selector.
 const agentAdapterIconPaths: Record<AgentAdapter, string> = {
-  codex: "/agent-icons/openai.svg",
-  "claude-code": "/agent-icons/claude.svg",
+  codex: "/agent-icons/codex.svg",
+  "claude-code": "/agent-icons/claude-code.svg",
 };
 
 export function getAgentAdapterIconPath(adapter: AgentAdapter): string {

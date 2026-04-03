@@ -177,11 +177,11 @@ function installDom() {
   };
 }
 
-test("AgentAdapter icon helpers point to the vendored SVG assets", () => {
-  assert.equal(getAgentAdapterIconPath("codex"), "/agent-icons/openai.svg");
+test("AgentAdapter icon helpers point to the local SVG assets", () => {
+  assert.equal(getAgentAdapterIconPath("codex"), "/agent-icons/codex.svg");
   assert.equal(
     getAgentAdapterIconPath("claude-code"),
-    "/agent-icons/claude.svg",
+    "/agent-icons/claude-code.svg",
   );
 
   const iconMarkup = renderToStaticMarkup(
@@ -191,8 +191,8 @@ test("AgentAdapter icon helpers point to the vendored SVG assets", () => {
     </MantineProvider>,
   );
 
-  assert.match(iconMarkup, /\/agent-icons\/openai\.svg/);
-  assert.match(iconMarkup, /\/agent-icons\/claude\.svg/);
+  assert.match(iconMarkup, /\/agent-icons\/codex\.svg/);
+  assert.match(iconMarkup, /\/agent-icons\/claude-code\.svg/);
 });
 
 test("AgentAdapter option label renders the matching icon without changing text", () => {
@@ -205,8 +205,8 @@ test("AgentAdapter option label renders the matching icon without changing text"
 
   assert.match(markup, /Codex/);
   assert.match(markup, /Claude Code/);
-  assert.match(markup, /\/agent-icons\/openai\.svg/);
-  assert.match(markup, /\/agent-icons\/claude\.svg/);
+  assert.match(markup, /\/agent-icons\/codex\.svg/);
+  assert.match(markup, /\/agent-icons\/claude-code\.svg/);
 });
 
 test("Project Agent CLI options keep the existing disabled Claude label behavior", () => {
@@ -250,7 +250,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
       '[data-position="left"] img',
     );
     assert.ok(selectedIcon);
-    assert.equal(selectedIcon.getAttribute("src"), "/agent-icons/openai.svg");
+    assert.equal(selectedIcon.getAttribute("src"), "/agent-icons/codex.svg");
 
     await act(async () => {
       input.dispatchEvent(
@@ -278,7 +278,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     assert.ok(codexOption);
     assert.equal(
       codexOption.querySelector("img")?.getAttribute("src"),
-      "/agent-icons/openai.svg",
+      "/agent-icons/codex.svg",
     );
 
     const claudeOption = options.find(
@@ -287,7 +287,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     assert.ok(claudeOption);
     assert.equal(
       claudeOption.querySelector("img")?.getAttribute("src"),
-      "/agent-icons/claude.svg",
+      "/agent-icons/claude-code.svg",
     );
     assert.equal(claudeOption.getAttribute("data-combobox-disabled"), "true");
 
@@ -318,7 +318,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     assert.ok(updatedSelectedIcon);
     assert.equal(
       updatedSelectedIcon.getAttribute("src"),
-      "/agent-icons/claude.svg",
+      "/agent-icons/claude-code.svg",
     );
   } finally {
     await act(async () => {

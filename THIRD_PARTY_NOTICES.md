@@ -13,25 +13,3 @@ This repository includes third-party assets that are not covered by the root
 
 This audio file remains under the Pixabay Content License and is excluded from
 the repository's MIT license.
-
-## `apps/web/public/agent-icons/openai.svg`
-
-- Source package: `@lobehub/icons-static-svg@1.84.0`
-- Package URL: https://www.npmjs.com/package/@lobehub/icons-static-svg
-- Upstream repository: https://github.com/lobehub/lobe-icons
-- Asset URL: https://unpkg.com/@lobehub/icons-static-svg@1.84.0/icons/openai.svg
-- License: MIT
-- Full license text: `apps/web/public/agent-icons/openai.svg.license.txt`
-
-## `apps/web/public/agent-icons/claude.svg`
-
-- Source package: `@lobehub/icons-static-svg@1.84.0`
-- Package URL: https://www.npmjs.com/package/@lobehub/icons-static-svg
-- Upstream repository: https://github.com/lobehub/lobe-icons
-- Asset URL: https://unpkg.com/@lobehub/icons-static-svg@1.84.0/icons/claude.svg
-- License: MIT
-- Full license text: `apps/web/public/agent-icons/claude.svg.license.txt`
-
-These SVG assets were copied from `@lobehub/icons-static-svg` and remain
-available under that package's MIT license, with the upstream MIT notice
-preserved in the adjacent license files.
