@@ -10,6 +10,7 @@ import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import {
   buildSessionResponse,
   publishSessionUpdated,
+  shouldPublishPreExecutionSessionUpdate,
 } from "../lib/execution-runtime/publishers.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
@@ -225,11 +226,13 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             },
           ),
         );
-        publishSessionUpdated(
-          eventHub,
-          resumeResult.session,
-          executionRuntime.hasActiveExecution(resumeResult.session.id),
-        );
+        if (shouldPublishPreExecutionSessionUpdate(resumeResult.session)) {
+          publishSessionUpdated(
+            eventHub,
+            resumeResult.session,
+            executionRuntime.hasActiveExecution(resumeResult.session.id),
+          );
+        }
         resumeResult.logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent(
@@ -359,11 +362,13 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
 
           const resumeResult = store.resumeTicket(ticket.id, feedbackBody);
 
-          publishSessionUpdated(
-            eventHub,
-            resumeResult.session,
-            executionRuntime.hasActiveExecution(resumeResult.session.id),
-          );
+          if (shouldPublishPreExecutionSessionUpdate(resumeResult.session)) {
+            publishSessionUpdated(
+              eventHub,
+              resumeResult.session,
+              executionRuntime.hasActiveExecution(resumeResult.session.id),
+            );
+          }
           resumeResult.logs.forEach((logLine, index) => {
             eventHub.publish(
               makeProtocolEvent(

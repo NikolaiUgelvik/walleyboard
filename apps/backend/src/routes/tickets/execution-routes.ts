@@ -9,7 +9,10 @@ import {
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
-import { publishSessionUpdated } from "../../lib/execution-runtime/publishers.js";
+import {
+  publishSessionUpdated,
+  shouldPublishPreExecutionSessionUpdate,
+} from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
@@ -81,11 +84,13 @@ export function registerTicketExecutionRoutes(
             ticket,
           }),
         );
-        publishSessionUpdated(
-          eventHub,
-          session,
-          executionRuntime.hasActiveExecution(session.id),
-        );
+        if (shouldPublishPreExecutionSessionUpdate(session)) {
+          publishSessionUpdated(
+            eventHub,
+            session,
+            executionRuntime.hasActiveExecution(session.id),
+          );
+        }
         logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent("session.output", "session", session.id, {
@@ -252,11 +257,13 @@ export function registerTicketExecutionRoutes(
             },
           ),
         );
-        publishSessionUpdated(
-          eventHub,
-          resumeResult.session,
-          executionRuntime.hasActiveExecution(resumeResult.session.id),
-        );
+        if (shouldPublishPreExecutionSessionUpdate(resumeResult.session)) {
+          publishSessionUpdated(
+            eventHub,
+            resumeResult.session,
+            executionRuntime.hasActiveExecution(resumeResult.session.id),
+          );
+        }
         resumeResult.logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent(
@@ -407,11 +414,13 @@ export function registerTicketExecutionRoutes(
             },
           ),
         );
-        publishSessionUpdated(
-          eventHub,
-          restartResult.session,
-          executionRuntime.hasActiveExecution(restartResult.session.id),
-        );
+        if (shouldPublishPreExecutionSessionUpdate(restartResult.session)) {
+          publishSessionUpdated(
+            eventHub,
+            restartResult.session,
+            executionRuntime.hasActiveExecution(restartResult.session.id),
+          );
+        }
         restartResult.logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent(

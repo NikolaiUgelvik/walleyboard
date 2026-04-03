@@ -55,6 +55,9 @@ Not yet implemented:
 - The draft-to-ready flow is `edit draft -> Refine or Questions -> optional Revert Refine -> Create Ready`
 - Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session and worktree
+- The inbox only lists work that currently needs a human action:
+  drafts waiting for confirmation, review tickets that are ready for human review and not still under active AI review, and sessions that are paused or failed for real operator input while the agent is not actively controlling the worktree
+- The inbox alert sound only plays when one of those human-actionable items becomes newly actionable after it was previously absent; initial load, refresh churn, and automatic relaunch transitions do not trigger the sound
 - Ticket cards expose a compact action group for `Diff`, `Terminal`, `Preview`, and `Activity`; the inspector keeps a single activity summary row that opens the same interpreted stream
 - `Diff`, `Terminal`, and `Preview` require a prepared worktree, while `Activity` stays available whenever the ticket still has a session, even after worktree cleanup
 - The `Terminal` action opens a plain xterm.js shell rooted at the ticket worktree without take-over or restore-agent controls on that surface, and it stays unavailable only while a live agent process still owns that worktree

@@ -2,6 +2,7 @@ import type {
   DraftTicketState,
   ExecutionSession,
   Project,
+  SessionResponse,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -47,9 +48,9 @@ export function deriveInboxItems(input: {
   drafts: DraftTicketState[];
   projects: Project[];
   tickets: TicketFrontmatter[];
-  sessionsById: Map<string, ExecutionSession>;
-  ticketAiReviewActiveById?: Map<number, boolean>;
-  ticketAiReviewResolvedById?: Map<number, boolean>;
+  sessionsById: Map<string, SessionResponse>;
+  ticketAiReviewActiveById?: ReadonlyMap<number, boolean>;
+  ticketAiReviewResolvedById?: ReadonlyMap<number, boolean>;
 }): InboxItem[] {
   const projectNameById = new Map(
     input.projects.map((project) => [project.id, project.name]),
@@ -87,12 +88,13 @@ export function deriveInboxItems(input: {
 
     const projectName =
       projectNameById.get(ticket.project) ?? "Unknown project";
-    const session =
+    const sessionSummary =
       ticket.session_id === null
         ? null
         : (input.sessionsById.get(ticket.session_id) ?? null);
     const ticketAiReviewResolved =
       ticketAiReviewResolvedById.get(ticket.id) === true;
+    const session = sessionSummary?.session ?? null;
 
     if (
       ticket.status === "review" &&
@@ -115,7 +117,11 @@ export function deriveInboxItems(input: {
       continue;
     }
 
-    if (session && isAttentionNeededSessionStatus(session.status)) {
+    if (
+      session &&
+      !sessionSummary?.agent_controls_worktree &&
+      isAttentionNeededSessionStatus(session.status)
+    ) {
       const title =
         session.plan_status === "awaiting_feedback"
           ? `Plan feedback needed for ticket #${ticket.id}`

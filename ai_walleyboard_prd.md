@@ -1279,6 +1279,8 @@ The MVP should prove one reliable end-to-end workflow:
 - Host or Docker-backed ticket execution selected per project
 - Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
+- Inbox items and alert sounds only for newly actionable human work:
+  drafts awaiting confirmation, review tickets awaiting human review after AI review settles, and sessions that are truly paused or failed for operator input rather than briefly passing through an inbox-eligible state during refresh or automatic relaunch
 - Card-level diff, terminal, preview, and activity actions, with diff/terminal/activity opening in large modal workspaces
 - Activity access retained from the card and inspector even after worktree cleanup
 - Plain xterm.js worktree terminal access without agent takeover controls on that surface, gated off only while a live agent process still owns the worktree
@@ -1316,6 +1318,7 @@ The MVP should prove one reliable end-to-end workflow:
 - Review in MVP is a local review experience and does not require GitHub PR objects.
 - Queueing may remain a simple per-project FIFO flow without cross-project prioritization.
 - In-app notifications are sufficient for MVP as long as waiting states are visible and hard to miss.
+- In-app inbox entries and sounds should key off stable human-actionable states only; transient status churn during refresh, AI-review handoff, request-changes relaunch, or other auto-resume transitions must not create a fresh alert.
 - GitHub CLI credentials are not required for the MVP path unless a later feature flag enables PR operations.
 
 ### 11.5 Suggested MVP Build Order

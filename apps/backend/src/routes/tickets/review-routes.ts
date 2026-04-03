@@ -4,7 +4,10 @@ import { requestChangesInputSchema } from "../../../../../packages/contracts/src
 
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
-import { publishSessionUpdated } from "../../lib/execution-runtime/publishers.js";
+import {
+  publishSessionUpdated,
+  shouldPublishPreExecutionSessionUpdate,
+} from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { createKeyedSerialTaskRunner } from "../../lib/keyed-serial-task-runner.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
@@ -69,11 +72,13 @@ export function registerTicketReviewRoutes(
             },
           ),
         );
-        publishSessionUpdated(
-          eventHub,
-          restartResult.session,
-          executionRuntime.hasActiveExecution(restartResult.session.id),
-        );
+        if (shouldPublishPreExecutionSessionUpdate(restartResult.session)) {
+          publishSessionUpdated(
+            eventHub,
+            restartResult.session,
+            executionRuntime.hasActiveExecution(restartResult.session.id),
+          );
+        }
         restartResult.logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent(

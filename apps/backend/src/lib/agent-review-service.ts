@@ -9,7 +9,10 @@ import type {
 } from "../../../../packages/contracts/src/index.js";
 
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
-import { publishSessionUpdated } from "./execution-runtime/publishers.js";
+import {
+  publishSessionUpdated,
+  shouldPublishPreExecutionSessionUpdate,
+} from "./execution-runtime/publishers.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
 import type { RestartTicketResult, Store } from "./store.js";
 
@@ -285,11 +288,13 @@ export class AgentReviewService {
         },
       ),
     );
-    publishSessionUpdated(
-      this.#eventHub,
-      restartResult.session,
-      this.#executionRuntime.hasActiveExecution(restartResult.session.id),
-    );
+    if (shouldPublishPreExecutionSessionUpdate(restartResult.session)) {
+      publishSessionUpdated(
+        this.#eventHub,
+        restartResult.session,
+        this.#executionRuntime.hasActiveExecution(restartResult.session.id),
+      );
+    }
     restartResult.logs.forEach((logLine, index) => {
       this.#eventHub.publish(
         makeProtocolEvent(

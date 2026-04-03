@@ -524,9 +524,9 @@ export function useWalleyBoardController() {
 
   const globalSessionById = new Map(
     globalSessionSummaries
-      .map((query) => query.data?.session)
-      .filter((value): value is ExecutionSession => value !== undefined)
-      .map((item) => [item.id, item]),
+      .map((query) => query.data)
+      .filter((value): value is SessionResponse => value !== undefined)
+      .map((item) => [item.session.id, item]),
   );
   const actionItems = deriveInboxItems({
     drafts: globalDrafts,
