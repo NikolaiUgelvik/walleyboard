@@ -226,7 +226,7 @@ test("repository terminal tabs preserve each tab instance and resolved path acro
   try {
     await act(async () => {
       root.render(
-        <MantineProvider env="test">
+        <MantineProvider>
           <WorkspaceTerminalContent
             selectedSessionTicket={null}
             workspaceTerminalContext={workspaceTerminalContext}
@@ -267,6 +267,10 @@ test("repository terminal tabs preserve each tab instance and resolved path acro
       mounts.get("/projects/project-1/repositories/repo-1/terminal"),
       1,
     );
+    assert.equal(
+      mounts.get("/projects/project-1/repositories/repo-2/terminal") ?? 0,
+      0,
+    );
 
     await act(async () => {
       apiTab.dispatchEvent(
@@ -281,6 +285,10 @@ test("repository terminal tabs preserve each tab instance and resolved path acro
       'div[data-socket-path="/projects/project-1/repositories/repo-2/terminal"] button',
     );
     assert.ok(apiResolveButton);
+    assert.equal(
+      mounts.get("/projects/project-1/repositories/repo-2/terminal"),
+      1,
+    );
     await act(async () => {
       apiResolveButton.dispatchEvent(
         new harness.window.MouseEvent("click", {

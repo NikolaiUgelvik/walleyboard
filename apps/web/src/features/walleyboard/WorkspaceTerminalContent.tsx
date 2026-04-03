@@ -1,4 +1,5 @@
 import { Loader, Tabs, Text } from "@mantine/core";
+import { useEffect, useState } from "react";
 
 import type { WorkspaceTerminalContext } from "./shared.js";
 import type { resolveWorkspaceTerminalPanelState } from "./workspace-modal-state.js";
@@ -12,6 +13,133 @@ export type WorkspaceTerminalComponentProps = {
 export type WorkspaceTerminalComponent = (
   props: WorkspaceTerminalComponentProps,
 ) => React.JSX.Element;
+
+function RepositoryTabsTerminalContent({
+  repositories,
+  TerminalComponent,
+}: {
+  repositories: Extract<
+    WorkspaceTerminalContext,
+    { kind: "repository_tabs" }
+  >["repositories"];
+  TerminalComponent: WorkspaceTerminalComponent;
+}) {
+  const defaultRepository = repositories[0] ?? null;
+  const [activeRepositoryId, setActiveRepositoryId] = useState(
+    defaultRepository?.id ?? null,
+  );
+  const [visitedRepositoryIds, setVisitedRepositoryIds] = useState<string[]>(
+    defaultRepository ? [defaultRepository.id] : [],
+  );
+
+  useEffect(() => {
+    if (!defaultRepository) {
+      setActiveRepositoryId(null);
+      setVisitedRepositoryIds([]);
+      return;
+    }
+
+    const repositoryIds = new Set(
+      repositories.map((repository) => repository.id),
+    );
+    const nextActiveRepositoryId = repositoryIds.has(activeRepositoryId ?? "")
+      ? activeRepositoryId
+      : defaultRepository.id;
+
+    if (nextActiveRepositoryId !== activeRepositoryId) {
+      setActiveRepositoryId(nextActiveRepositoryId);
+    }
+
+    setVisitedRepositoryIds((current) => {
+      const next = current.filter((id) => repositoryIds.has(id));
+      if (nextActiveRepositoryId && !next.includes(nextActiveRepositoryId)) {
+        next.push(nextActiveRepositoryId);
+      }
+
+      return next.length === current.length &&
+        next.every((id, index) => id === current[index])
+        ? current
+        : next;
+    });
+  }, [activeRepositoryId, defaultRepository, repositories]);
+
+  if (!defaultRepository) {
+    return (
+      <Text size="sm" c="dimmed">
+        This project does not have any configured repositories.
+      </Text>
+    );
+  }
+
+  if (repositories.length === 1) {
+    return (
+      <TerminalComponent
+        key={defaultRepository.socketPath}
+        socketPath={defaultRepository.socketPath}
+        surfaceLabel="repository"
+        worktreePath={defaultRepository.worktreePath}
+      />
+    );
+  }
+
+  return (
+    <Tabs
+      value={activeRepositoryId}
+      onChange={setActiveRepositoryId}
+      styles={{
+        root: {
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+        },
+      }}
+    >
+      <Tabs.List>
+        {repositories.map((repository) => (
+          <Tabs.Tab key={repository.id} value={repository.id}>
+            {repository.label}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          paddingTop: "var(--mantine-spacing-sm)",
+        }}
+      >
+        {visitedRepositoryIds.map((repositoryId) => {
+          const repository = repositories.find(
+            (entry) => entry.id === repositoryId,
+          );
+          if (!repository) {
+            return null;
+          }
+
+          return (
+            <div
+              key={repository.id}
+              hidden={repository.id !== activeRepositoryId}
+              style={{
+                display:
+                  repository.id === activeRepositoryId ? "block" : "none",
+                height: "100%",
+              }}
+            >
+              <TerminalComponent
+                key={repository.socketPath}
+                socketPath={repository.socketPath}
+                surfaceLabel="repository"
+                worktreePath={repository.worktreePath}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </Tabs>
+  );
+}
 
 export function WorkspaceTerminalContent({
   selectedSessionTicket,
@@ -27,62 +155,11 @@ export function WorkspaceTerminalContent({
   TerminalComponent: WorkspaceTerminalComponent;
 }) {
   if (workspaceTerminalContext?.kind === "repository_tabs") {
-    const repositories = workspaceTerminalContext.repositories;
-    const defaultRepository = repositories[0] ?? null;
-    if (!defaultRepository) {
-      return (
-        <Text size="sm" c="dimmed">
-          This project does not have any configured repositories.
-        </Text>
-      );
-    }
-
-    if (repositories.length === 1) {
-      return (
-        <TerminalComponent
-          key={defaultRepository.socketPath}
-          socketPath={defaultRepository.socketPath}
-          surfaceLabel="repository"
-          worktreePath={defaultRepository.worktreePath}
-        />
-      );
-    }
-
     return (
-      <Tabs
-        defaultValue={defaultRepository.id}
-        styles={{
-          root: {
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-          },
-          panel: {
-            flex: 1,
-            minHeight: 0,
-            paddingTop: "var(--mantine-spacing-sm)",
-          },
-        }}
-      >
-        <Tabs.List>
-          {repositories.map((repository) => (
-            <Tabs.Tab key={repository.id} value={repository.id}>
-              {repository.label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
-
-        {repositories.map((repository) => (
-          <Tabs.Panel key={repository.id} value={repository.id}>
-            <TerminalComponent
-              key={repository.socketPath}
-              socketPath={repository.socketPath}
-              surfaceLabel="repository"
-              worktreePath={repository.worktreePath}
-            />
-          </Tabs.Panel>
-        ))}
-      </Tabs>
+      <RepositoryTabsTerminalContent
+        repositories={workspaceTerminalContext.repositories}
+        TerminalComponent={TerminalComponent}
+      />
     );
   }
 
