@@ -336,3 +336,32 @@ test("renders summarized todo list events without raw JSON", () => {
   assert.match(html, /0\/3 completed/);
   assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.started&quot;/);
 });
+
+test("suppresses top-level Codex turn and thread envelope events", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          JSON.stringify({
+            type: "turn.started",
+          }),
+          JSON.stringify({
+            type: "thread.started",
+            thread_id: "019d53d4-84ec-7a30-9142-b564455d4ce1",
+          }),
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(
+    html,
+    /No interpreted activity is available for this session yet/,
+  );
+  assert.doesNotMatch(html, /thread_id/);
+  assert.doesNotMatch(html, /turn\.started/);
+  assert.doesNotMatch(html, /thread\.started/);
+});

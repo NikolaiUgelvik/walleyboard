@@ -104,6 +104,15 @@ function interpretCodexEvent(
   }
 
   if (
+    event.eventType === "turn.started" ||
+    event.eventType === "thread.started" ||
+    event.eventType === "turn.completed" ||
+    event.eventType === "thread.completed"
+  ) {
+    return null;
+  }
+
+  if (
     event.eventType === "agent_message" &&
     event.payload === null &&
     event.rawPayload.trim().length > 0
@@ -472,6 +481,20 @@ function interpretCodexEvent(
   return null;
 }
 
+function isSuppressedCodexEnvelopeEvent(line: string): boolean {
+  const event = parseCodexEvent(line);
+  if (!event) {
+    return false;
+  }
+
+  return (
+    event.eventType === "turn.started" ||
+    event.eventType === "thread.started" ||
+    event.eventType === "turn.completed" ||
+    event.eventType === "thread.completed"
+  );
+}
+
 function interpretGenericAdapterLine(
   line: string,
   index: number,
@@ -536,6 +559,9 @@ function interpretSessionLog(
     const codexEvent = interpretCodexEvent(line, index);
     if (codexEvent) {
       return codexEvent;
+    }
+    if (isSuppressedCodexEnvelopeEvent(line)) {
+      return null;
     }
   } else {
     const genericAdapterLine = interpretGenericAdapterLine(
