@@ -362,11 +362,22 @@ export type ArchiveActionFeedback = {
 
 export type DiffLayout = "split" | "stacked";
 export type WorkspaceModalKind = "diff" | "terminal" | "activity";
-export type WorkspaceTerminalContext = {
+export type WorkspaceTerminalTab = {
+  id: string;
+  label: string;
   socketPath: string;
-  surfaceLabel: "ticket" | "repository";
   worktreePath: string | null;
 };
+export type WorkspaceTerminalContext =
+  | ({
+      kind: "single";
+      surfaceLabel: "ticket" | "repository";
+    } & WorkspaceTerminalTab)
+  | {
+      kind: "repository_tabs";
+      repositories: WorkspaceTerminalTab[];
+      surfaceLabel: "repository";
+    };
 export type ReviewCardActionKind = "merge" | "create_pr" | "open_pr";
 export type ReviewCardAction = {
   kind: ReviewCardActionKind;

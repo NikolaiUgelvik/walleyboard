@@ -682,6 +682,7 @@ export function useWalleyBoardController() {
     repositoryWorkspacePreview,
     repositoryWorkspacePreviewQuery,
   } = useSelectedRepositoryWorkspace({
+    repositories,
     selectedProjectId,
     selectedRepository,
     setWorkspaceModal,

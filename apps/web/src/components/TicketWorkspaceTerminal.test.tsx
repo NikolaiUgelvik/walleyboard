@@ -7,6 +7,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildTicketWorkspaceTerminalOptions,
   resolveTerminalTheme,
+  resolveWorkspaceTerminalHeading,
+  resolveWorkspaceTerminalPathLabel,
   TERMINAL_COLOR_SCHEME_HOOK_OPTIONS,
   TicketWorkspaceTerminalViewport,
   updateTicketWorkspaceTerminalTheme,
@@ -75,4 +77,21 @@ test("switches the existing terminal instance between dark and light themes", ()
   assert.strictEqual(terminal.options.theme, lightTheme);
   assert.equal(terminal.options.theme?.background, "#f8f7f4");
   assert.equal(fitCalls, 2);
+});
+
+test("resolves repository terminal labels with the resolved working directory", () => {
+  assert.equal(
+    resolveWorkspaceTerminalHeading("repository"),
+    "Repository terminal",
+  );
+  assert.equal(
+    resolveWorkspaceTerminalPathLabel("/tmp/repository-target"),
+    "/tmp/repository-target",
+  );
+});
+
+test("resolves a non-pending placeholder while the terminal path is still resolving", () => {
+  assert.equal(resolveWorkspaceTerminalHeading("ticket"), "Ticket terminal");
+  assert.equal(resolveWorkspaceTerminalPathLabel(null), "starting...");
+  assert.notEqual(resolveWorkspaceTerminalPathLabel(null), "pending");
 });

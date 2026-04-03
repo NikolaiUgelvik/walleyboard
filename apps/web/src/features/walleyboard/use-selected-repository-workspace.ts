@@ -14,7 +14,24 @@ import {
   type WorkspaceTerminalContext,
 } from "./shared.js";
 
+export function buildProjectTerminalContext(input: {
+  projectId: string;
+  repositories: RepositoryConfig[];
+}): WorkspaceTerminalContext {
+  return {
+    kind: "repository_tabs",
+    repositories: input.repositories.map((repository) => ({
+      id: repository.id,
+      label: repository.name,
+      socketPath: `/projects/${input.projectId}/repositories/${repository.id}/workspace/terminal`,
+      worktreePath: null,
+    })),
+    surfaceLabel: "repository",
+  };
+}
+
 export function useSelectedRepositoryWorkspace(input: {
+  repositories: RepositoryConfig[];
   selectedProjectId: string | null;
   selectedRepository: RepositoryConfig | null;
   setWorkspaceModal: Dispatch<SetStateAction<WorkspaceModalKind | null>>;
@@ -145,17 +162,22 @@ export function useSelectedRepositoryWorkspace(input: {
   };
 
   const openSelectedRepositoryWorkspaceTerminal = (): void => {
-    if (input.selectedProjectId === null || input.selectedRepository === null) {
+    if (
+      input.selectedProjectId === null ||
+      input.selectedRepository === null ||
+      input.repositories.length === 0
+    ) {
       return;
     }
 
     setRepositoryTerminalPending(true);
     input.setWorkspaceTicket(null);
-    input.setWorkspaceTerminalContext({
-      socketPath: `/projects/${input.selectedProjectId}/repositories/${input.selectedRepository.id}/workspace/terminal`,
-      surfaceLabel: "repository",
-      worktreePath: null,
-    });
+    input.setWorkspaceTerminalContext(
+      buildProjectTerminalContext({
+        projectId: input.selectedProjectId,
+        repositories: input.repositories,
+      }),
+    );
     input.setWorkspaceModal("terminal");
     setRepositoryTerminalPending(false);
   };

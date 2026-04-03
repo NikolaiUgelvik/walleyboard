@@ -21,6 +21,7 @@ import {
 } from "./BoardView.js";
 import { TicketWorkspaceSummaryRow } from "./InspectorPane.js";
 import type { RepositoryWorkspacePreview } from "./shared.js";
+import { buildProjectTerminalContext } from "./use-selected-repository-workspace.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 import {
   resolveWorkspaceDiffPanelState,
@@ -543,11 +544,52 @@ test("project workspace actions call the repository preview and terminal handler
   const terminalAction = findElementByProp(
     tree,
     "aria-label",
-    "Open repository terminal",
+    "Open project terminal",
   );
   assert.ok(terminalAction);
   (terminalAction.props as { onClick: () => void }).onClick();
   assert.equal(repositoryTerminalActionCalls(), 1);
+});
+
+test("project terminal context creates one repository tab per repository", () => {
+  const context = buildProjectTerminalContext({
+    projectId: "project-1",
+    repositories: [
+      {
+        id: "repo-1",
+        project_id: "project-1",
+        name: "repo",
+        path: "/tmp/repo",
+        target_branch: "main",
+        setup_hook: null,
+        cleanup_hook: null,
+        validation_profile: [],
+        extra_env_allowlist: [],
+        created_at: "2026-04-02T00:00:00.000Z",
+        updated_at: "2026-04-02T00:00:00.000Z",
+      },
+      {
+        id: "repo-2",
+        project_id: "project-1",
+        name: "api",
+        path: "/tmp/api",
+        target_branch: "main",
+        setup_hook: null,
+        cleanup_hook: null,
+        validation_profile: [],
+        extra_env_allowlist: [],
+        created_at: "2026-04-02T00:00:00.000Z",
+        updated_at: "2026-04-02T00:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.equal(context.kind, "repository_tabs");
+  assert.deepEqual(
+    context.repositories.map((repository) => repository.label),
+    ["repo", "api"],
+  );
+  assert.equal(context.repositories[1]?.socketPath.includes("/repo-2/"), true);
 });
 
 test("ticket workspace summary row opens the activity stream from the inspector", () => {

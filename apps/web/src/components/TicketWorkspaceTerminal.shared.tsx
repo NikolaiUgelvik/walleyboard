@@ -62,6 +62,20 @@ export function updateTicketWorkspaceTerminalTheme(
   return theme;
 }
 
+export function resolveWorkspaceTerminalHeading(
+  surfaceLabel: "ticket" | "repository",
+): string {
+  return surfaceLabel === "repository"
+    ? "Repository terminal"
+    : "Ticket terminal";
+}
+
+export function resolveWorkspaceTerminalPathLabel(
+  worktreePath: string | null,
+): string {
+  return worktreePath ?? "starting...";
+}
+
 export function TicketWorkspaceTerminalViewport({
   containerRef,
   colorScheme,

@@ -64,6 +64,9 @@ export function createWorkspaceModalControls(input: {
     input.setWorkspaceTerminalContext(
       modal === "terminal"
         ? {
+            kind: "single",
+            id: `ticket-${ticket.id}`,
+            label: `Ticket #${ticket.id}`,
             socketPath: `/tickets/${ticket.id}/workspace/terminal`,
             surfaceLabel: "ticket",
             worktreePath:

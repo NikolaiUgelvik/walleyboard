@@ -379,6 +379,13 @@ export function registerTicketReadWorkspaceRoutes(
         return;
       }
 
+      socket.send(
+        JSON.stringify({
+          type: "terminal.started",
+          worktree_path: session.worktree_path,
+        }),
+      );
+
       terminal.pty.onData((data) => {
         socket.send(
           JSON.stringify({

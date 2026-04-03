@@ -9,6 +9,8 @@ import { apiBaseUrl } from "../lib/api-base-url.js";
 import {
   buildTicketWorkspaceTerminalOptions,
   resolveTerminalTheme,
+  resolveWorkspaceTerminalHeading,
+  resolveWorkspaceTerminalPathLabel,
   TERMINAL_COLOR_SCHEME_HOOK_OPTIONS,
   TicketWorkspaceTerminalViewport,
   updateTicketWorkspaceTerminalTheme,
@@ -39,6 +41,8 @@ export function TicketWorkspaceTerminal({
   const terminalThemeRef = useRef(resolveTerminalTheme(terminalColorScheme));
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedWorktreePath, setResolvedWorktreePath] =
+    useState(worktreePath);
   terminalThemeRef.current = resolveTerminalTheme(terminalColorScheme);
 
   useEffect(() => {
@@ -48,6 +52,7 @@ export function TicketWorkspaceTerminal({
     }
 
     setError(null);
+    setResolvedWorktreePath(worktreePath);
     const terminal = new Terminal(
       buildTicketWorkspaceTerminalOptions(terminalThemeRef.current),
     );
@@ -93,6 +98,10 @@ export function TicketWorkspaceTerminal({
       try {
         const message = JSON.parse(String(event.data)) as
           | {
+              type?: "terminal.started";
+              worktree_path?: string | null;
+            }
+          | {
               type?: "terminal.output";
               data?: string;
             }
@@ -105,6 +114,11 @@ export function TicketWorkspaceTerminal({
               exit_code?: number;
               signal?: number;
             };
+
+        if (message.type === "terminal.started") {
+          setResolvedWorktreePath(message.worktree_path ?? null);
+          return;
+        }
 
         if (message.type === "terminal.output" && message.data) {
           terminal.write(message.data);
@@ -153,7 +167,7 @@ export function TicketWorkspaceTerminal({
       terminal.dispose();
       container.replaceChildren();
     };
-  }, [socketPath]);
+  }, [socketPath, worktreePath]);
 
   useEffect(() => {
     updateTicketWorkspaceTerminalTheme(
@@ -166,12 +180,13 @@ export function TicketWorkspaceTerminal({
   return (
     <Stack gap="sm" style={{ height: "100%" }}>
       <Stack gap={4}>
-        <Text fw={600}>Worktree terminal</Text>
+        <Text fw={600}>{resolveWorkspaceTerminalHeading(surfaceLabel)}</Text>
         <Text size="sm" c="dimmed">
           Plain shell access at the {surfaceLabel} worktree root.
         </Text>
         <Text size="sm" c="dimmed">
-          Working directory: <Code>{worktreePath ?? "pending"}</Code>
+          Working directory:{" "}
+          <Code>{resolveWorkspaceTerminalPathLabel(resolvedWorktreePath)}</Code>
         </Text>
       </Stack>
 

@@ -267,6 +267,13 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         return;
       }
 
+      socket.send(
+        JSON.stringify({
+          type: "terminal.started",
+          worktree_path: worktreePath,
+        }),
+      );
+
       terminal.pty.onData((data) => {
         socket.send(
           JSON.stringify({

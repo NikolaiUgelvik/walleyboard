@@ -320,7 +320,7 @@ export function ProjectWorkspaceActions({
           {previewRunning ? "Stop Preview" : "Preview"}
         </Button>
         <Button
-          aria-label="Open repository terminal"
+          aria-label="Open project terminal"
           disabled={controller.repositoryTerminalPending}
           leftSection={<IconTerminal2 size={16} />}
           size="compact-sm"
