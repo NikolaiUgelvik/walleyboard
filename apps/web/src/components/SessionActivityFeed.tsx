@@ -179,6 +179,22 @@ function normalizeCommandPathList(paths: string): string {
     .join(", ");
 }
 
+function summarizePathList(paths: string[]): string {
+  if (paths.length === 0) {
+    return "";
+  }
+
+  if (paths.length === 1) {
+    return `\`${normalizeLoggedPath(paths[0] ?? "")}\``;
+  }
+
+  if (paths.length === 2) {
+    return `\`${normalizeLoggedPath(paths[0] ?? "")}\` and \`${normalizeLoggedPath(paths[1] ?? "")}\``;
+  }
+
+  return `\`${normalizeLoggedPath(paths[0] ?? "")}\`, \`${normalizeLoggedPath(paths[1] ?? "")}\`, and ${paths.length - 2} more`;
+}
+
 function formatCommandTargetSummary(targets: string): string {
   const normalizedTargets = normalizeCommandPathList(targets);
   if (normalizedTargets.length === 0) {
@@ -216,6 +232,39 @@ function extractCodexRawNumberField(
 
   const parsed = Number.parseInt(match[1], 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function extractCodexRawPaths(rawPayload: string): string[] {
+  return Array.from(
+    rawPayload.matchAll(/"path"\s*:\s*"((?:\\.|[^"\\])*)"/g),
+    (match) => unescapeShellString(match[1] ?? ""),
+  ).filter(Boolean);
+}
+
+function describeFileChangeActivity(
+  paths: string[],
+  label: string,
+  inProgress: boolean,
+): {
+  label: string;
+  detail: string;
+} | null {
+  if (paths.length === 0) {
+    return null;
+  }
+
+  const pathSummary = summarizePathList(paths);
+  if (inProgress) {
+    return {
+      label: paths.length === 1 ? "Editing file" : "Editing files",
+      detail: `${label} started updating ${pathSummary}.`,
+    };
+  }
+
+  return {
+    label: paths.length === 1 ? "Updated file" : "Updated files",
+    detail: `${label} updated ${pathSummary}.`,
+  };
 }
 
 function describeCommandExecution(
@@ -442,6 +491,24 @@ function interpretCodexEvent(
           : description.detail,
       );
     }
+
+    if (rawItemType === "file_change") {
+      const description = describeFileChangeActivity(
+        extractCodexRawPaths(event.rawPayload),
+        "Codex",
+        event.eventType === "item.started",
+      );
+      if (!description) {
+        return null;
+      }
+
+      return createActivity(
+        `codex-file-change-raw-${index}`,
+        "gray",
+        description.label,
+        description.detail,
+      );
+    }
   }
 
   if (
@@ -462,6 +529,30 @@ function interpretCodexEvent(
   }
 
   if (
+    event.eventType === "file_change.started" ||
+    event.eventType === "file_change.completed"
+  ) {
+    const description = describeFileChangeActivity(
+      event.rawPayload
+        .split(/\s*,\s*/)
+        .map((part) => part.trim())
+        .filter(Boolean),
+      "Codex",
+      event.eventType === "file_change.started",
+    );
+    if (!description) {
+      return null;
+    }
+
+    return createActivity(
+      `codex-file-change-${index}`,
+      "gray",
+      description.label,
+      description.detail,
+    );
+  }
+
+  if (
     !event.payload ||
     !("item" in event.payload) ||
     !event.payload.item ||
@@ -472,10 +563,6 @@ function interpretCodexEvent(
 
   const itemRecord = event.payload.item as Record<string, unknown>;
   const itemType = typeof itemRecord.type === "string" ? itemRecord.type : null;
-
-  if (event.eventType === "item.started") {
-    return null;
-  }
 
   if (itemType === "agent_message") {
     const text =
@@ -498,6 +585,10 @@ function interpretCodexEvent(
   }
 
   if (itemType === "command_execution") {
+    if (event.eventType === "item.started") {
+      return null;
+    }
+
     const command =
       typeof itemRecord.command === "string" ? itemRecord.command : null;
     if (!command) {
@@ -529,6 +620,33 @@ function interpretCodexEvent(
 
     return createActivity(
       `codex-command-${index}`,
+      "gray",
+      description.label,
+      description.detail,
+    );
+  }
+
+  if (itemType === "file_change") {
+    const changes = Array.isArray(itemRecord.changes)
+      ? itemRecord.changes.filter(
+          (change): change is Record<string, unknown> =>
+            !!change && typeof change === "object",
+        )
+      : [];
+    const paths = changes
+      .map((change) => (typeof change.path === "string" ? change.path : null))
+      .filter((path): path is string => path !== null);
+    const description = describeFileChangeActivity(
+      paths,
+      "Codex",
+      event.eventType === "item.started",
+    );
+    if (!description) {
+      return null;
+    }
+
+    return createActivity(
+      `codex-file-change-item-${index}`,
       "gray",
       description.label,
       description.detail,

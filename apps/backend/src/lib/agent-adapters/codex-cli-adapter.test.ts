@@ -284,3 +284,33 @@ test("CodexCliAdapter.interpretOutputLine preserves readable agent messages", ()
     "[codex agent_message] I found the relevant files and I am preparing a patch.",
   );
 });
+
+test("CodexCliAdapter.interpretOutputLine summarizes file change events", () => {
+  const adapter = new CodexCliAdapter();
+
+  const interpreted = adapter.interpretOutputLine(
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "item_81",
+        type: "file_change",
+        changes: [
+          {
+            path: "/workspace/apps/backend/src/lib/sqlite-store.test.ts",
+            kind: "update",
+          },
+          {
+            path: "/workspace/apps/web/src/components/AgentReviewHistoryModal.test.tsx",
+            kind: "update",
+          },
+        ],
+        status: "completed",
+      },
+    }),
+  );
+
+  assert.equal(
+    interpreted.logLine,
+    "[codex file_change.completed] /workspace/apps/backend/src/lib/sqlite-store.test.ts, /workspace/apps/web/src/components/AgentReviewHistoryModal.test.tsx",
+  );
+});

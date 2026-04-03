@@ -118,3 +118,75 @@ test("renders search commands with the searched pattern and target files", () =>
     /apps\/backend\/src\/routes\/read-workspace-routes\.test\.ts/,
   );
 });
+
+test("renders raw file change JSON as readable file update activity", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          JSON.stringify({
+            type: "item.started",
+            item: {
+              id: "item_83",
+              type: "file_change",
+              changes: [
+                {
+                  path: "/workspace/apps/web/src/components/AgentReviewHistoryModal.test.tsx",
+                  kind: "update",
+                },
+              ],
+              status: "in_progress",
+            },
+          }),
+          JSON.stringify({
+            type: "item.completed",
+            item: {
+              id: "item_83",
+              type: "file_change",
+              changes: [
+                {
+                  path: "/workspace/apps/web/src/components/AgentReviewHistoryModal.test.tsx",
+                  kind: "update",
+                },
+              ],
+              status: "completed",
+            },
+          }),
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(html, /Updated file/);
+  assert.match(html, /Editing file/);
+  assert.match(
+    html,
+    /apps\/web\/src\/components\/AgentReviewHistoryModal\.test\.tsx/,
+  );
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.completed&quot;/);
+});
+
+test("renders summarized file change events without raw JSON", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          "[codex file_change.completed] /workspace/apps/backend/src/lib/sqlite-store.test.ts, /workspace/apps/web/src/components/AgentReviewHistoryModal.test.tsx",
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(html, /Updated files/);
+  assert.match(html, /apps\/backend\/src\/lib\/sqlite-store\.test\.ts/);
+  assert.match(
+    html,
+    /apps\/web\/src\/components\/AgentReviewHistoryModal\.test\.tsx/,
+  );
+});

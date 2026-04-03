@@ -156,6 +156,34 @@ function summarizeCodexCommandEvent(
   return `[codex command.completed] ${truncate(command, 180)}`;
 }
 
+function summarizeCodexFileChangeEvent(
+  eventType: string,
+  item: Record<string, unknown>,
+): string | null {
+  const changes = Array.isArray(item.changes)
+    ? item.changes.filter(
+        (change): change is Record<string, unknown> =>
+          !!change && typeof change === "object",
+      )
+    : [];
+  const paths = changes
+    .map((change) => (typeof change.path === "string" ? change.path : null))
+    .filter((path): path is string => path !== null);
+  if (paths.length === 0) {
+    return null;
+  }
+
+  const preview = paths.slice(0, 2).join(", ");
+  const suffix = paths.length > 2 ? ` (+${paths.length - 2} more)` : "";
+  const summary = `${preview}${suffix}`;
+
+  if (eventType === "item.started") {
+    return `[codex file_change.started] ${truncate(summary, 180)}`;
+  }
+
+  return `[codex file_change.completed] ${truncate(summary, 180)}`;
+}
+
 function summarizeCodexItemEvent(
   eventType: string,
   item: Record<string, unknown>,
@@ -177,6 +205,10 @@ function summarizeCodexItemEvent(
 
   if (itemType === "command_execution") {
     return summarizeCodexCommandEvent(eventType, item);
+  }
+
+  if (itemType === "file_change") {
+    return summarizeCodexFileChangeEvent(eventType, item);
   }
 
   return null;
