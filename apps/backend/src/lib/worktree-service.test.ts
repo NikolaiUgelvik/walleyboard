@@ -734,7 +734,7 @@ test("mergeReviewedBranch uses the conflict resolver and completes the rebase be
   }
 });
 
-test("mergeReviewedBranch invokes the conflict resolver only once across retry attempts", async () => {
+test("mergeReviewedBranch lets the resolver catch up with an advancing target branch and finish the merge", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-retry-"));
 
   try {
@@ -769,16 +769,19 @@ test("mergeReviewedBranch invokes the conflict resolver only once across retry a
 
     let resolverCalls = 0;
 
-    await assert.rejects(
-      mergeReviewedBranch(
-        createRepositoryConfig(repoPath),
-        worktreePath,
-        "ticket-branch",
-        "main",
-        {
-          resolveConflicts: () => {
-            resolverCalls += 1;
+    const result = await mergeReviewedBranch(
+      createRepositoryConfig(repoPath),
+      worktreePath,
+      "ticket-branch",
+      "main",
+      {
+        resolveConflicts: ({ recoveryKind, stage, conflictedFiles }) => {
+          resolverCalls += 1;
+
+          if (recoveryKind === "conflicts") {
             assert.equal(resolverCalls, 1);
+            assert.equal(stage, "rebase");
+            assert.deepEqual(conflictedFiles, ["story.txt"]);
             writeFileSync(
               join(worktreePath, "story.txt"),
               "main change\nticket change\n",
@@ -803,22 +806,54 @@ test("mergeReviewedBranch invokes the conflict resolver only once across retry a
               resolved: true,
               logs: ["AI-assisted conflict resolution completed."],
             };
-          },
+          }
+
+          assert.equal(recoveryKind, "target_branch_advanced");
+          assert.equal(resolverCalls, 2);
+          assert.equal(stage, "merge");
+          assert.deepEqual(conflictedFiles, []);
+
+          try {
+            runGit(worktreePath, ["merge", "main"]);
+          } catch {
+            writeFileSync(
+              join(worktreePath, "story.txt"),
+              "main rewrite\nticket change\n",
+              "utf8",
+            );
+            runGit(worktreePath, ["add", "story.txt"]);
+            runGit(
+              worktreePath,
+              ["-c", "core.editor=true", "merge", "--continue"],
+              { GIT_EDITOR: "true" },
+            );
+          }
+
+          return {
+            resolved: true,
+            logs: ["AI-assisted target-branch catch-up completed."],
+          };
         },
-      ),
-      (error: unknown) => {
-        assert.ok(error instanceof AutomaticMergeRecoveryError);
-        assert.ok(error.note.includes("existing worktree and branch"));
-        assert.ok(
-          error.logs.some((line) =>
-            line.includes("Refreshing the ticket worktree and retrying"),
-          ),
-        );
-        return true;
       },
     );
 
-    assert.equal(resolverCalls, 1);
+    assert.equal(resolverCalls, 2);
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes("AI-assisted target-branch catch-up completed."),
+      ),
+    );
+    assert.ok(
+      result.logs.some((line) =>
+        line.includes(
+          "Retrying the final merge after updating ticket-branch with the latest main changes.",
+        ),
+      ),
+    );
+    assert.equal(
+      readFileSync(join(repoPath, "story.txt"), "utf8"),
+      "main rewrite\nticket change\n",
+    );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

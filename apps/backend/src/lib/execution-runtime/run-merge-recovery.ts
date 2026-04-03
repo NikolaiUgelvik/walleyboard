@@ -1,0 +1,236 @@
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+
+import type {
+  ExecutionSession,
+  Project,
+  RepositoryConfig,
+  TicketFrontmatter,
+} from "../../../../../packages/contracts/src/index.js";
+import type { AgentCliAdapter } from "../agent-adapters/types.js";
+import type { DockerRuntimeManager } from "../docker-runtime.js";
+import {
+  buildMergeConflictSummaryPath,
+  buildProcessEnv,
+  buildWorkspaceOutputPath,
+  hasMeaningfulContent,
+  streamLines,
+  truncate,
+} from "./helpers.js";
+import type { MergeRecoveryKind } from "./merge-recovery.js";
+import {
+  formatMergeRecoveryFailureNote,
+  formatMergeRecoveryLaunchLabel,
+} from "./merge-recovery.js";
+
+export async function runMergeRecovery(input: {
+  adapter: AgentCliAdapter;
+  cleanupExecutionEnvironment: (sessionId: string) => void;
+  conflictedFiles: string[];
+  dockerRuntime: DockerRuntimeManager;
+  failureMessage: string;
+  project: Project;
+  recoveryKind: MergeRecoveryKind;
+  repository: RepositoryConfig;
+  session: ExecutionSession;
+  stage: "rebase" | "merge";
+  targetBranch: string;
+  ticket: TicketFrontmatter;
+}): Promise<{
+  resolved: boolean;
+  logs: string[];
+  note?: string;
+}> {
+  const worktreePath = input.session.worktree_path;
+  if (!worktreePath) {
+    throw new Error("Execution session has no prepared worktree");
+  }
+
+  const useDockerRuntime = input.project.execution_backend === "docker";
+  const outputSummaryPath = useDockerRuntime
+    ? buildWorkspaceOutputPath(worktreePath, input.session.id, "merge-conflict")
+    : buildMergeConflictSummaryPath(
+        input.project,
+        input.ticket.id,
+        input.session.id,
+      );
+  const run = input.adapter.buildMergeConflictRun({
+    conflictedFiles: input.conflictedFiles,
+    failureMessage: input.failureMessage,
+    outputPath: outputSummaryPath,
+    project: input.project,
+    recoveryKind: input.recoveryKind,
+    repository: input.repository,
+    session: input.session,
+    stage: input.stage,
+    targetBranch: input.targetBranch,
+    ticket: input.ticket,
+    useDockerRuntime,
+  });
+  const { model, reasoningEffort } = input.adapter.resolveModelSelection(
+    input.project,
+    "ticket",
+  );
+
+  const logs = [
+    `Launching ${input.adapter.label} ${formatMergeRecoveryLaunchLabel(input.recoveryKind)} in ${input.session.worktree_path}`,
+    `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
+  ];
+  if (model) {
+    logs.push(`Model override: ${model}`);
+  }
+  if (reasoningEffort) {
+    logs.push(`Reasoning effort override: ${reasoningEffort}`);
+  }
+
+  const ptyEnv = buildProcessEnv();
+  writeFileSync(outputSummaryPath, "", "utf8");
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    let adapterOutput = "";
+
+    const finish = (result: {
+      resolved: boolean;
+      logs: string[];
+      note?: string;
+    }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (useDockerRuntime) {
+        input.cleanupExecutionEnvironment(input.session.id);
+      }
+      resolve(result);
+    };
+
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      if (useDockerRuntime) {
+        if (!run.dockerSpec) {
+          throw new Error(
+            `${input.adapter.label} does not provide a Docker execution configuration.`,
+          );
+        }
+        input.dockerRuntime.ensureSessionContainer({
+          dockerSpec: run.dockerSpec,
+          sessionId: input.session.id,
+          projectId: input.project.id,
+          ticketId: input.ticket.id,
+          worktreePath,
+        });
+        child = input.dockerRuntime.spawnProcessInSession(
+          input.session.id,
+          run.command,
+          run.args,
+          {
+            cwd: worktreePath,
+            env: ptyEnv,
+          },
+        );
+      } else {
+        child = spawn(run.command, run.args, {
+          cwd: worktreePath,
+          env: ptyEnv,
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `${input.adapter.label} failed to start`;
+      finish({
+        resolved: false,
+        logs,
+        note: formatMergeRecoveryFailureNote({
+          adapterLabel: input.adapter.label,
+          message,
+          recoveryKind: input.recoveryKind,
+          stage: input.stage,
+          targetBranch: input.targetBranch,
+          when: "start",
+        }),
+      });
+      return;
+    }
+
+    let lastOutputContent: string | undefined;
+    const captureAdapterLine = (line: string) => {
+      const interpreted = input.adapter.interpretOutputLine(line);
+      if (hasMeaningfulContent(interpreted.outputContent)) {
+        lastOutputContent = interpreted.outputContent;
+      }
+      if (logs.length < 16) {
+        logs.push(interpreted.logLine);
+      }
+      adapterOutput += `${line}\n`;
+    };
+
+    streamLines(child.stdout, captureAdapterLine);
+    streamLines(child.stderr, (line) => {
+      if (logs.length < 16) {
+        logs.push(`[${input.adapter.id} stderr] ${truncate(line)}`);
+      }
+      adapterOutput += `${line}\n`;
+    });
+
+    child.once("error", (error) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `${input.adapter.label} execution failed`;
+      finish({
+        resolved: false,
+        logs,
+        note: formatMergeRecoveryFailureNote({
+          adapterLabel: input.adapter.label,
+          message,
+          recoveryKind: input.recoveryKind,
+          stage: input.stage,
+          targetBranch: input.targetBranch,
+          when: "execution",
+        }),
+      });
+    });
+
+    child.once("close", (exitCode, signal) => {
+      let summary = existsSync(outputSummaryPath)
+        ? readFileSync(outputSummaryPath, "utf8").trim()
+        : "";
+      if (summary.length === 0 && lastOutputContent) {
+        writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
+        summary = lastOutputContent.trim();
+      }
+      if (summary.length > 0) {
+        logs.push(`Merge-conflict resolution summary: ${truncate(summary)}`);
+      }
+
+      if (exitCode === 0) {
+        finish({
+          resolved: true,
+          logs,
+        });
+        return;
+      }
+
+      const reason = input.adapter.formatExitReason(
+        exitCode,
+        signal,
+        summary || adapterOutput,
+      );
+      finish({
+        resolved: false,
+        logs,
+        note: formatMergeRecoveryFailureNote({
+          adapterLabel: input.adapter.label,
+          message: reason,
+          recoveryKind: input.recoveryKind,
+          stage: input.stage,
+          targetBranch: input.targetBranch,
+          when: "finish",
+        }),
+      });
+    });
+  });
+}

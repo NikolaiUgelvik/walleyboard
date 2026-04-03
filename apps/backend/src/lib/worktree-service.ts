@@ -41,6 +41,7 @@ export type MergeConflictResolutionInput = {
   worktreePath: string;
   workingBranch: string;
   targetBranch: string;
+  recoveryKind: "conflicts" | "target_branch_advanced";
   stage: "rebase" | "merge";
   failureMessage: string;
   conflictedFiles: string[];
@@ -507,6 +508,23 @@ function gitStatusPorcelain(repoPath: string): string {
   return runGit(repoPath, ["status", "--short"]);
 }
 
+function branchContainsRef(
+  repoPath: string,
+  ancestorRef: string,
+  branchRef: string,
+): boolean {
+  try {
+    runGit(repoPath, ["merge-base", "--is-ancestor", ancestorRef, branchRef]);
+    return true;
+  } catch (error) {
+    if (error instanceof GitCommandError && error.exitCode === 1) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 function formatFileList(files: string[]): string {
   return files.length > 0 ? files.join(", ") : "unknown files";
 }
@@ -825,6 +843,7 @@ async function attemptRebaseWithRecovery(
       worktreePath,
       workingBranch,
       targetBranch,
+      recoveryKind: "conflicts",
       stage: conflictStage,
       failureMessage:
         error instanceof Error ? error.message : "Git conflict recovery failed",
@@ -890,6 +909,90 @@ async function attemptRebaseWithRecovery(
   }
 }
 
+async function attemptTargetBranchCatchupWithRecovery(
+  worktreePath: string,
+  workingBranch: string,
+  targetBranch: string,
+  resolveConflicts: MergeReviewedBranchOptions["resolveConflicts"] | undefined,
+  failureMessage: string,
+): Promise<{ logs: string[] }> {
+  const logs: string[] = [];
+
+  if (!resolveConflicts) {
+    throw new AutomaticMergeRecoveryError(
+      "Direct merge could not keep up with target-branch updates.",
+      {
+        logs,
+        note: `The target branch ${targetBranch} kept advancing while merging ${workingBranch}. Continue from the existing worktree and branch.`,
+      },
+    );
+  }
+
+  const resolution = await resolveConflicts({
+    worktreePath,
+    workingBranch,
+    targetBranch,
+    recoveryKind: "target_branch_advanced",
+    stage: "merge",
+    failureMessage,
+    conflictedFiles: [],
+  });
+  logs.push(...resolution.logs);
+
+  if (!resolution.resolved) {
+    throw new AutomaticMergeRecoveryError(
+      "Automatic merge recovery could not update the ticket branch to the latest target branch.",
+      {
+        logs,
+        note:
+          resolution.note ??
+          `Automatic merge recovery could not update ${workingBranch} with the latest ${targetBranch} changes.`,
+      },
+    );
+  }
+
+  if (isRebaseInProgress(worktreePath) || isMergeInProgress(worktreePath)) {
+    throw new AutomaticMergeRecoveryError(
+      "Automatic merge recovery did not finish updating the ticket branch.",
+      {
+        logs,
+        note: "Automatic merge recovery stopped before the ticket branch finished integrating the latest target-branch changes.",
+      },
+    );
+  }
+
+  const worktreeStatus = gitStatusPorcelain(worktreePath);
+  if (worktreeStatus.length > 0) {
+    throw new AutomaticMergeRecoveryError(
+      "Automatic merge recovery left additional worktree changes after updating the ticket branch.",
+      {
+        logs,
+        note: "Automatic merge recovery left extra worktree changes after updating the ticket branch with the latest target-branch changes.",
+      },
+    );
+  }
+
+  const worktreeBranch = runGit(worktreePath, [
+    "rev-parse",
+    "--abbrev-ref",
+    "HEAD",
+  ]);
+  if (worktreeBranch !== workingBranch) {
+    throw new AutomaticMergeRecoveryError(
+      "Automatic merge recovery changed the ticket worktree branch unexpectedly.",
+      {
+        logs,
+        note: `Automatic merge recovery left the worktree on ${worktreeBranch} instead of ${workingBranch}.`,
+      },
+    );
+  }
+
+  logs.push(
+    `Updated ${workingBranch} with the latest ${targetBranch} changes in the ticket worktree`,
+  );
+  return { logs };
+}
+
 export async function mergeReviewedBranch(
   repository: RepositoryConfig,
   worktreePath: string,
@@ -922,8 +1025,11 @@ export async function mergeReviewedBranch(
   const logs = [`Ticket worktree verified on ${workingBranch}`];
   const maxMergeAttempts = 2;
   let conflictRecoveryUsed = false;
+  let targetAdvanceRecoveryUsed = false;
+  let skipRebaseOnNextAttempt = false;
+  let attempt = 1;
 
-  for (let attempt = 1; attempt <= maxMergeAttempts; attempt += 1) {
+  while (attempt <= maxMergeAttempts) {
     const refreshedTarget = refreshTargetBranch(
       repository.path,
       repository,
@@ -935,24 +1041,38 @@ export async function mergeReviewedBranch(
       logs: string[];
       usedConflictResolution: boolean;
     };
-    try {
-      rebaseResult = await attemptRebaseWithRecovery(
-        worktreePath,
-        workingBranch,
-        refreshedTarget.syncRef,
-        targetBranch,
-        conflictRecoveryUsed ? undefined : options.resolveConflicts,
-        conflictRecoveryUsed,
-      );
-    } catch (error) {
-      if (error instanceof AutomaticMergeRecoveryError) {
-        throw new AutomaticMergeRecoveryError(error.message, {
-          logs: [...logs, ...error.logs],
-          note: error.note,
-        });
-      }
+    if (
+      skipRebaseOnNextAttempt &&
+      branchContainsRef(worktreePath, refreshedTarget.syncRef, workingBranch)
+    ) {
+      rebaseResult = {
+        logs: [
+          `${workingBranch} already includes the refreshed ${refreshedTarget.syncRef} head. Skipping rebase before retrying the final merge.`,
+        ],
+        usedConflictResolution: false,
+      };
+      skipRebaseOnNextAttempt = false;
+    } else {
+      skipRebaseOnNextAttempt = false;
+      try {
+        rebaseResult = await attemptRebaseWithRecovery(
+          worktreePath,
+          workingBranch,
+          refreshedTarget.syncRef,
+          targetBranch,
+          conflictRecoveryUsed ? undefined : options.resolveConflicts,
+          conflictRecoveryUsed,
+        );
+      } catch (error) {
+        if (error instanceof AutomaticMergeRecoveryError) {
+          throw new AutomaticMergeRecoveryError(error.message, {
+            logs: [...logs, ...error.logs],
+            note: error.note,
+          });
+        }
 
-      throw error;
+        throw error;
+      }
     }
     logs.push(...rebaseResult.logs);
     if (rebaseResult.usedConflictResolution) {
@@ -1020,19 +1140,45 @@ export async function mergeReviewedBranch(
         targetHead,
       };
     } catch (error) {
-      if (isFastForwardFailure(error) && attempt < maxMergeAttempts) {
+      if (
+        isFastForwardFailure(error) &&
+        attempt < maxMergeAttempts &&
+        !conflictRecoveryUsed &&
+        !targetAdvanceRecoveryUsed
+      ) {
         logs.push(
           `${refreshedTarget.mergeBackBranch} advanced during direct merge. Refreshing the ticket worktree and retrying the merge flow.`,
         );
+        attempt += 1;
         continue;
       }
 
       if (isFastForwardFailure(error)) {
+        if (!targetAdvanceRecoveryUsed) {
+          const recovery = await attemptTargetBranchCatchupWithRecovery(
+            worktreePath,
+            workingBranch,
+            refreshedTarget.syncRef,
+            options.resolveConflicts,
+            error instanceof Error
+              ? error.message
+              : `Direct merge could not keep up with ${refreshedTarget.mergeBackBranch}`,
+          );
+          logs.push(...recovery.logs);
+          logs.push(
+            `Retrying the final merge after updating ${workingBranch} with the latest ${refreshedTarget.mergeBackBranch} changes.`,
+          );
+          targetAdvanceRecoveryUsed = true;
+          skipRebaseOnNextAttempt = true;
+          attempt = 1;
+          continue;
+        }
+
         throw new AutomaticMergeRecoveryError(
-          "Automatic merge recovery could not keep up with target-branch updates.",
+          "Automatic merge recovery could not keep up with target-branch updates after updating the ticket branch.",
           {
             logs,
-            note: `Automatic merge recovery could not complete because ${refreshedTarget.mergeBackBranch} kept advancing during the direct-merge retry.`,
+            note: `Automatic merge recovery could not complete because ${refreshedTarget.mergeBackBranch} kept advancing even after the ticket branch was updated in the worktree.`,
           },
         );
       }

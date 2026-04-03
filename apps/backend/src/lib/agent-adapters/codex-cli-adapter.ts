@@ -387,6 +387,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       buildMergeConflictPrompt({
         ticket: input.ticket,
         repository: input.repository,
+        recoveryKind: input.recoveryKind,
         targetBranch: input.targetBranch,
         stage: input.stage,
         conflictedFiles: input.conflictedFiles,
