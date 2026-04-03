@@ -3,6 +3,19 @@ import React from "react";
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 import { agentLabel as agentLabelForAdapter } from "../features/walleyboard/shared.js";
 import { MarkdownContent } from "./MarkdownContent.js";
+import {
+  describeCommandExecution,
+  describeFileChangeActivity,
+  describeTodoListActivity,
+  describeWebSearchActivity,
+  extractCodexRawItemActionType,
+  extractCodexRawItemStringField,
+  extractCodexRawNumberField,
+  extractCodexRawPaths,
+  extractCodexRawTodoItems,
+  parseCodexEvent,
+  unwrapShellCommand,
+} from "./SessionActivityFeed.codex.js";
 
 type SessionActivityFeedProps = {
   logs: string[];
@@ -23,12 +36,6 @@ type SessionActivity = {
   tone: ActivityTone;
   label: string;
   detail: string;
-};
-
-type ParsedCodexEvent = {
-  eventType: string;
-  payload: Record<string, unknown> | null;
-  rawPayload: string;
 };
 
 type ParsedExecutionSummary = {
@@ -87,340 +94,6 @@ function truncate(value: string, maxLength = 240): string {
   return `${value.slice(0, maxLength - 1)}...`;
 }
 
-function parseCodexEvent(line: string): ParsedCodexEvent | null {
-  const match = line.match(/^\[codex ([^\]]+)\] (.+)$/);
-  if (match) {
-    const [, eventType, rawPayload] = match;
-    if (!eventType || !rawPayload) {
-      return null;
-    }
-
-    try {
-      const payload = JSON.parse(rawPayload) as Record<string, unknown>;
-      return {
-        eventType,
-        payload,
-        rawPayload,
-      };
-    } catch {
-      return {
-        eventType,
-        payload: null,
-        rawPayload,
-      };
-    }
-  }
-
-  const normalized = line.trim();
-  if (!normalized.startsWith("{")) {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(normalized) as Record<string, unknown>;
-    const eventType =
-      typeof payload.type === "string"
-        ? payload.type
-        : typeof payload.event === "string"
-          ? payload.event
-          : null;
-    if (!eventType) {
-      return null;
-    }
-    return {
-      payload,
-      eventType,
-      rawPayload: normalized,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function stripOuterQuotes(value: string): string {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-
-  return value;
-}
-
-function unescapeShellString(value: string): string {
-  return value.replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\\/g, "\\");
-}
-
-function unwrapShellCommand(command: string): string {
-  const trimmed = command.trim();
-  const wrappedMatch = trimmed.match(/^(?:\/bin\/)?(?:bash|sh)\s+-lc\s+(.+)$/s);
-  if (!wrappedMatch) {
-    return trimmed;
-  }
-
-  const wrappedCommand = wrappedMatch[1];
-  if (!wrappedCommand) {
-    return trimmed;
-  }
-
-  return unescapeShellString(stripOuterQuotes(wrappedCommand)).trim();
-}
-
-function normalizeLoggedPath(value: string): string {
-  return value.replace(/^\/workspace\//, "");
-}
-
-function normalizeCommandPathList(paths: string): string {
-  return paths
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => normalizeLoggedPath(stripOuterQuotes(part)))
-    .join(", ");
-}
-
-function summarizePathList(paths: string[]): string {
-  if (paths.length === 0) {
-    return "";
-  }
-
-  if (paths.length === 1) {
-    return `\`${normalizeLoggedPath(paths[0] ?? "")}\``;
-  }
-
-  if (paths.length === 2) {
-    return `\`${normalizeLoggedPath(paths[0] ?? "")}\` and \`${normalizeLoggedPath(paths[1] ?? "")}\``;
-  }
-
-  return `\`${normalizeLoggedPath(paths[0] ?? "")}\`, \`${normalizeLoggedPath(paths[1] ?? "")}\`, and ${paths.length - 2} more`;
-}
-
-function formatCommandTargetSummary(targets: string): string {
-  const normalizedTargets = normalizeCommandPathList(targets);
-  if (normalizedTargets.length === 0) {
-    return "the repository";
-  }
-
-  return normalizedTargets;
-}
-
-function extractCodexRawItemStringField(
-  rawPayload: string,
-  fieldName: string,
-): string | null {
-  const match = rawPayload.match(
-    new RegExp(
-      `"item"\\s*:\\s*\\{[\\s\\S]*?"${fieldName}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,
-      "s",
-    ),
-  );
-  if (!match?.[1]) {
-    return null;
-  }
-
-  return unescapeShellString(match[1]);
-}
-
-function extractCodexRawNumberField(
-  rawPayload: string,
-  fieldName: string,
-): number | null {
-  const match = rawPayload.match(new RegExp(`"${fieldName}"\\s*:\\s*(-?\\d+)`));
-  if (!match?.[1]) {
-    return null;
-  }
-
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function extractCodexRawPaths(rawPayload: string): string[] {
-  return Array.from(
-    rawPayload.matchAll(/"path"\s*:\s*"((?:\\.|[^"\\])*)"/g),
-    (match) => unescapeShellString(match[1] ?? ""),
-  ).filter(Boolean);
-}
-
-function describeFileChangeActivity(
-  paths: string[],
-  label: string,
-  inProgress: boolean,
-): {
-  label: string;
-  detail: string;
-} | null {
-  if (paths.length === 0) {
-    return null;
-  }
-
-  const pathSummary = summarizePathList(paths);
-  if (inProgress) {
-    return {
-      label: paths.length === 1 ? "Editing file" : "Editing files",
-      detail: `${label} started updating ${pathSummary}.`,
-    };
-  }
-
-  return {
-    label: paths.length === 1 ? "Updated file" : "Updated files",
-    detail: `${label} updated ${pathSummary}.`,
-  };
-}
-
-function describeCommandExecution(
-  command: string,
-  label: string,
-): {
-  label: string;
-  detail: string;
-} {
-  const resolvedCommand = unwrapShellCommand(command);
-  const quotedSearchCommand = stripOuterQuotes(resolvedCommand);
-
-  const rgMatch = quotedSearchCommand.match(
-    /^rg(?:\s+--files)?\s+-n\s+["']([^"']+)["']\s+(.+)$/,
-  );
-  if (rgMatch) {
-    const [, pattern, targets] = rgMatch;
-    return {
-      label: "Searched code",
-      detail: `${label} searched for \`${pattern}\` in ${formatCommandTargetSummary(targets ?? "")}.`,
-    };
-  }
-
-  const rgFilesMatch = quotedSearchCommand.match(/^rg\s+--files\s+(.+)$/);
-  if (rgFilesMatch) {
-    return {
-      label: "Listed matching files",
-      detail: `${label} listed files under ${formatCommandTargetSummary(rgFilesMatch[1] ?? "")}.`,
-    };
-  }
-
-  const grepMatch = quotedSearchCommand.match(
-    /^grep(?:\s+-\S+)*\s+["']([^"']+)["']\s+(.+)$/,
-  );
-  if (grepMatch) {
-    const [, pattern, targets] = grepMatch;
-    return {
-      label: "Searched code",
-      detail: `${label} searched for \`${pattern}\` in ${formatCommandTargetSummary(targets ?? "")}.`,
-    };
-  }
-
-  const findMatch = quotedSearchCommand.match(/^find\s+(.+)$/);
-  if (findMatch) {
-    return {
-      label: "Scanned files",
-      detail: `${label} scanned ${formatCommandTargetSummary(findMatch[1] ?? "")} for relevant files.`,
-    };
-  }
-
-  const sedMatch = resolvedCommand.match(
-    /^sed -n ['"]?(\d+),(\d+)p['"]?\s+(.+)$/,
-  );
-  if (sedMatch) {
-    const [, startLine, endLine, path] = sedMatch;
-    return {
-      label: "Read file excerpt",
-      detail: `${label} reviewed \`${normalizeLoggedPath(path ?? "")}\` lines ${startLine}-${endLine}.`,
-    };
-  }
-
-  const catMatch = resolvedCommand.match(/^cat\s+(.+)$/);
-  if (catMatch) {
-    return {
-      label: "Read file",
-      detail: `${label} opened \`${normalizeLoggedPath(catMatch[1] ?? "")}\`.`,
-    };
-  }
-
-  const listMatch = resolvedCommand.match(/^ls(?:\s+-\S+)*\s+(.+)$/);
-  if (listMatch) {
-    return {
-      label: "Listed directory",
-      detail: `${label} inspected \`${normalizeLoggedPath(listMatch[1] ?? "")}\`.`,
-    };
-  }
-
-  if (resolvedCommand.includes(".github/workflows")) {
-    return {
-      label: "Inspected CI workflow",
-      detail: `${label} reviewed the CI workflow configuration.`,
-    };
-  }
-
-  if (resolvedCommand.includes(".gitignore")) {
-    return {
-      label: "Checked ignore rules",
-      detail: `${label} inspected \`.gitignore\`.`,
-    };
-  }
-
-  if (
-    resolvedCommand.includes("npm run typecheck") ||
-    resolvedCommand.includes("tsc -p")
-  ) {
-    return {
-      label: "Checked types",
-      detail: `${label} ran the project's type checks.`,
-    };
-  }
-
-  if (
-    resolvedCommand.includes("npm run build") ||
-    resolvedCommand.includes("vite build")
-  ) {
-    return {
-      label: "Built project",
-      detail: `${label} ran the build to verify the current changes.`,
-    };
-  }
-
-  if (
-    resolvedCommand.includes("npm run test") ||
-    resolvedCommand.includes("npm test") ||
-    resolvedCommand.includes("pytest")
-  ) {
-    return {
-      label: "Ran tests",
-      detail: `${label} ran a test command for the current change.`,
-    };
-  }
-
-  if (resolvedCommand.includes("git status")) {
-    return {
-      label: "Checked git status",
-      detail: `${label} verified the repository status.`,
-    };
-  }
-
-  if (resolvedCommand.includes("git diff")) {
-    return {
-      label: "Reviewed changes",
-      detail: `${label} inspected the current diff.`,
-    };
-  }
-
-  if (
-    resolvedCommand.includes("rg ") ||
-    resolvedCommand.includes("grep ") ||
-    resolvedCommand.includes("sed -n") ||
-    resolvedCommand.includes("cat ") ||
-    resolvedCommand.includes("ls ") ||
-    resolvedCommand.includes("find ")
-  ) {
-    return {
-      label: "Inspected project files",
-      detail: `${label} looked through repository files to gather context.`,
-    };
-  }
-
-  return {
-    label: "Ran command",
-    detail: `Ran \`${truncate(resolvedCommand, 160)}\`.`,
-  };
-}
-
 function interpretCodexEvent(
   line: string,
   index: number,
@@ -475,7 +148,7 @@ function interpretCodexEvent(
         return null;
       }
 
-      const description = describeCommandExecution(command, "Codex");
+      const description = describeCommandExecution(command, "Codex", truncate);
       const exitCode = extractCodexRawNumberField(
         event.rawPayload,
         "exit_code",
@@ -509,13 +182,54 @@ function interpretCodexEvent(
         description.detail,
       );
     }
+
+    if (rawItemType === "web_search") {
+      const description = describeWebSearchActivity(
+        extractCodexRawItemStringField(event.rawPayload, "query") ?? "",
+        extractCodexRawItemActionType(event.rawPayload),
+        "Codex",
+        event.eventType === "item.started",
+      );
+      if (!description) {
+        return null;
+      }
+
+      return createActivity(
+        `codex-web-search-raw-${index}`,
+        "gray",
+        description.label,
+        description.detail,
+      );
+    }
+
+    if (rawItemType === "todo_list") {
+      const description = describeTodoListActivity(
+        extractCodexRawTodoItems(event.rawPayload),
+        "Codex",
+        event.eventType === "item.started",
+      );
+      if (!description) {
+        return null;
+      }
+
+      return createActivity(
+        `codex-todo-list-raw-${index}`,
+        "yellow",
+        description.label,
+        description.detail,
+      );
+    }
   }
 
   if (
     event.eventType === "command.completed" ||
     event.eventType === "command.failed"
   ) {
-    const description = describeCommandExecution(event.rawPayload, "Codex");
+    const description = describeCommandExecution(
+      event.rawPayload,
+      "Codex",
+      truncate,
+    );
     return createActivity(
       `codex-command-text-${index}`,
       event.eventType === "command.failed" ? "red" : "gray",
@@ -550,6 +264,58 @@ function interpretCodexEvent(
       description.label,
       description.detail,
     );
+  }
+
+  if (
+    event.eventType === "web_search.started" ||
+    event.eventType === "web_search.search" ||
+    event.eventType === "web_search.open" ||
+    event.eventType === "web_search.completed"
+  ) {
+    const description = describeWebSearchActivity(
+      event.rawPayload,
+      event.eventType === "web_search.search"
+        ? "search"
+        : event.eventType === "web_search.open"
+          ? "open"
+          : null,
+      "Codex",
+      event.eventType === "web_search.started",
+    );
+    if (!description) {
+      return null;
+    }
+
+    return createActivity(
+      `codex-web-search-${index}`,
+      "gray",
+      description.label,
+      description.detail,
+    );
+  }
+
+  if (
+    event.eventType === "todo_list.started" ||
+    event.eventType === "todo_list.completed"
+  ) {
+    const summaryMatch = event.rawPayload.match(/^(.*)\s+\[(\d+)\/(\d+)\]$/);
+    const summaryText = summaryMatch?.[1]?.trim() ?? event.rawPayload.trim();
+    const completedCount = summaryMatch?.[2] ?? null;
+    const totalCount = summaryMatch?.[3] ?? null;
+    const lines = summaryText
+      .split(/\s+\|\s+/)
+      .map((item) => `- ${item}`)
+      .join("\n");
+    const description = createActivity(
+      `codex-todo-list-${index}`,
+      "yellow",
+      event.eventType === "todo_list.started"
+        ? "Plan updated"
+        : "Plan checkpoint",
+      `Codex refreshed the task list:\n${lines}${completedCount && totalCount ? `\n${completedCount}/${totalCount} completed` : ""}`,
+    );
+
+    return description;
   }
 
   if (
@@ -601,7 +367,7 @@ function interpretCodexEvent(
       typeof itemRecord.aggregated_output === "string"
         ? itemRecord.aggregated_output.trim()
         : "";
-    const description = describeCommandExecution(command, "Codex");
+    const description = describeCommandExecution(command, "Codex", truncate);
 
     if (exitCode !== null && exitCode !== 0) {
       const failureDetail =
@@ -648,6 +414,56 @@ function interpretCodexEvent(
     return createActivity(
       `codex-file-change-item-${index}`,
       "gray",
+      description.label,
+      description.detail,
+    );
+  }
+
+  if (itemType === "web_search") {
+    const action =
+      itemRecord.action && typeof itemRecord.action === "object"
+        ? (itemRecord.action as Record<string, unknown>)
+        : null;
+    const description = describeWebSearchActivity(
+      typeof itemRecord.query === "string" ? itemRecord.query : "",
+      typeof action?.type === "string" ? action.type : null,
+      "Codex",
+      event.eventType === "item.started",
+    );
+    if (!description) {
+      return null;
+    }
+
+    return createActivity(
+      `codex-web-search-item-${index}`,
+      "gray",
+      description.label,
+      description.detail,
+    );
+  }
+
+  if (itemType === "todo_list") {
+    const todoItems = Array.isArray(itemRecord.items)
+      ? itemRecord.items.filter(
+          (todo): todo is Record<string, unknown> =>
+            !!todo && typeof todo === "object",
+        )
+      : [];
+    const description = describeTodoListActivity(
+      todoItems.map((todo) => ({
+        text: typeof todo.text === "string" ? todo.text : "",
+        completed: todo.completed === true,
+      })),
+      "Codex",
+      event.eventType === "item.started",
+    );
+    if (!description) {
+      return null;
+    }
+
+    return createActivity(
+      `codex-todo-list-item-${index}`,
+      "yellow",
       description.label,
       description.detail,
     );

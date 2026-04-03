@@ -190,3 +190,149 @@ test("renders summarized file change events without raw JSON", () => {
     /apps\/web\/src\/components\/AgentReviewHistoryModal\.test\.tsx/,
   );
 });
+
+test("renders raw web search JSON as readable web activity", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          JSON.stringify({
+            type: "item.started",
+            item: {
+              id: "ws_0",
+              type: "web_search",
+              query: "",
+              action: {
+                type: "other",
+              },
+            },
+          }),
+          JSON.stringify({
+            type: "item.completed",
+            item: {
+              id: "ws_1",
+              type: "web_search",
+              query: "Simple Icons license CC0 OpenAI icon Claude icon",
+              action: {
+                type: "search",
+                query: "Simple Icons license CC0 OpenAI icon Claude icon",
+              },
+            },
+          }),
+          JSON.stringify({
+            type: "item.completed",
+            item: {
+              id: "ws_2",
+              type: "web_search",
+              query:
+                "https://github.com/simple-icons/simple-icons/blob/develop/DISCLAIMER.md",
+              action: {
+                type: "other",
+              },
+            },
+          }),
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(html, /Searched web/);
+  assert.match(html, /Opened web page/);
+  assert.match(html, /Simple Icons license CC0 OpenAI icon Claude icon/);
+  assert.match(
+    html,
+    /https:\/\/github\.com\/simple-icons\/simple-icons\/blob\/develop\/DISCLAIMER\.md/,
+  );
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.completed&quot;/);
+  assert.doesNotMatch(html, /Searching web/);
+});
+
+test("renders summarized web search events without raw JSON", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          "[codex web_search.search] site:github.com/simple-icons/simple-icons OpenAI SVG simple-icons",
+          "[codex web_search.open] https://github.com/simple-icons/simple-icons",
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(html, /Searched web/);
+  assert.match(html, /Opened web page/);
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.completed&quot;/);
+});
+
+test("renders raw todo list JSON as readable plan activity", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          JSON.stringify({
+            type: "item.started",
+            item: {
+              id: "item_51",
+              type: "todo_list",
+              items: [
+                {
+                  text: "Vendor SVG assets and document third-party license/source",
+                  completed: false,
+                },
+                {
+                  text: "Wire icons into Agent CLI selector rendering without behavior changes",
+                  completed: false,
+                },
+                {
+                  text: "Add focused regression test",
+                  completed: false,
+                },
+              ],
+            },
+          }),
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(html, /Plan updated/);
+  assert.match(
+    html,
+    /Vendor SVG assets and document third-party license\/source/,
+  );
+  assert.match(
+    html,
+    /Wire icons into Agent CLI selector rendering without behavior changes/,
+  );
+  assert.match(html, /1 more items/);
+  assert.match(html, /0\/3 completed/);
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.started&quot;/);
+});
+
+test("renders summarized todo list events without raw JSON", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          "[codex todo_list.started] Vendor SVG assets and document third-party license/source | Wire icons into Agent CLI selector rendering without behavior changes (+1 more) [0/3]",
+        ],
+        session: createSession(),
+      }),
+    ),
+  );
+
+  assert.match(html, /Plan updated/);
+  assert.match(html, /0\/3 completed/);
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.started&quot;/);
+});

@@ -315,3 +315,60 @@ test("CodexCliAdapter.interpretOutputLine summarizes file change events", () => 
     "[codex file_change.completed] /workspace/apps/backend/src/lib/sqlite-store.test.ts, /workspace/apps/web/src/components/AgentReviewHistoryModal.test.tsx",
   );
 });
+
+test("CodexCliAdapter.interpretOutputLine summarizes web search events", () => {
+  const adapter = new CodexCliAdapter();
+
+  const interpreted = adapter.interpretOutputLine(
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "ws_1",
+        type: "web_search",
+        query: "Simple Icons license CC0 OpenAI icon Claude icon",
+        action: {
+          type: "search",
+          query: "Simple Icons license CC0 OpenAI icon Claude icon",
+        },
+      },
+    }),
+  );
+
+  assert.equal(
+    interpreted.logLine,
+    "[codex web_search.search] Simple Icons license CC0 OpenAI icon Claude icon",
+  );
+});
+
+test("CodexCliAdapter.interpretOutputLine summarizes todo list events", () => {
+  const adapter = new CodexCliAdapter();
+
+  const interpreted = adapter.interpretOutputLine(
+    JSON.stringify({
+      type: "item.started",
+      item: {
+        id: "item_51",
+        type: "todo_list",
+        items: [
+          {
+            text: "Vendor SVG assets and document third-party license/source",
+            completed: false,
+          },
+          {
+            text: "Wire icons into Agent CLI selector rendering without behavior changes",
+            completed: false,
+          },
+          {
+            text: "Add focused regression test",
+            completed: false,
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.equal(
+    interpreted.logLine,
+    "[codex todo_list.started] Vendor SVG assets and document third-party license/source | Wire icons into Agent CLI selector rendering without behavior changes (+1 more) [0/3]",
+  );
+});

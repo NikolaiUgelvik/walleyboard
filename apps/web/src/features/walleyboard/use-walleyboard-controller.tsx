@@ -24,6 +24,7 @@ import {
   useDraftRefinementActivity,
   useGlobalDrafts,
 } from "./draft-queries.js";
+import { hasProjectOptionsDirty } from "./project-options-dirty.js";
 import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
   type ArchiveActionFeedback,
@@ -651,32 +652,22 @@ export function useWalleyBoardController() {
       repositories: projectOptionsRepositories,
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
-  const projectOptionsDirty =
-    projectOptionsProject !== null &&
-    (projectOptionsAgentAdapter !== projectOptionsProject.agent_adapter ||
-      projectOptionsExecutionBackend !==
-        projectOptionsProject.execution_backend ||
-      projectOptionsAutomaticAgentReview !==
-        projectOptionsProject.automatic_agent_review ||
-      projectOptionsAutomaticAgentReviewRunLimit !==
-        projectOptionsProject.automatic_agent_review_run_limit ||
-      projectOptionsDefaultReviewAction !==
-        projectOptionsProject.default_review_action ||
-      projectOptionsPreviewStartCommandValue !==
-        projectOptionsProject.preview_start_command ||
-      projectOptionsPreWorktreeCommandValue !==
-        projectOptionsProject.pre_worktree_command ||
-      projectOptionsPostWorktreeCommandValue !==
-        projectOptionsProject.post_worktree_command ||
-      projectOptionsDraftModelValue !==
-        projectOptionsProject.draft_analysis_model ||
-      projectOptionsDraftReasoningEffortValue !==
-        projectOptionsProject.draft_analysis_reasoning_effort ||
-      projectOptionsTicketModelValue !==
-        projectOptionsProject.ticket_work_model ||
-      projectOptionsTicketReasoningEffortValue !==
-        projectOptionsProject.ticket_work_reasoning_effort ||
-      projectOptionsRepositoryBranchesDirty);
+  const projectOptionsDirty = hasProjectOptionsDirty({
+    draftModelValue: projectOptionsDraftModelValue,
+    draftReasoningEffortValue: projectOptionsDraftReasoningEffortValue,
+    executionBackend: projectOptionsExecutionBackend,
+    postWorktreeCommandValue: projectOptionsPostWorktreeCommandValue,
+    preWorktreeCommandValue: projectOptionsPreWorktreeCommandValue,
+    previewStartCommandValue: projectOptionsPreviewStartCommandValue,
+    project: projectOptionsProject,
+    projectOptionsAutomaticAgentReview,
+    projectOptionsAutomaticAgentReviewRunLimit,
+    projectOptionsDefaultReviewAction,
+    repositoryBranchesDirty: projectOptionsRepositoryBranchesDirty,
+    selectedAgentAdapter: projectOptionsAgentAdapter,
+    ticketModelValue: projectOptionsTicketModelValue,
+    ticketReasoningEffortValue: projectOptionsTicketReasoningEffortValue,
+  });
   const canDeleteProject =
     projectOptionsProject !== null &&
     projectDeleteConfirmText.trim() === projectOptionsProject.slug;

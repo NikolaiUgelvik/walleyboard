@@ -184,6 +184,68 @@ function summarizeCodexFileChangeEvent(
   return `[codex file_change.completed] ${truncate(summary, 180)}`;
 }
 
+function summarizeCodexWebSearchEvent(
+  eventType: string,
+  item: Record<string, unknown>,
+): string | null {
+  const query = typeof item.query === "string" ? item.query.trim() : "";
+  const action =
+    item.action && typeof item.action === "object"
+      ? (item.action as Record<string, unknown>)
+      : null;
+  const actionType = typeof action?.type === "string" ? action.type : null;
+  const isUrl = /^https?:\/\//.test(query);
+
+  if (eventType === "item.started") {
+    return query.length > 0
+      ? `[codex web_search.started] ${truncate(query, 180)}`
+      : "[codex web_search.started]";
+  }
+
+  if (actionType === "search" || (!isUrl && query.length > 0)) {
+    return `[codex web_search.search] ${truncate(query, 180)}`;
+  }
+
+  if (isUrl) {
+    return `[codex web_search.open] ${truncate(query, 180)}`;
+  }
+
+  return query.length > 0
+    ? `[codex web_search.completed] ${truncate(query, 180)}`
+    : "[codex web_search.completed]";
+}
+
+function summarizeCodexTodoListEvent(
+  eventType: string,
+  item: Record<string, unknown>,
+): string | null {
+  const todoItems = Array.isArray(item.items)
+    ? item.items.filter(
+        (todo): todo is Record<string, unknown> =>
+          !!todo && typeof todo === "object",
+      )
+    : [];
+  const texts = todoItems
+    .map((todo) => (typeof todo.text === "string" ? todo.text.trim() : null))
+    .filter((text): text is string => !!text);
+  if (texts.length === 0) {
+    return null;
+  }
+
+  const completedCount = todoItems.filter(
+    (todo) => todo.completed === true,
+  ).length;
+  const preview = texts.slice(0, 2).join(" | ");
+  const suffix = texts.length > 2 ? ` (+${texts.length - 2} more)` : "";
+  const summary = `${preview}${suffix} [${completedCount}/${texts.length}]`;
+
+  if (eventType === "item.started") {
+    return `[codex todo_list.started] ${truncate(summary, 180)}`;
+  }
+
+  return `[codex todo_list.completed] ${truncate(summary, 180)}`;
+}
+
 function summarizeCodexItemEvent(
   eventType: string,
   item: Record<string, unknown>,
@@ -209,6 +271,14 @@ function summarizeCodexItemEvent(
 
   if (itemType === "file_change") {
     return summarizeCodexFileChangeEvent(eventType, item);
+  }
+
+  if (itemType === "web_search") {
+    return summarizeCodexWebSearchEvent(eventType, item);
+  }
+
+  if (itemType === "todo_list") {
+    return summarizeCodexTodoListEvent(eventType, item);
   }
 
   return null;
