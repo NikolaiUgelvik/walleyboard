@@ -1,11 +1,18 @@
 import "@xterm/xterm/css/xterm.css";
 
-import { Box, Code, Stack, Text, useComputedColorScheme } from "@mantine/core";
+import { Code, Stack, Text, useComputedColorScheme } from "@mantine/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 
 import { apiBaseUrl } from "../lib/api-base-url.js";
+import {
+  buildTicketWorkspaceTerminalOptions,
+  resolveTerminalTheme,
+  TERMINAL_COLOR_SCHEME_HOOK_OPTIONS,
+  TicketWorkspaceTerminalViewport,
+  updateTicketWorkspaceTerminalTheme,
+} from "./TicketWorkspaceTerminal.shared.js";
 
 type TicketWorkspaceTerminalProps = {
   socketPath: string;
@@ -18,37 +25,21 @@ function resolveTerminalSocketUrl(socketPath: string): string {
   return `${base}${socketPath}`;
 }
 
-function resolveTerminalTheme(colorScheme: "light" | "dark") {
-  return colorScheme === "dark"
-    ? {
-        background: "#10151b",
-        foreground: "#eef2f7",
-        cursor: "#f59e0b",
-        selectionBackground: "rgba(245, 158, 11, 0.28)",
-      }
-    : {
-        background: "#f8f7f4",
-        foreground: "#182230",
-        cursor: "#c2410c",
-        selectionBackground: "rgba(194, 65, 12, 0.18)",
-      };
-}
-
 export function TicketWorkspaceTerminal({
   socketPath,
   surfaceLabel,
   worktreePath,
 }: TicketWorkspaceTerminalProps) {
-  const terminalColorScheme = useComputedColorScheme("light", {
-    getInitialValueInEffect: false,
-  });
+  const terminalColorScheme = useComputedColorScheme(
+    "light",
+    TERMINAL_COLOR_SCHEME_HOOK_OPTIONS,
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const terminalThemeRef = useRef(resolveTerminalTheme(terminalColorScheme));
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const terminalTheme = resolveTerminalTheme(terminalColorScheme);
-  terminalThemeRef.current = terminalTheme;
+  terminalThemeRef.current = resolveTerminalTheme(terminalColorScheme);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -57,14 +48,9 @@ export function TicketWorkspaceTerminal({
     }
 
     setError(null);
-    const terminal = new Terminal({
-      allowProposedApi: false,
-      convertEol: true,
-      cursorBlink: true,
-      fontFamily: "'IBM Plex Mono', 'SFMono-Regular', monospace",
-      fontSize: 13,
-      theme: terminalThemeRef.current,
-    });
+    const terminal = new Terminal(
+      buildTicketWorkspaceTerminalOptions(terminalThemeRef.current),
+    );
     const fitAddon = new FitAddon();
     const socket = new WebSocket(resolveTerminalSocketUrl(socketPath));
     terminalRef.current = terminal;
@@ -170,13 +156,11 @@ export function TicketWorkspaceTerminal({
   }, [socketPath]);
 
   useEffect(() => {
-    const terminal = terminalRef.current;
-    if (!terminal) {
-      return;
-    }
-
-    terminal.options.theme = resolveTerminalTheme(terminalColorScheme);
-    fitAddonRef.current?.fit();
+    updateTicketWorkspaceTerminalTheme(
+      terminalRef.current,
+      fitAddonRef.current,
+      terminalColorScheme,
+    );
   }, [terminalColorScheme]);
 
   return (
@@ -197,12 +181,10 @@ export function TicketWorkspaceTerminal({
         </Text>
       ) : null}
 
-      <Box
-        className="ticket-workspace-terminal-shell"
-        style={{ background: terminalTheme.background }}
-      >
-        <div ref={containerRef} className="ticket-workspace-terminal-screen" />
-      </Box>
+      <TicketWorkspaceTerminalViewport
+        containerRef={containerRef}
+        colorScheme={terminalColorScheme}
+      />
     </Stack>
   );
 }
