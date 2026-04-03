@@ -338,32 +338,12 @@ export function registerTicketReadWorkspaceRoutes(
         socket.close();
         return;
       }
-      if (executionRuntime.hasActiveExecution(session.id)) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message:
-              "The agent still controls this worktree. Stop or finish the current run before opening the workspace terminal.",
-          }),
-        );
-        socket.close();
-        return;
-      }
 
       let terminal: ReturnType<typeof executionRuntime.startWorkspaceTerminal>;
       try {
         terminal = executionRuntime.startWorkspaceTerminal({
           sessionId: session.id,
           worktreePath: session.worktree_path,
-          onAgentTakeover: () => {
-            socket.send(
-              JSON.stringify({
-                type: "terminal.error",
-                message:
-                  "The agent reclaimed this worktree and closed the workspace terminal.",
-              }),
-            );
-          },
         });
       } catch (error) {
         socket.send(

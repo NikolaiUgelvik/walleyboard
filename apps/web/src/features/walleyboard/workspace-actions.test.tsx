@@ -218,27 +218,10 @@ test("ticket workspace actions keep diff and activity available after worktree c
   );
 });
 
-test("ticket workspace terminal action stays disabled while the agent owns the worktree", () => {
+test("ticket workspace terminal action stays available while the agent owns the worktree", () => {
   const { controller, ticket } = createController({
     agentControlsWorktree: true,
     session: { status: "awaiting_input", worktree_path: "/tmp/worktree-9" },
-  });
-
-  const tree = TicketWorkspaceActions({ controller, ticket });
-  const terminalAction = findElementByProp(
-    tree,
-    "aria-label",
-    "Open worktree terminal",
-  );
-
-  assert.ok(terminalAction);
-  assert.equal((terminalAction.props as { disabled?: boolean }).disabled, true);
-});
-
-test("ticket workspace terminal action stays available when no active agent owns the worktree", () => {
-  const { controller, ticket } = createController({
-    agentControlsWorktree: false,
-    session: { status: "queued", worktree_path: "/tmp/worktree-9" },
   });
 
   const tree = TicketWorkspaceActions({ controller, ticket });

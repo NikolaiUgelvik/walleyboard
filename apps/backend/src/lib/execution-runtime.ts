@@ -42,7 +42,6 @@ import {
 } from "./execution-runtime/publishers.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
 import {
-  closeTrackedWorkspaceTerminalsForExecution,
   disposeTrackedWorkspaceTerminals,
   startTrackedManualTerminal,
   startTrackedWorkspaceTerminal,
@@ -197,16 +196,11 @@ export class ExecutionRuntime {
   startWorkspaceTerminal(input: {
     sessionId: string;
     worktreePath: string;
-    onAgentTakeover?: () => void;
   }): IPty {
     return startTrackedWorkspaceTerminal({
-      activeSessions: this.#activeSessions,
       sessionId: input.sessionId,
       worktreePath: input.worktreePath,
       workspaceTerminals: this.#workspaceTerminals,
-      ...(input.onAgentTakeover
-        ? { onAgentTakeover: input.onAgentTakeover }
-        : {}),
     });
   }
 
@@ -877,8 +871,6 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no current attempt");
     }
 
-    this.#closeWorkspaceTerminalsForExecution(session.id);
-
     const adapter = this.#getSessionAdapter(session);
     const extraInstructions: PromptContextSection[] = [];
     const persistedResumeGuidance = hasMeaningfulContent(additionalInstruction)
@@ -1486,12 +1478,5 @@ export class ExecutionRuntime {
       failedSession ? this.hasActiveExecution(failedSession.id) : false,
     );
     this.startQueuedSessions(input.ticket.project);
-  }
-
-  #closeWorkspaceTerminalsForExecution(sessionId: string): void {
-    closeTrackedWorkspaceTerminalsForExecution({
-      sessionId,
-      workspaceTerminals: this.#workspaceTerminals,
-    });
   }
 }

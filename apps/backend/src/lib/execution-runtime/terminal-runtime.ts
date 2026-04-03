@@ -7,12 +7,8 @@ import { publishSessionOutput } from "./publishers.js";
 import { resolveTrackedExit } from "./waiters.js";
 
 export type WorkspaceTerminalRuntime = {
-  notifyAgentTakeover: () => void;
   pty: IPty;
 };
-
-export const workspaceTerminalAgentControlMessage =
-  "The agent still controls this worktree. Stop or finish the current run before opening the workspace terminal.";
 
 export function disposeTrackedWorkspaceTerminals(
   workspaceTerminals: Map<string, Set<WorkspaceTerminalRuntime>>,
@@ -25,16 +21,10 @@ export function disposeTrackedWorkspaceTerminals(
 }
 
 export function startTrackedWorkspaceTerminal(input: {
-  activeSessions: Map<string, IPty>;
-  onAgentTakeover?: () => void;
   sessionId: string;
   worktreePath: string;
   workspaceTerminals: Map<string, Set<WorkspaceTerminalRuntime>>;
 }): IPty {
-  if (input.activeSessions.has(input.sessionId)) {
-    throw new Error(workspaceTerminalAgentControlMessage);
-  }
-
   let child: IPty;
 
   try {
@@ -57,7 +47,6 @@ export function startTrackedWorkspaceTerminal(input: {
   }
 
   const runtime: WorkspaceTerminalRuntime = {
-    notifyAgentTakeover: input.onAgentTakeover ?? (() => {}),
     pty: child,
   };
   const existingTerminals = input.workspaceTerminals.get(input.sessionId);
@@ -79,30 +68,6 @@ export function startTrackedWorkspaceTerminal(input: {
   });
 
   return child;
-}
-
-export function closeTrackedWorkspaceTerminalsForExecution(input: {
-  sessionId: string;
-  workspaceTerminals: Map<string, Set<WorkspaceTerminalRuntime>>;
-}): void {
-  const terminals = input.workspaceTerminals.get(input.sessionId);
-  if (!terminals || terminals.size === 0) {
-    return;
-  }
-
-  input.workspaceTerminals.delete(input.sessionId);
-  for (const terminal of terminals) {
-    try {
-      terminal.notifyAgentTakeover();
-    } catch {
-      // Ignore disconnected clients while reclaiming the worktree.
-    }
-    try {
-      terminal.pty.kill("SIGKILL");
-    } catch {
-      // Ignore already-exited terminals while reclaiming the worktree.
-    }
-  }
 }
 
 export function startTrackedManualTerminal(input: {

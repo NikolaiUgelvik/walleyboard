@@ -66,10 +66,16 @@ export function WorkspaceModalContent({
         />
       ) : controller.workspaceModal === "terminal" ? (
         controller.selectedSessionTicket ? (
-          <TicketWorkspaceTerminal
-            ticketId={controller.selectedSessionTicket.id}
-            worktreePath={controller.session?.worktree_path ?? null}
-          />
+          controller.session?.worktree_path ? (
+            <TicketWorkspaceTerminal
+              ticketId={controller.selectedSessionTicket.id}
+              worktreePath={controller.session.worktree_path}
+            />
+          ) : (
+            <Text size="sm" c="dimmed">
+              This ticket does not have a prepared worktree.
+            </Text>
+          )
         ) : (
           <Text size="sm" c="dimmed">
             The ticket worktree is still being prepared.
