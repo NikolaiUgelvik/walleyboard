@@ -96,6 +96,7 @@ function createController(input?: {
   agentControlsWorktree?: boolean;
   preview?: TicketWorkspacePreview | null;
   previewError?: string;
+  sessionQueryError?: string;
   session?: Partial<ExecutionSession> | null;
   selectedSessionTicketSession?: Partial<ExecutionSession> | null;
   sessionQueryPending?: boolean;
@@ -190,8 +191,10 @@ function createController(input?: {
       isError: false,
     },
     sessionQuery: {
-      error: null,
-      isError: false,
+      error: input?.sessionQueryError
+        ? new Error(input.sessionQueryError)
+        : null,
+      isError: input?.sessionQueryError != null,
       isPending: input?.sessionQueryPending ?? false,
     },
     stopTicketWorkspacePreviewMutation: {
@@ -312,8 +315,31 @@ test("workspace terminal modal uses the selected ticket session while session de
       sessionQuery: controller.sessionQuery,
     }),
     {
+      error: null,
       state: "ready",
       worktreePath: "/tmp/worktree-9",
+    },
+  );
+});
+
+test("workspace terminal modal state surfaces session load failures", () => {
+  const { controller } = createController({
+    selectedSessionTicketSession: null,
+    session: null,
+    sessionQueryError: "Session details could not be loaded.",
+  });
+
+  assert.deepEqual(
+    resolveWorkspaceTerminalPanelState({
+      selectedSessionTicket: controller.selectedSessionTicket,
+      selectedSessionTicketSession: controller.selectedSessionTicketSession,
+      session: controller.session,
+      sessionQuery: controller.sessionQuery,
+    }),
+    {
+      error: "Session details could not be loaded.",
+      state: "error",
+      worktreePath: null,
     },
   );
 });

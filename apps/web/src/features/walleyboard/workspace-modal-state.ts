@@ -25,6 +25,8 @@ export function resolveWorkspaceTerminalPanelState(input: {
   selectedSessionTicketSession: TerminalSessionSnapshot;
   session: TerminalSessionSnapshot;
   sessionQuery: {
+    error: { message: string } | null;
+    isError: boolean;
     isPending: boolean;
   };
 }) {
@@ -33,6 +35,7 @@ export function resolveWorkspaceTerminalPanelState(input: {
 
   if (!input.selectedSessionTicket) {
     return {
+      error: null,
       state: "preparing" as const,
       worktreePath: null,
     };
@@ -40,6 +43,7 @@ export function resolveWorkspaceTerminalPanelState(input: {
 
   if (terminalSession?.worktree_path) {
     return {
+      error: null,
       state: "ready" as const,
       worktreePath: terminalSession.worktree_path,
     };
@@ -47,12 +51,23 @@ export function resolveWorkspaceTerminalPanelState(input: {
 
   if (input.sessionQuery.isPending) {
     return {
+      error: null,
       state: "loading" as const,
       worktreePath: null,
     };
   }
 
+  if (input.sessionQuery.isError) {
+    return {
+      error:
+        input.sessionQuery.error?.message ?? "Unable to load session details",
+      state: "error" as const,
+      worktreePath: null,
+    };
+  }
+
   return {
+    error: null,
     state: "missing_worktree" as const,
     worktreePath: null,
   };

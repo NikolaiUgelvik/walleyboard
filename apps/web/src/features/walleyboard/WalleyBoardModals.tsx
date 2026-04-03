@@ -83,6 +83,10 @@ export function WorkspaceModalContent({
           />
         ) : workspaceTerminalPanelState.state === "loading" ? (
           <Loader size="sm" />
+        ) : workspaceTerminalPanelState.state === "error" ? (
+          <Text size="sm" c="red">
+            {workspaceTerminalPanelState.error}
+          </Text>
         ) : workspaceTerminalPanelState.state === "missing_worktree" ? (
           <Text size="sm" c="dimmed">
             This ticket does not have a prepared worktree.

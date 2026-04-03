@@ -723,6 +723,35 @@ test("delete route closes an open workspace terminal before cleaning up the work
   }
 });
 
+test("closing tracked workspace terminals tolerates terminals that already exited", () => {
+  const workspaceTerminals = new Map<string, Set<WorkspaceTerminalRuntime>>();
+  let killCalls = 0;
+  const terminal: WorkspaceTerminalRuntime = {
+    exitMessage: null,
+    pty: {
+      kill() {
+        killCalls += 1;
+        throw new Error("PTY already exited");
+      },
+    } as unknown as WorkspaceTerminalRuntime["pty"],
+  };
+  workspaceTerminals.set("session-9", new Set([terminal]));
+
+  assert.doesNotThrow(() => {
+    closeTrackedWorkspaceTerminals(
+      workspaceTerminals,
+      "session-9",
+      "This workspace terminal closed because the ticket worktree was cleaned up.",
+    );
+  });
+  assert.equal(killCalls, 1);
+  assert.equal(
+    terminal.exitMessage,
+    "This workspace terminal closed because the ticket worktree was cleaned up.",
+  );
+  assert.equal(workspaceTerminals.has("session-9"), false);
+});
+
 test("start-agent-review route delegates to the agent review service", async () => {
   const requestedTicketIds: number[] = [];
   const app = Fastify();

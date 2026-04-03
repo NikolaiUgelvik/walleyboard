@@ -31,9 +31,13 @@ export function closeTrackedWorkspaceTerminals(
     return;
   }
 
+  workspaceTerminals.delete(sessionId);
+
   for (const terminal of sessionTerminals) {
     terminal.exitMessage = exitMessage;
-    terminal.pty.kill("SIGKILL");
+    try {
+      terminal.pty.kill("SIGKILL");
+    } catch {}
   }
 }
 
