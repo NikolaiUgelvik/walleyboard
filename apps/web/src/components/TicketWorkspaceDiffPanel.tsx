@@ -33,6 +33,92 @@ type DiffFileSummary = {
   label: string;
 };
 
+const diffRendererUnsafeCss = `
+  :host {
+    display: block;
+    border: 1px solid var(--walleyboard-diff-renderer-border);
+    border-radius: 16px;
+    background: var(--diffs-bg);
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  [data-diff],
+  [data-file] {
+    margin: 0;
+    background: var(--diffs-bg);
+  }
+
+  [data-code] {
+    scrollbar-color: var(--walleyboard-diff-gutter-divider) transparent;
+  }
+
+  [data-code]::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+
+  [data-diff]:hover [data-code]::-webkit-scrollbar-thumb,
+  [data-file]:hover [data-code]::-webkit-scrollbar-thumb {
+    background-color: var(--walleyboard-diff-gutter-divider);
+  }
+
+  [data-gutter] {
+    background: var(--diffs-bg);
+  }
+
+  [data-line],
+  [data-no-newline],
+  [data-gutter-buffer],
+  [data-column-number] {
+    border-bottom: 1px solid var(--walleyboard-diff-row-divider);
+  }
+
+  [data-line]:last-child,
+  [data-no-newline]:last-child,
+  [data-gutter-buffer]:last-child,
+  [data-column-number]:last-child {
+    border-bottom: 0;
+  }
+
+  [data-diff-type="split"][data-overflow="scroll"] [data-additions] {
+    border-left: 1px solid var(--walleyboard-diff-split-divider);
+  }
+
+  [data-diff-type="split"][data-overflow="scroll"] [data-deletions] {
+    border-right: 1px solid var(--walleyboard-diff-split-divider);
+  }
+
+  [data-diff-type="split"][data-overflow="wrap"] [data-deletions] [data-content] {
+    border-right: 1px solid var(--walleyboard-diff-split-divider);
+  }
+
+  [data-diff-type="split"][data-overflow="wrap"] [data-additions] [data-gutter] {
+    border-left: 1px solid var(--walleyboard-diff-split-divider);
+  }
+
+  [data-separator] {
+    border-top: 1px solid var(--walleyboard-diff-row-divider);
+    border-bottom: 1px solid var(--walleyboard-diff-row-divider);
+  }
+
+  [data-separator-wrapper] {
+    padding-inline: 16px;
+  }
+
+  [data-separator-content],
+  [data-expand-button] {
+    color: var(--walleyboard-diff-number-fg);
+  }
+
+  [data-expand-button] {
+    border-right: 1px solid var(--walleyboard-diff-row-divider);
+  }
+
+  [data-column-number] {
+    background-clip: padding-box;
+  }
+`;
+
 function getFileKey(file: FileDiffMetadata, index: number): string {
   return `${file.prevName ?? ""}:${file.name}:${index}`;
 }
@@ -131,6 +217,7 @@ export function TicketWorkspaceDiffPanel({
         lineDiffType: "word",
         overflow: "scroll",
         themeType: colorScheme === "auto" ? "system" : colorScheme,
+        unsafeCSS: diffRendererUnsafeCss,
       });
       instance.render({
         fileContainer: container,
