@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,26 @@ import type {
 
 import { AgentAdapterRegistry } from "./agent-adapters/registry.js";
 import { ExecutionRuntime } from "./execution-runtime.js";
+
+function configureGitIdentity(repoPath: string) {
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "WalleyBoard"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  execFileSync(
+    "git",
+    ["-C", repoPath, "config", "user.email", "walleyboard@example.com"],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+}
+
+function runGit(repoPath: string, args: string[]) {
+  return execFileSync("git", ["-C", repoPath, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
 
 function createProject(): Project {
   return {
@@ -403,6 +424,206 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
       [
         `[runtime failure] Codex exited with code 1. Final output: ${noisyLine}`,
       ],
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("startExecution resumes into merge recovery when the preserved worktree is mid-merge", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
+  const worktreePath = join(tempDir, "workspace");
+
+  execFileSync("git", ["init", worktreePath], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  configureGitIdentity(worktreePath);
+  runGit(worktreePath, ["checkout", "-b", "main"]);
+  execFileSync(
+    "bash",
+    [
+      "-lc",
+      `printf 'base\n' > ${JSON.stringify(join(worktreePath, "story.txt"))}`,
+    ],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  runGit(worktreePath, ["add", "story.txt"]);
+  runGit(worktreePath, ["commit", "-m", "initial"]);
+  runGit(worktreePath, ["checkout", "-b", "ticket-branch"]);
+  execFileSync(
+    "bash",
+    [
+      "-lc",
+      `printf 'ticket change\n' > ${JSON.stringify(join(worktreePath, "story.txt"))}`,
+    ],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  runGit(worktreePath, ["add", "story.txt"]);
+  runGit(worktreePath, ["commit", "-m", "ticket change"]);
+  runGit(worktreePath, ["checkout", "main"]);
+  execFileSync(
+    "bash",
+    [
+      "-lc",
+      `printf 'main change\n' > ${JSON.stringify(join(worktreePath, "story.txt"))}`,
+    ],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  runGit(worktreePath, ["add", "story.txt"]);
+  runGit(worktreePath, ["commit", "-m", "main change"]);
+  runGit(worktreePath, ["checkout", "ticket-branch"]);
+  assert.throws(() => runGit(worktreePath, ["merge", "main"]));
+
+  const sessionLogs: string[] = [];
+  let buildExecutionRunCalls = 0;
+  let mergeRunInput: {
+    conflictedFiles: string[];
+    failureMessage: string;
+    stage: "merge" | "rebase";
+    targetBranch: string;
+  } | null = null;
+
+  const dockerRuntime = {
+    assertAvailable() {
+      return {
+        installed: true,
+        available: true,
+        client_version: "29.3.1",
+        server_version: "29.3.1",
+        error: null,
+      };
+    },
+    cleanupSessionContainer() {},
+    dispose() {},
+    ensureSessionContainer() {},
+    spawnPtyInSession(_sessionId: string, command: string) {
+      assert.equal(command, "test-agent");
+      return {
+        kill() {},
+        onData() {},
+        onExit() {},
+        pid: 1234,
+        process: "docker",
+        resize() {},
+        write() {},
+      } as never;
+    },
+  };
+  const store = {
+    appendSessionLog(_sessionId: string, line: string) {
+      sessionLogs.push(line);
+      return sessionLogs.length;
+    },
+    getRequestedChangeNote() {
+      return undefined;
+    },
+    updateExecutionAttempt() {
+      return undefined;
+    },
+    updateSessionStatus(_sessionId: string, _status: string, _summary: string) {
+      return createSession(worktreePath);
+    },
+    updateSessionAdapterSessionRef() {
+      return createSession(worktreePath);
+    },
+  };
+  const eventHub = {
+    publish() {},
+  };
+
+  try {
+    const adapterRegistry = new AgentAdapterRegistry([
+      {
+        id: "codex",
+        label: "Fake Agent",
+        buildDraftRun() {
+          throw new Error("draft runs are not used in this test");
+        },
+        buildExecutionRun() {
+          buildExecutionRunCalls += 1;
+          throw new Error(
+            "execution run should not be used for merge recovery",
+          );
+        },
+        buildMergeConflictRun(input) {
+          mergeRunInput = {
+            conflictedFiles: input.conflictedFiles,
+            failureMessage: input.failureMessage,
+            stage: input.stage,
+            targetBranch: input.targetBranch,
+          };
+          return {
+            command: "test-agent",
+            args: ["merge-recovery", input.outputPath, "fake merge prompt"],
+            outputPath: input.outputPath,
+            dockerSpec: {
+              imageTag: "example/test-agent:latest",
+              dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+              homePath: "/home/test-agent",
+              configMountPath: "/home/test-agent/.fake-agent",
+            },
+          };
+        },
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
+        },
+        interpretOutputLine(line) {
+          return {
+            logLine: line,
+          };
+        },
+        parseDraftResult() {
+          throw new Error("draft parsing is not used in this test");
+        },
+        formatExitReason() {
+          return "fake exit";
+        },
+        resolveModelSelection() {
+          return {
+            model: null,
+            reasoningEffort: null,
+          };
+        },
+      },
+    ]);
+    const runtime = new ExecutionRuntime({
+      adapterRegistry,
+      dockerRuntime: dockerRuntime as never,
+      eventHub: eventHub as never,
+      store: store as never,
+    });
+
+    runtime.startExecution({
+      project: createProject(),
+      repository: createRepository(tempDir),
+      ticket: {
+        ...createTicket(),
+        target_branch: "main",
+        working_branch: "ticket-branch",
+      },
+      session: createSession(worktreePath),
+    });
+
+    assert.equal(buildExecutionRunCalls, 0);
+    assert.deepEqual(mergeRunInput, {
+      conflictedFiles: ["story.txt"],
+      failureMessage:
+        "Resume detected unresolved git conflicts in the preserved worktree.",
+      stage: "merge",
+      targetBranch: "main",
+    });
+    assert.ok(
+      sessionLogs.some((line) =>
+        line.includes(
+          "Completing the in-progress git merge before any new ticket work continues.",
+        ),
+      ),
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

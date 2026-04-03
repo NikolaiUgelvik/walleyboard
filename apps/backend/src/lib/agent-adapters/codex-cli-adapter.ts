@@ -371,7 +371,14 @@ export class CodexCliAdapter implements AgentCliAdapter {
       useDockerRuntime: input.useDockerRuntime,
       worktreePath: input.session.worktree_path,
     });
-    const args = ["exec", "--json", "--output-last-message", outputPath];
+    const resumeSessionRef = hasMeaningfulContent(
+      input.session.adapter_session_ref,
+    )
+      ? input.session.adapter_session_ref
+      : null;
+    const args = resumeSessionRef
+      ? ["exec", "resume", "--json"]
+      : ["exec", "--json"];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
@@ -383,6 +390,10 @@ export class CodexCliAdapter implements AgentCliAdapter {
       model,
       reasoningEffort,
     });
+    args.push("--output-last-message", outputPath);
+    if (resumeSessionRef) {
+      args.push(resumeSessionRef);
+    }
     args.push(
       buildMergeConflictPrompt({
         ticket: input.ticket,
