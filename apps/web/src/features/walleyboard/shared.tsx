@@ -187,6 +187,19 @@ export type TicketWorkspacePreviewResponse = {
   preview: TicketWorkspacePreview;
 };
 
+export type RepositoryWorkspacePreview = {
+  repository_id: string;
+  state: TicketWorkspacePreview["state"];
+  preview_url: string | null;
+  backend_url: string | null;
+  started_at: string | null;
+  error: string | null;
+};
+
+export type RepositoryWorkspacePreviewResponse = {
+  preview: RepositoryWorkspacePreview;
+};
+
 export type ReviewPackageResponse = {
   review_package: ReviewPackage;
 };
@@ -215,6 +228,11 @@ export type ArchiveActionFeedback = {
 
 export type DiffLayout = "split" | "stacked";
 export type WorkspaceModalKind = "diff" | "terminal" | "activity";
+export type WorkspaceTerminalContext = {
+  socketPath: string;
+  surfaceLabel: "ticket" | "repository";
+  worktreePath: string | null;
+};
 export type ReviewCardActionKind = "merge" | "create_pr" | "open_pr";
 export type ReviewCardAction = {
   kind: ReviewCardActionKind;

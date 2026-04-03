@@ -283,6 +283,101 @@ export type ImmediateWorktreeResetResult = {
   warnings: string[];
 };
 
+function resolveRepositoryWorkspaceRoot(
+  project: Project,
+  repository: RepositoryConfig,
+): string {
+  const projectWorktreeRoot = resolveWalleyBoardPath("worktrees", project.slug);
+  const repositorySlug = slugify(repository.name);
+  return join(
+    projectWorktreeRoot,
+    `repository-${repositorySlug || repository.id}-target`,
+  );
+}
+
+function isValidPreparedWorkspace(worktreePath: string): boolean {
+  try {
+    runGit(worktreePath, ["rev-parse", "--is-inside-work-tree"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function prepareRepositoryTargetBranchWorkspace(
+  project: Project,
+  repository: RepositoryConfig,
+): string {
+  const worktreeRoot = resolveRepositoryWorkspaceRoot(project, repository);
+  mkdirSync(dirname(worktreeRoot), { recursive: true });
+
+  if (existsSync(worktreeRoot) && isValidPreparedWorkspace(worktreeRoot)) {
+    return worktreeRoot;
+  }
+
+  if (existsSync(worktreeRoot)) {
+    removeStandaloneWorkspace(worktreeRoot);
+  }
+
+  const targetBranch =
+    repository.target_branch ?? project.default_target_branch ?? "main";
+  runGit(repository.path, ["rev-parse", "--is-inside-work-tree"]);
+  const refreshedTarget = refreshTargetBranch(
+    repository.path,
+    repository,
+    targetBranch,
+  );
+
+  if (project.execution_backend === "docker") {
+    try {
+      runGitAtRoot([
+        "clone",
+        "--quiet",
+        "--no-hardlinks",
+        "--branch",
+        refreshedTarget.mergeBackBranch,
+        repository.path,
+        worktreeRoot,
+      ]);
+      copyGitIdentity(repository.path, worktreeRoot);
+      addWorkspaceExclude(worktreeRoot, ".walleyboard/");
+      return worktreeRoot;
+    } catch (error) {
+      if (existsSync(worktreeRoot)) {
+        removeStandaloneWorkspace(worktreeRoot);
+      }
+
+      throw error;
+    }
+  }
+
+  try {
+    runGit(repository.path, [
+      "worktree",
+      "add",
+      worktreeRoot,
+      refreshedTarget.syncRef,
+    ]);
+    addWorkspaceExclude(worktreeRoot, ".walleyboard/");
+    return worktreeRoot;
+  } catch (error) {
+    if (existsSync(worktreeRoot)) {
+      try {
+        runGit(repository.path, [
+          "worktree",
+          "remove",
+          "--force",
+          worktreeRoot,
+        ]);
+      } catch {
+        // Keep the original error. Cleanup failures can be handled manually.
+      }
+    }
+
+    throw error;
+  }
+}
+
 export function prepareWorktree(
   project: Project,
   repository: RepositoryConfig,

@@ -47,6 +47,7 @@ type WorkspaceModalContentController = Pick<
   | "ticketWorkspaceDiffLayout"
   | "ticketWorkspaceDiffQuery"
   | "workspaceModal"
+  | "workspaceTerminalContext"
 >;
 
 export function WorkspaceModalContent({
@@ -75,10 +76,17 @@ export function WorkspaceModalContent({
           onLayoutChange={controller.setTicketWorkspaceDiffLayout}
         />
       ) : controller.workspaceModal === "terminal" ? (
-        workspaceTerminalPanelState.state === "ready" &&
-        controller.selectedSessionTicket ? (
+        controller.workspaceTerminalContext ? (
           <TicketWorkspaceTerminal
-            ticketId={controller.selectedSessionTicket.id}
+            socketPath={controller.workspaceTerminalContext.socketPath}
+            surfaceLabel={controller.workspaceTerminalContext.surfaceLabel}
+            worktreePath={controller.workspaceTerminalContext.worktreePath}
+          />
+        ) : workspaceTerminalPanelState.state === "ready" &&
+          controller.selectedSessionTicket ? (
+          <TicketWorkspaceTerminal
+            socketPath={`/tickets/${controller.selectedSessionTicket.id}/workspace/terminal`}
+            surfaceLabel="ticket"
             worktreePath={workspaceTerminalPanelState.worktreePath}
           />
         ) : workspaceTerminalPanelState.state === "loading" ? (
@@ -93,7 +101,7 @@ export function WorkspaceModalContent({
           </Text>
         ) : (
           <Text size="sm" c="dimmed">
-            The ticket worktree is still being prepared.
+            The workspace terminal is still being prepared.
           </Text>
         )
       ) : controller.workspaceModal === "activity" ? (

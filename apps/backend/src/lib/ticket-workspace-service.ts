@@ -27,14 +27,25 @@ type PreviewProcess = {
   label: "backend" | "frontend" | "preview";
 };
 
+export type RepositoryWorkspacePreview = {
+  repository_id: string;
+  state: TicketWorkspacePreview["state"];
+  preview_url: string | null;
+  backend_url: string | null;
+  started_at: string | null;
+  error: string | null;
+};
+
 type PreviewRuntime = {
-  ticketId: number;
+  key: string;
+  repositoryId: string | null;
+  ticketId: number | null;
   backendUrl: string | null;
   error: string | null;
   previewUrl: string | null;
   processes: PreviewProcess[];
   startedAt: string | null;
-  startPromise: Promise<TicketWorkspacePreview> | null;
+  startPromise: Promise<void> | null;
   state: TicketWorkspacePreview["state"];
   stopping: boolean;
   worktreePath: string;
@@ -115,9 +126,40 @@ function isGitInternalPath(filename: string | null): boolean {
   return filename === ".git" || filename.startsWith(".git/");
 }
 
-function makePreviewSnapshot(runtime: PreviewRuntime): TicketWorkspacePreview {
+function getTicketPreviewKey(ticketId: number): string {
+  return `ticket:${ticketId}`;
+}
+
+function getRepositoryPreviewKey(repositoryId: string): string {
+  return `repository:${repositoryId}`;
+}
+
+function makeTicketPreviewSnapshot(
+  runtime: PreviewRuntime,
+): TicketWorkspacePreview {
+  if (runtime.ticketId === null) {
+    throw new Error("Ticket preview runtime is missing its ticket id");
+  }
+
   return {
     ticket_id: runtime.ticketId,
+    state: runtime.state,
+    preview_url: runtime.previewUrl,
+    backend_url: runtime.backendUrl,
+    started_at: runtime.startedAt,
+    error: runtime.error,
+  };
+}
+
+function makeRepositoryPreviewSnapshot(
+  runtime: PreviewRuntime,
+): RepositoryWorkspacePreview {
+  if (runtime.repositoryId === null) {
+    throw new Error("Repository preview runtime is missing its repository id");
+  }
+
+  return {
+    repository_id: runtime.repositoryId,
     state: runtime.state,
     preview_url: runtime.previewUrl,
     backend_url: runtime.backendUrl,
@@ -229,7 +271,7 @@ async function waitForProcessGroupExit(
 export class TicketWorkspaceService {
   readonly #apiBaseUrl: string;
   readonly #eventHub: EventHub;
-  readonly #previews = new Map<number, PreviewRuntime>();
+  readonly #previews = new Map<string, PreviewRuntime>();
   readonly #watchRegistrations = new Map<number, WatchRegistration>();
 
   constructor(options: { apiBaseUrl: string; eventHub: EventHub }) {
@@ -278,7 +320,7 @@ export class TicketWorkspaceService {
   }
 
   getPreview(ticketId: number): TicketWorkspacePreview {
-    const runtime = this.#previews.get(ticketId);
+    const runtime = this.#previews.get(getTicketPreviewKey(ticketId));
     if (!runtime) {
       return {
         ticket_id: ticketId,
@@ -290,25 +332,107 @@ export class TicketWorkspaceService {
       };
     }
 
-    return makePreviewSnapshot(runtime);
+    return makeTicketPreviewSnapshot(runtime);
+  }
+
+  getRepositoryPreview(repositoryId: string): RepositoryWorkspacePreview {
+    const runtime = this.#previews.get(getRepositoryPreviewKey(repositoryId));
+    if (!runtime) {
+      return {
+        repository_id: repositoryId,
+        state: "idle",
+        preview_url: null,
+        backend_url: null,
+        started_at: null,
+        error: null,
+      };
+    }
+
+    return makeRepositoryPreviewSnapshot(runtime);
   }
 
   async ensurePreview(input: {
     ticketId: number;
     worktreePath: string;
   }): Promise<TicketWorkspacePreview> {
-    const existing = this.#previews.get(input.ticketId);
+    const runtime = await this.#ensurePreviewRuntime({
+      key: getTicketPreviewKey(input.ticketId),
+      repositoryId: null,
+      ticketId: input.ticketId,
+      worktreePath: input.worktreePath,
+    });
+    return makeTicketPreviewSnapshot(runtime);
+  }
+
+  async ensureRepositoryPreview(input: {
+    repositoryId: string;
+    worktreePath: string;
+  }): Promise<RepositoryWorkspacePreview> {
+    const runtime = await this.#ensurePreviewRuntime({
+      key: getRepositoryPreviewKey(input.repositoryId),
+      repositoryId: input.repositoryId,
+      ticketId: null,
+      worktreePath: input.worktreePath,
+    });
+    return makeRepositoryPreviewSnapshot(runtime);
+  }
+
+  stopPreview(ticketId: number): void {
+    this.#stopPreviewByKey(getTicketPreviewKey(ticketId));
+  }
+
+  stopRepositoryPreview(repositoryId: string): void {
+    this.#stopPreviewByKey(getRepositoryPreviewKey(repositoryId));
+  }
+
+  async stopPreviewAndWait(ticketId: number): Promise<void> {
+    await this.#stopPreviewAndWaitByKey(getTicketPreviewKey(ticketId));
+  }
+
+  async stopRepositoryPreviewAndWait(repositoryId: string): Promise<void> {
+    await this.#stopPreviewAndWaitByKey(getRepositoryPreviewKey(repositoryId));
+  }
+
+  async disposeTicket(ticketId: number): Promise<void> {
+    await this.stopPreviewAndWait(ticketId);
+
+    const watchRegistration = this.#watchRegistrations.get(ticketId);
+    if (!watchRegistration) {
+      return;
+    }
+
+    if (watchRegistration.debounceTimer) {
+      clearTimeout(watchRegistration.debounceTimer);
+    }
+
+    for (const watcher of watchRegistration.watchers) {
+      watcher.close();
+    }
+
+    this.#watchRegistrations.delete(ticketId);
+  }
+
+  async #ensurePreviewRuntime(input: {
+    key: string;
+    repositoryId: string | null;
+    ticketId: number | null;
+    worktreePath: string;
+  }): Promise<PreviewRuntime> {
+    const existing = this.#previews.get(input.key);
     if (existing?.state === "ready") {
-      return makePreviewSnapshot(existing);
+      return existing;
     }
     if (existing?.startPromise) {
-      return await existing.startPromise;
+      await existing.startPromise;
+      return this.#previews.get(input.key) ?? existing;
     }
     if (existing) {
-      await this.stopPreviewAndWait(input.ticketId);
+      await this.#stopPreviewAndWaitByKey(input.key);
     }
 
     const runtime: PreviewRuntime = {
+      key: input.key,
+      repositoryId: input.repositoryId,
       ticketId: input.ticketId,
       backendUrl: null,
       error: null,
@@ -323,20 +447,20 @@ export class TicketWorkspaceService {
     };
 
     runtime.startPromise = this.#startPreview(runtime).finally(() => {
-      const current = this.#previews.get(input.ticketId);
+      const current = this.#previews.get(input.key);
       if (current === runtime) {
         current.startPromise = null;
       }
     });
 
-    this.#previews.set(input.ticketId, runtime);
-    this.#publishWorkspaceUpdate(input.ticketId, "preview");
-
-    return await runtime.startPromise;
+    this.#previews.set(input.key, runtime);
+    this.#publishPreviewUpdate(runtime);
+    await runtime.startPromise;
+    return this.#previews.get(input.key) ?? runtime;
   }
 
-  stopPreview(ticketId: number): void {
-    const runtime = this.#previews.get(ticketId);
+  #stopPreviewByKey(key: string): void {
+    const runtime = this.#previews.get(key);
     if (!runtime) {
       return;
     }
@@ -355,12 +479,12 @@ export class TicketWorkspaceService {
       }
     }
 
-    this.#previews.delete(ticketId);
-    this.#publishWorkspaceUpdate(ticketId, "preview");
+    this.#previews.delete(key);
+    this.#publishPreviewUpdate(runtime);
   }
 
-  async stopPreviewAndWait(ticketId: number): Promise<void> {
-    const runtime = this.#previews.get(ticketId);
+  async #stopPreviewAndWaitByKey(key: string): Promise<void> {
+    const runtime = this.#previews.get(key);
     if (!runtime) {
       return;
     }
@@ -387,39 +511,18 @@ export class TicketWorkspaceService {
       ),
     );
 
-    this.#previews.delete(ticketId);
-    this.#publishWorkspaceUpdate(ticketId, "preview");
+    this.#previews.delete(key);
+    this.#publishPreviewUpdate(runtime);
   }
 
-  async disposeTicket(ticketId: number): Promise<void> {
-    await this.stopPreviewAndWait(ticketId);
-
-    const watchRegistration = this.#watchRegistrations.get(ticketId);
-    if (!watchRegistration) {
-      return;
-    }
-
-    if (watchRegistration.debounceTimer) {
-      clearTimeout(watchRegistration.debounceTimer);
-    }
-
-    for (const watcher of watchRegistration.watchers) {
-      watcher.close();
-    }
-
-    this.#watchRegistrations.delete(ticketId);
-  }
-
-  async #startPreview(
-    runtime: PreviewRuntime,
-  ): Promise<TicketWorkspacePreview> {
+  async #startPreview(runtime: PreviewRuntime): Promise<void> {
     const scripts = parsePackageScripts(runtime.worktreePath);
     if (!scripts) {
       runtime.state = "failed";
       runtime.error =
         "Preview requires a package.json with a dev, dev:web, or dev:backend script.";
-      this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
-      return makePreviewSnapshot(runtime);
+      this.#publishPreviewUpdate(runtime);
+      return;
     }
 
     try {
@@ -494,8 +597,8 @@ export class TicketWorkspaceService {
       runtime.state = "ready";
       runtime.startedAt = nowIso();
       runtime.error = null;
-      this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
-      return makePreviewSnapshot(runtime);
+      this.#publishPreviewUpdate(runtime);
+      return;
     } catch (error) {
       runtime.state = "failed";
       runtime.error =
@@ -503,10 +606,9 @@ export class TicketWorkspaceService {
       runtime.previewUrl = null;
       runtime.backendUrl = null;
       runtime.startedAt = null;
-      await this.stopPreviewAndWait(runtime.ticketId);
-      this.#previews.set(runtime.ticketId, runtime);
-      this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
-      return makePreviewSnapshot(runtime);
+      await this.#stopPreviewAndWaitByKey(runtime.key);
+      this.#previews.set(runtime.key, runtime);
+      this.#publishPreviewUpdate(runtime);
     }
   }
 
@@ -565,9 +667,9 @@ export class TicketWorkspaceService {
       runtime.error = `${input.label} preview exited (${signal ?? code ?? "unknown"})`;
       runtime.previewUrl = null;
       runtime.backendUrl = null;
-      this.stopPreview(runtime.ticketId);
-      this.#previews.set(runtime.ticketId, runtime);
-      this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
+      this.#stopPreviewByKey(runtime.key);
+      this.#previews.set(runtime.key, runtime);
+      this.#publishPreviewUpdate(runtime);
     });
 
     return previewProcess;
@@ -632,5 +734,13 @@ export class TicketWorkspaceService {
         },
       ),
     );
+  }
+
+  #publishPreviewUpdate(runtime: PreviewRuntime): void {
+    if (runtime.ticketId === null) {
+      return;
+    }
+
+    this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
   }
 }

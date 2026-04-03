@@ -35,7 +35,6 @@ import {
   draftMatchesSearch,
   fetchJson,
   findLatestRevertableRefineEvent,
-  focusElementById,
   type InspectorState,
   mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
@@ -61,14 +60,17 @@ import {
   type TicketsResponse,
   ticketMatchesSearch,
   type WorkspaceModalKind,
+  type WorkspaceTerminalContext,
   writeLastOpenProjectId,
 } from "./shared.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
+import { useSelectedRepositoryWorkspace } from "./use-selected-repository-workspace.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
+import { createWorkspaceModalControls } from "./workspace-modal-controls.js";
 import {
   resolveSelectedWorkspaceTicketId,
   shouldKeepWorkspaceModalOpen,
@@ -169,6 +171,8 @@ export function useWalleyBoardController() {
     useState<WorkspaceModalKind | null>(null);
   const [workspaceTicket, setWorkspaceTicket] =
     useState<TicketFrontmatter | null>(null);
+  const [workspaceTerminalContext, setWorkspaceTerminalContext] =
+    useState<WorkspaceTerminalContext | null>(null);
   const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] = useState<
     "split" | "stacked"
   >(() => readDiffLayoutPreference());
@@ -462,10 +466,16 @@ export function useWalleyBoardController() {
   });
 
   useEffect(() => {
-    if (!shouldKeepWorkspaceModalOpen(inspectorState.kind, workspaceModal)) {
+    if (
+      !shouldKeepWorkspaceModalOpen(
+        inspectorState.kind,
+        workspaceModal,
+        workspaceTerminalContext !== null,
+      )
+    ) {
       setWorkspaceModal(null);
     }
-  }, [inspectorState.kind, workspaceModal]);
+  }, [inspectorState.kind, workspaceModal, workspaceTerminalContext]);
 
   const sessionQuery = useQuery({
     queryKey: ["sessions", selectedSessionId],
@@ -642,6 +652,21 @@ export function useWalleyBoardController() {
     projectDeleteConfirmText.trim() === projectOptionsProject.slug;
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const selectedRepository = repositories[0] ?? null;
+  const {
+    handleSelectedRepositoryPreviewAction,
+    openSelectedRepositoryWorkspaceTerminal,
+    repositoryPreviewActionError,
+    repositoryPreviewActionPending,
+    repositoryTerminalPending,
+    repositoryWorkspacePreview,
+    repositoryWorkspacePreviewQuery,
+  } = useSelectedRepositoryWorkspace({
+    selectedProjectId,
+    selectedRepository,
+    setWorkspaceModal,
+    setWorkspaceTerminalContext,
+    setWorkspaceTicket,
+  });
   const draftEditorRepositories =
     draftEditorProjectId !== null && draftEditorProjectId === selectedProjectId
       ? repositories
@@ -1189,66 +1214,29 @@ export function useWalleyBoardController() {
     mutations.restoreTicketMutation.reset();
   };
 
-  const openNewDraft = (): void => {
-    initializeNewDraftEditor(selectedProjectId);
-    setWorkspaceModal(null);
-    setWorkspaceTicket(null);
-    setInspectorState({ kind: "new_draft" });
-    window.requestAnimationFrame(() => focusElementById("draft-title"));
-  };
-
-  const hideInspector = (): void => {
-    setWorkspaceModal(null);
-    setWorkspaceTicket(null);
-    setInspectorState({ kind: "hidden" });
-  };
-
-  const openTicketSession = (ticket: TicketFrontmatter): void => {
-    if (!ticket.session_id) {
-      return;
-    }
-
-    setInspectorState({ kind: "session", sessionId: ticket.session_id });
-  };
-
-  const openTicketWorkspaceModal = (
-    ticket: TicketFrontmatter,
-    modal: WorkspaceModalKind,
-  ): void => {
-    if (modal === "diff") {
-      setWorkspaceTicket(ticket);
-      setWorkspaceModal("diff");
-      if (ticket.session_id) {
-        openTicketSession(ticket);
-      }
-      return;
-    }
-
-    if (!ticket.session_id) {
-      return;
-    }
-
-    setWorkspaceTicket(null);
-    openTicketSession(ticket);
-    setWorkspaceModal(modal);
-  };
-
-  const closeWorkspaceModal = (): void => {
-    setWorkspaceModal(null);
-    setWorkspaceTicket(null);
-  };
+  const {
+    closeWorkspaceModal,
+    hideInspector,
+    openDraft,
+    openNewDraft,
+    openTicketSession,
+    openTicketWorkspaceModal,
+  } = createWorkspaceModalControls({
+    initializeNewDraftEditor,
+    selectedProjectId,
+    session,
+    sessionById,
+    setInspectorState,
+    setWorkspaceModal,
+    setWorkspaceTerminalContext,
+    setWorkspaceTicket,
+  });
 
   const openArchivedTicketDiff = (ticket: TicketFrontmatter): void => {
     setArchiveActionFeedback(null);
     setArchiveModalOpen(false);
     setWorkspaceTicket(ticket);
     setWorkspaceModal("diff");
-  };
-
-  const openDraft = (draftId: string): void => {
-    setWorkspaceModal(null);
-    setWorkspaceTicket(null);
-    setInspectorState({ kind: "draft", draftId });
   };
 
   const handleSaveNewDraft = (): void => {
@@ -1347,6 +1335,7 @@ export function useWalleyBoardController() {
     handleQuestionNewDraft,
     handleRefineNewDraft,
     handleSaveNewDraft,
+    handleSelectedRepositoryPreviewAction,
     healthQuery,
     hideInspector,
     initializeNewDraftEditor,
@@ -1358,6 +1347,7 @@ export function useWalleyBoardController() {
     latestRevertableRefineEvent,
     openArchiveModal,
     openArchivedTicketDiff,
+    openSelectedRepositoryWorkspaceTerminal,
     openTicketWorkspaceModal,
     openDraft,
     openNewDraft,
@@ -1404,7 +1394,12 @@ export function useWalleyBoardController() {
     refreshProjectOptionsBranches,
     repositories,
     repositoriesQuery,
+    repositoryPreviewActionError,
+    repositoryPreviewActionPending,
     repositoryPath,
+    repositoryTerminalPending,
+    repositoryWorkspacePreview,
+    repositoryWorkspacePreviewQuery,
     restartTicketFromScratch,
     requestedChangesBody,
     resumeReason,
@@ -1434,6 +1429,7 @@ export function useWalleyBoardController() {
     sessionQuery,
     closeWorkspaceModal,
     workspaceModal,
+    workspaceTerminalContext,
     setArchiveModalOpen,
     setBoardSearch,
     setDefaultBranch,

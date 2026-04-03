@@ -9,12 +9,18 @@ import React, {
 
 import type {
   ExecutionSession,
+  Project,
+  RepositoryConfig,
   TicketFrontmatter,
   TicketWorkspacePreview,
 } from "../../../../../packages/contracts/src/index.js";
 
-import { TicketWorkspaceActions } from "./BoardView.js";
+import {
+  ProjectWorkspaceActions,
+  TicketWorkspaceActions,
+} from "./BoardView.js";
 import { TicketWorkspaceSummaryRow } from "./InspectorPane.js";
+import type { RepositoryWorkspacePreview } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 import {
   resolveWorkspaceDiffPanelState,
@@ -99,6 +105,8 @@ function createController(input?: {
   sessionSummaryError?: string;
   sessionSummaryPending?: boolean;
   sessionQueryError?: string;
+  repositoryPreview?: RepositoryWorkspacePreview | null;
+  repositoryPreviewError?: string;
   session?: Partial<ExecutionSession> | null;
   selectedSessionTicketSession?: Partial<ExecutionSession> | null;
   sessionQueryPending?: boolean;
@@ -107,8 +115,43 @@ function createController(input?: {
 }) {
   const openCalls: Array<{ kind: string; ticketId: number }> = [];
   const previewActionCalls: number[] = [];
+  let repositoryPreviewActionCalls = 0;
+  let repositoryTerminalActionCalls = 0;
   const ticket = input?.selectedTicket ?? createTicket();
   const preview = input?.preview ?? null;
+  const repositoryPreview = input?.repositoryPreview ?? null;
+  const selectedProject: Project = {
+    id: "project-1",
+    slug: "project-1",
+    name: "Project One",
+    agent_adapter: "codex",
+    execution_backend: "host",
+    automatic_agent_review: false,
+    default_review_action: "direct_merge",
+    default_target_branch: "main",
+    pre_worktree_command: null,
+    post_worktree_command: null,
+    draft_analysis_model: null,
+    draft_analysis_reasoning_effort: null,
+    ticket_work_model: null,
+    ticket_work_reasoning_effort: null,
+    max_concurrent_sessions: 1,
+    created_at: "2026-04-02T00:00:00.000Z",
+    updated_at: "2026-04-02T00:00:00.000Z",
+  };
+  const selectedRepository: RepositoryConfig = {
+    id: "repo-1",
+    project_id: "project-1",
+    name: "repo",
+    path: "/tmp/repo",
+    target_branch: "main",
+    setup_hook: null,
+    cleanup_hook: null,
+    validation_profile: [],
+    extra_env_allowlist: [],
+    created_at: "2026-04-02T00:00:00.000Z",
+    updated_at: "2026-04-02T00:00:00.000Z",
+  };
   const session =
     input?.session === null
       ? null
@@ -166,6 +209,12 @@ function createController(input?: {
     handleTicketPreviewAction(selected: TicketFrontmatter) {
       previewActionCalls.push(selected.id);
     },
+    handleSelectedRepositoryPreviewAction() {
+      repositoryPreviewActionCalls += 1;
+    },
+    openSelectedRepositoryWorkspaceTerminal() {
+      repositoryTerminalActionCalls += 1;
+    },
     openTicketWorkspaceModal(selected: TicketFrontmatter, kind: string) {
       openCalls.push({ kind, ticketId: selected.id });
     },
@@ -174,10 +223,16 @@ function createController(input?: {
       : {},
     selectedSessionTicket: input?.selectedTicket ?? ticket,
     selectedSessionTicketSession,
+    repositoryPreviewActionError: input?.repositoryPreviewError ?? null,
+    repositoryPreviewActionPending: false,
+    repositoryTerminalPending: false,
+    repositoryWorkspacePreview: repositoryPreview,
     startTicketWorkspacePreviewMutation: {
       isPending: false,
       variables: null,
     },
+    selectedProject,
+    selectedRepository,
     session,
     sessionById:
       ticket.session_id && session
@@ -229,7 +284,14 @@ function createController(input?: {
     workspaceModal: input?.workspaceModal ?? null,
   } as unknown as WalleyBoardController;
 
-  return { controller, openCalls, previewActionCalls, ticket };
+  return {
+    controller,
+    openCalls,
+    previewActionCalls,
+    repositoryPreviewActionCalls: () => repositoryPreviewActionCalls,
+    repositoryTerminalActionCalls: () => repositoryTerminalActionCalls,
+    ticket,
+  };
 }
 
 test("ticket workspace actions switch preview labels and surface preview errors", () => {
@@ -430,6 +492,60 @@ test("ticket workspace activity action opens the activity modal from the card", 
 
   assert.equal(stopPropagationCalled, true);
   assert.deepEqual(openCalls, [{ kind: "activity", ticketId: ticket.id }]);
+});
+
+test("project workspace actions surface repository preview errors and switch labels", () => {
+  const { controller } = createController({
+    repositoryPreview: {
+      repository_id: "repo-1",
+      state: "ready",
+      preview_url: "http://127.0.0.1:4173",
+      backend_url: null,
+      started_at: "2026-04-02T00:00:00.000Z",
+      error: null,
+    },
+    repositoryPreviewError:
+      "Preview is running, but the browser blocked opening a new tab.",
+  });
+
+  const tree = ProjectWorkspaceActions({ controller });
+  assert.ok(tree);
+
+  const previewAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Turn off dev server",
+  );
+
+  assert.ok(previewAction);
+  assert.match(
+    collectText(tree),
+    /Preview is running, but the browser blocked opening a new tab\./,
+  );
+});
+
+test("project workspace actions call the repository preview and terminal handlers", () => {
+  const {
+    controller,
+    repositoryPreviewActionCalls,
+    repositoryTerminalActionCalls,
+  } = createController();
+  const tree = ProjectWorkspaceActions({ controller });
+  assert.ok(tree);
+
+  const previewAction = findElementByProp(tree, "aria-label", "Preview");
+  assert.ok(previewAction);
+  (previewAction.props as { onClick: () => void }).onClick();
+  assert.equal(repositoryPreviewActionCalls(), 1);
+
+  const terminalAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open repository terminal",
+  );
+  assert.ok(terminalAction);
+  (terminalAction.props as { onClick: () => void }).onClick();
+  assert.equal(repositoryTerminalActionCalls(), 1);
 });
 
 test("ticket workspace summary row opens the activity stream from the inspector", () => {

@@ -8,13 +8,14 @@ import { useEffect, useRef, useState } from "react";
 import { apiBaseUrl } from "../lib/api-base-url.js";
 
 type TicketWorkspaceTerminalProps = {
-  ticketId: number;
+  socketPath: string;
+  surfaceLabel: "ticket" | "repository";
   worktreePath: string | null;
 };
 
-function resolveTerminalSocketUrl(ticketId: number): string {
+function resolveTerminalSocketUrl(socketPath: string): string {
   const base = apiBaseUrl.replace(/^http/, "ws");
-  return `${base}/tickets/${ticketId}/workspace/terminal`;
+  return `${base}${socketPath}`;
 }
 
 function resolveTerminalTheme(colorScheme: "light" | "dark") {
@@ -34,7 +35,8 @@ function resolveTerminalTheme(colorScheme: "light" | "dark") {
 }
 
 export function TicketWorkspaceTerminal({
-  ticketId,
+  socketPath,
+  surfaceLabel,
   worktreePath,
 }: TicketWorkspaceTerminalProps) {
   const { colorScheme } = useMantineColorScheme();
@@ -62,7 +64,7 @@ export function TicketWorkspaceTerminal({
       theme: terminalThemeRef.current,
     });
     const fitAddon = new FitAddon();
-    const socket = new WebSocket(resolveTerminalSocketUrl(ticketId));
+    const socket = new WebSocket(resolveTerminalSocketUrl(socketPath));
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     const resizeObserver = new ResizeObserver(() => {
@@ -163,7 +165,7 @@ export function TicketWorkspaceTerminal({
       terminal.dispose();
       container.replaceChildren();
     };
-  }, [ticketId]);
+  }, [socketPath]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -180,7 +182,7 @@ export function TicketWorkspaceTerminal({
       <Stack gap={4}>
         <Text fw={600}>Worktree terminal</Text>
         <Text size="sm" c="dimmed">
-          Plain shell access at the ticket worktree root.
+          Plain shell access at the {surfaceLabel} worktree root.
         </Text>
         <Text size="sm" c="dimmed">
           Working directory: <Code>{worktreePath ?? "pending"}</Code>

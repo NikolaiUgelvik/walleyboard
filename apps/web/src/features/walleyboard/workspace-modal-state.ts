@@ -76,8 +76,13 @@ export function resolveWorkspaceTerminalPanelState(input: {
 export function shouldKeepWorkspaceModalOpen(
   inspectorKind: "draft" | "hidden" | "new_draft" | "session",
   workspaceModal: WorkspaceModalKind | null,
+  hasTerminalContext = false,
 ): boolean {
-  return inspectorKind === "session" || workspaceModal === "diff";
+  return (
+    inspectorKind === "session" ||
+    workspaceModal === "diff" ||
+    (workspaceModal === "terminal" && hasTerminalContext)
+  );
 }
 
 export function resolveSelectedWorkspaceTicketId(input: {

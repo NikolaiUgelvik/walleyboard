@@ -14,8 +14,13 @@ import {
 } from "../lib/rate-limit.js";
 import type { Store } from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
+import type {
+  RepositoryWorkspacePreview,
+  TicketWorkspaceService,
+} from "../lib/ticket-workspace-service.js";
 import {
   fetchRepositoryBranches,
+  prepareRepositoryTargetBranchWorkspace,
   removeLocalBranch,
   removePreparedWorktree,
 } from "../lib/worktree-service.js";
@@ -23,6 +28,7 @@ import {
 type ProjectRouteOptions = {
   store: Store;
   executionRuntime: ExecutionRuntime;
+  ticketWorkspaceService: TicketWorkspaceService;
 };
 
 const activeProjectSessionStatuses = new Set([
@@ -35,8 +41,41 @@ const activeProjectSessionStatuses = new Set([
 
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   app,
-  { store, executionRuntime },
+  { store, executionRuntime, ticketWorkspaceService },
 ) => {
+  const getProjectRepositoryPair = (
+    projectId: string,
+    repositoryId: string,
+  ): {
+    project: ReturnType<Store["getProject"]>;
+    repository: ReturnType<Store["getRepository"]>;
+  } => {
+    const project = store.getProject(projectId);
+    const repository = store.getRepository(repositoryId);
+    if (!project || !repository || repository.project_id !== project.id) {
+      return {
+        project: undefined,
+        repository: undefined,
+      };
+    }
+
+    return { project, repository };
+  };
+
+  const buildRepositoryPreviewResponse = (
+    repositoryId: string,
+    preview: RepositoryWorkspacePreview,
+  ) => ({
+    preview: {
+      repository_id: repositoryId,
+      state: preview.state,
+      preview_url: preview.preview_url,
+      backend_url: preview.backend_url,
+      started_at: preview.started_at,
+      error: preview.error,
+    },
+  });
+
   const handleProjectUpdate = async (
     projectId: string,
     body: unknown,
@@ -92,6 +131,200 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     async (request) => ({
       repositories: store.listProjectRepositories(request.params.projectId),
     }),
+  );
+
+  app.get<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/preview",
+    async (request, reply) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      return buildRepositoryPreviewResponse(
+        repository.id,
+        ticketWorkspaceService.getRepositoryPreview(repository.id),
+      );
+    },
+  );
+
+  app.post<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/preview",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      try {
+        const worktreePath = prepareRepositoryTargetBranchWorkspace(
+          project,
+          repository,
+        );
+        const preview = await ticketWorkspaceService.ensureRepositoryPreview({
+          repositoryId: repository.id,
+          worktreePath,
+        });
+        reply.send(buildRepositoryPreviewResponse(repository.id, preview));
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to start preview",
+        });
+      }
+    },
+  );
+
+  app.post<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/preview/stop",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      await ticketWorkspaceService.stopRepositoryPreviewAndWait(repository.id);
+      reply.send(
+        buildRepositoryPreviewResponse(
+          repository.id,
+          ticketWorkspaceService.getRepositoryPreview(repository.id),
+        ),
+      );
+    },
+  );
+
+  app.get<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/terminal",
+    { websocket: true },
+    (socket, request) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message: "Repository not found",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      let worktreePath: string;
+      try {
+        worktreePath = prepareRepositoryTargetBranchWorkspace(
+          project,
+          repository,
+        );
+      } catch (error) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Repository workspace could not be prepared",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      let terminal: ReturnType<typeof executionRuntime.startWorkspaceTerminal>;
+      try {
+        terminal = executionRuntime.startWorkspaceTerminal({
+          sessionId: `repository-workspace:${repository.id}`,
+          worktreePath,
+        });
+      } catch (error) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Workspace terminal failed to start",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      socket.on("message", (message: Buffer) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(message.toString("utf8"));
+        } catch {
+          return;
+        }
+
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          (parsed as { type?: string }).type === "terminal.input" &&
+          typeof (parsed as { data?: string }).data === "string"
+        ) {
+          terminal.write((parsed as { data: string }).data);
+          return;
+        }
+
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          (parsed as { type?: string }).type === "terminal.resize" &&
+          typeof (parsed as { cols?: number }).cols === "number" &&
+          typeof (parsed as { rows?: number }).rows === "number"
+        ) {
+          terminal.resize(
+            (parsed as { cols: number }).cols,
+            (parsed as { rows: number }).rows,
+          );
+        }
+      });
+
+      terminal.onData((data) => {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.output",
+            data,
+          }),
+        );
+      });
+
+      terminal.onExit(({ exitCode }) => {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.exit",
+            exitCode,
+          }),
+        );
+        socket.close();
+      });
+
+      socket.on("close", () => {
+        try {
+          terminal.kill("SIGTERM");
+        } catch {
+          // Ignore already-exited repository terminals.
+        }
+      });
+    },
   );
 
   app.get<{ Params: { projectId: string } }>(
