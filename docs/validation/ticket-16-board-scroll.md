@@ -3,9 +3,13 @@
 Date: 2026-04-03
 
 Scope:
-Browser validation for ticket `#16` against the CSS surface changed in
-`apps/web/src/app-shell.css`, using the current board class structure with one
-tall populated column and four empty columns.
+Primary regression coverage now lives in
+`apps/web/src/features/walleyboard/board-scroll.test.tsx`, which renders the
+real board shell composition (`ProjectRail`, `BoardView`, and `InspectorPane`)
+and asserts the production stylesheet in `apps/web/src/app-shell.css` keeps
+vertical scroll ownership at `.walleyboard-shell` while stretching empty
+columns. The browser measurements below remain a supporting spot-check from the
+original ticket validation.
 
 Environment:
 
