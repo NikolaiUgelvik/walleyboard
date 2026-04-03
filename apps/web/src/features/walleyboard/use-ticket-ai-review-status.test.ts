@@ -86,10 +86,9 @@ test("keeps pending review-run lookups unresolved until they finish", () => {
   assert.equal(status.reviewRunQueriesSettled, false);
 });
 
-test("treats errored review-run lookups as settled and uses last known data", () => {
+test("keeps errored review-run lookups unresolved when no review state is known", () => {
   const reviewTickets = getTicketsWithAiReviewSessions([
     createTicket({ id: 31, session_id: "session-31" }),
-    createTicket({ id: 32, session_id: "session-32" }),
   ]);
 
   const status = deriveTicketAiReviewStatus({
@@ -98,6 +97,22 @@ test("treats errored review-run lookups as settled and uses last known data", ()
         data: undefined,
         status: "error",
       },
+    ],
+    reviewTickets,
+  });
+
+  assert.equal(status.ticketAiReviewActiveById.get(31), false);
+  assert.equal(status.ticketAiReviewResolvedById.get(31), false);
+  assert.equal(status.reviewRunQueriesSettled, false);
+});
+
+test("treats errored review-run lookups with last known data as settled", () => {
+  const reviewTickets = getTicketsWithAiReviewSessions([
+    createTicket({ id: 32, session_id: "session-32" }),
+  ]);
+
+  const status = deriveTicketAiReviewStatus({
+    reviewRunQueries: [
       {
         data: {
           review_run: {
@@ -120,8 +135,6 @@ test("treats errored review-run lookups as settled and uses last known data", ()
     reviewTickets,
   });
 
-  assert.equal(status.ticketAiReviewActiveById.get(31), false);
-  assert.equal(status.ticketAiReviewResolvedById.get(31), true);
   assert.equal(status.ticketAiReviewActiveById.get(32), false);
   assert.equal(status.ticketAiReviewResolvedById.get(32), true);
   assert.equal(status.reviewRunQueriesSettled, true);

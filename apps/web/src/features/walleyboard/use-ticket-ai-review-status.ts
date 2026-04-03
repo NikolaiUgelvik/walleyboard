@@ -21,6 +21,22 @@ type TicketAiReviewStatus = {
   reviewRunQueriesSettled: boolean;
 };
 
+function isReviewRunQueryResolved(query: {
+  data: ReviewRunResponse | null | undefined;
+  status: "pending" | "error" | "success";
+}): boolean {
+  if (query.status === "success") {
+    return true;
+  }
+
+  const reviewRun = query.data?.review_run ?? null;
+  return (
+    query.status === "error" &&
+    reviewRun !== null &&
+    reviewRun.status !== "running"
+  );
+}
+
 export function deriveTicketAiReviewStatus(input: {
   reviewRunQueries: Array<{
     data: ReviewRunResponse | null | undefined;
@@ -36,14 +52,17 @@ export function deriveTicketAiReviewStatus(input: {
     const reviewRun = query?.data?.review_run ?? null;
 
     ticketAiReviewActiveById.set(ticket.id, reviewRun?.status === "running");
-    ticketAiReviewResolvedById.set(ticket.id, query?.status !== "pending");
+    ticketAiReviewResolvedById.set(
+      ticket.id,
+      query !== undefined && isReviewRunQueryResolved(query),
+    );
   }
 
   return {
     ticketAiReviewActiveById,
     ticketAiReviewResolvedById,
     reviewRunQueriesSettled: input.reviewRunQueries.every(
-      (query) => query.status !== "pending",
+      isReviewRunQueryResolved,
     ),
   };
 }
