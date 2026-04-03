@@ -313,3 +313,19 @@ test("board shell keeps scroll ownership at the shell and stretches empty column
     /\.walleyboard-rail,\s*\.walleyboard-main,\s*\.walleyboard-detail\s*\{[^}]*min-height:\s*0\s*;/,
   );
 });
+
+test("board header keeps the selected project and repository summary without status badges", () => {
+  const controller = createWalleyBoardController();
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, />Project One</);
+  assert.match(markup, />walleyboard • 0 validation command\(s\)</);
+  assert.doesNotMatch(markup, />backend</);
+  assert.doesNotMatch(markup, />0 running</);
+  assert.doesNotMatch(markup, />0 queued</);
+  assert.doesNotMatch(markup, />0 in review</);
+});

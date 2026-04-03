@@ -354,21 +354,7 @@ export function BoardView({
             </Stack>
             <Stack gap="xs" align="flex-end">
               <ProjectWorkspaceActions controller={controller} />
-              <Group gap="xs">
-                <ColorSchemeControl />
-                <Badge variant="light" color="green">
-                  {controller.healthQuery.data?.service ?? "backend"}
-                </Badge>
-                <Badge variant="outline">
-                  {controller.runningSessionCount} running
-                </Badge>
-                <Badge variant="outline">
-                  {controller.queuedSessionCount} queued
-                </Badge>
-                <Badge variant="outline">
-                  {controller.reviewCount} in review
-                </Badge>
-              </Group>
+              <ColorSchemeControl />
             </Stack>
           </Group>
         </Box>
