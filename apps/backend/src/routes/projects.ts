@@ -14,8 +14,13 @@ import {
 } from "../lib/rate-limit.js";
 import type { Store } from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
+import type {
+  RepositoryWorkspacePreview,
+  TicketWorkspaceService,
+} from "../lib/ticket-workspace-service.js";
 import {
   fetchRepositoryBranches,
+  prepareRepositoryTargetBranchWorkspace,
   removeLocalBranch,
   removePreparedWorktree,
 } from "../lib/worktree-service.js";
@@ -23,6 +28,7 @@ import {
 type ProjectRouteOptions = {
   store: Store;
   executionRuntime: ExecutionRuntime;
+  ticketWorkspaceService: TicketWorkspaceService;
 };
 
 const activeProjectSessionStatuses = new Set([
@@ -35,8 +41,41 @@ const activeProjectSessionStatuses = new Set([
 
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   app,
-  { store, executionRuntime },
+  { store, executionRuntime, ticketWorkspaceService },
 ) => {
+  const getProjectRepositoryPair = (
+    projectId: string,
+    repositoryId: string,
+  ): {
+    project: ReturnType<Store["getProject"]>;
+    repository: ReturnType<Store["getRepository"]>;
+  } => {
+    const project = store.getProject(projectId);
+    const repository = store.getRepository(repositoryId);
+    if (!project || !repository || repository.project_id !== project.id) {
+      return {
+        project: undefined,
+        repository: undefined,
+      };
+    }
+
+    return { project, repository };
+  };
+
+  const buildRepositoryPreviewResponse = (
+    repositoryId: string,
+    preview: RepositoryWorkspacePreview,
+  ) => ({
+    preview: {
+      repository_id: repositoryId,
+      state: preview.state,
+      preview_url: preview.preview_url,
+      backend_url: preview.backend_url,
+      started_at: preview.started_at,
+      error: preview.error,
+    },
+  });
+
   const handleProjectUpdate = async (
     projectId: string,
     body: unknown,
@@ -92,6 +131,215 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     async (request) => ({
       repositories: store.listProjectRepositories(request.params.projectId),
     }),
+  );
+
+  app.get<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/preview",
+    async (request, reply) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      return buildRepositoryPreviewResponse(
+        repository.id,
+        ticketWorkspaceService.getRepositoryPreview(repository.id),
+      );
+    },
+  );
+
+  app.post<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/preview",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      try {
+        const worktreePath = prepareRepositoryTargetBranchWorkspace(
+          project,
+          repository,
+        );
+        const preview = await ticketWorkspaceService.ensureRepositoryPreview({
+          repositoryId: repository.id,
+          worktreePath,
+        });
+        reply.send(buildRepositoryPreviewResponse(repository.id, preview));
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to start preview",
+        });
+      }
+    },
+  );
+
+  app.post<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/preview/stop",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        reply.code(404).send({ error: "Repository not found" });
+        return;
+      }
+
+      await ticketWorkspaceService.stopRepositoryPreviewAndWait(repository.id);
+      reply.send(
+        buildRepositoryPreviewResponse(
+          repository.id,
+          ticketWorkspaceService.getRepositoryPreview(repository.id),
+        ),
+      );
+    },
+  );
+
+  app.get<{ Params: { projectId: string; repositoryId: string } }>(
+    "/projects/:projectId/repositories/:repositoryId/workspace/terminal",
+    { websocket: true },
+    (socket, request) => {
+      const { project, repository } = getProjectRepositoryPair(
+        request.params.projectId,
+        request.params.repositoryId,
+      );
+      if (!project || !repository) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message: "Repository not found",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      let worktreePath: string;
+      try {
+        worktreePath = prepareRepositoryTargetBranchWorkspace(
+          project,
+          repository,
+        );
+      } catch (error) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Repository workspace could not be prepared",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      let terminal: ReturnType<typeof executionRuntime.startWorkspaceTerminal>;
+      try {
+        terminal = executionRuntime.startWorkspaceTerminal({
+          sessionId: `repository-workspace:${repository.id}`,
+          worktreePath,
+        });
+      } catch (error) {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Workspace terminal failed to start",
+          }),
+        );
+        socket.close();
+        return;
+      }
+
+      terminal.pty.onData((data) => {
+        socket.send(
+          JSON.stringify({
+            type: "terminal.output",
+            data,
+          }),
+        );
+      });
+
+      terminal.pty.onExit(({ exitCode, signal }) => {
+        if (terminal.exitMessage) {
+          socket.send(
+            JSON.stringify({
+              type: "terminal.error",
+              message: terminal.exitMessage,
+            }),
+          );
+        }
+        socket.send(
+          JSON.stringify({
+            type: "terminal.exit",
+            exit_code: exitCode,
+            signal,
+          }),
+        );
+        socket.close();
+      });
+
+      socket.on("message", (rawMessage: unknown) => {
+        try {
+          const message = JSON.parse(String(rawMessage)) as unknown;
+
+          if (
+            message &&
+            typeof message === "object" &&
+            (message as { type?: string }).type === "terminal.input" &&
+            typeof (message as { data?: string }).data === "string"
+          ) {
+            if ((message as { data: string }).data.length > 0) {
+              terminal.pty.write((message as { data: string }).data);
+            }
+            return;
+          }
+
+          if (
+            message &&
+            typeof message === "object" &&
+            (message as { type?: string }).type === "terminal.resize" &&
+            typeof (message as { cols?: number }).cols === "number" &&
+            typeof (message as { rows?: number }).rows === "number"
+          ) {
+            terminal.pty.resize(
+              Math.max(1, Math.floor((message as { cols: number }).cols)),
+              Math.max(1, Math.floor((message as { rows: number }).rows)),
+            );
+          }
+        } catch {
+          socket.send(
+            JSON.stringify({
+              type: "terminal.error",
+              message: "Unable to parse terminal message",
+            }),
+          );
+        }
+      });
+
+      socket.on("close", () => {
+        try {
+          terminal.pty.kill();
+        } catch {
+          // Ignore already-exited repository terminals.
+        }
+      });
+    },
   );
 
   app.get<{ Params: { projectId: string } }>(
@@ -260,6 +508,10 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
 
         if (repository && session?.worktree_path) {
           try {
+            executionRuntime.closeWorkspaceTerminals(
+              session.id,
+              "This workspace terminal closed because the project worktree was cleaned up.",
+            );
             const worktreeRemoval = removePreparedWorktree(
               repository,
               session.worktree_path,

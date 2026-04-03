@@ -465,6 +465,10 @@ export class TicketExecutionWorkflowService {
     if (!session.worktree_path) {
       throw new Error("Execution session has no prepared worktree");
     }
+    const project = this.projects.getProject(ticket.project);
+    if (!project) {
+      throw new Error("Project not found");
+    }
 
     const reviewPackage = this.reviews.getReviewPackage(ticketId);
     const noteId = nanoid();

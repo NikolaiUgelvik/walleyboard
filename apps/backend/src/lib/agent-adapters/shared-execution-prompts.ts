@@ -83,16 +83,24 @@ export function buildPlanPrompt(
 export function buildMergeConflictPrompt(input: {
   ticket: TicketFrontmatter;
   repository: RepositoryConfig;
+  recoveryKind: "conflicts" | "target_branch_advanced";
   targetBranch: string;
   stage: "rebase" | "merge";
   conflictedFiles: string[];
   failureMessage: string;
 }): string {
-  const sections: string[] = [
-    `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository ${input.repository.name}.`,
-    "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
-    "",
-  ];
+  const sections: string[] =
+    input.recoveryKind === "target_branch_advanced"
+      ? [
+          `Update the ticket branch for ticket #${input.ticket.id} in repository ${input.repository.name} so it includes the latest ${input.targetBranch} changes and the final merge can continue.`,
+          "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
+          "",
+        ]
+      : [
+          `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository ${input.repository.name}.`,
+          "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
+          "",
+        ];
 
   appendMarkdownSection(sections, "Title", input.ticket.title);
   sections.push("");
@@ -117,17 +125,31 @@ export function buildMergeConflictPrompt(input: {
   );
   sections.push("");
   appendMarkdownSection(sections, "Git failure", input.failureMessage);
-  sections.push(
-    "",
-    "Requirements:",
-    "- Stay inside this repository worktree.",
-    "- Make the smallest safe conflict resolution that keeps the ticket intent and the latest target-branch behavior.",
-    "- If a rebase is in progress, resolve conflicts, stage the files, and run `git rebase --continue` until the rebase finishes.",
-    "- If a merge is in progress, resolve conflicts, stage the files, and finish the merge.",
-    "- Do not abort the rebase or merge unless it is impossible to resolve safely.",
-    "- Do not open a PR or change ticket metadata.",
-    "- End with a concise summary stating whether the git operation finished cleanly.",
-  );
+  if (input.recoveryKind === "target_branch_advanced") {
+    sections.push(
+      "",
+      "Requirements:",
+      "- Stay inside this repository worktree.",
+      "- Update the current ticket branch so it includes the latest target-branch changes before the final merge is retried.",
+      "- Merge the target branch into the current ticket branch in this worktree, resolve conflicts safely if they appear, and complete the merge commit when needed.",
+      "- Keep the resulting branch ready for the final merge back onto the target branch.",
+      "- Leave the worktree clean with no in-progress git operation when you finish.",
+      "- Do not open a PR or change ticket metadata.",
+      "- End with a concise summary stating whether the ticket branch now contains the latest target-branch changes cleanly.",
+    );
+  } else {
+    sections.push(
+      "",
+      "Requirements:",
+      "- Stay inside this repository worktree.",
+      "- Make the smallest safe conflict resolution that keeps the ticket intent and the latest target-branch behavior.",
+      "- If a rebase is in progress, resolve conflicts, stage the files, and run `git rebase --continue` until the rebase finishes.",
+      "- If a merge is in progress, resolve conflicts, stage the files, and finish the merge.",
+      "- Do not abort the rebase or merge unless it is impossible to resolve safely.",
+      "- Do not open a PR or change ticket metadata.",
+      "- End with a concise summary stating whether the git operation finished cleanly.",
+    );
+  }
   return sections.join("\n");
 }
 

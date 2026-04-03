@@ -152,9 +152,16 @@ function createService(
     ticketId: number;
     worktreePath: string | null;
   }> = [];
+  const closedWorkspaceTerminals: Array<{
+    sessionId: string;
+    exitMessage: string;
+  }> = [];
   const previewStops: number[] = [];
   const disposedTickets: number[] = [];
   const executionRuntime = {
+    closeWorkspaceTerminals(sessionId: string, exitMessage: string) {
+      closedWorkspaceTerminals.push({ sessionId, exitMessage });
+    },
     hasActiveExecution() {
       return false;
     },
@@ -183,6 +190,7 @@ function createService(
   };
 
   return {
+    closedWorkspaceTerminals,
     disposedTickets,
     executionStarts,
     previewStops,
@@ -457,34 +465,35 @@ test("reconcileTicket marks merged pull requests done and cleans up local artifa
       last_reconciled_at: null,
     });
 
-    const { disposedTickets, previewStops, service } = createService(
-      fixture.store,
-      dequeueGhResponse([
-        {
-          output: JSON.stringify({
-            data: {
-              repository: {
-                pr_18: {
-                  number: 18,
-                  url: "https://github.com/acme/repo/pull/18",
-                  state: "MERGED",
-                  reviewDecision: "APPROVED",
-                  headRefName: fixture.ticket.working_branch,
-                  baseRefName: fixture.ticket.target_branch,
-                  headRefOid: runGit(fixture.runtime.worktreePath, [
-                    "rev-parse",
-                    "HEAD",
-                  ]),
-                  reviews: {
-                    nodes: [],
+    const { closedWorkspaceTerminals, disposedTickets, previewStops, service } =
+      createService(
+        fixture.store,
+        dequeueGhResponse([
+          {
+            output: JSON.stringify({
+              data: {
+                repository: {
+                  pr_18: {
+                    number: 18,
+                    url: "https://github.com/acme/repo/pull/18",
+                    state: "MERGED",
+                    reviewDecision: "APPROVED",
+                    headRefName: fixture.ticket.working_branch,
+                    baseRefName: fixture.ticket.target_branch,
+                    headRefOid: runGit(fixture.runtime.worktreePath, [
+                      "rev-parse",
+                      "HEAD",
+                    ]),
+                    reviews: {
+                      nodes: [],
+                    },
                   },
                 },
               },
-            },
-          }),
-        },
-      ]),
-    );
+            }),
+          },
+        ]),
+      );
 
     await service.reconcileTicket(fixture.ticket.id);
 
@@ -502,6 +511,13 @@ test("reconcileTicket marks merged pull requests done and cleans up local artifa
     );
     assert.deepEqual(previewStops, [fixture.ticket.id]);
     assert.deepEqual(disposedTickets, [fixture.ticket.id]);
+    assert.deepEqual(closedWorkspaceTerminals, [
+      {
+        sessionId: fixture.session.id,
+        exitMessage:
+          "This workspace terminal closed because the ticket worktree was cleaned up after merge.",
+      },
+    ]);
   } finally {
     restoreWalleyBoardHome();
     rmSync(tempDir, { recursive: true, force: true });

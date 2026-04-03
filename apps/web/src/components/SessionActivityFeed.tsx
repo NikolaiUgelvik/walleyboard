@@ -1,5 +1,6 @@
 import { Badge, Code, Group, List, Stack, Text } from "@mantine/core";
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
+import { agentLabel as agentLabelForAdapter } from "../features/walleyboard/shared.js";
 import { MarkdownContent } from "./MarkdownContent.js";
 
 type SessionActivityFeedProps = {
@@ -42,14 +43,7 @@ type ParsedExecutionSummary = {
 };
 
 function sessionAgentLabel(session: ExecutionSession): string {
-  switch (session.agent_adapter) {
-    case "codex":
-      return "Codex";
-    case "claude-code":
-      return "Claude Code";
-    default:
-      return "Agent";
-  }
+  return agentLabelForAdapter(session.agent_adapter);
 }
 
 function createActivity(
@@ -113,35 +107,38 @@ function parseCodexEvent(line: string): ParsedCodexEvent | null {
   }
 }
 
-function describeCommandExecution(command: string): {
+function describeCommandExecution(
+  command: string,
+  label: string,
+): {
   label: string;
   detail: string;
 } {
   if (command.includes(".github/workflows")) {
     return {
       label: "Inspected CI workflow",
-      detail: "Codex reviewed the CI workflow configuration.",
+      detail: `${label} reviewed the CI workflow configuration.`,
     };
   }
 
   if (command.includes(".gitignore")) {
     return {
       label: "Checked ignore rules",
-      detail: "Codex inspected `.gitignore`.",
+      detail: `${label} inspected \`.gitignore\`.`,
     };
   }
 
   if (command.includes("npm run typecheck") || command.includes("tsc -p")) {
     return {
       label: "Checked types",
-      detail: "Codex ran the project's type checks.",
+      detail: `${label} ran the project's type checks.`,
     };
   }
 
   if (command.includes("npm run build") || command.includes("vite build")) {
     return {
       label: "Built project",
-      detail: "Codex ran the build to verify the current changes.",
+      detail: `${label} ran the build to verify the current changes.`,
     };
   }
 
@@ -152,21 +149,21 @@ function describeCommandExecution(command: string): {
   ) {
     return {
       label: "Ran tests",
-      detail: "Codex ran a test command for the current change.",
+      detail: `${label} ran a test command for the current change.`,
     };
   }
 
   if (command.includes("git status")) {
     return {
       label: "Checked git status",
-      detail: "Codex verified the repository status.",
+      detail: `${label} verified the repository status.`,
     };
   }
 
   if (command.includes("git diff")) {
     return {
       label: "Reviewed changes",
-      detail: "Codex inspected the current diff.",
+      detail: `${label} inspected the current diff.`,
     };
   }
 
@@ -180,7 +177,7 @@ function describeCommandExecution(command: string): {
   ) {
     return {
       label: "Inspected project files",
-      detail: "Codex looked through repository files to gather context.",
+      detail: `${label} looked through repository files to gather context.`,
     };
   }
 
@@ -244,7 +241,7 @@ function interpretCodexEvent(
       typeof itemRecord.aggregated_output === "string"
         ? itemRecord.aggregated_output.trim()
         : "";
-    const description = describeCommandExecution(command);
+    const description = describeCommandExecution(command, "Codex");
 
     if (exitCode !== null && exitCode !== 0) {
       const failureDetail =
@@ -673,7 +670,8 @@ function interpretSessionLog(
     line.startsWith("Verified git repository: ") ||
     line.startsWith("Checked out target branch: ") ||
     line === "Codex launch has been handed off to the execution runtime." ||
-    line === "Agent launch has been handed off to the execution runtime."
+    line === "Agent launch has been handed off to the execution runtime." ||
+    line === "Claude Code launch has been handed off to the execution runtime."
   ) {
     return null;
   }

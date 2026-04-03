@@ -1,44 +1,39 @@
 import "@xterm/xterm/css/xterm.css";
 
-import { Box, Code, Stack, Text, useMantineColorScheme } from "@mantine/core";
+import { Code, Stack, Text, useComputedColorScheme } from "@mantine/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 
 import { apiBaseUrl } from "../lib/api-base-url.js";
+import {
+  buildTicketWorkspaceTerminalOptions,
+  resolveTerminalTheme,
+  TERMINAL_COLOR_SCHEME_HOOK_OPTIONS,
+  TicketWorkspaceTerminalViewport,
+  updateTicketWorkspaceTerminalTheme,
+} from "./TicketWorkspaceTerminal.shared.js";
 
 type TicketWorkspaceTerminalProps = {
-  ticketId: number;
+  socketPath: string;
+  surfaceLabel: "ticket" | "repository";
   worktreePath: string | null;
 };
 
-function resolveTerminalSocketUrl(ticketId: number): string {
+function resolveTerminalSocketUrl(socketPath: string): string {
   const base = apiBaseUrl.replace(/^http/, "ws");
-  return `${base}/tickets/${ticketId}/workspace/terminal`;
-}
-
-function resolveTerminalTheme(colorScheme: "light" | "dark") {
-  return colorScheme === "dark"
-    ? {
-        background: "#10151b",
-        foreground: "#eef2f7",
-        cursor: "#f59e0b",
-        selectionBackground: "rgba(245, 158, 11, 0.28)",
-      }
-    : {
-        background: "#f8f7f4",
-        foreground: "#182230",
-        cursor: "#c2410c",
-        selectionBackground: "rgba(194, 65, 12, 0.18)",
-      };
+  return `${base}${socketPath}`;
 }
 
 export function TicketWorkspaceTerminal({
-  ticketId,
+  socketPath,
+  surfaceLabel,
   worktreePath,
 }: TicketWorkspaceTerminalProps) {
-  const { colorScheme } = useMantineColorScheme();
-  const terminalColorScheme = colorScheme === "dark" ? "dark" : "light";
+  const terminalColorScheme = useComputedColorScheme(
+    "light",
+    TERMINAL_COLOR_SCHEME_HOOK_OPTIONS,
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const terminalThemeRef = useRef(resolveTerminalTheme(terminalColorScheme));
@@ -53,16 +48,11 @@ export function TicketWorkspaceTerminal({
     }
 
     setError(null);
-    const terminal = new Terminal({
-      allowProposedApi: false,
-      convertEol: true,
-      cursorBlink: true,
-      fontFamily: "'IBM Plex Mono', 'SFMono-Regular', monospace",
-      fontSize: 13,
-      theme: terminalThemeRef.current,
-    });
+    const terminal = new Terminal(
+      buildTicketWorkspaceTerminalOptions(terminalThemeRef.current),
+    );
     const fitAddon = new FitAddon();
-    const socket = new WebSocket(resolveTerminalSocketUrl(ticketId));
+    const socket = new WebSocket(resolveTerminalSocketUrl(socketPath));
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     const resizeObserver = new ResizeObserver(() => {
@@ -163,16 +153,14 @@ export function TicketWorkspaceTerminal({
       terminal.dispose();
       container.replaceChildren();
     };
-  }, [ticketId]);
+  }, [socketPath]);
 
   useEffect(() => {
-    const terminal = terminalRef.current;
-    if (!terminal) {
-      return;
-    }
-
-    terminal.options.theme = resolveTerminalTheme(terminalColorScheme);
-    fitAddonRef.current?.fit();
+    updateTicketWorkspaceTerminalTheme(
+      terminalRef.current,
+      fitAddonRef.current,
+      terminalColorScheme,
+    );
   }, [terminalColorScheme]);
 
   return (
@@ -180,7 +168,7 @@ export function TicketWorkspaceTerminal({
       <Stack gap={4}>
         <Text fw={600}>Worktree terminal</Text>
         <Text size="sm" c="dimmed">
-          Plain shell access at the ticket worktree root.
+          Plain shell access at the {surfaceLabel} worktree root.
         </Text>
         <Text size="sm" c="dimmed">
           Working directory: <Code>{worktreePath ?? "pending"}</Code>
@@ -193,9 +181,10 @@ export function TicketWorkspaceTerminal({
         </Text>
       ) : null}
 
-      <Box className="ticket-workspace-terminal-shell">
-        <div ref={containerRef} className="ticket-workspace-terminal-screen" />
-      </Box>
+      <TicketWorkspaceTerminalViewport
+        containerRef={containerRef}
+        colorScheme={terminalColorScheme}
+      />
     </Stack>
   );
 }

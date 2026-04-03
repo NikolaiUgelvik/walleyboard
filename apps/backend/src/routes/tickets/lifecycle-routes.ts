@@ -152,6 +152,10 @@ export function registerTicketLifecycleRoutes(
 
       if (repository && session?.worktree_path) {
         try {
+          executionRuntime.closeWorkspaceTerminals(
+            session.id,
+            "This workspace terminal closed because the ticket worktree was cleaned up.",
+          );
           const worktreeRemoval = removePreparedWorktree(
             repository,
             session.worktree_path,

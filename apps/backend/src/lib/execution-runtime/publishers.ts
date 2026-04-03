@@ -19,6 +19,12 @@ export function buildSessionResponse(
   };
 }
 
+export function shouldPublishPreExecutionSessionUpdate(
+  session: ExecutionSession,
+): boolean {
+  return session.status === "queued";
+}
+
 export function publishSessionUpdated(
   eventHub: EventHub,
   session: ExecutionSession | undefined,

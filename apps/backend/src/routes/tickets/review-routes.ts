@@ -5,8 +5,12 @@ import { requestChangesInputSchema } from "../../../../../packages/contracts/src
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
 import { resolveTargetBranch } from "../../lib/execution-runtime/helpers.js";
-import { publishSessionUpdated } from "../../lib/execution-runtime/publishers.js";
+import {
+  publishSessionUpdated,
+  shouldPublishPreExecutionSessionUpdate,
+} from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
+import { createKeyedSerialTaskRunner } from "../../lib/keyed-serial-task-runner.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
   AutomaticMergeRecoveryError,
@@ -28,6 +32,8 @@ export function registerTicketReviewRoutes(
     ticketWorkspaceService,
   }: TicketRouteDependencies,
 ) {
+  const runMergeForRepository = createKeyedSerialTaskRunner();
+
   app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/request-changes",
     { preHandler: commandRouteRateLimit(app) },
@@ -67,11 +73,13 @@ export function registerTicketReviewRoutes(
             },
           ),
         );
-        publishSessionUpdated(
-          eventHub,
-          restartResult.session,
-          executionRuntime.hasActiveExecution(restartResult.session.id),
-        );
+        if (shouldPublishPreExecutionSessionUpdate(restartResult.session)) {
+          publishSessionUpdated(
+            eventHub,
+            restartResult.session,
+            executionRuntime.hasActiveExecution(restartResult.session.id),
+          );
+        }
         restartResult.logs.forEach((logLine, index) => {
           eventHub.publish(
             makeProtocolEvent(
@@ -201,209 +209,295 @@ export function registerTicketReviewRoutes(
         reply.code(409).send({ error: "Ticket is missing merge metadata" });
         return;
       }
-      const sessionId = ticket.session_id;
-
-      const session = store.getSession(sessionId);
-      if (!session) {
-        reply.code(404).send({ error: "Session not found" });
-        return;
-      }
-      if (!session.worktree_path) {
-        reply.code(409).send({ error: "Session has no prepared worktree" });
-        return;
-      }
 
       const repository = store.getRepository(ticket.repo);
       if (!repository) {
         reply.code(404).send({ error: "Repository not found" });
         return;
       }
-      const project = store.getProject(ticket.project);
-      if (!project) {
-        reply.code(404).send({ error: "Project not found" });
-        return;
-      }
-
-      const reviewPackage = store.getReviewPackage(ticketId);
-      if (!reviewPackage) {
-        reply.code(409).send({
-          error: "Review package is required before merge",
-        });
-        return;
-      }
 
       try {
-        await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+        const response = await runMergeForRepository(
+          repository.id,
+          async () => {
+            const lockedTicket = store.getTicket(ticketId);
+            if (!lockedTicket) {
+              return {
+                statusCode: 404,
+                body: { error: "Ticket not found" },
+              };
+            }
+            if (lockedTicket.status !== "review") {
+              return {
+                statusCode: 409,
+                body: { error: "Only review tickets can be merged" },
+              };
+            }
+            if (!lockedTicket.session_id || !lockedTicket.working_branch) {
+              return {
+                statusCode: 409,
+                body: { error: "Ticket is missing merge metadata" },
+              };
+            }
 
-        const effectiveTargetBranch = resolveTargetBranch(
-          repository,
-          ticket.target_branch,
-        );
-        const mergeResult = await mergeReviewedBranch(
-          repository,
-          session.worktree_path,
-          ticket.working_branch,
-          effectiveTargetBranch,
-          {
-            resolveConflicts: (input) =>
-              executionRuntime.resolveMergeConflicts({
-                project,
+            const lockedSession = store.getSession(lockedTicket.session_id);
+            if (!lockedSession) {
+              return {
+                statusCode: 404,
+                body: { error: "Session not found" },
+              };
+            }
+            if (!lockedSession.worktree_path) {
+              return {
+                statusCode: 409,
+                body: { error: "Session has no prepared worktree" },
+              };
+            }
+
+            const lockedProject = store.getProject(lockedTicket.project);
+            if (!lockedProject) {
+              return {
+                statusCode: 404,
+                body: { error: "Project not found" },
+              };
+            }
+
+            if (!store.getReviewPackage(ticketId)) {
+              return {
+                statusCode: 409,
+                body: { error: "Review package is required before merge" },
+              };
+            }
+
+            await ticketWorkspaceService.stopPreviewAndWait(ticketId);
+            const effectiveTargetBranch = resolveTargetBranch(
+              repository,
+              lockedTicket.target_branch,
+            );
+
+            try {
+              const mergeResult = await mergeReviewedBranch(
                 repository,
-                ticket,
-                session,
-                targetBranch: effectiveTargetBranch,
-                stage: input.stage,
-                conflictedFiles: input.conflictedFiles,
-                failureMessage: input.failureMessage,
-              }),
+                lockedSession.worktree_path,
+                lockedTicket.working_branch,
+                effectiveTargetBranch,
+                {
+                  resolveConflicts: (input) =>
+                    executionRuntime.resolveMergeConflicts({
+                      project: lockedProject,
+                      recoveryKind: input.recoveryKind,
+                      repository,
+                      ticket: lockedTicket,
+                      session: lockedSession,
+                      targetBranch: effectiveTargetBranch,
+                      stage: input.stage,
+                      conflictedFiles: input.conflictedFiles,
+                      failureMessage: input.failureMessage,
+                    }),
+                },
+              );
+
+              const logLines = [...mergeResult.logs];
+              const cleanupWarnings: string[] = [];
+              let deferredWorktreeCleanup = false;
+              let skipLocalBranchCleanup = false;
+              let workspaceRetired = false;
+
+              try {
+                executionRuntime.closeWorkspaceTerminals(
+                  lockedSession.id,
+                  "This workspace terminal closed because the ticket worktree was cleaned up after merge.",
+                );
+                const worktreeRemoval = removePreparedWorktree(
+                  repository,
+                  lockedSession.worktree_path,
+                  lockedProject.post_worktree_command,
+                  lockedTicket.working_branch,
+                );
+                if (worktreeRemoval.status === "scheduled") {
+                  deferredWorktreeCleanup = true;
+                  skipLocalBranchCleanup = true;
+                }
+                workspaceRetired = true;
+                logLines.push(
+                  worktreeRemoval.status === "scheduled"
+                    ? `Scheduled worktree removal for ${lockedSession.worktree_path} after the post-worktree command finishes`
+                    : `Removed worktree ${lockedSession.worktree_path}`,
+                );
+              } catch (error) {
+                cleanupWarnings.push(
+                  error instanceof Error
+                    ? error.message
+                    : "Unable to remove worktree",
+                );
+              }
+
+              if (!skipLocalBranchCleanup) {
+                try {
+                  removeLocalBranch(repository, lockedTicket.working_branch);
+                  logLines.push(
+                    `Deleted local branch ${lockedTicket.working_branch}`,
+                  );
+                } catch (error) {
+                  cleanupWarnings.push(
+                    error instanceof Error
+                      ? error.message
+                      : "Unable to delete local branch",
+                  );
+                }
+              }
+
+              const mergedTicket = store.updateTicketStatus(ticketId, "done");
+              const summary =
+                cleanupWarnings.length === 0
+                  ? deferredWorktreeCleanup
+                    ? `Merged ${lockedTicket.working_branch} into ${effectiveTargetBranch}. Worktree cleanup is continuing in the background.`
+                    : `Merged ${lockedTicket.working_branch} into ${effectiveTargetBranch} and cleaned up local artifacts.`
+                  : `Merged ${lockedTicket.working_branch} into ${effectiveTargetBranch}, but cleanup needs attention: ${cleanupWarnings.join(
+                      " | ",
+                    )}`;
+              const mergedSession = store.updateSessionStatus(
+                lockedSession.id,
+                "completed",
+                summary,
+              );
+              const completedSession =
+                workspaceRetired && mergedSession
+                  ? (store.updateSessionWorktreePath(lockedSession.id, null) ??
+                    mergedSession)
+                  : mergedSession;
+
+              store.recordTicketEvent(ticketId, "ticket.merged", {
+                ticket_id: ticketId,
+                target_branch: effectiveTargetBranch,
+                target_head: mergeResult.targetHead,
+                cleanup_warnings: cleanupWarnings,
+              });
+
+              for (const line of [
+                ...logLines,
+                ...cleanupWarnings.map(
+                  (warning) => `Cleanup warning: ${warning}`,
+                ),
+              ]) {
+                appendSessionOutput(
+                  lockedSession.id,
+                  lockedSession.current_attempt_id,
+                  line,
+                );
+              }
+
+              eventHub.publish(
+                makeProtocolEvent(
+                  "ticket.updated",
+                  "ticket",
+                  String(ticketId),
+                  {
+                    ticket: mergedTicket,
+                  },
+                ),
+              );
+              publishSessionUpdated(
+                eventHub,
+                completedSession,
+                completedSession
+                  ? executionRuntime.hasActiveExecution(completedSession.id)
+                  : false,
+              );
+              await ticketWorkspaceService.disposeTicket(ticketId);
+
+              return {
+                statusCode: 200,
+                body: makeCommandAck(
+                  true,
+                  "Ticket merged into the target branch",
+                  {
+                    ticket_id: ticketId,
+                    session_id: lockedSession.id,
+                  },
+                ),
+              };
+            } catch (error) {
+              if (error instanceof AutomaticMergeRecoveryError) {
+                for (const line of error.logs) {
+                  appendSessionOutput(
+                    lockedSession.id,
+                    lockedSession.current_attempt_id,
+                    line,
+                  );
+                }
+
+                const mergeConflict = store.recordMergeConflict(
+                  ticketId,
+                  error.note,
+                );
+                eventHub.publish(
+                  makeProtocolEvent(
+                    "ticket.updated",
+                    "ticket",
+                    String(ticketId),
+                    {
+                      ticket: mergeConflict.ticket,
+                    },
+                  ),
+                );
+                publishSessionUpdated(
+                  eventHub,
+                  mergeConflict.session,
+                  executionRuntime.hasActiveExecution(mergeConflict.session.id),
+                );
+                mergeConflict.logs.forEach((logLine, index) => {
+                  eventHub.publish(
+                    makeProtocolEvent(
+                      "session.output",
+                      "session",
+                      lockedSession.id,
+                      {
+                        session_id: lockedSession.id,
+                        attempt_id: lockedSession.current_attempt_id,
+                        sequence:
+                          store.getSessionLogs(lockedSession.id).length -
+                          mergeConflict.logs.length +
+                          index,
+                        chunk: logLine,
+                      },
+                    ),
+                  );
+                });
+                appendSessionOutput(
+                  lockedSession.id,
+                  lockedSession.current_attempt_id,
+                  `[merge blocked] ${error.message}`,
+                );
+                return {
+                  statusCode: 409,
+                  body: { error: error.message },
+                };
+              }
+
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Unable to merge ticket";
+              appendSessionOutput(
+                lockedSession.id,
+                lockedSession.current_attempt_id,
+                `[merge blocked] ${message}`,
+              );
+              return {
+                statusCode: 409,
+                body: { error: message },
+              };
+            }
           },
         );
 
-        const logLines = [...mergeResult.logs];
-        const cleanupWarnings: string[] = [];
-        let deferredWorktreeCleanup = false;
-        let skipLocalBranchCleanup = false;
-        let workspaceRetired = false;
-
-        try {
-          const worktreeRemoval = removePreparedWorktree(
-            repository,
-            session.worktree_path,
-            project.post_worktree_command,
-            ticket.working_branch,
-          );
-          if (worktreeRemoval.status === "scheduled") {
-            deferredWorktreeCleanup = true;
-            skipLocalBranchCleanup = true;
-          }
-          workspaceRetired = true;
-          logLines.push(
-            worktreeRemoval.status === "scheduled"
-              ? `Scheduled worktree removal for ${session.worktree_path} after the post-worktree command finishes`
-              : `Removed worktree ${session.worktree_path}`,
-          );
-        } catch (error) {
-          cleanupWarnings.push(
-            error instanceof Error
-              ? error.message
-              : "Unable to remove worktree",
-          );
-        }
-
-        if (!skipLocalBranchCleanup) {
-          try {
-            removeLocalBranch(repository, ticket.working_branch);
-            logLines.push(`Deleted local branch ${ticket.working_branch}`);
-          } catch (error) {
-            cleanupWarnings.push(
-              error instanceof Error
-                ? error.message
-                : "Unable to delete local branch",
-            );
-          }
-        }
-
-        const mergedTicket = store.updateTicketStatus(ticketId, "done");
-        const summary =
-          cleanupWarnings.length === 0
-            ? deferredWorktreeCleanup
-              ? `Merged ${ticket.working_branch} into ${ticket.target_branch}. Worktree cleanup is continuing in the background.`
-              : `Merged ${ticket.working_branch} into ${ticket.target_branch} and cleaned up local artifacts.`
-            : `Merged ${ticket.working_branch} into ${ticket.target_branch}, but cleanup needs attention: ${cleanupWarnings.join(
-                " | ",
-              )}`;
-        const mergedSession = store.updateSessionStatus(
-          sessionId,
-          "completed",
-          summary,
-        );
-        const completedSession =
-          workspaceRetired && mergedSession
-            ? (store.updateSessionWorktreePath(sessionId, null) ??
-              mergedSession)
-            : mergedSession;
-
-        store.recordTicketEvent(ticketId, "ticket.merged", {
-          ticket_id: ticketId,
-          target_branch: effectiveTargetBranch,
-          target_head: mergeResult.targetHead,
-          cleanup_warnings: cleanupWarnings,
-        });
-
-        for (const line of [
-          ...logLines,
-          ...cleanupWarnings.map((warning) => `Cleanup warning: ${warning}`),
-        ]) {
-          appendSessionOutput(sessionId, session.current_attempt_id, line);
-        }
-
-        eventHub.publish(
-          makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
-            ticket: mergedTicket,
-          }),
-        );
-        publishSessionUpdated(
-          eventHub,
-          completedSession,
-          completedSession
-            ? executionRuntime.hasActiveExecution(completedSession.id)
-            : false,
-        );
-        await ticketWorkspaceService.disposeTicket(ticketId);
-
-        reply.send(
-          makeCommandAck(true, "Ticket merged into the target branch", {
-            ticket_id: ticketId,
-            session_id: sessionId,
-          }),
-        );
+        reply.code(response.statusCode).send(response.body);
       } catch (error) {
-        if (error instanceof AutomaticMergeRecoveryError) {
-          for (const line of error.logs) {
-            appendSessionOutput(sessionId, session.current_attempt_id, line);
-          }
-
-          const mergeConflict = store.recordMergeConflict(ticketId, error.note);
-          eventHub.publish(
-            makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
-              ticket: mergeConflict.ticket,
-            }),
-          );
-          publishSessionUpdated(
-            eventHub,
-            mergeConflict.session,
-            executionRuntime.hasActiveExecution(mergeConflict.session.id),
-          );
-          mergeConflict.logs.forEach((logLine, index) => {
-            eventHub.publish(
-              makeProtocolEvent("session.output", "session", sessionId, {
-                session_id: sessionId,
-                attempt_id: session.current_attempt_id,
-                sequence:
-                  store.getSessionLogs(sessionId).length -
-                  mergeConflict.logs.length +
-                  index,
-                chunk: logLine,
-              }),
-            );
-          });
-          appendSessionOutput(
-            sessionId,
-            session.current_attempt_id,
-            `[merge blocked] ${error.message}`,
-          );
-          reply.code(409).send({ error: error.message });
-          return;
-        }
-
-        const message =
-          error instanceof Error ? error.message : "Unable to merge ticket";
-        appendSessionOutput(
-          sessionId,
-          session.current_attempt_id,
-          `[merge blocked] ${message}`,
-        );
-        reply.code(409).send({ error: message });
+        reply.code(409).send({
+          error:
+            error instanceof Error ? error.message : "Unable to merge ticket",
+        });
       }
     },
   );

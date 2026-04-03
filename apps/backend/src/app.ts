@@ -99,7 +99,11 @@ export async function createApp() {
   await app.register(websocket);
   await app.register(fastifyRateLimit, globalRateLimitOptions());
   await app.register(healthRoutes, { dockerRuntime });
-  await app.register(projectRoutes, { store, executionRuntime });
+  await app.register(projectRoutes, {
+    store,
+    executionRuntime,
+    ticketWorkspaceService,
+  });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, {
     agentReviewService,

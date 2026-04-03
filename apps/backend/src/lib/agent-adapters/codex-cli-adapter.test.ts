@@ -154,6 +154,37 @@ test("CodexCliAdapter.buildExecutionRun rejects Docker output paths outside the 
   );
 });
 
+test("CodexCliAdapter.buildMergeConflictRun resumes an existing adapter session when available", () => {
+  const adapter = new CodexCliAdapter();
+  const session = createSession();
+  session.adapter_session_ref = "sess-merge-123";
+
+  const run = adapter.buildMergeConflictRun({
+    conflictedFiles: ["src/story.txt"],
+    failureMessage: "Unfinished merge detected.",
+    outputPath:
+      "/tmp/spacegame-worktree/.walleyboard/session-1-merge-conflict.txt",
+    project: createProject(),
+    recoveryKind: "conflicts",
+    repository: createRepository(),
+    session,
+    stage: "merge",
+    targetBranch: "origin/main",
+    ticket: createTicket(),
+    useDockerRuntime: true,
+  });
+
+  assert.equal(run.args[0], "exec");
+  assert.equal(run.args[1], "resume");
+  assert.ok(run.args.includes("sess-merge-123"));
+  const outputFlagIndex = run.args.indexOf("--output-last-message");
+  assert.notEqual(outputFlagIndex, -1);
+  assert.equal(
+    run.args[outputFlagIndex + 1],
+    "/workspace/.walleyboard/session-1-merge-conflict.txt",
+  );
+});
+
 test("CodexCliAdapter.buildReviewRun uses read-only sandbox on host", () => {
   const adapter = new CodexCliAdapter();
 

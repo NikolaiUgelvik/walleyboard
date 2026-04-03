@@ -2,6 +2,7 @@ import type {
   DraftTicketState,
   ExecutionSession,
   Project,
+  SessionResponse,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -47,11 +48,16 @@ export function deriveInboxItems(input: {
   drafts: DraftTicketState[];
   projects: Project[];
   tickets: TicketFrontmatter[];
-  sessionsById: Map<string, ExecutionSession>;
+  sessionsById: Map<string, SessionResponse>;
+  ticketAiReviewActiveById?: ReadonlyMap<number, boolean>;
+  ticketAiReviewResolvedById?: ReadonlyMap<number, boolean>;
 }): InboxItem[] {
   const projectNameById = new Map(
     input.projects.map((project) => [project.id, project.name]),
   );
+  const ticketAiReviewActiveById = input.ticketAiReviewActiveById ?? new Map();
+  const ticketAiReviewResolvedById =
+    input.ticketAiReviewResolvedById ?? new Map();
   const items = [] as Array<InboxItem & { updatedAt: string }>;
 
   for (const draft of input.drafts) {
@@ -76,16 +82,24 @@ export function deriveInboxItems(input: {
   }
 
   for (const ticket of input.tickets) {
+    if (ticketAiReviewActiveById.get(ticket.id) === true) {
+      continue;
+    }
+
     const projectName =
       projectNameById.get(ticket.project) ?? "Unknown project";
-    const session =
+    const sessionSummary =
       ticket.session_id === null
         ? null
         : (input.sessionsById.get(ticket.session_id) ?? null);
+    const ticketAiReviewResolved =
+      ticketAiReviewResolvedById.get(ticket.id) === true;
+    const session = sessionSummary?.session ?? null;
 
     if (
       ticket.status === "review" &&
       ticket.session_id &&
+      ticketAiReviewResolved &&
       !hasActiveLinkedPullRequest(ticket.linked_pr)
     ) {
       items.push({
@@ -103,7 +117,11 @@ export function deriveInboxItems(input: {
       continue;
     }
 
-    if (session && isAttentionNeededSessionStatus(session.status)) {
+    if (
+      session &&
+      !sessionSummary?.agent_controls_worktree &&
+      isAttentionNeededSessionStatus(session.status)
+    ) {
       const title =
         session.plan_status === "awaiting_feedback"
           ? `Plan feedback needed for ticket #${ticket.id}`

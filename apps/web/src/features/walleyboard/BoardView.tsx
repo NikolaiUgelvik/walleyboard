@@ -173,6 +173,9 @@ export function TicketWorkspaceActions({
         ? controller.session
         : null))
     : null;
+  const ticketSessionSummaryState = ticket.session_id
+    ? (controller.sessionSummaryStateById.get(ticket.session_id) ?? null)
+    : null;
   const preview = controller.ticketWorkspacePreviewByTicketId.get(ticket.id);
   const previewRunning = preview?.state === "ready";
   const previewBusy =
@@ -184,24 +187,26 @@ export function TicketWorkspaceActions({
   const previewError =
     controller.previewActionErrorByTicketId[ticket.id] ?? preview?.error;
   const hasPreparedWorktree = ticketSession?.worktree_path != null;
-  const ticketSessionAgentControlsWorktree =
-    ticket.session_id === null
-      ? false
-      : (controller.agentControlsWorktreeBySessionId.get(ticket.session_id) ??
-        true);
   const diffDisabled =
     ticket.session_id === null ||
     (!hasPreparedWorktree && ticket.status !== "done");
-  const terminalDisabled =
-    !hasPreparedWorktree || ticketSessionAgentControlsWorktree;
+  const terminalWorktreeUnavailable =
+    ticket.session_id === null ||
+    (!hasPreparedWorktree &&
+      ticketSessionSummaryState !== null &&
+      !ticketSessionSummaryState.isPending &&
+      !ticketSessionSummaryState.isError);
+  const terminalDisabled = terminalWorktreeUnavailable;
   const previewDisabled = !hasPreparedWorktree || previewBusy;
   const activityDisabled = ticket.session_id == null;
   const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
-  const terminalTitle = !hasPreparedWorktree
-    ? "Terminal"
-    : ticketSessionAgentControlsWorktree
-      ? "Terminal unavailable while the agent controls this worktree"
-      : "Terminal";
+  const terminalTitle = terminalDisabled
+    ? "Terminal unavailable until this ticket has a prepared worktree"
+    : ticketSessionSummaryState?.isPending && !hasPreparedWorktree
+      ? "Terminal status is still loading"
+      : ticketSessionSummaryState?.isError && !hasPreparedWorktree
+        ? "Terminal status could not be loaded. Open to view the error."
+        : "Terminal";
 
   return (
     <Stack gap={6}>
@@ -270,6 +275,60 @@ export function TicketWorkspaceActions({
   );
 }
 
+export function ProjectWorkspaceActions({
+  controller,
+}: {
+  controller: WalleyBoardController;
+}): React.JSX.Element | null {
+  if (!controller.selectedProject || !controller.selectedRepository) {
+    return null;
+  }
+
+  const preview = controller.repositoryWorkspacePreview;
+  const previewRunning = preview?.state === "ready";
+  const previewBusy =
+    preview?.state === "starting" || controller.repositoryPreviewActionPending;
+  const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
+
+  return (
+    <Stack gap={6} align="flex-end">
+      <Button.Group>
+        <Button
+          aria-label={previewLabel}
+          disabled={previewBusy}
+          leftSection={
+            previewBusy ? <Loader size={14} /> : <IconBrowser size={16} />
+          }
+          size="compact-sm"
+          variant="light"
+          onClick={controller.handleSelectedRepositoryPreviewAction}
+        >
+          {previewRunning ? "Stop Preview" : "Preview"}
+        </Button>
+        <Button
+          aria-label="Open repository terminal"
+          disabled={controller.repositoryTerminalPending}
+          leftSection={<IconTerminal2 size={16} />}
+          size="compact-sm"
+          variant="light"
+          onClick={controller.openSelectedRepositoryWorkspaceTerminal}
+        >
+          Terminal
+        </Button>
+      </Button.Group>
+      {controller.repositoryPreviewActionError ? (
+        <Text size="sm" c="red">
+          {controller.repositoryPreviewActionError}
+        </Text>
+      ) : preview?.error ? (
+        <Text size="sm" c="red">
+          {preview.error}
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
 export function BoardView({
   controller,
 }: {
@@ -293,21 +352,24 @@ export function BoardView({
                   : "Choose a project from the left rail to bring its drafts, tickets, and sessions into the board."}
               </Text>
             </Stack>
-            <Group gap="xs">
-              <ColorSchemeControl />
-              <Badge variant="light" color="green">
-                {controller.healthQuery.data?.service ?? "backend"}
-              </Badge>
-              <Badge variant="outline">
-                {controller.runningSessionCount} running
-              </Badge>
-              <Badge variant="outline">
-                {controller.queuedSessionCount} queued
-              </Badge>
-              <Badge variant="outline">
-                {controller.reviewCount} in review
-              </Badge>
-            </Group>
+            <Stack gap="xs" align="flex-end">
+              <ProjectWorkspaceActions controller={controller} />
+              <Group gap="xs">
+                <ColorSchemeControl />
+                <Badge variant="light" color="green">
+                  {controller.healthQuery.data?.service ?? "backend"}
+                </Badge>
+                <Badge variant="outline">
+                  {controller.runningSessionCount} running
+                </Badge>
+                <Badge variant="outline">
+                  {controller.queuedSessionCount} queued
+                </Badge>
+                <Badge variant="outline">
+                  {controller.reviewCount} in review
+                </Badge>
+              </Group>
+            </Stack>
           </Group>
         </Box>
 
@@ -613,6 +675,13 @@ export function BoardView({
                               ?.ticketId === ticket.id &&
                             !controller.startTicketMutation.variables
                               .planningEnabled;
+                          const aiReviewActive =
+                            controller.ticketAiReviewActiveById.get(
+                              ticket.id,
+                            ) ??
+                            (controller.startAgentReviewMutation.isPending &&
+                              controller.startAgentReviewMutation.variables ===
+                                ticket.id);
 
                           return (
                             <Box
@@ -649,6 +718,11 @@ export function BoardView({
                                     </Text>
                                   </Stack>
                                   <Group gap={6} align="center">
+                                    {aiReviewActive ? (
+                                      <Badge variant="light" color="violet">
+                                        AI review in progress
+                                      </Badge>
+                                    ) : null}
                                     <Badge
                                       variant="light"
                                       color={ticketStatusColor(ticket.status)}

@@ -66,6 +66,7 @@ export type MergeConflictRunInput = {
   failureMessage: string;
   outputPath: string;
   project: Project;
+  recoveryKind: "conflicts" | "target_branch_advanced";
   repository: RepositoryConfig;
   session: ExecutionSession;
   stage: "rebase" | "merge";

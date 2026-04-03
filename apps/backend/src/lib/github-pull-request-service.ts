@@ -15,6 +15,7 @@ import {
   publishSessionOutput,
   publishSessionUpdated,
   publishTicketUpdated,
+  shouldPublishPreExecutionSessionUpdate,
 } from "./execution-runtime/publishers.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
 import type { Store } from "./store.js";
@@ -935,6 +936,10 @@ export class GitHubPullRequestService {
 
     if (session.worktree_path) {
       try {
+        this.#dependencies.executionRuntime.closeWorkspaceTerminals(
+          session.id,
+          "This workspace terminal closed because the ticket worktree was cleaned up after merge.",
+        );
         const worktreeRemoval = removePreparedWorktree(
           repository,
           session.worktree_path,
@@ -1078,13 +1083,15 @@ export class GitHubPullRequestService {
     );
 
     publishTicketUpdated(this.#dependencies.eventHub, updatedTicket);
-    publishSessionUpdated(
-      this.#dependencies.eventHub,
-      restartResult.session,
-      this.#dependencies.executionRuntime.hasActiveExecution(
-        restartResult.session.id,
-      ),
-    );
+    if (shouldPublishPreExecutionSessionUpdate(restartResult.session)) {
+      publishSessionUpdated(
+        this.#dependencies.eventHub,
+        restartResult.session,
+        this.#dependencies.executionRuntime.hasActiveExecution(
+          restartResult.session.id,
+        ),
+      );
+    }
     this.#publishExistingLogs(
       restartResult.session.id,
       restartResult.attempt.id,

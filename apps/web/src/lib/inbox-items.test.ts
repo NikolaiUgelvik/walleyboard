@@ -5,6 +5,7 @@ import type {
   DraftTicketState,
   ExecutionSession,
   Project,
+  SessionResponse,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -104,6 +105,16 @@ function createSession(
   };
 }
 
+function createSessionSummary(
+  overrides: Partial<SessionResponse> = {},
+): SessionResponse {
+  return {
+    session: createSession(),
+    agent_controls_worktree: false,
+    ...overrides,
+  };
+}
+
 test("derives mixed-project inbox items with project context and newest-first ordering", () => {
   const projects = [
     createProject(),
@@ -139,34 +150,40 @@ test("derives mixed-project inbox items with project context and newest-first or
       updated_at: "2026-04-01T12:00:00.000Z",
     }),
   ];
-  const sessionsById = new Map<string, ExecutionSession>([
+  const sessionsById = new Map<string, SessionResponse>([
     [
       "session-review",
-      createSession({
-        id: "session-review",
-        ticket_id: 7,
-        status: "completed",
-        last_summary: "Ready for review.",
+      createSessionSummary({
+        session: createSession({
+          id: "session-review",
+          ticket_id: 7,
+          status: "completed",
+          last_summary: "Ready for review.",
+        }),
       }),
     ],
     [
       "session-input",
-      createSession({
-        id: "session-input",
-        ticket_id: 8,
-        project_id: "project-2",
-        status: "awaiting_input",
-        last_summary: "Need a decision on the project jump behavior.",
+      createSessionSummary({
+        session: createSession({
+          id: "session-input",
+          ticket_id: 8,
+          project_id: "project-2",
+          status: "awaiting_input",
+          last_summary: "Need a decision on the project jump behavior.",
+        }),
       }),
     ],
     [
       "session-done",
-      createSession({
-        id: "session-done",
-        ticket_id: 9,
-        project_id: "project-2",
-        status: "completed",
-        last_summary: "Merged already.",
+      createSessionSummary({
+        session: createSession({
+          id: "session-done",
+          ticket_id: 9,
+          project_id: "project-2",
+          status: "completed",
+          last_summary: "Merged already.",
+        }),
       }),
     ],
   ]);
@@ -176,6 +193,8 @@ test("derives mixed-project inbox items with project context and newest-first or
     projects,
     tickets,
     sessionsById,
+    ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[7, true]]),
   });
 
   assert.deepEqual(
@@ -228,15 +247,19 @@ test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
     sessionsById: new Map([
       [
         "session-plan",
-        createSession({
-          id: "session-plan",
-          ticket_id: 14,
-          plan_status: "awaiting_feedback",
-          plan_summary: "Confirm the cross-project switch before continuing.",
-          last_summary: "This should not be shown.",
+        createSessionSummary({
+          session: createSession({
+            id: "session-plan",
+            ticket_id: 14,
+            plan_status: "awaiting_feedback",
+            plan_summary: "Confirm the cross-project switch before continuing.",
+            last_summary: "This should not be shown.",
+          }),
         }),
       ],
     ]),
+    ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[23, true]]),
   });
 
   assert.deepEqual(items, [
@@ -291,22 +314,28 @@ test("hides review tickets with active linked pull requests from the inbox", () 
     sessionsById: new Map([
       [
         "session-pr-open",
-        createSession({
-          id: "session-pr-open",
-          ticket_id: 21,
-          status: "completed",
-          last_summary: "PR opened.",
+        createSessionSummary({
+          session: createSession({
+            id: "session-pr-open",
+            ticket_id: 21,
+            status: "completed",
+            last_summary: "PR opened.",
+          }),
         }),
       ],
       [
         "session-input",
-        createSession({
-          id: "session-input",
-          ticket_id: 22,
-          status: "awaiting_input",
+        createSessionSummary({
+          session: createSession({
+            id: "session-input",
+            ticket_id: 22,
+            status: "awaiting_input",
+          }),
         }),
       ],
     ]),
+    ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[23, true]]),
   });
 
   assert.deepEqual(
@@ -345,14 +374,18 @@ test("keeps review tickets without an active linked pull request in the inbox", 
     sessionsById: new Map([
       [
         "session-pr-closed",
-        createSession({
-          id: "session-pr-closed",
-          ticket_id: 23,
-          status: "completed",
-          last_summary: "Closed the old PR.",
+        createSessionSummary({
+          session: createSession({
+            id: "session-pr-closed",
+            ticket_id: 23,
+            status: "completed",
+            last_summary: "Closed the old PR.",
+          }),
         }),
       ],
     ]),
+    ticketAiReviewActiveById: new Map(),
+    ticketAiReviewResolvedById: new Map([[23, true]]),
   });
 
   assert.deepEqual(items, [
@@ -384,6 +417,7 @@ test("surfaces refined drafts in the inbox with a stable draft key", () => {
     projects: [createProject()],
     tickets: [],
     sessionsById: new Map(),
+    ticketAiReviewActiveById: new Map(),
   });
 
   assert.deepEqual(items, [
@@ -400,4 +434,188 @@ test("surfaces refined drafts in the inbox with a stable draft key", () => {
       projectName: "Project One",
     },
   ]);
+});
+
+test("hides review tickets while an AI review session is still running", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 30,
+        status: "review",
+        session_id: "session-review",
+        title: "Wait for AI review to finish",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review",
+        createSessionSummary({
+          session: createSession({
+            id: "session-review",
+            ticket_id: 30,
+            status: "completed",
+          }),
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[30, true]]),
+    ticketAiReviewResolvedById: new Map([[30, true]]),
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("keeps review tickets out of the inbox until AI review status resolves", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 26,
+        status: "review",
+        session_id: "session-review-pending",
+        title: "Wait for AI review status before showing this",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-pending",
+        createSessionSummary({
+          session: createSession({
+            id: "session-review-pending",
+            ticket_id: 26,
+            status: "completed",
+            last_summary:
+              "Implementation completed and AI review lookup is pending.",
+          }),
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[26, false]]),
+    ticketAiReviewResolvedById: new Map([[26, false]]),
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("shows tickets in the inbox again after AI review completes when inbox rules still match", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 25,
+        status: "review",
+        session_id: "session-review-complete",
+        title: "Show this after AI review completes",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-complete",
+        createSessionSummary({
+          session: createSession({
+            id: "session-review-complete",
+            ticket_id: 25,
+            status: "completed",
+            last_summary: "AI review finished without blocking merge.",
+          }),
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[25, false]]),
+    ticketAiReviewResolvedById: new Map([[25, true]]),
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "review-25",
+      color: "blue",
+      title: "Review ready for ticket #25",
+      message:
+        "Show this after AI review completes is ready for review and can be merged or sent back for changes.",
+      targetKind: "session",
+      targetId: "session-review-complete",
+      actionLabel: "Open Review",
+      projectId: "project-1",
+      projectName: "Project One",
+    },
+  ]);
+});
+
+test("shows review tickets when the AI review lookup errors after completion", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 27,
+        status: "review",
+        session_id: "session-review-error",
+        title: "Do not hide this when the lookup errors",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-error",
+        createSessionSummary({
+          session: createSession({
+            id: "session-review-error",
+            ticket_id: 27,
+            status: "completed",
+            last_summary: "AI review finished but the status refresh failed.",
+          }),
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[27, false]]),
+    ticketAiReviewResolvedById: new Map([[27, true]]),
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "review-27",
+      color: "blue",
+      title: "Review ready for ticket #27",
+      message:
+        "Do not hide this when the lookup errors is ready for review and can be merged or sent back for changes.",
+      targetKind: "session",
+      targetId: "session-review-error",
+      actionLabel: "Open Review",
+      projectId: "project-1",
+      projectName: "Project One",
+    },
+  ]);
+});
+
+test("hides session inbox items while the agent still controls the worktree", () => {
+  const items = deriveInboxItems({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 31,
+        status: "in_progress",
+        session_id: "session-running-handoff",
+        title: "Resume work without operator input",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-running-handoff",
+        createSessionSummary({
+          session: createSession({
+            id: "session-running-handoff",
+            ticket_id: 31,
+            status: "awaiting_input",
+          }),
+          agent_controls_worktree: true,
+        }),
+      ],
+    ]),
+  });
+
+  assert.deepEqual(items, []);
 });

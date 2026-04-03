@@ -1,5 +1,9 @@
 import type { WorkspaceModalKind } from "./shared.js";
 
+type TerminalSessionSnapshot = {
+  worktree_path: string | null;
+} | null;
+
 export function resolveWorkspaceDiffPanelState(input: {
   ticketWorkspaceDiffQuery: {
     error: { message: string } | null;
@@ -16,11 +20,69 @@ export function resolveWorkspaceDiffPanelState(input: {
   };
 }
 
+export function resolveWorkspaceTerminalPanelState(input: {
+  selectedSessionTicket: { id: number } | null;
+  selectedSessionTicketSession: TerminalSessionSnapshot;
+  session: TerminalSessionSnapshot;
+  sessionQuery: {
+    error: { message: string } | null;
+    isError: boolean;
+    isPending: boolean;
+  };
+}) {
+  const terminalSession =
+    input.selectedSessionTicketSession ?? input.session ?? null;
+
+  if (!input.selectedSessionTicket) {
+    return {
+      error: null,
+      state: "preparing" as const,
+      worktreePath: null,
+    };
+  }
+
+  if (terminalSession?.worktree_path) {
+    return {
+      error: null,
+      state: "ready" as const,
+      worktreePath: terminalSession.worktree_path,
+    };
+  }
+
+  if (input.sessionQuery.isPending) {
+    return {
+      error: null,
+      state: "loading" as const,
+      worktreePath: null,
+    };
+  }
+
+  if (input.sessionQuery.isError) {
+    return {
+      error:
+        input.sessionQuery.error?.message ?? "Unable to load session details",
+      state: "error" as const,
+      worktreePath: null,
+    };
+  }
+
+  return {
+    error: null,
+    state: "missing_worktree" as const,
+    worktreePath: null,
+  };
+}
+
 export function shouldKeepWorkspaceModalOpen(
   inspectorKind: "draft" | "hidden" | "new_draft" | "session",
   workspaceModal: WorkspaceModalKind | null,
+  hasTerminalContext = false,
 ): boolean {
-  return inspectorKind === "session" || workspaceModal === "diff";
+  return (
+    inspectorKind === "session" ||
+    workspaceModal === "diff" ||
+    (workspaceModal === "terminal" && hasTerminalContext)
+  );
 }
 
 export function resolveSelectedWorkspaceTicketId(input: {

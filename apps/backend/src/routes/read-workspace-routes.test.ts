@@ -19,6 +19,7 @@ import type {
 
 import { AgentAdapterRegistry } from "../lib/agent-adapters/registry.js";
 import { EventHub } from "../lib/event-hub.js";
+import type { WorkspaceTerminalRuntime } from "../lib/execution-runtime/terminal-runtime.js";
 import { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { registerTicketReadWorkspaceRoutes } from "./tickets/read-workspace-routes.js";
 import type { TicketRouteDependencies } from "./tickets/shared.js";
@@ -89,25 +90,6 @@ async function waitForSocketMessage(
   });
 }
 
-async function waitForSocketClose(socket: WebSocketClient): Promise<void> {
-  return await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(
-        new Error("Timed out waiting for workspace terminal socket close"),
-      );
-    }, 5_000);
-
-    socket.addEventListener("close", () => {
-      clearTimeout(timeout);
-      resolve();
-    });
-    socket.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket errored"));
-    });
-  });
-}
-
 async function createApp(
   dependencies: Partial<TicketRouteDependencies>,
 ): Promise<FastifyInstance> {
@@ -145,17 +127,20 @@ async function createApp(
     }: {
       sessionId: string;
       worktreePath: string;
-    }) {
-      return spawnPty("bash", ["--noprofile", "--norc"], {
-        cwd: worktreePath,
-        env: {
-          ...process.env,
-          TERM: "xterm-256color",
-        },
-        cols: 120,
-        rows: 32,
-        name: "xterm-256color",
-      });
+    }): WorkspaceTerminalRuntime {
+      return {
+        exitMessage: null,
+        pty: spawnPty("bash", ["--noprofile", "--norc"], {
+          cwd: worktreePath,
+          env: {
+            ...process.env,
+            TERM: "xterm-256color",
+          },
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        }),
+      };
     },
     ...(dependencies.executionRuntime ?? {}),
   };
@@ -339,7 +324,7 @@ test("workspace terminal reports a clear error when the ticket has no prepared w
   }
 });
 
-test("workspace terminal reports a clear error when the agent still owns the worktree", async () => {
+test("workspace terminal stays available while the agent still owns the worktree", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-owned-"));
   const app = await createApp({
     executionRuntime: {
@@ -369,17 +354,20 @@ test("workspace terminal reports a clear error when the agent still owns the wor
     socket = await openSocket(
       `${address.replace(/^http/, "ws")}/tickets/13/workspace/terminal`,
     );
+    socket.send(
+      JSON.stringify({
+        type: "terminal.input",
+        data: "exit\r",
+      }),
+    );
 
     const message = await waitForSocketMessage(
       socket,
-      (candidate) => candidate.type === "terminal.error",
+      (candidate) => candidate.type === "terminal.exit",
     );
 
-    assert.deepEqual(message, {
-      type: "terminal.error",
-      message:
-        "The agent still controls this worktree. Stop or finish the current run before opening the workspace terminal.",
-    });
+    assert.equal(message.type, "terminal.exit");
+    assert.equal(message.exit_code, 0);
   } finally {
     socket?.close();
     await app.close();
@@ -487,7 +475,7 @@ test("workspace terminal publishes shell exit messages for worktree sessions", a
   }
 });
 
-test("workspace terminal closes when queued worktree ownership shifts back to the agent", async () => {
+test("workspace terminal stays available after execution starts in the same worktree", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-runtime-"));
   const ticket = createTicket();
   let session = createSession(tempDir);
@@ -612,12 +600,6 @@ test("workspace terminal closes when queued worktree ownership shifts back to th
       `${address.replace(/^http/, "ws")}/tickets/${ticket.id}/workspace/terminal`,
     );
 
-    const takeoverMessagePromise = waitForSocketMessage(
-      socket,
-      (candidate) => candidate.type === "terminal.error",
-    );
-    const closePromise = waitForSocketClose(socket);
-
     session = {
       ...session,
       queue_entered_at: null,
@@ -630,14 +612,34 @@ test("workspace terminal closes when queued worktree ownership shifts back to th
       session,
     });
 
-    const message = await takeoverMessagePromise;
-    assert.deepEqual(message, {
-      type: "terminal.error",
-      message:
-        "The agent reclaimed this worktree and closed the workspace terminal.",
-    });
-    await closePromise;
     assert.equal(runtime.hasActiveExecution(session.id), true);
+
+    socket.send(
+      JSON.stringify({
+        type: "terminal.input",
+        data: "pwd\r",
+      }),
+    );
+
+    const pwdMessage = await waitForSocketMessage(
+      socket,
+      (candidate) =>
+        candidate.type === "terminal.output" &&
+        typeof candidate.data === "string" &&
+        candidate.data.includes(tempDir),
+    );
+    assert.equal(pwdMessage.type, "terminal.output");
+
+    socket.send(
+      JSON.stringify({
+        type: "terminal.input",
+        data: "exit\r",
+      }),
+    );
+    await waitForSocketMessage(
+      socket,
+      (candidate) => candidate.type === "terminal.exit",
+    );
   } finally {
     if (runtime.hasActiveExecution(session.id)) {
       await runtime.stopExecution(session.id, "Test cleanup.");

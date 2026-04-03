@@ -22,14 +22,18 @@ import {
   agentAdapterOptions,
   buildRepositoryBranchOptions,
   executionBackendOptions,
-  projectModelPresetOptions,
+  getModelPresetOptions,
+  modelPlaceholder,
   reasoningEffortOptions,
   resolveRepositoryTargetBranch,
   reviewActionOptions,
   slugify,
 } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
-import { resolveWorkspaceDiffPanelState } from "./workspace-modal-state.js";
+import {
+  resolveWorkspaceDiffPanelState,
+  resolveWorkspaceTerminalPanelState,
+} from "./workspace-modal-state.js";
 
 type WorkspaceModalContentController = Pick<
   WalleyBoardController,
@@ -38,11 +42,13 @@ type WorkspaceModalContentController = Pick<
   | "sessionLogsQuery"
   | "sessionQuery"
   | "selectedSessionTicket"
+  | "selectedSessionTicketSession"
   | "setTicketWorkspaceDiffLayout"
   | "ticketWorkspaceDiff"
   | "ticketWorkspaceDiffLayout"
   | "ticketWorkspaceDiffQuery"
   | "workspaceModal"
+  | "workspaceTerminalContext"
 >;
 
 export function WorkspaceModalContent({
@@ -52,6 +58,12 @@ export function WorkspaceModalContent({
 }) {
   const workspaceDiffPanelState = resolveWorkspaceDiffPanelState({
     ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,
+  });
+  const workspaceTerminalPanelState = resolveWorkspaceTerminalPanelState({
+    selectedSessionTicket: controller.selectedSessionTicket,
+    selectedSessionTicketSession: controller.selectedSessionTicketSession,
+    session: controller.session,
+    sessionQuery: controller.sessionQuery,
   });
 
   return (
@@ -65,14 +77,32 @@ export function WorkspaceModalContent({
           onLayoutChange={controller.setTicketWorkspaceDiffLayout}
         />
       ) : controller.workspaceModal === "terminal" ? (
-        controller.selectedSessionTicket ? (
+        controller.workspaceTerminalContext ? (
           <TicketWorkspaceTerminal
-            ticketId={controller.selectedSessionTicket.id}
-            worktreePath={controller.session?.worktree_path ?? null}
+            socketPath={controller.workspaceTerminalContext.socketPath}
+            surfaceLabel={controller.workspaceTerminalContext.surfaceLabel}
+            worktreePath={controller.workspaceTerminalContext.worktreePath}
           />
+        ) : workspaceTerminalPanelState.state === "ready" &&
+          controller.selectedSessionTicket ? (
+          <TicketWorkspaceTerminal
+            socketPath={`/tickets/${controller.selectedSessionTicket.id}/workspace/terminal`}
+            surfaceLabel="ticket"
+            worktreePath={workspaceTerminalPanelState.worktreePath}
+          />
+        ) : workspaceTerminalPanelState.state === "loading" ? (
+          <Loader size="sm" />
+        ) : workspaceTerminalPanelState.state === "error" ? (
+          <Text size="sm" c="red">
+            {workspaceTerminalPanelState.error}
+          </Text>
+        ) : workspaceTerminalPanelState.state === "missing_worktree" ? (
+          <Text size="sm" c="dimmed">
+            This ticket does not have a prepared worktree.
+          </Text>
         ) : (
           <Text size="sm" c="dimmed">
-            The ticket worktree is still being prepared.
+            The workspace terminal is still being prepared.
           </Text>
         )
       ) : controller.workspaceModal === "activity" ? (
@@ -264,6 +294,8 @@ export function WalleyBoardModals({
                     controller.setProjectOptionsFormError(null);
                     controller.updateProjectMutation.reset();
                     controller.setProjectOptionsAgentAdapter(value);
+                    controller.setProjectOptionsDraftModelPreset("default");
+                    controller.setProjectOptionsTicketModelPreset("default");
                     if (value === "claude-code") {
                       controller.setProjectOptionsExecutionBackend("host");
                     }
@@ -411,7 +443,9 @@ export function WalleyBoardModals({
                 <Select
                   label="Draft refining model"
                   description="Used for both Refine and Questions? draft analysis runs."
-                  data={projectModelPresetOptions}
+                  data={getModelPresetOptions(
+                    controller.projectOptionsAgentAdapter,
+                  )}
                   value={controller.projectOptionsDraftModelPreset}
                   onChange={(value) => {
                     if (!value) {
@@ -428,7 +462,9 @@ export function WalleyBoardModals({
                 {controller.projectOptionsDraftModelPreset === "custom" ? (
                   <TextInput
                     label="Custom draft model ID"
-                    placeholder="gpt-5.3-spark"
+                    placeholder={modelPlaceholder(
+                      controller.projectOptionsAgentAdapter,
+                    )}
                     value={controller.projectOptionsDraftModelCustom}
                     onChange={(event) => {
                       controller.setProjectOptionsFormError(null);
@@ -461,7 +497,9 @@ export function WalleyBoardModals({
                 <Select
                   label="General ticket work model"
                   description="Used when the selected agent starts or resumes ticket implementation work."
-                  data={projectModelPresetOptions}
+                  data={getModelPresetOptions(
+                    controller.projectOptionsAgentAdapter,
+                  )}
                   value={controller.projectOptionsTicketModelPreset}
                   onChange={(value) => {
                     if (!value) {
@@ -478,7 +516,9 @@ export function WalleyBoardModals({
                 {controller.projectOptionsTicketModelPreset === "custom" ? (
                   <TextInput
                     label="Custom ticket work model ID"
-                    placeholder="gpt-5.3-spark"
+                    placeholder={modelPlaceholder(
+                      controller.projectOptionsAgentAdapter,
+                    )}
                     value={controller.projectOptionsTicketModelCustom}
                     onChange={(event) => {
                       controller.setProjectOptionsFormError(null);

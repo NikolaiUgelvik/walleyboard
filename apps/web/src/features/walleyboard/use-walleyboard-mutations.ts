@@ -17,6 +17,7 @@ import type {
   ArchiveActionFeedback,
   InspectorState,
   ProjectsResponse,
+  ReviewRunResponse,
   TicketsResponse,
   TicketWorkspacePreviewResponse,
 } from "./shared.js";
@@ -58,6 +59,38 @@ type UseWalleyBoardMutationsInput = {
   setValidationCommandsText: StateSetter<string>;
   tickets: TicketFrontmatter[];
 };
+
+export function setOptimisticRunningReviewRun(input: {
+  implementationSessionId: string | null;
+  queryClient: QueryClient;
+  ticketId: number;
+}): void {
+  const now = new Date().toISOString();
+
+  input.queryClient.setQueryData<ReviewRunResponse | null>(
+    ["tickets", input.ticketId, "review-run"],
+    (current) => ({
+      review_run: {
+        id: current?.review_run.id ?? `pending-review-run-${input.ticketId}`,
+        ticket_id: input.ticketId,
+        review_package_id:
+          current?.review_run.review_package_id ??
+          `pending-review-package-${input.ticketId}`,
+        implementation_session_id:
+          current?.review_run.implementation_session_id ??
+          input.implementationSessionId ??
+          `pending-implementation-session-${input.ticketId}`,
+        status: "running",
+        adapter_session_ref: current?.review_run.adapter_session_ref ?? null,
+        report: null,
+        failure_message: null,
+        created_at: current?.review_run.created_at ?? now,
+        updated_at: now,
+        completed_at: null,
+      },
+    }),
+  );
+}
 
 export function useWalleyBoardMutations({
   queryClient,
@@ -753,6 +786,13 @@ export function useWalleyBoardMutations({
     mutationFn: (ticketId: number) =>
       postJson<CommandAck>(`/tickets/${ticketId}/start-agent-review`, {}),
     onSuccess: async (_, ticketId) => {
+      setOptimisticRunningReviewRun({
+        queryClient,
+        ticketId,
+        implementationSessionId:
+          tickets.find((ticket) => ticket.id === ticketId)?.session_id ?? null,
+      });
+
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "tickets"],

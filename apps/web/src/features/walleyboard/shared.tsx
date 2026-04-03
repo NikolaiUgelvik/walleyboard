@@ -81,17 +81,33 @@ export const boardColumnMeta: Record<
   },
 };
 
-export const projectModelPresetValues = [
+const codexModelPresetValues = [
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.3-codex",
   "gpt-5.3-codex-spark",
 ] as const;
-export const projectModelPresetOptions = [
-  { value: "default", label: "Default" },
-  ...projectModelPresetValues.map((value) => ({ value, label: value })),
-  { value: "custom", label: "Custom" },
-];
+const claudeCodeModelPresetValues = [
+  "claude-sonnet-4-6",
+  "claude-opus-4-6",
+  "claude-haiku-4-5",
+] as const;
+export const projectModelPresetValues = [
+  ...codexModelPresetValues,
+  ...claudeCodeModelPresetValues,
+] as const;
+export function getModelPresetOptions(adapter: AgentAdapter) {
+  const values =
+    adapter === "claude-code"
+      ? claudeCodeModelPresetValues
+      : codexModelPresetValues;
+  return [
+    { value: "default", label: "Default" },
+    ...values.map((value) => ({ value, label: value })),
+    { value: "custom", label: "Custom" },
+  ];
+}
+export const projectModelPresetOptions = getModelPresetOptions("codex");
 export const reasoningEffortOptions = [
   { value: "default", label: "Default" },
   { value: "low", label: "Low" },
@@ -111,6 +127,21 @@ export const agentAdapterOptions = [
   { label: "Codex", value: "codex" },
   { label: "Claude Code", value: "claude-code" },
 ] satisfies Array<{ label: string; value: AgentAdapter }>;
+
+export function agentLabel(adapter: AgentAdapter): string {
+  switch (adapter) {
+    case "codex":
+      return "Codex";
+    case "claude-code":
+      return "Claude Code";
+    default:
+      return "Agent";
+  }
+}
+
+export function modelPlaceholder(adapter: AgentAdapter): string {
+  return adapter === "claude-code" ? "claude-sonnet-4-6" : "gpt-5.3-spark";
+}
 
 export function readLastOpenProjectId(): string | null {
   if (typeof window === "undefined") {
@@ -187,6 +218,19 @@ export type TicketWorkspacePreviewResponse = {
   preview: TicketWorkspacePreview;
 };
 
+export type RepositoryWorkspacePreview = {
+  repository_id: string;
+  state: TicketWorkspacePreview["state"];
+  preview_url: string | null;
+  backend_url: string | null;
+  started_at: string | null;
+  error: string | null;
+};
+
+export type RepositoryWorkspacePreviewResponse = {
+  preview: RepositoryWorkspacePreview;
+};
+
 export type ReviewPackageResponse = {
   review_package: ReviewPackage;
 };
@@ -215,6 +259,11 @@ export type ArchiveActionFeedback = {
 
 export type DiffLayout = "split" | "stacked";
 export type WorkspaceModalKind = "diff" | "terminal" | "activity";
+export type WorkspaceTerminalContext = {
+  socketPath: string;
+  surfaceLabel: "ticket" | "repository";
+  worktreePath: string | null;
+};
 export type ReviewCardActionKind = "merge" | "create_pr" | "open_pr";
 export type ReviewCardAction = {
   kind: ReviewCardActionKind;

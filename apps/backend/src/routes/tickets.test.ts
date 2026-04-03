@@ -12,15 +12,87 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
 
 import type { TicketFrontmatter } from "../../../../packages/contracts/src/index.js";
 
 import { EventHub } from "../lib/event-hub.js";
+import {
+  closeTrackedWorkspaceTerminals,
+  startTrackedWorkspaceTerminal,
+  type WorkspaceTerminalRuntime,
+} from "../lib/execution-runtime/terminal-runtime.js";
 import { SqliteStore } from "../lib/sqlite-store.js";
 import { prepareWorktree } from "../lib/worktree-service.js";
 import { ticketRoutes } from "./tickets.js";
+
+type WebSocketClient = {
+  addEventListener: (
+    type: "close" | "error" | "message" | "open",
+    listener: (event?: { data?: unknown }) => void,
+  ) => void;
+  close: () => void;
+  send: (data: string) => void;
+};
+
+function createWebSocket(url: string): WebSocketClient {
+  const WebSocketConstructor = (
+    globalThis as typeof globalThis & {
+      WebSocket: new (url: string) => WebSocketClient;
+    }
+  ).WebSocket;
+  return new WebSocketConstructor(url);
+}
+
+async function openSocket(url: string): Promise<WebSocketClient> {
+  return await new Promise<WebSocketClient>((resolve, reject) => {
+    const socket = createWebSocket(url);
+    const timeout = setTimeout(() => {
+      reject(new Error("Timed out opening workspace terminal socket"));
+    }, 5_000);
+
+    socket.addEventListener("open", () => {
+      clearTimeout(timeout);
+      resolve(socket);
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("Workspace terminal socket failed to open"));
+    });
+  });
+}
+
+async function waitForSocketMessage(
+  socket: WebSocketClient,
+  predicate: (message: Record<string, unknown>) => boolean,
+): Promise<Record<string, unknown>> {
+  return await new Promise<Record<string, unknown>>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Timed out waiting for workspace terminal message"));
+    }, 5_000);
+
+    socket.addEventListener("message", (event) => {
+      const rawData = typeof event?.data === "string" ? event.data : "";
+      const message = JSON.parse(rawData) as Record<string, unknown>;
+      if (!predicate(message)) {
+        return;
+      }
+
+      clearTimeout(timeout);
+      resolve(message);
+    });
+    socket.addEventListener("close", () => {
+      clearTimeout(timeout);
+      reject(new Error("Workspace terminal socket closed before the message"));
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("Workspace terminal socket errored"));
+    });
+  });
+}
 
 function setWalleyBoardHome(path: string): () => void {
   const previous = process.env.WALLEYBOARD_HOME;
@@ -129,6 +201,7 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
     }> = [];
     const executionRuntime = {
       assertProjectExecutionBackendAvailable() {},
+      closeWorkspaceTerminals() {},
       cleanupExecutionEnvironment() {},
       hasActiveExecution() {
         return false;
@@ -283,6 +356,7 @@ test("merge route clears the persisted worktree path after cleanup", async () =>
       eventHub: new EventHub(),
       store,
       executionRuntime: {
+        closeWorkspaceTerminals() {},
         hasActiveExecution() {
           return false;
         },
@@ -411,6 +485,7 @@ test("done tickets keep their stored diff through archive and restore", async ()
       eventHub: new EventHub(),
       store,
       executionRuntime: {
+        closeWorkspaceTerminals() {},
         hasActiveExecution() {
           return false;
         },
@@ -482,6 +557,199 @@ test("done tickets keep their stored diff through archive and restore", async ()
     process.chdir(previousCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test("delete route closes an open workspace terminal before cleaning up the worktree", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-delete-"));
+  const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
+
+  try {
+    process.chdir(tempDir);
+
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Route Delete Project",
+      repository: {
+        name: "repo",
+        path: repoPath,
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    const runtime = prepareWorktree(project, repository, ticket);
+    const started = store.startTicket(ticket.id, false, runtime);
+    const workspaceTerminals = new Map<string, Set<WorkspaceTerminalRuntime>>();
+    const executionRuntime = {
+      closeWorkspaceTerminals(sessionId: string, exitMessage: string) {
+        closeTrackedWorkspaceTerminals(
+          workspaceTerminals,
+          sessionId,
+          exitMessage,
+        );
+      },
+      cleanupExecutionEnvironment() {},
+      hasActiveExecution() {
+        return false;
+      },
+      startQueuedSessions() {},
+      startWorkspaceTerminal(input: {
+        sessionId: string;
+        worktreePath: string;
+      }) {
+        return startTrackedWorkspaceTerminal({
+          ...input,
+          workspaceTerminals,
+        });
+      },
+      async stopExecution() {
+        return false;
+      },
+    };
+
+    const app = Fastify();
+    await app.register(websocket);
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: executionRuntime as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          throw new Error("Not used in this test");
+        },
+        async reconcileTicket() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      ticketWorkspaceService: {
+        async disposeTicket() {},
+        async stopPreviewAndWait() {},
+      } as never,
+    });
+
+    let socket: WebSocketClient | null = null;
+    try {
+      const address = await app.listen({ host: "127.0.0.1", port: 0 });
+      socket = await openSocket(
+        `${address.replace(/^http/, "ws")}/tickets/${ticket.id}/workspace/terminal`,
+      );
+
+      socket.send(
+        JSON.stringify({
+          type: "terminal.input",
+          data: "pwd\r",
+        }),
+      );
+      await waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "terminal.output" &&
+          typeof message.data === "string" &&
+          message.data.includes(runtime.worktreePath),
+      );
+
+      socket.send(
+        JSON.stringify({
+          type: "terminal.input",
+          data: "echo terminal-busy; trap '' HUP; sleep 30\r",
+        }),
+      );
+      await waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "terminal.output" &&
+          typeof message.data === "string" &&
+          message.data.includes("terminal-busy"),
+      );
+
+      const errorPromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "terminal.error",
+      );
+      const exitPromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "terminal.exit",
+      );
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/tickets/${ticket.id}/delete`,
+        payload: {},
+      });
+
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.json().accepted, true);
+
+      const errorMessage = await errorPromise;
+      assert.deepEqual(errorMessage, {
+        type: "terminal.error",
+        message:
+          "This workspace terminal closed because the ticket worktree was cleaned up.",
+      });
+
+      const exitMessage = await exitPromise;
+      assert.equal(exitMessage.type, "terminal.exit");
+      assert.equal(store.getTicket(ticket.id), undefined);
+      assert.equal(existsSync(runtime.worktreePath), false);
+      assert.equal(store.getSession(started.session.id), undefined);
+      assert.equal(workspaceTerminals.has(started.session.id), false);
+    } finally {
+      socket?.close();
+      await app.close();
+    }
+  } finally {
+    restoreWalleyBoardHome();
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("closing tracked workspace terminals tolerates terminals that already exited", () => {
+  const workspaceTerminals = new Map<string, Set<WorkspaceTerminalRuntime>>();
+  let killCalls = 0;
+  const terminal: WorkspaceTerminalRuntime = {
+    exitMessage: null,
+    pty: {
+      kill() {
+        killCalls += 1;
+        throw new Error("PTY already exited");
+      },
+    } as unknown as WorkspaceTerminalRuntime["pty"],
+  };
+  workspaceTerminals.set("session-9", new Set([terminal]));
+
+  assert.doesNotThrow(() => {
+    closeTrackedWorkspaceTerminals(
+      workspaceTerminals,
+      "session-9",
+      "This workspace terminal closed because the ticket worktree was cleaned up.",
+    );
+  });
+  assert.equal(killCalls, 1);
+  assert.equal(
+    terminal.exitMessage,
+    "This workspace terminal closed because the ticket worktree was cleaned up.",
+  );
+  assert.equal(workspaceTerminals.has("session-9"), false);
 });
 
 test("start-agent-review route delegates to the agent review service", async () => {

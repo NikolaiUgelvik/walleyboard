@@ -34,6 +34,7 @@ import {
   truncate,
   writeReviewDiff,
 } from "./execution-runtime/helpers.js";
+import type { MergeRecoveryKind } from "./execution-runtime/merge-recovery.js";
 import {
   publishDraftUpdated,
   publishSessionOutput,
@@ -42,8 +43,9 @@ import {
   publishTicketUpdated,
 } from "./execution-runtime/publishers.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
+import { runMergeRecovery } from "./execution-runtime/run-merge-recovery.js";
 import {
-  closeTrackedWorkspaceTerminalsForExecution,
+  closeTrackedWorkspaceTerminals,
   disposeTrackedWorkspaceTerminals,
   startTrackedManualTerminal,
   startTrackedWorkspaceTerminal,
@@ -80,6 +82,72 @@ type ReviewReadyInput = {
   ticket: TicketFrontmatter;
 };
 type ReviewReadyHandler = (input: ReviewReadyInput) => Promise<void>;
+
+type WorktreeRecoveryState = {
+  conflictedFiles: string[];
+  failureMessage: string;
+  stage: "rebase" | "merge";
+};
+
+function inspectWorktreeRecoveryState(
+  worktreePath: string,
+): WorktreeRecoveryState | null {
+  try {
+    const conflictedFiles = runGit(worktreePath, [
+      "diff",
+      "--name-only",
+      "--diff-filter=U",
+    ])
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const mergeHeadPath = runGit(worktreePath, [
+      "rev-parse",
+      "--git-path",
+      "MERGE_HEAD",
+    ]);
+    const rebaseMergePath = runGit(worktreePath, [
+      "rev-parse",
+      "--git-path",
+      "rebase-merge",
+    ]);
+    const rebaseApplyPath = runGit(worktreePath, [
+      "rev-parse",
+      "--git-path",
+      "rebase-apply",
+    ]);
+    const currentBranch = runGit(worktreePath, [
+      "rev-parse",
+      "--abbrev-ref",
+      "HEAD",
+    ]);
+    const mergeInProgress = existsSync(mergeHeadPath);
+    const rebaseInProgress =
+      existsSync(rebaseMergePath) || existsSync(rebaseApplyPath);
+    const detachedHead = currentBranch === "HEAD";
+
+    if (!mergeInProgress && !rebaseInProgress && conflictedFiles.length === 0) {
+      return null;
+    }
+
+    const stage = rebaseInProgress ? "rebase" : "merge";
+    const failureMessage = rebaseInProgress
+      ? "Resume detected an unfinished git rebase in the preserved worktree."
+      : mergeInProgress
+        ? "Resume detected an unfinished git merge in the preserved worktree."
+        : detachedHead
+          ? "Resume detected unresolved git conflicts in a detached worktree."
+          : "Resume detected unresolved git conflicts in the preserved worktree.";
+
+    return {
+      conflictedFiles,
+      failureMessage,
+      stage,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
@@ -198,17 +266,20 @@ export class ExecutionRuntime {
   startWorkspaceTerminal(input: {
     sessionId: string;
     worktreePath: string;
-    onAgentTakeover?: () => void;
-  }): IPty {
+  }): WorkspaceTerminalRuntime {
     return startTrackedWorkspaceTerminal({
-      activeSessions: this.#activeSessions,
       sessionId: input.sessionId,
       worktreePath: input.worktreePath,
       workspaceTerminals: this.#workspaceTerminals,
-      ...(input.onAgentTakeover
-        ? { onAgentTakeover: input.onAgentTakeover }
-        : {}),
     });
+  }
+
+  closeWorkspaceTerminals(sessionId: string, exitMessage: string): void {
+    closeTrackedWorkspaceTerminals(
+      this.#workspaceTerminals,
+      sessionId,
+      exitMessage,
+    );
   }
 
   startQueuedSessions(projectId: string): void {
@@ -366,6 +437,7 @@ export class ExecutionRuntime {
 
   async resolveMergeConflicts(input: {
     project: Project;
+    recoveryKind: MergeRecoveryKind;
     repository: RepositoryConfig;
     ticket: TicketFrontmatter;
     session: ExecutionSession;
@@ -378,180 +450,22 @@ export class ExecutionRuntime {
     logs: string[];
     note?: string;
   }> {
-    const worktreePath = input.session.worktree_path;
-    if (!worktreePath) {
-      throw new Error("Execution session has no prepared worktree");
-    }
-
     const adapter = this.#getSessionAdapter(input.session);
-    const useDockerRuntime = input.project.execution_backend === "docker";
-    const outputSummaryPath = useDockerRuntime
-      ? buildWorkspaceOutputPath(
-          worktreePath,
-          input.session.id,
-          "merge-conflict",
-        )
-      : buildMergeConflictSummaryPath(
-          input.project,
-          input.ticket.id,
-          input.session.id,
-        );
-    const run = adapter.buildMergeConflictRun({
+    return await runMergeRecovery({
+      adapter,
+      cleanupExecutionEnvironment: (sessionId) => {
+        this.cleanupExecutionEnvironment(sessionId);
+      },
       conflictedFiles: input.conflictedFiles,
+      dockerRuntime: this.#dockerRuntime,
       failureMessage: input.failureMessage,
-      outputPath: outputSummaryPath,
       project: input.project,
+      recoveryKind: input.recoveryKind,
       repository: input.repository,
       session: input.session,
       stage: input.stage,
       targetBranch: input.targetBranch,
       ticket: input.ticket,
-      useDockerRuntime,
-    });
-    const { model, reasoningEffort } = adapter.resolveModelSelection(
-      input.project,
-      "ticket",
-    );
-
-    const logs = [
-      `Launching ${adapter.label} merge-conflict resolution in ${input.session.worktree_path}`,
-      `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
-    ];
-    if (model) {
-      logs.push(`Model override: ${model}`);
-    }
-    if (reasoningEffort) {
-      logs.push(`Reasoning effort override: ${reasoningEffort}`);
-    }
-
-    const ptyEnv = buildProcessEnv();
-    writeFileSync(outputSummaryPath, "", "utf8");
-
-    return await new Promise((resolve) => {
-      let settled = false;
-      let adapterOutput = "";
-
-      const finish = (result: {
-        resolved: boolean;
-        logs: string[];
-        note?: string;
-      }) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (useDockerRuntime) {
-          this.cleanupExecutionEnvironment(input.session.id);
-        }
-        resolve(result);
-      };
-
-      let child: ChildProcessWithoutNullStreams;
-      try {
-        if (useDockerRuntime) {
-          if (!run.dockerSpec) {
-            throw new Error(
-              `${adapter.label} does not provide a Docker execution configuration.`,
-            );
-          }
-          this.#dockerRuntime.ensureSessionContainer({
-            dockerSpec: run.dockerSpec,
-            sessionId: input.session.id,
-            projectId: input.project.id,
-            ticketId: input.ticket.id,
-            worktreePath,
-          });
-          child = this.#dockerRuntime.spawnProcessInSession(
-            input.session.id,
-            run.command,
-            run.args,
-            {
-              cwd: worktreePath,
-              env: ptyEnv,
-            },
-          );
-        } else {
-          child = spawn(run.command, run.args, {
-            cwd: worktreePath,
-            env: ptyEnv,
-          });
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : `${adapter.label} failed to start`;
-        finish({
-          resolved: false,
-          logs,
-          note: `${adapter.label} could not start while resolving ${input.stage} conflicts: ${message}`,
-        });
-        return;
-      }
-
-      let lastOutputContent: string | undefined;
-      const captureAdapterLine = (line: string) => {
-        const interpreted = adapter.interpretOutputLine(line);
-        if (hasMeaningfulContent(interpreted.outputContent)) {
-          lastOutputContent = interpreted.outputContent;
-        }
-        if (logs.length < 16) {
-          logs.push(interpreted.logLine);
-        }
-        adapterOutput += `${line}\n`;
-      };
-
-      streamLines(child.stdout, captureAdapterLine);
-      streamLines(child.stderr, (line) => {
-        if (logs.length < 16) {
-          logs.push(`[${adapter.id} stderr] ${truncate(line)}`);
-        }
-        adapterOutput += `${line}\n`;
-      });
-
-      child.once("error", (error) => {
-        const message =
-          error instanceof Error
-            ? error.message
-            : `${adapter.label} execution failed`;
-        finish({
-          resolved: false,
-          logs,
-          note: `${adapter.label} execution failed while resolving ${input.stage} conflicts: ${message}`,
-        });
-      });
-
-      child.once("close", (exitCode, signal) => {
-        let summary = existsSync(outputSummaryPath)
-          ? readFileSync(outputSummaryPath, "utf8").trim()
-          : "";
-        if (summary.length === 0 && lastOutputContent) {
-          writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
-          summary = lastOutputContent.trim();
-        }
-        if (summary.length > 0) {
-          logs.push(`Merge-conflict resolution summary: ${truncate(summary)}`);
-        }
-
-        if (exitCode === 0) {
-          finish({
-            resolved: true,
-            logs,
-          });
-          return;
-        }
-
-        const reason = adapter.formatExitReason(
-          exitCode,
-          signal,
-          summary || adapterOutput,
-        );
-        finish({
-          resolved: false,
-          logs,
-          note: `${adapter.label} could not finish resolving the ${input.stage} conflicts. ${reason}`,
-        });
-      });
     });
   }
 
@@ -878,8 +792,6 @@ export class ExecutionRuntime {
       throw new Error("Execution session has no current attempt");
     }
 
-    this.#closeWorkspaceTerminalsForExecution(session.id);
-
     const adapter = this.#getSessionAdapter(session);
     const extraInstructions: PromptContextSection[] = [];
     const persistedResumeGuidance = hasMeaningfulContent(additionalInstruction)
@@ -912,21 +824,47 @@ export class ExecutionRuntime {
       session.planning_enabled && session.plan_status !== "approved"
         ? "plan"
         : "implementation";
+    const recoveryState =
+      executionMode === "implementation"
+        ? inspectWorktreeRecoveryState(session.worktree_path)
+        : null;
     const useDockerRuntime = project.execution_backend === "docker";
-    const outputSummaryPath = useDockerRuntime
-      ? buildWorkspaceOutputPath(session.worktree_path, session.id)
-      : buildOutputSummaryPath(project, ticket.id, session.id);
-    const run = adapter.buildExecutionRun({
-      executionMode,
-      extraInstructions,
-      outputPath: outputSummaryPath,
-      planSummary: session.plan_summary,
-      project,
-      repository,
-      session,
-      ticket,
-      useDockerRuntime,
-    });
+    const outputSummaryPath = recoveryState
+      ? useDockerRuntime
+        ? buildWorkspaceOutputPath(
+            session.worktree_path,
+            session.id,
+            "merge-conflict",
+          )
+        : buildMergeConflictSummaryPath(project, ticket.id, session.id)
+      : useDockerRuntime
+        ? buildWorkspaceOutputPath(session.worktree_path, session.id)
+        : buildOutputSummaryPath(project, ticket.id, session.id);
+    const run = recoveryState
+      ? adapter.buildMergeConflictRun({
+          conflictedFiles: recoveryState.conflictedFiles,
+          failureMessage: recoveryState.failureMessage,
+          outputPath: outputSummaryPath,
+          project,
+          recoveryKind: "conflicts",
+          repository,
+          session,
+          stage: recoveryState.stage,
+          targetBranch: ticket.target_branch ?? repository.target_branch,
+          ticket,
+          useDockerRuntime,
+        })
+      : adapter.buildExecutionRun({
+          executionMode,
+          extraInstructions,
+          outputPath: outputSummaryPath,
+          planSummary: session.plan_summary,
+          project,
+          repository,
+          session,
+          ticket,
+          useDockerRuntime,
+        });
     const activeSessionRef = hasMeaningfulContent(session.adapter_session_ref)
       ? session.adapter_session_ref
       : null;
@@ -997,7 +935,9 @@ export class ExecutionRuntime {
     const runningSession = this.#store.updateSessionStatus(
       session.id,
       "running",
-      `${adapter.label} execution is running inside the prepared worktree.`,
+      recoveryState
+        ? `${adapter.label} merge recovery is running inside the prepared worktree.`
+        : `${adapter.label} execution is running inside the prepared worktree.`,
     );
     publishSessionUpdated(
       this.#eventHub,
@@ -1010,9 +950,18 @@ export class ExecutionRuntime {
       session.id,
       attemptId,
       useDockerRuntime
-        ? `Launching ${adapter.label} in Docker for ${session.worktree_path}`
-        : `Launching ${adapter.label} in ${session.worktree_path}`,
+        ? `Launching ${adapter.label}${recoveryState ? " merge recovery" : ""} in Docker for ${session.worktree_path}`
+        : `Launching ${adapter.label}${recoveryState ? " merge recovery" : ""} in ${session.worktree_path}`,
     );
+    if (recoveryState) {
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        session.id,
+        attemptId,
+        `${recoveryState.failureMessage} Completing the in-progress git ${recoveryState.stage} before any new ticket work continues.`,
+      );
+    }
     publishSessionOutput(
       this.#eventHub,
       this.#store,
@@ -1047,7 +996,7 @@ export class ExecutionRuntime {
         `Reasoning effort override: ${reasoningEffort}`,
       );
     }
-    if (session.planning_enabled) {
+    if (session.planning_enabled && !recoveryState) {
       publishSessionOutput(
         this.#eventHub,
         this.#store,
@@ -1495,12 +1444,5 @@ export class ExecutionRuntime {
       failedSession ? this.hasActiveExecution(failedSession.id) : false,
     );
     this.startQueuedSessions(input.ticket.project);
-  }
-
-  #closeWorkspaceTerminalsForExecution(sessionId: string): void {
-    closeTrackedWorkspaceTerminalsForExecution({
-      sessionId,
-      workspaceTerminals: this.#workspaceTerminals,
-    });
   }
 }
