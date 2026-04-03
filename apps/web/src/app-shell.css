@@ -372,6 +372,7 @@ body {
   padding: 16px;
   color: var(--walleyboard-muted);
   font-size: 13px;
+  flex: 1;
 }
 
 .inbox-item {
@@ -580,8 +581,8 @@ body {
   }
 
   .walleyboard-layout {
-    height: 100%;
-    min-height: 0;
+    height: auto;
+    min-height: 100%;
   }
 
   .walleyboard-rail,
@@ -591,37 +592,30 @@ body {
   }
 
   .walleyboard-main {
-    display: flex;
-    flex-direction: column;
+    display: block;
   }
 
   .workbench-shell {
-    flex: 1;
-    min-height: 0;
+    min-height: 100%;
   }
 
   .board-scroller {
-    flex: 1;
-    min-height: 0;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
   }
 
   .board-grid {
-    height: 100%;
-    min-height: 0;
-    grid-template-rows: minmax(0, 1fr);
+    height: auto;
     align-items: stretch;
   }
 
   .board-column {
-    min-height: 0;
-    height: 100%;
-    overflow: hidden;
+    height: auto;
+    overflow: visible;
   }
 
   .board-column-stack {
-    overflow-y: auto;
+    overflow-y: visible;
   }
 }
 
