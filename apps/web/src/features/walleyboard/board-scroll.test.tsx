@@ -21,6 +21,7 @@ import { InspectorPane } from "./InspectorPane.js";
 import { ProjectRail } from "./ProjectRail.js";
 import { boardColumns } from "./shared.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import { WalleyBoardView } from "./WalleyBoardView.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
 
@@ -122,6 +123,16 @@ function installDom() {
     },
     mountNode,
     window,
+  };
+}
+
+function installStylesheet(document: Document, cssText: string): () => void {
+  const styleTag = document.createElement("style");
+  styleTag.textContent = cssText;
+  document.head.append(styleTag);
+
+  return () => {
+    styleTag.remove();
   };
 }
 
@@ -546,6 +557,63 @@ test("ready tickets expose an edit action in the overflow menu", async () => {
       root.unmount();
       await Promise.resolve();
     });
+    harness.cleanup();
+  }
+});
+
+test("inspector-open layout keeps the shell as the only vertical scroll owner", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    inspectorState: { kind: "session" },
+    inspectorVisible: true,
+  });
+  const cleanupStylesheet = installStylesheet(
+    harness.window.document,
+    extractBlock(stylesheet, "@media (min-width: 901px)"),
+  );
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <WalleyBoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const shell = harness.mountNode.querySelector(".walleyboard-shell");
+    const layout = harness.mountNode.querySelector(
+      ".walleyboard-layout--with-detail",
+    );
+    const detail = harness.mountNode.querySelector(".walleyboard-detail");
+
+    assert.ok(shell, "Expected the board shell to render");
+    assert.ok(layout, "Expected the inspector-open layout class to render");
+    assert.ok(detail, "Expected the inspector detail pane to render");
+    assert.match(
+      detail.textContent ?? "",
+      /Ticket session/,
+      "Expected the session inspector content to render",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(shell).overflowY,
+      "auto",
+      "Expected the board shell to own vertical scrolling",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(detail).overflowY,
+      "visible",
+      "Expected the detail pane to avoid its own vertical scrollbar",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    cleanupStylesheet();
     harness.cleanup();
   }
 });
