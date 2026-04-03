@@ -18,6 +18,7 @@ import type {
   ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
+  TicketReference,
 } from "../../../../../packages/contracts/src/index.js";
 
 import { nowIso } from "../time.js";
@@ -292,7 +293,10 @@ export function mapRepository(row: Record<string, unknown>): RepositoryConfig {
   };
 }
 
-export function mapDraft(row: Record<string, unknown>): DraftTicketState {
+export function mapDraft(
+  row: Record<string, unknown>,
+  ticketReferences: TicketReference[] = [],
+): DraftTicketState {
   return {
     id: String(row.id),
     project_id: String(row.project_id),
@@ -300,6 +304,7 @@ export function mapDraft(row: Record<string, unknown>): DraftTicketState {
     title_draft: String(row.title_draft),
     description_draft:
       row.description_draft === null ? "" : String(row.description_draft),
+    ticket_references: ticketReferences,
     proposed_repo_id:
       row.proposed_repo_id === null ? null : String(row.proposed_repo_id),
     confirmed_repo_id:
@@ -334,7 +339,10 @@ export function mapDraft(row: Record<string, unknown>): DraftTicketState {
   };
 }
 
-export function mapTicket(row: Record<string, unknown>): TicketFrontmatter {
+export function mapTicket(
+  row: Record<string, unknown>,
+  ticketReferences: TicketReference[] = [],
+): TicketFrontmatter {
   return {
     id: Number(row.id),
     project: String(row.project_id),
@@ -343,6 +351,7 @@ export function mapTicket(row: Record<string, unknown>): TicketFrontmatter {
     status: String(row.status) as TicketFrontmatter["status"],
     title: String(row.title),
     description: row.description === null ? "" : String(row.description),
+    ticket_references: ticketReferences,
     ticket_type: String(row.ticket_type) as TicketFrontmatter["ticket_type"],
     acceptance_criteria: parseJson(row.acceptance_criteria, []),
     working_branch:

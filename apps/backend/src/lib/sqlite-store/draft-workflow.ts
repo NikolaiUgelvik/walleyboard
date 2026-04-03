@@ -14,6 +14,7 @@ import {
   type SqliteStoreContext,
   stringifyJson,
 } from "./shared.js";
+import { validateTicketReferences } from "./ticket-references.js";
 import type { TicketRepository } from "./ticket-repository.js";
 
 export class DraftWorkflowService {
@@ -30,6 +31,8 @@ export class DraftWorkflowService {
     if (!draft) {
       throw new Error("Draft not found");
     }
+
+    validateTicketReferences(this.context, [input.title, input.description]);
 
     const repository = this.projects.getRepository(input.repo_id);
     if (!repository) {

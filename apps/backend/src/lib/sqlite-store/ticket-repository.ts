@@ -6,9 +6,19 @@ import type {
 import type { ListProjectTicketsOptions } from "../store.js";
 import { nowIso } from "../time.js";
 import { mapTicket, type SqliteStoreContext, stringifyJson } from "./shared.js";
+import { resolveTicketReferences } from "./ticket-references.js";
 
 export class TicketRepository {
   constructor(private readonly context: SqliteStoreContext) {}
+
+  #mapTicketRow(row: Record<string, unknown>): TicketFrontmatter {
+    return mapTicket(row, [
+      ...resolveTicketReferences(this.context, [
+        String(row.title ?? ""),
+        row.description === null ? "" : String(row.description),
+      ]),
+    ]);
+  }
 
   listProjectTickets(
     projectId: string,
@@ -44,14 +54,14 @@ export class TicketRepository {
             `,
           );
     const rows = statement.all(projectId) as Record<string, unknown>[];
-    return rows.map(mapTicket);
+    return rows.map((row) => this.#mapTicketRow(row));
   }
 
   getTicket(ticketId: number): TicketFrontmatter | undefined {
     const row = this.context.db
       .prepare("SELECT * FROM tickets WHERE id = ?")
       .get(ticketId) as Record<string, unknown> | undefined;
-    return row ? mapTicket(row) : undefined;
+    return row ? this.#mapTicketRow(row) : undefined;
   }
 
   updateTicketStatus(

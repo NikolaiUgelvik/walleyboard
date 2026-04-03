@@ -191,7 +191,11 @@ export function WalleyBoardModals({
                       <Text component="span" inherit>
                         #{ticket.id}{" "}
                       </Text>
-                      <MarkdownContent content={ticket.title} inline />
+                      <MarkdownContent
+                        content={ticket.title}
+                        inline
+                        ticketReferences={ticket.ticket_references ?? []}
+                      />
                     </Box>
                     <Group gap="xs" wrap="nowrap">
                       <Button

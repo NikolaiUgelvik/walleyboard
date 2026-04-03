@@ -15,6 +15,12 @@ export const ticketStatusSchema = z.enum([
   "done",
 ]);
 
+export const ticketReferenceSchema = z.object({
+  ticket_id: z.number().int().positive(),
+  title: z.string().min(1),
+  status: ticketStatusSchema,
+});
+
 export const ticketTypeSchema = z.enum([
   "feature",
   "bugfix",
@@ -121,6 +127,7 @@ export const draftTicketStateSchema = z.object({
   artifact_scope_id: opaqueIdSchema,
   title_draft: z.string().min(1),
   description_draft: z.string().min(1),
+  ticket_references: z.array(ticketReferenceSchema).optional(),
   proposed_repo_id: opaqueIdSchema.nullable(),
   confirmed_repo_id: opaqueIdSchema.nullable(),
   proposed_ticket_type: ticketTypeSchema.nullable(),
@@ -181,6 +188,7 @@ export const ticketFrontmatterSchema = z.object({
   status: ticketStatusSchema,
   title: z.string().min(1),
   description: z.string(),
+  ticket_references: z.array(ticketReferenceSchema).optional(),
   ticket_type: ticketTypeSchema,
   acceptance_criteria: z.array(z.string().min(1)),
   working_branch: z.string().min(1).nullable(),
@@ -301,6 +309,7 @@ export type ValidationCommand = z.infer<typeof validationCommandSchema>;
 export type ValidationResult = z.infer<typeof validationResultSchema>;
 export type PullRequestRef = z.infer<typeof pullRequestRefSchema>;
 export type RequestedChangeNote = z.infer<typeof requestedChangeNoteSchema>;
+export type TicketReference = z.infer<typeof ticketReferenceSchema>;
 export type DraftTicketState = z.infer<typeof draftTicketStateSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type RepositoryConfig = z.infer<typeof repositoryConfigSchema>;

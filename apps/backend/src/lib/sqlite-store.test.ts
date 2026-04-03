@@ -1182,6 +1182,93 @@ test("markdown content is preserved across draft, ticket, and session note flows
   }
 });
 
+test("ticket references resolve across drafts, reloads, and ready tickets", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-refs-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Ticket References",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const referencedDraft = store.createDraft({
+      project_id: project.id,
+      title: "Original dependency",
+      description: "Ship the first slice.",
+    });
+    const referencedTicket = store.confirmDraft(referencedDraft.id, {
+      title: referencedDraft.title_draft,
+      description: referencedDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Ship the first slice."],
+      target_branch: "main",
+    });
+
+    const dependentDraft = store.createDraft({
+      project_id: project.id,
+      title: `Follow-up for #${referencedTicket.id}`,
+      description: `Build the next step on #${referencedTicket.id}.`,
+    });
+
+    assert.deepEqual(dependentDraft.ticket_references, [
+      {
+        ticket_id: referencedTicket.id,
+        title: referencedTicket.title,
+        status: "ready",
+      },
+    ]);
+
+    const reloadedStore = new SqliteStore(databasePath);
+    const reloadedDraft = reloadedStore.getDraft(dependentDraft.id);
+    assert.ok(reloadedDraft);
+    assert.deepEqual(reloadedDraft.ticket_references, [
+      {
+        ticket_id: referencedTicket.id,
+        title: referencedTicket.title,
+        status: "ready",
+      },
+    ]);
+
+    const dependentTicket = reloadedStore.confirmDraft(dependentDraft.id, {
+      title: `Follow-up for #${referencedTicket.id}`,
+      description: `Build the next step on #${referencedTicket.id}.`,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Carry the referenced dependency forward."],
+      target_branch: "main",
+    });
+
+    assert.deepEqual(dependentTicket.ticket_references, [
+      {
+        ticket_id: referencedTicket.id,
+        title: referencedTicket.title,
+        status: "ready",
+      },
+    ]);
+
+    reloadedStore.updateTicketStatus(referencedTicket.id, "done");
+
+    assert.deepEqual(
+      reloadedStore.getTicket(dependentTicket.id)?.ticket_references,
+      [
+        {
+          ticket_id: referencedTicket.id,
+          title: referencedTicket.title,
+          status: "done",
+        },
+      ],
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("drafts and tickets keep markdown in SQLite instead of creating ticket files", {
   concurrency: false,
 }, () => {

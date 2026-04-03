@@ -25,6 +25,7 @@ import {
   commandRouteRateLimit,
   fileRouteRateLimit,
 } from "../lib/rate-limit.js";
+import { TicketReferenceValidationError } from "../lib/sqlite-store/ticket-references.js";
 import type { Store } from "../lib/store.js";
 import {
   buildTicketArtifactFilePath,
@@ -601,10 +602,20 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
           }),
         );
       } catch (error) {
-        reply.code(404).send({
-          error:
-            error instanceof Error ? error.message : "Unable to confirm draft",
-        });
+        const message =
+          error instanceof Error ? error.message : "Unable to confirm draft";
+        reply
+          .code(
+            error instanceof TicketReferenceValidationError
+              ? 400
+              : message === "Draft not found" ||
+                  message === "Repository not found"
+                ? 404
+                : 409,
+          )
+          .send({
+            error: message,
+          });
       }
     },
   );

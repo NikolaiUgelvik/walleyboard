@@ -80,3 +80,24 @@ test("resolves project artifact links against the backend origin", () => {
     /<a href="http:\/\/127\.0\.0\.1:4000\/projects\/project-1\/draft-artifacts\/scope-1\/example\.png" rel="noreferrer" target="_blank">Artifact<\/a>/,
   );
 });
+
+test("renders resolved ticket references as linked summaries", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(MarkdownContent, {
+      inline: true,
+      content: "Depends on #33 before merge.",
+      ticketReferences: [
+        {
+          ticket_id: 33,
+          title: "Finish the API contract",
+          status: "in_progress",
+        },
+      ],
+    }),
+  );
+
+  assert.match(
+    html,
+    /Depends on <a class="markdown-ticket-reference" href="#ticket-33">#33<\/a><span class="markdown-ticket-reference-meta"> \(Finish the API contract • In progress\)<\/span> before merge\./,
+  );
+});

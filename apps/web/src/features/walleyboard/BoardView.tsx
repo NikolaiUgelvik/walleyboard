@@ -587,6 +587,9 @@ export function BoardView({
                                       <MarkdownContent
                                         content={draft.title_draft}
                                         inline
+                                        ticketReferences={
+                                          draft.ticket_references ?? []
+                                        }
                                       />
                                     </Box>
                                     <Badge variant="light" color="gray">
@@ -602,6 +605,9 @@ export function BoardView({
                                   <MarkdownContent
                                     className="markdown-muted markdown-small"
                                     content={draft.description_draft}
+                                    ticketReferences={
+                                      draft.ticket_references ?? []
+                                    }
                                   />
                                   <Text className="board-card-meta">
                                     Repository:{" "}
@@ -714,6 +720,9 @@ export function BoardView({
                                       <MarkdownContent
                                         content={ticket.title}
                                         inline
+                                        ticketReferences={
+                                          ticket.ticket_references ?? []
+                                        }
                                       />
                                     </Box>
                                     <Text className="board-card-meta">
@@ -746,6 +755,9 @@ export function BoardView({
                                   content={getBoardTicketDescriptionPreview(
                                     ticket.description,
                                   )}
+                                  ticketReferences={
+                                    ticket.ticket_references ?? []
+                                  }
                                 />
                                 {ticket.linked_pr ? (
                                   <Group gap={8} wrap="wrap">

@@ -17,9 +17,19 @@ import {
   type SqliteStoreContext,
   stringifyJson,
 } from "./shared.js";
+import { resolveTicketReferences } from "./ticket-references.js";
 
 export class DraftRepository {
   constructor(private readonly context: SqliteStoreContext) {}
+
+  #mapDraftRow(row: Record<string, unknown>): DraftTicketState {
+    return mapDraft(row, [
+      ...resolveTicketReferences(this.context, [
+        String(row.title_draft ?? ""),
+        row.description_draft === null ? "" : String(row.description_draft),
+      ]),
+    ]);
+  }
 
   listProjectDrafts(projectId: string): DraftTicketState[] {
     const rows = this.context.db
@@ -27,7 +37,7 @@ export class DraftRepository {
         "SELECT * FROM draft_ticket_states WHERE project_id = ? ORDER BY updated_at DESC",
       )
       .all(projectId) as Record<string, unknown>[];
-    return rows.map(mapDraft);
+    return rows.map((row) => this.#mapDraftRow(row));
   }
 
   createDraft(input: CreateDraftInput): DraftTicketState {
@@ -97,7 +107,7 @@ export class DraftRepository {
     const row = this.context.db
       .prepare("SELECT * FROM draft_ticket_states WHERE id = ?")
       .get(draftId) as Record<string, unknown> | undefined;
-    return row ? mapDraft(row) : undefined;
+    return row ? this.#mapDraftRow(row) : undefined;
   }
 
   updateDraft(

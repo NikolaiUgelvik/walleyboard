@@ -356,6 +356,9 @@ export function InspectorPane({
                     <MarkdownContent
                       content={controller.selectedDraft.title_draft}
                       inline
+                      ticketReferences={
+                        controller.selectedDraft.ticket_references ?? []
+                      }
                     />
                   </Box>
                 </Stack>
@@ -726,6 +729,10 @@ export function InspectorPane({
                             <MarkdownContent
                               content={controller.selectedSessionTicket.title}
                               inline
+                              ticketReferences={
+                                controller.selectedSessionTicket
+                                  .ticket_references ?? []
+                              }
                             />
                           </>
                         ) : (
@@ -835,6 +842,10 @@ export function InspectorPane({
                       <MarkdownContent
                         className="markdown-muted markdown-small"
                         content={controller.selectedSessionTicket.description}
+                        ticketReferences={
+                          controller.selectedSessionTicket.ticket_references ??
+                          []
+                        }
                       />
                       {controller.selectedSessionTicket.acceptance_criteria
                         .length > 0 ? (
