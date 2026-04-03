@@ -22,7 +22,8 @@ import {
   agentAdapterOptions,
   buildRepositoryBranchOptions,
   executionBackendOptions,
-  projectModelPresetOptions,
+  getModelPresetOptions,
+  modelPlaceholder,
   reasoningEffortOptions,
   resolveRepositoryTargetBranch,
   reviewActionOptions,
@@ -293,6 +294,8 @@ export function WalleyBoardModals({
                     controller.setProjectOptionsFormError(null);
                     controller.updateProjectMutation.reset();
                     controller.setProjectOptionsAgentAdapter(value);
+                    controller.setProjectOptionsDraftModelPreset("default");
+                    controller.setProjectOptionsTicketModelPreset("default");
                     if (value === "claude-code") {
                       controller.setProjectOptionsExecutionBackend("host");
                     }
@@ -440,7 +443,9 @@ export function WalleyBoardModals({
                 <Select
                   label="Draft refining model"
                   description="Used for both Refine and Questions? draft analysis runs."
-                  data={projectModelPresetOptions}
+                  data={getModelPresetOptions(
+                    controller.projectOptionsAgentAdapter,
+                  )}
                   value={controller.projectOptionsDraftModelPreset}
                   onChange={(value) => {
                     if (!value) {
@@ -457,7 +462,9 @@ export function WalleyBoardModals({
                 {controller.projectOptionsDraftModelPreset === "custom" ? (
                   <TextInput
                     label="Custom draft model ID"
-                    placeholder="gpt-5.3-spark"
+                    placeholder={modelPlaceholder(
+                      controller.projectOptionsAgentAdapter,
+                    )}
                     value={controller.projectOptionsDraftModelCustom}
                     onChange={(event) => {
                       controller.setProjectOptionsFormError(null);
@@ -490,7 +497,9 @@ export function WalleyBoardModals({
                 <Select
                   label="General ticket work model"
                   description="Used when the selected agent starts or resumes ticket implementation work."
-                  data={projectModelPresetOptions}
+                  data={getModelPresetOptions(
+                    controller.projectOptionsAgentAdapter,
+                  )}
                   value={controller.projectOptionsTicketModelPreset}
                   onChange={(value) => {
                     if (!value) {
@@ -507,7 +516,9 @@ export function WalleyBoardModals({
                 {controller.projectOptionsTicketModelPreset === "custom" ? (
                   <TextInput
                     label="Custom ticket work model ID"
-                    placeholder="gpt-5.3-spark"
+                    placeholder={modelPlaceholder(
+                      controller.projectOptionsAgentAdapter,
+                    )}
                     value={controller.projectOptionsTicketModelCustom}
                     onChange={(event) => {
                       controller.setProjectOptionsFormError(null);

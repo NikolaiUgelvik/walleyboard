@@ -20,6 +20,7 @@ import { SectionCard } from "../../components/SectionCard.js";
 import { summarizeSessionActivity } from "../../components/SessionActivityFeed.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import {
+  agentLabel,
   DraftEventResultView,
   DraftQuestionsResultView,
   describePullRequestStatus,
@@ -192,7 +193,7 @@ export function InspectorPane({
         controller.draftEditorProject ? (
           <SectionCard
             title="New draft"
-            description="Work in the composer first. Save the draft directly, or let Codex create it automatically when you refine, ask questions, or create a ready ticket."
+            description={`Work in the composer first. Save the draft directly, or let ${agentLabel(controller.draftEditorProject.agent_adapter)} create it automatically when you refine, ask questions, or create a ready ticket.`}
           >
             <form
               onSubmit={(event) => {
@@ -345,7 +346,7 @@ export function InspectorPane({
         controller.selectedDraft ? (
           <SectionCard
             title="Draft inspector"
-            description="Edit the draft directly, then use Codex to refine it or check feasibility."
+            description={`Edit the draft directly, then use ${controller.selectedProject ? agentLabel(controller.selectedProject.agent_adapter) : "the agent"} to refine it or check feasibility.`}
           >
             <Stack gap="md">
               <Group justify="space-between" align="flex-start">
@@ -361,7 +362,10 @@ export function InspectorPane({
                 <Group gap="xs">
                   {controller.draftAnalysisActive ? (
                     <Badge variant="light" color="blue">
-                      Codex running
+                      {controller.selectedProject
+                        ? agentLabel(controller.selectedProject.agent_adapter)
+                        : "Agent"}{" "}
+                      running
                     </Badge>
                   ) : null}
                   <Badge variant="light" color="gray">
@@ -1048,7 +1052,7 @@ export function InspectorPane({
                         ) : null}
                         <Textarea
                           label="Requested changes"
-                          placeholder="Ask Codex to adjust the current review before you approve it."
+                          placeholder={`Ask ${controller.selectedProject ? agentLabel(controller.selectedProject.agent_adapter) : "the agent"} to adjust the current review before you approve it.`}
                           value={controller.requestedChangesBody}
                           onChange={(event) =>
                             controller.setRequestedChangesBody(
@@ -1256,7 +1260,7 @@ export function InspectorPane({
                           id="next-attempt-guidance"
                           name="nextAttemptGuidance"
                           label="Next attempt guidance"
-                          placeholder="Optional. Clarify what Codex should address on the next attempt."
+                          placeholder={`Optional. Clarify what ${controller.selectedProject ? agentLabel(controller.selectedProject.agent_adapter) : "the agent"} should address on the next attempt.`}
                           value={controller.resumeReason}
                           onChange={(event) =>
                             controller.setResumeReason(
