@@ -3,10 +3,22 @@ import type { TicketFrontmatter } from "../../../../../packages/contracts/src/in
 
 import { fetchOptionalJson, type ReviewRunResponse } from "./shared.js";
 
+export function getTicketsWithAiReviewSessions(
+  tickets: TicketFrontmatter[],
+): Array<TicketFrontmatter & { session_id: string }> {
+  return tickets.filter(
+    (
+      ticket,
+    ): ticket is TicketFrontmatter & {
+      session_id: string;
+    } => ticket.session_id !== null,
+  );
+}
+
 export function useTicketAiReviewStatus(
   tickets: TicketFrontmatter[],
 ): Map<number, boolean> {
-  const reviewTickets = tickets.filter((ticket) => ticket.status === "review");
+  const reviewTickets = getTicketsWithAiReviewSessions(tickets);
   const reviewRunQueries = useQueries({
     queries: reviewTickets.map((ticket) => ({
       queryKey: ["tickets", ticket.id, "review-run"],
