@@ -3,6 +3,7 @@ import {
   Box,
   Group,
   List,
+  Select,
   SegmentedControl,
   Stack,
   Text,
@@ -165,6 +166,39 @@ export function AgentAdapterOptionLabel({
       <AgentAdapterIcon adapter={adapter} />
       <span>{label}</span>
     </Group>
+  );
+}
+
+export function ProjectAgentAdapterSelect({
+  claudeCodeAvailable,
+  value,
+  onChange,
+}: {
+  claudeCodeAvailable: boolean;
+  value: AgentAdapter;
+  onChange: (value: AgentAdapter) => void;
+}) {
+  return (
+    <Select
+      label="Agent CLI"
+      description="Choose which agent runtime this project uses for draft analysis and ticket work."
+      data={getProjectAgentAdapterOptions(claudeCodeAvailable)}
+      leftSection={<AgentAdapterIcon adapter={value} />}
+      renderOption={({ option }) => (
+        <AgentAdapterOptionLabel
+          adapter={option.value === "claude-code" ? "claude-code" : "codex"}
+          label={option.label}
+        />
+      )}
+      value={value}
+      onChange={(nextValue) => {
+        if (nextValue !== "codex" && nextValue !== "claude-code") {
+          return;
+        }
+
+        onChange(nextValue);
+      }}
+    />
   );
 }
 

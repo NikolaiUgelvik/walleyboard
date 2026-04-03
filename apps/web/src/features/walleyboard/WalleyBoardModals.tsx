@@ -20,13 +20,11 @@ import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspaceTerminal } from "../../components/TicketWorkspaceTerminal.js";
 import {
-  AgentAdapterIcon,
-  AgentAdapterOptionLabel,
   buildRepositoryBranchOptions,
   executionBackendOptions,
   getModelPresetOptions,
-  getProjectAgentAdapterOptions,
   modelPlaceholder,
+  ProjectAgentAdapterSelect,
   reasoningEffortOptions,
   resolveRepositoryTargetBranch,
   reviewActionOptions,
@@ -288,31 +286,12 @@ export function WalleyBoardModals({
               </Text>
 
               <Stack gap="xs">
-                <Select
-                  label="Agent CLI"
-                  description="Choose which agent runtime this project uses for draft analysis and ticket work."
-                  data={getProjectAgentAdapterOptions(
-                    Boolean(controller.claudeCodeHealth?.available),
-                  )}
-                  leftSection={
-                    <AgentAdapterIcon
-                      adapter={controller.projectOptionsAgentAdapter}
-                    />
-                  }
-                  renderOption={({ option }) => (
-                    <AgentAdapterOptionLabel
-                      adapter={
-                        option.value === "claude-code" ? "claude-code" : "codex"
-                      }
-                      label={option.label}
-                    />
+                <ProjectAgentAdapterSelect
+                  claudeCodeAvailable={Boolean(
+                    controller.claudeCodeHealth?.available,
                   )}
                   value={controller.projectOptionsAgentAdapter}
                   onChange={(value) => {
-                    if (value !== "codex" && value !== "claude-code") {
-                      return;
-                    }
-
                     controller.setProjectOptionsFormError(null);
                     controller.updateProjectMutation.reset();
                     controller.setProjectOptionsAgentAdapter(value);
