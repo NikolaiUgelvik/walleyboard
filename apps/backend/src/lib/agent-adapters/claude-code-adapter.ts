@@ -105,15 +105,12 @@ export function shellEscape(value: string): string {
 
 /**
  * Build a shell command that invokes `claude` and redirects stdout to
- * `outputPath`. Used only for draft analysis runs, which are spawned via
- * regular `spawn()` (not PTY) and produce a single JSON blob on stdout
- * via `--output-format json`.
+ * `outputPath`. Used for Claude JSON-result flows where the runtime reads
+ * the output file after exit and passes its contents to `parseDraftResult`.
  *
- * Draft analysis does not need streaming stdout - the runtime just reads
- * the output file after exit and passes it to `parseDraftResult`. Using
- * `>` redirect (instead of `tee`) avoids the problems that `tee` causes
- * with PTY (ANSI escape codes) and stream-json (capturing the entire
- * transcript instead of just the result).
+ * Using `>` redirect (instead of `tee`) avoids PTY ANSI escape sequences
+ * and prevents capturing the full transcript when we only want the final
+ * JSON result.
  *
  * Uses `bash` for broad compatibility across Linux distributions.
  */
@@ -474,10 +471,9 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
     appendClaudeCodeModelArgs(claudeArgs, model);
 
-    // Claude Code CLI has no --output-file flag. For draft runs (which use
-    // regular spawn, not PTY), wrap in a shell command that redirects stdout
-    // to the output file. The runtime reads this file after exit and passes
-    // its contents to parseDraftResult.
+    // Claude Code CLI has no --output-file flag, so wrap draft runs in a
+    // shell command that redirects stdout to the output file. The runtime
+    // reads this file after exit and passes its contents to parseDraftResult.
     const { command, args } = buildDraftShellCommand(
       this.#resolveCliPath(),
       claudeArgs,
@@ -570,13 +566,10 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
     appendClaudeCodeModelArgs(args, model);
 
-    // Merge conflict runs use regular spawn (not PTY), but still use
-    // --output-format stream-json which emits many lines. Shell wrapping
-    // with tee would capture the entire NDJSON transcript into the output
-    // file, but the runtime expects only a summary. Spawning `claude`
-    // directly means the output file stays empty (pre-created by the
-    // runtime). The runtime reads it and gets "", which is handled
-    // gracefully. Stdout still flows to child.stdout for streamLines.
+    // Merge conflict runs stream through PTY just like the main execution
+    // path. We still spawn `claude` directly because wrapping stream-json
+    // output in shell redirection would capture the entire NDJSON transcript
+    // instead of a concise final result.
     return {
       command: this.#resolveCliPath(),
       args,

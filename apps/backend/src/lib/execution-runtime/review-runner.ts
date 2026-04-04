@@ -1,6 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import type { IPty } from "node-pty";
+import { type IPty, spawn as spawnPty } from "node-pty";
 
 import {
   type ExecutionSession,
@@ -20,7 +19,7 @@ import {
   buildReviewRunOutputPath,
   buildWorkspaceOutputPath,
   hasMeaningfulContent,
-  streamLines,
+  streamPtyLines,
 } from "./helpers.js";
 
 export async function runTicketReviewSession(input: {
@@ -75,7 +74,7 @@ export async function runTicketReviewSession(input: {
   }
 
   return await new Promise((resolve, reject) => {
-    let child: ChildProcessWithoutNullStreams | IPty;
+    let child: IPty;
     try {
       if (useDockerRuntime) {
         if (!run.dockerSpec) {
@@ -107,9 +106,12 @@ export async function runTicketReviewSession(input: {
           },
         );
       } else {
-        child = spawn(run.command, run.args, {
+        child = spawnPty(run.command, run.args, {
           cwd: worktreePath,
           env: buildProcessEnv(),
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
         });
       }
     } catch (error) {
@@ -202,56 +204,12 @@ export async function runTicketReviewSession(input: {
       }));
     };
 
-    if (useDockerRuntime) {
-      const dockerChild = child as IPty;
-      input.activeReviewRuns.set(input.reviewRunId, dockerChild);
-      let pendingBuffer = "";
-      dockerChild.onData((chunk: string) => {
-        pendingBuffer += chunk.replace(/\r\n/g, "\n");
-
-        while (pendingBuffer.includes("\n")) {
-          const newlineIndex = pendingBuffer.indexOf("\n");
-          const line = pendingBuffer.slice(0, newlineIndex);
-          pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
-          handleLine(line);
-        }
-      });
-      dockerChild.onExit(
-        ({
-          exitCode,
-          signal: _signal,
-        }: {
-          exitCode: number;
-          signal?: number;
-        }) => {
-          if (pendingBuffer.trim().length > 0) {
-            handleLine(pendingBuffer);
-            pendingBuffer = "";
-          }
-          handleExit(exitCode, null);
-        },
-      );
-      return;
-    }
-
-    const processChild = child as ChildProcessWithoutNullStreams;
-    input.activeReviewRuns.set(input.reviewRunId, processChild);
-    streamLines(processChild.stdout, handleLine);
-    streamLines(processChild.stderr, (line) => {
-      rawOutput += `${line}\n`;
-      input.onLogLine?.(`[${input.adapter.id} stderr] ${line}`);
-    });
-
-    processChild.once("error", (error: Error) => {
-      finish(() => {
-        throw error instanceof Error
-          ? error
-          : new Error(`${input.adapter.label} review execution failed.`);
-      });
-    });
-
-    processChild.once("close", (exitCode, signal) => {
-      handleExit(exitCode, signal);
+    input.activeReviewRuns.set(input.reviewRunId, child);
+    streamPtyLines(child, {
+      onExit: ({ exitCode }) => {
+        handleExit(exitCode, null);
+      },
+      onLine: handleLine,
     });
   });
 }

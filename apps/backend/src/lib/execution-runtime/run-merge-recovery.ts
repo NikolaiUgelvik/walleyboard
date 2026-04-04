@@ -1,5 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { type IPty, spawn as spawnPty } from "node-pty";
 
 import type {
   ExecutionSession,
@@ -15,7 +15,7 @@ import {
   buildProcessEnv,
   buildWorkspaceOutputPath,
   hasMeaningfulContent,
-  streamLines,
+  streamPtyLines,
   truncate,
 } from "./helpers.js";
 import type { MergeRecoveryKind } from "./merge-recovery.js";
@@ -110,7 +110,7 @@ export async function runMergeRecovery(input: {
       resolve(result);
     };
 
-    let child: ChildProcessWithoutNullStreams;
+    let child: IPty;
     try {
       if (useDockerRuntime) {
         if (!run.dockerSpec) {
@@ -129,19 +129,25 @@ export async function runMergeRecovery(input: {
           ticketId: input.ticket.id,
           worktreePath,
         });
-        child = input.dockerRuntime.spawnProcessInSession(
+        child = input.dockerRuntime.spawnPtyInSession(
           input.session.id,
           run.command,
           run.args,
           {
+            cols: 120,
+            rows: 32,
             cwd: worktreePath,
             env: ptyEnv,
+            name: "xterm-256color",
           },
         );
       } else {
-        child = spawn(run.command, run.args, {
+        child = spawnPty(run.command, run.args, {
           cwd: worktreePath,
           env: ptyEnv,
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
         });
       }
     } catch (error) {
@@ -177,73 +183,48 @@ export async function runMergeRecovery(input: {
       adapterOutput += `${line}\n`;
     };
 
-    streamLines(child.stdout, captureAdapterLine);
-    streamLines(child.stderr, (line) => {
-      input.onLogLine?.(`[${input.adapter.id} stderr] ${line}`);
-      if (logs.length < 16) {
-        logs.push(`[${input.adapter.id} stderr] ${truncate(line)}`);
-      }
-      adapterOutput += `${line}\n`;
-    });
+    streamPtyLines(child, {
+      onExit: ({ exitCode }) => {
+        let summary = existsSync(outputSummaryPath)
+          ? readFileSync(outputSummaryPath, "utf8").trim()
+          : "";
+        if (summary.length === 0 && lastOutputContent) {
+          writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
+          summary = lastOutputContent.trim();
+        }
+        if (summary.length > 0) {
+          const summaryLine = `Merge-conflict resolution summary: ${truncate(summary)}`;
+          logs.push(summaryLine);
+          input.onLogLine?.(summaryLine);
+        }
 
-    child.once("error", (error) => {
-      const message =
-        error instanceof Error
-          ? error.message
-          : `${input.adapter.label} execution failed`;
-      finish({
-        resolved: false,
-        logs,
-        note: formatMergeRecoveryFailureNote({
-          adapterLabel: input.adapter.label,
-          message,
-          recoveryKind: input.recoveryKind,
-          stage: input.stage,
-          targetBranch: input.targetBranch,
-          when: "execution",
-        }),
-      });
-    });
+        if (exitCode === 0) {
+          finish({
+            resolved: true,
+            logs,
+          });
+          return;
+        }
 
-    child.once("close", (exitCode, signal) => {
-      let summary = existsSync(outputSummaryPath)
-        ? readFileSync(outputSummaryPath, "utf8").trim()
-        : "";
-      if (summary.length === 0 && lastOutputContent) {
-        writeFileSync(outputSummaryPath, lastOutputContent, "utf8");
-        summary = lastOutputContent.trim();
-      }
-      if (summary.length > 0) {
-        const summaryLine = `Merge-conflict resolution summary: ${truncate(summary)}`;
-        logs.push(summaryLine);
-        input.onLogLine?.(summaryLine);
-      }
-
-      if (exitCode === 0) {
+        const reason = input.adapter.formatExitReason(
+          exitCode,
+          null,
+          summary || adapterOutput,
+        );
         finish({
-          resolved: true,
+          resolved: false,
           logs,
+          note: formatMergeRecoveryFailureNote({
+            adapterLabel: input.adapter.label,
+            message: reason,
+            recoveryKind: input.recoveryKind,
+            stage: input.stage,
+            targetBranch: input.targetBranch,
+            when: "finish",
+          }),
         });
-        return;
-      }
-
-      const reason = input.adapter.formatExitReason(
-        exitCode,
-        signal,
-        summary || adapterOutput,
-      );
-      finish({
-        resolved: false,
-        logs,
-        note: formatMergeRecoveryFailureNote({
-          adapterLabel: input.adapter.label,
-          message: reason,
-          recoveryKind: input.recoveryKind,
-          stage: input.stage,
-          targetBranch: input.targetBranch,
-          when: "finish",
-        }),
-      });
+      },
+      onLine: captureAdapterLine,
     });
   });
 }

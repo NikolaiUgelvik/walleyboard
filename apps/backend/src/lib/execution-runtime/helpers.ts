@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import readline from "node:readline";
+import type { IPty } from "node-pty";
 import type { z } from "zod";
 
 import type {
@@ -396,6 +397,35 @@ export function streamLines(
     crlfDelay: Number.POSITIVE_INFINITY,
   });
   lineReader.on("line", onLine);
+}
+
+export function streamPtyLines(
+  pty: IPty,
+  handlers: {
+    onExit: (event: { exitCode: number; signal?: number }) => void;
+    onLine: (line: string) => void;
+  },
+): void {
+  let pendingBuffer = "";
+
+  pty.onData((chunk: string) => {
+    pendingBuffer += chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+    while (pendingBuffer.includes("\n")) {
+      const newlineIndex = pendingBuffer.indexOf("\n");
+      const line = pendingBuffer.slice(0, newlineIndex);
+      pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
+      handlers.onLine(line);
+    }
+  });
+
+  pty.onExit((event: { exitCode: number; signal?: number }) => {
+    if (pendingBuffer.trim().length > 0) {
+      handlers.onLine(pendingBuffer);
+      pendingBuffer = "";
+    }
+    handlers.onExit(event);
+  });
 }
 
 export function resolveValidationWorkingDirectory(

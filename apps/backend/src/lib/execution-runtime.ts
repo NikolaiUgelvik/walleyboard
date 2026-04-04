@@ -1,4 +1,3 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import { type IPty, spawn as spawnPty } from "node-pty";
@@ -29,7 +28,7 @@ import {
   hasMeaningfulContent,
   resolveTargetBranch,
   runGit,
-  streamLines,
+  streamPtyLines,
   summarizeDraftQuestions,
   summarizeDraftRefinement,
   truncate,
@@ -156,7 +155,10 @@ export class ExecutionRuntime {
   readonly #eventHub: EventHub;
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();
-  readonly #activeDraftRuns = new Map<string, ChildProcessWithoutNullStreams>();
+  readonly #activeDraftRuns = new Map<
+    string,
+    { kill(signal?: NodeJS.Signals): unknown }
+  >();
   readonly #activeReviewRuns = new Map<
     string,
     { kill(signal?: NodeJS.Signals): unknown }
@@ -624,11 +626,13 @@ export class ExecutionRuntime {
       repository,
       ...(hasMeaningfulContent(instruction) ? { instruction } : {}),
     });
-    const child = spawn(run.command, run.args, {
+    const child = spawnPty(run.command, run.args, {
       cwd: repository.path,
       env: buildProcessEnv(),
+      cols: 120,
+      rows: 32,
+      name: "xterm-256color",
     });
-    child.stdin.end();
 
     this.#activeDraftRuns.set(draft.id, child);
 
@@ -645,13 +649,6 @@ export class ExecutionRuntime {
         capturedOutput.shift();
       }
     };
-
-    streamLines(child.stdout, (line) => {
-      captureLine(adapter.interpretOutputLine(line).logLine);
-    });
-    streamLines(child.stderr, (line) => {
-      captureLine(`[${adapter.id} stderr] ${line}`);
-    });
 
     const failRun = (reason: string): void => {
       if (finalized) {
@@ -691,16 +688,7 @@ export class ExecutionRuntime {
       );
     }, draftAnalysisTimeoutMs);
 
-    child.once("error", (error) => {
-      clearTimeout(timeoutId);
-      const message =
-        error instanceof Error
-          ? error.message
-          : `${adapter.label} failed to start`;
-      failRun(`${adapter.label} failed to start: ${message}`);
-    });
-
-    child.once("close", (exitCode, signal) => {
+    const completeRun = (exitCode: number): void => {
       clearTimeout(timeoutId);
       if (finalized) {
         return;
@@ -711,7 +699,7 @@ export class ExecutionRuntime {
         : "";
 
       if (exitCode !== 0) {
-        failRun(adapter.formatExitReason(exitCode, signal, rawOutput));
+        failRun(adapter.formatExitReason(exitCode, null, rawOutput));
         return;
       }
 
@@ -791,6 +779,15 @@ export class ExecutionRuntime {
             : `Unable to process ${adapter.label} output`;
         failRun(message);
       }
+    };
+
+    streamPtyLines(child, {
+      onExit: ({ exitCode }) => {
+        completeRun(exitCode);
+      },
+      onLine: (line) => {
+        captureLine(adapter.interpretOutputLine(line).logLine);
+      },
     });
   }
 

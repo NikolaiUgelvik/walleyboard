@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
@@ -105,38 +102,59 @@ function createSession(worktreePath: string): ExecutionSession {
   };
 }
 
-function createFakeChild(): {
-  child: ChildProcessWithoutNullStreams & EventEmitter;
-  stderr: PassThrough;
-  stdout: PassThrough;
+function createFakePty(): {
+  emitData: (chunk: string) => void;
+  emitExit: (event: { exitCode: number; signal?: number }) => void;
+  pty: {
+    kill(signal?: NodeJS.Signals): unknown;
+    onData(callback: (chunk: string) => void): void;
+    onExit(
+      callback: (event: { exitCode: number; signal?: number }) => void,
+    ): void;
+    pid: number;
+    process: string;
+    resize(cols: number, rows: number): void;
+    write(data: string): void;
+  };
 } {
-  const stdout = new PassThrough();
-  const stderr = new PassThrough();
-  const child = new EventEmitter() as ChildProcessWithoutNullStreams &
-    EventEmitter;
-  Object.assign(child, {
-    kill() {
-      return true;
-    },
-    stdin: new PassThrough(),
-    stdout,
-    stderr,
-  });
+  let onDataHandler: ((chunk: string) => void) | null = null;
+  let onExitHandler:
+    | ((event: { exitCode: number; signal?: number }) => void)
+    | null = null;
+
   return {
-    child,
-    stderr,
-    stdout,
+    emitData(chunk: string) {
+      onDataHandler?.(chunk);
+    },
+    emitExit(event: { exitCode: number; signal?: number }) {
+      onExitHandler?.(event);
+    },
+    pty: {
+      kill() {
+        return true;
+      },
+      onData(callback: (chunk: string) => void) {
+        onDataHandler = callback;
+      },
+      onExit(callback: (event: { exitCode: number; signal?: number }) => void) {
+        onExitHandler = callback;
+      },
+      pid: 1234,
+      process: "docker",
+      resize() {},
+      write() {},
+    },
   };
 }
 
-test("runMergeRecovery streams Docker stdout and stderr through the log callback", async () => {
+test("runMergeRecovery streams Docker PTY output through the log callback", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-recovery-"));
   const worktreePath = join(tempDir, "workspace");
   mkdirSync(worktreePath, { recursive: true });
 
   const loggedLines: string[] = [];
   let cleanedSessionId: string | null = null;
-  const { child, stderr, stdout } = createFakeChild();
+  const { emitData, emitExit, pty } = createFakePty();
 
   try {
     const recoveryPromise = runMergeRecovery({
@@ -199,8 +217,8 @@ test("runMergeRecovery streams Docker stdout and stderr through the log callback
       ],
       dockerRuntime: {
         ensureSessionContainer() {},
-        spawnProcessInSession() {
-          return child;
+        spawnPtyInSession() {
+          return pty as never;
         },
       } as never,
       failureMessage: "Git rebase stopped on board-scroll.test.tsx.",
@@ -216,13 +234,10 @@ test("runMergeRecovery streams Docker stdout and stderr through the log callback
       ticket: createTicket(),
     });
 
-    stdout.write(
-      '{"summary":"Resolved the conflict and continued the rebase."}\n',
+    emitData(
+      '{"summary":"Resolved the conflict and continued the rebase."}\nStill waiting on one more tool check.\n',
     );
-    stderr.write("Still waiting on one more tool check.\n");
-    stdout.end();
-    stderr.end();
-    child.emit("close", 0, null);
+    emitExit({ exitCode: 0 });
 
     const result = await recoveryPromise;
     assert.equal(result.resolved, true);
@@ -241,9 +256,7 @@ test("runMergeRecovery streams Docker stdout and stderr through the log callback
       ),
     );
     assert.ok(
-      loggedLines.includes(
-        "[codex stderr] Still waiting on one more tool check.",
-      ),
+      loggedLines.includes("[codex] Still waiting on one more tool check."),
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
