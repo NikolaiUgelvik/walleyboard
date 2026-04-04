@@ -414,16 +414,32 @@ body {
   min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
+  padding-top: 8px;
   padding-bottom: 8px;
 }
 
-.board-grid {
+.board-scroll-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.board-scroll-inner {
   min-width: 1360px;
+  position: relative;
+}
+
+.board-grid {
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(5, minmax(250px, 1fr));
   gap: 12px;
   min-height: 0;
   align-items: stretch;
+  position: sticky;
+  top: 0;
 }
 
 .board-column {
@@ -434,7 +450,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: calc(100vh - 180px);
+  min-height: 0;
+  height: 100%;
 }
 
 .board-column-header {
@@ -459,11 +476,13 @@ body {
 }
 
 .board-column-stack {
-  display: flex;
-  flex-direction: column;
   gap: 8px;
   flex: 1;
   min-height: 0;
+}
+
+.board-column-content {
+  min-height: 100%;
 }
 
 .board-card {
@@ -962,6 +981,7 @@ body {
 
   .board-column {
     min-height: auto;
+    height: auto;
   }
 
   .project-tile-stack {

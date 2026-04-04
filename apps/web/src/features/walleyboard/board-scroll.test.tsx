@@ -479,6 +479,7 @@ test("board uses a shared vertical scroller while the shell stays fixed", () => 
   assert.match(markup, /\bwalleyboard-layout\b/);
   assert.match(markup, /\bwalleyboard-rail\b/);
   assert.match(markup, /\bwalleyboard-main\b/);
+  assert.equal(countClass(markup, "board-scroll-shell"), 1);
   assert.equal(countClass(markup, "board-column"), boardColumns.length);
   assert.equal(countClass(markup, "board-column-stack"), boardColumns.length);
   assert.equal(countClass(markup, "board-card"), 3);
@@ -498,10 +499,19 @@ test("board uses a shared vertical scroller while the shell stays fixed", () => 
     "display: flex",
     "flex-direction: column",
   ]);
+  assertRuleIncludes(stylesheet, ".board-scroll-shell", [
+    "flex: 1",
+    "min-height: 0",
+  ]);
   assertRuleIncludes(desktopRules, ".board-scroller", [
     "overflow-x: auto",
     "overflow-y: auto",
   ]);
+  assertRuleIncludes(stylesheet, ".board-scroll-inner", [
+    "min-width: 1360px",
+    "position: relative",
+  ]);
+  assertRuleIncludes(stylesheet, ".board-grid", ["position: sticky", "top: 0"]);
   assertRuleIncludes(desktopRules, ".board-grid", [
     "min-height: 0",
     "align-items: stretch",
@@ -554,7 +564,10 @@ test("narrow layout keeps the board region constrained to the shared scroller", 
     "grid-template-columns: 1fr",
     "grid-template-rows: auto minmax(0, 1fr) auto",
   ]);
-  assertRuleIncludes(narrowRules, ".board-column", ["min-height: auto"]);
+  assertRuleIncludes(narrowRules, ".board-column", [
+    "min-height: auto",
+    "height: auto",
+  ]);
   assert.doesNotMatch(
     stylesheet,
     /\.board-column-stack\s*\{[^}]*overflow-y:\s*auto\s*;/,
@@ -1545,7 +1558,7 @@ test("inspector-open layout keeps the shell fixed and leaves board scrolling to 
     assert.equal(
       harness.window.getComputedStyle(boardScroller).overflowY,
       "auto",
-      "Expected the board scroller to own the shared vertical scrolling",
+      "Expected the board scroller to own the vertical scrolling",
     );
 
     const columnStack = harness.mountNode.querySelector(".board-column-stack");
@@ -1613,12 +1626,145 @@ test("narrow inspector-open layout keeps board scrolling on the shared board pan
     assert.equal(
       harness.window.getComputedStyle(boardScroller).overflowY,
       "auto",
-      "Expected the board scroller to own the shared vertical scrolling",
+      "Expected the board scroller to own the vertical scrolling",
     );
     assert.notEqual(
       harness.window.getComputedStyle(columnStack).overflowY,
       "auto",
       "Expected board column stacks to avoid independent vertical scrolling",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    cleanupStylesheet();
+    harness.cleanup();
+  }
+});
+
+test("board scroller preserves its scroll position across rerenders with uneven columns", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      ready: [],
+      in_progress: [],
+      review: [],
+      done: [
+        createTicket({ id: 31, status: "done", title: "Done 1" }),
+        createTicket({ id: 32, status: "done", title: "Done 2" }),
+        createTicket({ id: 33, status: "done", title: "Done 3" }),
+        createTicket({ id: 34, status: "done", title: "Done 4" }),
+        createTicket({ id: 35, status: "done", title: "Done 5" }),
+      ],
+    },
+    mergeTicketMutation: createMutationStub(),
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [createDraft("draft-short", "Single short draft")],
+  });
+  const cleanupStylesheet = installDesktopStylesheet(harness.window.document);
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const boardScroller =
+      harness.mountNode.querySelector<HTMLElement>(".board-scroller");
+    const firstColumnStack = harness.mountNode.querySelector<HTMLElement>(
+      ".board-column-stack",
+    );
+    const firstColumnViewport = firstColumnStack?.querySelector<HTMLElement>(
+      ".mantine-ScrollArea-viewport",
+    );
+
+    assert.ok(boardScroller, "Expected the board scroller to render");
+    assert.ok(firstColumnStack, "Expected the first column stack to render");
+    assert.ok(
+      firstColumnViewport,
+      "Expected the first column viewport to render",
+    );
+
+    Object.defineProperty(boardScroller, "clientHeight", {
+      configurable: true,
+      value: 300,
+    });
+    Object.defineProperty(boardScroller, "scrollHeight", {
+      configurable: true,
+      value: 1440,
+    });
+    Object.defineProperty(boardScroller, "scrollTop", {
+      configurable: true,
+      value: 0,
+      writable: true,
+    });
+    Object.defineProperty(firstColumnViewport, "scrollHeight", {
+      configurable: true,
+      value: 1440,
+    });
+    Object.defineProperty(firstColumnViewport, "scrollTop", {
+      configurable: true,
+      value: 0,
+      writable: true,
+    });
+
+    await act(async () => {
+      boardScroller.scrollTop = 180;
+      boardScroller.dispatchEvent(new harness.window.Event("scroll"));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      boardScroller.scrollTop,
+      180,
+      "Expected rerendering the uneven board to preserve the DOM scroller position",
+    );
+    assert.equal(
+      firstColumnViewport.scrollTop,
+      180,
+      "Expected the first column viewport to stay aligned with the DOM scroller",
     );
   } finally {
     await act(async () => {

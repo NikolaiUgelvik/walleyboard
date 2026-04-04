@@ -6,6 +6,7 @@ import {
   Group,
   Loader,
   Menu,
+  ScrollArea,
   Stack,
   Text,
   TextInput,
@@ -19,6 +20,13 @@ import {
   IconTerminal2,
 } from "@tabler/icons-react";
 import type React from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type {
   ExecutionSession,
   TicketFrontmatter,
@@ -191,6 +199,57 @@ function TicketMenu({
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>
+  );
+}
+
+function BoardColumnScrollArea({
+  children,
+  columnIndex,
+  contentMinHeight,
+  onClick,
+  registerViewport,
+}: {
+  children: React.ReactNode;
+  columnIndex: number;
+  contentMinHeight?: number;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
+  registerViewport: (
+    columnIndex: number,
+    viewport: HTMLDivElement | null,
+  ) => void;
+}) {
+  const handleViewportRef = useCallback(
+    (viewport: HTMLDivElement | null) => {
+      registerViewport(columnIndex, viewport);
+    },
+    [columnIndex, registerViewport],
+  );
+
+  return (
+    <ScrollArea
+      className="board-column-stack"
+      onClick={onClick}
+      type="never"
+      viewportProps={{
+        style: {
+          overflowX: "hidden",
+          overflowY: "hidden",
+        },
+      }}
+      viewportRef={handleViewportRef}
+    >
+      <Stack
+        className="board-column-content"
+        gap="xs"
+        style={
+          contentMinHeight && contentMinHeight > 0
+            ? { minHeight: contentMinHeight }
+            : undefined
+        }
+      >
+        {children}
+      </Stack>
+    </ScrollArea>
   );
 }
 
@@ -368,6 +427,153 @@ export function BoardView({
 }: {
   controller: WalleyBoardController;
 }) {
+  const boardLayoutKey = [
+    controller.visibleDrafts.map((draft) => draft.id).join(","),
+    ...boardColumns.map((column) =>
+      column === "draft"
+        ? ""
+        : controller.groupedTickets[column]
+            .map((ticket) => ticket.id)
+            .join(","),
+    ),
+  ].join("|");
+  const columnViewportRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const boardScrollerRef = useRef<HTMLDivElement | null>(null);
+  const [columnContentMinHeight, setColumnContentMinHeight] = useState(0);
+  const [boardScrollContentHeight, setBoardScrollContentHeight] = useState(0);
+  const [boardViewportHeight, setBoardViewportHeight] = useState(0);
+
+  const syncColumnScrollTop = useCallback((scrollTop: number) => {
+    const viewports = columnViewportRefs.current.filter(
+      (viewport): viewport is HTMLDivElement => viewport !== null,
+    );
+
+    for (const viewport of viewports) {
+      if (Math.abs(viewport.scrollTop - scrollTop) < 1) {
+        continue;
+      }
+
+      viewport.scrollTop = scrollTop;
+    }
+  }, []);
+
+  const updateBoardScrollMetrics = useCallback(() => {
+    const boardScroller = boardScrollerRef.current;
+    if (!boardScroller) {
+      return;
+    }
+
+    const viewports = columnViewportRefs.current.filter(
+      (viewport): viewport is HTMLDivElement => viewport !== null,
+    );
+    const tallestColumnContentHeight = viewports.reduce(
+      (currentMax, viewport) => Math.max(currentMax, viewport.scrollHeight),
+      0,
+    );
+    const maxColumnScrollTop = viewports.reduce(
+      (currentMax, viewport) =>
+        Math.max(currentMax, viewport.scrollHeight - viewport.clientHeight),
+      0,
+    );
+    const scrollerStyles = window.getComputedStyle(boardScroller);
+    const scrollerPaddingTop = Number.parseFloat(scrollerStyles.paddingTop);
+    const scrollerPaddingBottom = Number.parseFloat(
+      scrollerStyles.paddingBottom,
+    );
+    const effectiveScrollerPaddingTop = Number.isFinite(scrollerPaddingTop)
+      ? scrollerPaddingTop
+      : 0;
+    const effectiveScrollerPaddingBottom = Number.isFinite(
+      scrollerPaddingBottom,
+    )
+      ? scrollerPaddingBottom
+      : 0;
+    const scrollerViewportHeight = Math.max(
+      0,
+      boardScroller.clientHeight -
+        effectiveScrollerPaddingTop -
+        effectiveScrollerPaddingBottom,
+    );
+    const nextBoardScrollContentHeight = Math.max(
+      scrollerViewportHeight,
+      scrollerViewportHeight + maxColumnScrollTop,
+    );
+
+    setColumnContentMinHeight((currentHeight) =>
+      currentHeight === tallestColumnContentHeight
+        ? currentHeight
+        : tallestColumnContentHeight,
+    );
+    setBoardScrollContentHeight((currentHeight) =>
+      currentHeight === nextBoardScrollContentHeight
+        ? currentHeight
+        : nextBoardScrollContentHeight,
+    );
+    setBoardViewportHeight((currentHeight) =>
+      currentHeight === scrollerViewportHeight
+        ? currentHeight
+        : scrollerViewportHeight,
+    );
+
+    const maxScrollTop = Math.max(0, maxColumnScrollTop);
+    const clampedScrollTop = Math.min(boardScroller.scrollTop, maxScrollTop);
+    if (boardScroller.scrollTop !== clampedScrollTop) {
+      boardScroller.scrollTop = clampedScrollTop;
+    }
+
+    syncColumnScrollTop(clampedScrollTop);
+  }, [syncColumnScrollTop]);
+
+  useLayoutEffect(() => {
+    void boardLayoutKey;
+    updateBoardScrollMetrics();
+  }, [boardLayoutKey, updateBoardScrollMetrics]);
+
+  useEffect(() => {
+    void boardLayoutKey;
+    const boardScroller = boardScrollerRef.current;
+    if (!boardScroller || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateBoardScrollMetrics();
+    });
+
+    resizeObserver.observe(boardScroller);
+    for (const viewport of columnViewportRefs.current) {
+      if (!viewport) {
+        continue;
+      }
+
+      resizeObserver.observe(viewport);
+      const content = viewport.firstElementChild;
+      if (content instanceof HTMLElement) {
+        resizeObserver.observe(content);
+      }
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [boardLayoutKey, updateBoardScrollMetrics]);
+
+  const registerColumnViewport = useCallback(
+    (columnIndex: number, viewport: HTMLDivElement | null) => {
+      columnViewportRefs.current[columnIndex] = viewport;
+    },
+    [],
+  );
+
+  const handleBoardScrollerScroll = useCallback<
+    React.UIEventHandler<HTMLDivElement>
+  >(
+    (event) => {
+      syncColumnScrollTop(event.currentTarget.scrollTop);
+    },
+    [syncColumnScrollTop],
+  );
+
   return (
     <Box className="walleyboard-main">
       <Stack className="workbench-shell" gap="md">
@@ -483,131 +689,176 @@ export function BoardView({
             </Text>
           </SectionCard>
         ) : (
-          <Box className="board-scroller">
-            <Box className="board-grid">
-              {boardColumns.map((column) => {
-                const meta = boardColumnMeta[column];
-                const columnCount =
-                  column === "draft"
-                    ? controller.visibleDrafts.length
-                    : controller.groupedTickets[column].length;
+          <Box className="board-scroll-shell">
+            <Box
+              className="board-scroller"
+              ref={boardScrollerRef}
+              onScroll={handleBoardScrollerScroll}
+            >
+              <Box
+                className="board-scroll-inner"
+                style={{
+                  height: Math.max(
+                    boardScrollContentHeight,
+                    boardViewportHeight,
+                  ),
+                }}
+              >
+                <Box
+                  className="board-grid"
+                  style={
+                    boardViewportHeight > 0
+                      ? { height: boardViewportHeight }
+                      : undefined
+                  }
+                >
+                  {boardColumns.map((column, columnIndex) => {
+                    const meta = boardColumnMeta[column];
+                    const columnCount =
+                      column === "draft"
+                        ? controller.visibleDrafts.length
+                        : controller.groupedTickets[column].length;
 
-                return (
-                  <Box key={column} className="board-column">
-                    <Box className="board-column-header">
-                      <Box className="board-column-title">
-                        <Box
-                          className="board-column-dot"
-                          style={{ background: meta.accent }}
-                        />
-                        <Text fw={700}>{meta.label}</Text>
-                      </Box>
-                      <Group gap="xs">
-                        <Badge variant="outline">{columnCount}</Badge>
-                        {column === "draft" ? (
-                          <Menu withinPortal position="bottom-end">
-                            <Menu.Target>
-                              <ActionIcon
-                                aria-label="Draft column actions"
-                                color="gray"
-                                variant="subtle"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                ...
-                              </ActionIcon>
-                            </Menu.Target>
-                            <Menu.Dropdown
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <Menu.Item
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  controller.openNewDraft();
-                                }}
-                              >
-                                New
-                              </Menu.Item>
-                            </Menu.Dropdown>
-                          </Menu>
-                        ) : null}
-                        {column === "done" ? (
-                          <Menu withinPortal position="bottom-end">
-                            <Menu.Target>
-                              <ActionIcon
-                                aria-label="Done column actions"
-                                color="gray"
-                                variant="subtle"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                ...
-                              </ActionIcon>
-                            </Menu.Target>
-                            <Menu.Dropdown
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <Menu.Item
-                                disabled={
-                                  controller.doneColumnTickets.length === 0 ||
-                                  controller.archiveDoneTicketsMutation
-                                    .isPending
-                                }
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  controller.archiveDoneTickets(
-                                    controller.doneColumnTickets,
-                                  );
-                                }}
-                              >
-                                Archive all
-                              </Menu.Item>
-                            </Menu.Dropdown>
-                          </Menu>
-                        ) : null}
-                      </Group>
-                    </Box>
-
-                    <Box
-                      className="board-column-stack"
-                      onClick={controller.hideInspector}
-                    >
-                      {column === "draft" ? (
-                        controller.visibleDrafts.length === 0 ? (
-                          <Box className="board-empty">{meta.empty}</Box>
-                        ) : (
-                          controller.visibleDrafts.map((draft) => {
-                            const repository =
-                              controller.repositories.find(
-                                (item) =>
-                                  item.id ===
-                                  (draft.confirmed_repo_id ??
-                                    draft.proposed_repo_id),
-                              ) ?? controller.selectedRepository;
-                            const isSelected =
-                              draft.id === controller.selectedDraftId;
-
-                            return (
-                              <Box
-                                key={draft.id}
-                                className={`board-card board-card-clickable${isSelected ? " board-card-selected" : ""}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  controller.openDraft(draft.id);
-                                }}
-                              >
-                                <Stack gap="xs">
-                                  <Group
-                                    justify="space-between"
-                                    align="flex-start"
+                    return (
+                      <Box key={column} className="board-column">
+                        <Box className="board-column-header">
+                          <Box className="board-column-title">
+                            <Box
+                              className="board-column-dot"
+                              style={{ background: meta.accent }}
+                            />
+                            <Text fw={700}>{meta.label}</Text>
+                          </Box>
+                          <Group gap="xs">
+                            <Badge variant="outline">{columnCount}</Badge>
+                            {column === "draft" ? (
+                              <Menu withinPortal position="bottom-end">
+                                <Menu.Target>
+                                  <ActionIcon
+                                    aria-label="Draft column actions"
+                                    color="gray"
+                                    variant="subtle"
+                                    onClick={(event) => event.stopPropagation()}
                                   >
-                                    <Box
-                                      style={{
-                                        fontWeight: 700,
-                                        lineHeight: 1.35,
-                                      }}
-                                    >
+                                    ...
+                                  </ActionIcon>
+                                </Menu.Target>
+                                <Menu.Dropdown
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <Menu.Item
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      controller.openNewDraft();
+                                    }}
+                                  >
+                                    New
+                                  </Menu.Item>
+                                </Menu.Dropdown>
+                              </Menu>
+                            ) : null}
+                            {column === "done" ? (
+                              <Menu withinPortal position="bottom-end">
+                                <Menu.Target>
+                                  <ActionIcon
+                                    aria-label="Done column actions"
+                                    color="gray"
+                                    variant="subtle"
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    ...
+                                  </ActionIcon>
+                                </Menu.Target>
+                                <Menu.Dropdown
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <Menu.Item
+                                    disabled={
+                                      controller.doneColumnTickets.length ===
+                                        0 ||
+                                      controller.archiveDoneTicketsMutation
+                                        .isPending
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      controller.archiveDoneTickets(
+                                        controller.doneColumnTickets,
+                                      );
+                                    }}
+                                  >
+                                    Archive all
+                                  </Menu.Item>
+                                </Menu.Dropdown>
+                              </Menu>
+                            ) : null}
+                          </Group>
+                        </Box>
+
+                        <BoardColumnScrollArea
+                          columnIndex={columnIndex}
+                          contentMinHeight={columnContentMinHeight}
+                          onClick={controller.hideInspector}
+                          registerViewport={registerColumnViewport}
+                        >
+                          {column === "draft" ? (
+                            controller.visibleDrafts.length === 0 ? (
+                              <Box className="board-empty">{meta.empty}</Box>
+                            ) : (
+                              controller.visibleDrafts.map((draft) => {
+                                const repository =
+                                  controller.repositories.find(
+                                    (item) =>
+                                      item.id ===
+                                      (draft.confirmed_repo_id ??
+                                        draft.proposed_repo_id),
+                                  ) ?? controller.selectedRepository;
+                                const isSelected =
+                                  draft.id === controller.selectedDraftId;
+
+                                return (
+                                  <Box
+                                    key={draft.id}
+                                    className={`board-card board-card-clickable${isSelected ? " board-card-selected" : ""}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      controller.openDraft(draft.id);
+                                    }}
+                                  >
+                                    <Stack gap="xs">
+                                      <Group
+                                        justify="space-between"
+                                        align="flex-start"
+                                      >
+                                        <Box
+                                          style={{
+                                            fontWeight: 700,
+                                            lineHeight: 1.35,
+                                          }}
+                                        >
+                                          <MarkdownContent
+                                            content={draft.title_draft}
+                                            inline
+                                            onTicketReferenceNavigate={
+                                              controller.navigateToTicketReference
+                                            }
+                                            ticketReferences={
+                                              draft.ticket_references ?? []
+                                            }
+                                          />
+                                        </Box>
+                                        <Badge variant="light" color="gray">
+                                          {formatDraftStatusLabel({
+                                            isRefining:
+                                              controller.isDraftRefinementActive(
+                                                draft.id,
+                                              ),
+                                            wizardStatus: draft.wizard_status,
+                                          })}
+                                        </Badge>
+                                      </Group>
                                       <MarkdownContent
-                                        content={draft.title_draft}
-                                        inline
+                                        className="markdown-muted markdown-small"
+                                        content={draft.description_draft}
                                         onTicketReferenceNavigate={
                                           controller.navigateToTicketReference
                                         }
@@ -615,480 +866,471 @@ export function BoardView({
                                           draft.ticket_references ?? []
                                         }
                                       />
-                                    </Box>
-                                    <Badge variant="light" color="gray">
-                                      {formatDraftStatusLabel({
-                                        isRefining:
-                                          controller.isDraftRefinementActive(
-                                            draft.id,
-                                          ),
-                                        wizardStatus: draft.wizard_status,
-                                      })}
-                                    </Badge>
-                                  </Group>
-                                  <MarkdownContent
-                                    className="markdown-muted markdown-small"
-                                    content={draft.description_draft}
-                                    onTicketReferenceNavigate={
-                                      controller.navigateToTicketReference
-                                    }
-                                    ticketReferences={
-                                      draft.ticket_references ?? []
-                                    }
-                                  />
-                                  <Text className="board-card-meta">
-                                    Repository:{" "}
-                                    {repository?.name ?? "unassigned"}
-                                  </Text>
-                                  <Text className="board-card-meta">
-                                    {draft.proposed_acceptance_criteria.length >
-                                    0
-                                      ? `${draft.proposed_acceptance_criteria.length} acceptance criteria ready`
-                                      : "Run refinement to generate acceptance criteria"}
-                                  </Text>
-                                </Stack>
-                              </Box>
-                            );
-                          })
-                        )
-                      ) : controller.groupedTickets[column].length === 0 ? (
-                        <Box className="board-empty">{meta.empty}</Box>
-                      ) : (
-                        controller.groupedTickets[column].map((ticket) => {
-                          const ticketSession =
-                            ticket.session_id !== null
-                              ? (controller.sessionById.get(
-                                  ticket.session_id,
-                                ) ?? null)
-                              : null;
-                          const isSelected =
-                            ticket.session_id !== null &&
-                            ticket.session_id === controller.selectedSessionId;
-                          const showDeleteError =
-                            controller.deleteTicketMutation.isError &&
-                            controller.deleteTicketMutation.variables
-                              ?.ticketId === ticket.id;
-                          const showArchiveError =
-                            controller.archiveTicketMutation.isError &&
-                            controller.archiveTicketMutation.variables
-                              ?.ticketId === ticket.id;
-                          const showResumeError =
-                            controller.resumeTicketMutation.isError &&
-                            controller.resumeTicketMutation.variables
-                              ?.ticketId === ticket.id;
-                          const showRestartError =
-                            controller.restartTicketMutation.isError &&
-                            controller.restartTicketMutation.variables
-                              ?.ticketId === ticket.id;
-                          const showStopError =
-                            controller.stopTicketMutation.isError &&
-                            controller.stopTicketMutation.variables
-                              ?.ticketId === ticket.id;
-                          const showEditError =
-                            controller.editReadyTicketMutation.isError &&
-                            controller.editReadyTicketMutation.variables?.ticket
-                              .id === ticket.id;
-                          const showMergeError =
-                            controller.mergeTicketMutation.isError &&
-                            controller.mergeTicketMutation.variables ===
-                              ticket.id;
-                          const showCreatePrError =
-                            controller.createPullRequestMutation.isError &&
-                            controller.createPullRequestMutation.variables ===
-                              ticket.id;
-                          const showStartPlanError =
-                            controller.startTicketMutation.isError &&
-                            controller.startTicketMutation.variables
-                              ?.ticketId === ticket.id &&
-                            controller.startTicketMutation.variables
-                              .planningEnabled;
-                          const showStartNowError =
-                            controller.startTicketMutation.isError &&
-                            controller.startTicketMutation.variables
-                              ?.ticketId === ticket.id &&
-                            !controller.startTicketMutation.variables
-                              .planningEnabled;
-                          const aiReviewActive =
-                            controller.ticketAiReviewActiveById.get(
-                              ticket.id,
-                            ) ??
-                            (controller.startAgentReviewMutation.isPending &&
-                              controller.startAgentReviewMutation.variables ===
-                                ticket.id);
-                          const diffLineSummary =
-                            ticket.status === "in_progress" ||
-                            ticket.status === "review"
-                              ? (controller.ticketDiffLineSummaryByTicketId?.get(
+                                      <Text className="board-card-meta">
+                                        Repository:{" "}
+                                        {repository?.name ?? "unassigned"}
+                                      </Text>
+                                      <Text className="board-card-meta">
+                                        {draft.proposed_acceptance_criteria
+                                          .length > 0
+                                          ? `${draft.proposed_acceptance_criteria.length} acceptance criteria ready`
+                                          : "Run refinement to generate acceptance criteria"}
+                                      </Text>
+                                    </Stack>
+                                  </Box>
+                                );
+                              })
+                            )
+                          ) : controller.groupedTickets[column].length === 0 ? (
+                            <Box className="board-empty">{meta.empty}</Box>
+                          ) : (
+                            controller.groupedTickets[column].map((ticket) => {
+                              const ticketSession =
+                                ticket.session_id !== null
+                                  ? (controller.sessionById.get(
+                                      ticket.session_id,
+                                    ) ?? null)
+                                  : null;
+                              const isSelected =
+                                ticket.session_id !== null &&
+                                ticket.session_id ===
+                                  controller.selectedSessionId;
+                              const showDeleteError =
+                                controller.deleteTicketMutation.isError &&
+                                controller.deleteTicketMutation.variables
+                                  ?.ticketId === ticket.id;
+                              const showArchiveError =
+                                controller.archiveTicketMutation.isError &&
+                                controller.archiveTicketMutation.variables
+                                  ?.ticketId === ticket.id;
+                              const showResumeError =
+                                controller.resumeTicketMutation.isError &&
+                                controller.resumeTicketMutation.variables
+                                  ?.ticketId === ticket.id;
+                              const showRestartError =
+                                controller.restartTicketMutation.isError &&
+                                controller.restartTicketMutation.variables
+                                  ?.ticketId === ticket.id;
+                              const showStopError =
+                                controller.stopTicketMutation.isError &&
+                                controller.stopTicketMutation.variables
+                                  ?.ticketId === ticket.id;
+                              const showEditError =
+                                controller.editReadyTicketMutation.isError &&
+                                controller.editReadyTicketMutation.variables
+                                  ?.ticket.id === ticket.id;
+                              const showMergeError =
+                                controller.mergeTicketMutation.isError &&
+                                controller.mergeTicketMutation.variables ===
+                                  ticket.id;
+                              const showCreatePrError =
+                                controller.createPullRequestMutation.isError &&
+                                controller.createPullRequestMutation
+                                  .variables === ticket.id;
+                              const showStartPlanError =
+                                controller.startTicketMutation.isError &&
+                                controller.startTicketMutation.variables
+                                  ?.ticketId === ticket.id &&
+                                controller.startTicketMutation.variables
+                                  .planningEnabled;
+                              const showStartNowError =
+                                controller.startTicketMutation.isError &&
+                                controller.startTicketMutation.variables
+                                  ?.ticketId === ticket.id &&
+                                !controller.startTicketMutation.variables
+                                  .planningEnabled;
+                              const aiReviewActive =
+                                controller.ticketAiReviewActiveById.get(
                                   ticket.id,
-                                ) ?? null)
-                              : null;
+                                ) ??
+                                (controller.startAgentReviewMutation
+                                  .isPending &&
+                                  controller.startAgentReviewMutation
+                                    .variables === ticket.id);
+                              const diffLineSummary =
+                                ticket.status === "in_progress" ||
+                                ticket.status === "review"
+                                  ? (controller.ticketDiffLineSummaryByTicketId?.get(
+                                      ticket.id,
+                                    ) ?? null)
+                                  : null;
 
-                          return (
-                            <Box
-                              key={ticket.id}
-                              id={`ticket-${ticket.id}`}
-                              tabIndex={-1}
-                              className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                controller.openTicketSession(ticket);
-                              }}
-                            >
-                              <Stack gap="xs">
-                                <Group
-                                  justify="space-between"
-                                  align="flex-start"
+                              return (
+                                <Box
+                                  key={ticket.id}
+                                  id={`ticket-${ticket.id}`}
+                                  tabIndex={-1}
+                                  className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    controller.openTicketSession(ticket);
+                                  }}
                                 >
-                                  <Stack gap={2}>
-                                    <Box
-                                      style={{
-                                        fontWeight: 700,
-                                        lineHeight: 1.35,
-                                      }}
+                                  <Stack gap="xs">
+                                    <Group
+                                      justify="space-between"
+                                      align="flex-start"
                                     >
-                                      <Text component="span" inherit>
-                                        #{ticket.id}{" "}
-                                      </Text>
-                                      <MarkdownContent
-                                        content={ticket.title}
-                                        inline
-                                        onTicketReferenceNavigate={
-                                          controller.navigateToTicketReference
-                                        }
-                                        ticketReferences={
-                                          ticket.ticket_references ?? []
-                                        }
-                                      />
-                                    </Box>
-                                    <Text className="board-card-meta">
-                                      {ticket.ticket_type} •{" "}
-                                      {ticket.target_branch}
-                                    </Text>
-                                  </Stack>
-                                  <Group gap={6} align="center">
-                                    {aiReviewActive ? (
-                                      <Badge variant="light" color="violet">
-                                        AI review in progress
-                                      </Badge>
-                                    ) : null}
-                                    <Badge
-                                      variant="light"
-                                      color={ticketStatusColor(ticket.status)}
-                                    >
-                                      {humanizeTicketStatus(ticket.status)}
-                                    </Badge>
-                                    <TicketMenu
-                                      controller={controller}
-                                      project={controller.selectedProject}
-                                      ticket={ticket}
-                                      ticketSession={ticketSession}
-                                    />
-                                  </Group>
-                                </Group>
-                                {diffLineSummary ? (
-                                  <Group gap={6} wrap="wrap">
-                                    <Badge variant="outline" color="gray">
-                                      {diffLineSummary.files}{" "}
-                                      {diffLineSummary.files === 1
-                                        ? "file changed"
-                                        : "files changed"}
-                                    </Badge>
-                                    <Badge variant="outline" color="green">
-                                      +{diffLineSummary.additions}
-                                    </Badge>
-                                    <Badge variant="outline" color="red">
-                                      -{diffLineSummary.deletions}
-                                    </Badge>
-                                  </Group>
-                                ) : null}
-                                <MarkdownContent
-                                  className="markdown-muted markdown-small"
-                                  content={getBoardTicketDescriptionPreview(
-                                    ticket.description,
-                                  )}
-                                  onTicketReferenceNavigate={
-                                    controller.navigateToTicketReference
-                                  }
-                                  ticketReferences={
-                                    ticket.ticket_references ?? []
-                                  }
-                                />
-                                {ticket.linked_pr ? (
-                                  <Group gap={8} wrap="wrap">
-                                    <Badge
-                                      variant="outline"
-                                      color={
-                                        ticket.linked_pr.state === "merged"
-                                          ? "green"
-                                          : ticket.linked_pr.review_status ===
-                                              "changes_requested"
-                                            ? "red"
-                                            : ticket.linked_pr.review_status ===
-                                                "approved"
-                                              ? "green"
-                                              : "blue"
-                                      }
-                                    >
-                                      PR #{ticket.linked_pr.number}
-                                    </Badge>
-                                    <Text size="xs" c="dimmed">
-                                      {describePullRequestStatus(
-                                        ticket.linked_pr,
-                                      )}
-                                    </Text>
-                                    <Text
-                                      component="a"
-                                      href={ticket.linked_pr.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      size="xs"
-                                      c="blue"
-                                      onClick={(event) =>
-                                        event.stopPropagation()
-                                      }
-                                    >
-                                      Open PR
-                                    </Text>
-                                  </Group>
-                                ) : null}
-                                {ticketSession ? (
-                                  <Group gap={8}>
-                                    <Badge
-                                      variant="outline"
-                                      color={sessionStatusColor(
-                                        ticketSession.status,
-                                      )}
-                                    >
-                                      {humanizeSessionStatus(
-                                        ticketSession.status,
-                                      )}
-                                    </Badge>
-                                    {ticketSession.status === "queued" ? (
-                                      <Text size="xs" c="dimmed">
-                                        Waiting for a running slot
-                                      </Text>
-                                    ) : null}
-                                  </Group>
-                                ) : null}
-                                <TicketWorkspaceActions
-                                  controller={controller}
-                                  ticket={ticket}
-                                />
-
-                                {showDeleteError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.deleteTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showArchiveError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.archiveTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showResumeError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.resumeTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showRestartError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.restartTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showStopError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.stopTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showEditError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.editReadyTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showMergeError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.mergeTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showCreatePrError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.createPullRequestMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-                                {showStartPlanError || showStartNowError ? (
-                                  <Text size="sm" c="red">
-                                    {
-                                      controller.startTicketMutation.error
-                                        ?.message
-                                    }
-                                  </Text>
-                                ) : null}
-
-                                {column === "ready" ? (
-                                  <Group
-                                    justify="flex-end"
-                                    align="flex-end"
-                                    gap="xs"
-                                  >
-                                    <Group gap="xs">
-                                      <Button
-                                        variant="light"
-                                        size="xs"
-                                        loading={
-                                          controller.startTicketMutation
-                                            .isPending &&
-                                          controller.startTicketMutation
-                                            .variables?.ticketId ===
-                                            ticket.id &&
-                                          controller.startTicketMutation
-                                            .variables.planningEnabled
-                                        }
-                                        onClick={() =>
-                                          controller.startTicketMutation.mutate(
-                                            {
-                                              ticketId: ticket.id,
-                                              planningEnabled: true,
-                                            },
-                                          )
-                                        }
-                                      >
-                                        Start with Plan
-                                      </Button>
-                                      <Button
-                                        size="xs"
-                                        loading={
-                                          controller.startTicketMutation
-                                            .isPending &&
-                                          controller.startTicketMutation
-                                            .variables?.ticketId ===
-                                            ticket.id &&
-                                          !controller.startTicketMutation
-                                            .variables.planningEnabled
-                                        }
-                                        onClick={() =>
-                                          controller.startTicketMutation.mutate(
-                                            {
-                                              ticketId: ticket.id,
-                                              planningEnabled: false,
-                                            },
-                                          )
-                                        }
-                                      >
-                                        Start Now
-                                      </Button>
-                                    </Group>
-                                  </Group>
-                                ) : column === "review" ? (
-                                  (() => {
-                                    const reviewActions =
-                                      resolveReviewCardActions(
-                                        controller.selectedProject,
-                                        ticket,
-                                      );
-                                    const primaryAction = reviewActions.primary;
-                                    if (!primaryAction) {
-                                      return null;
-                                    }
-
-                                    return (
-                                      <Group justify="flex-end" gap="xs">
-                                        <Button
-                                          size="xs"
-                                          variant={
-                                            primaryAction.kind === "open_pr"
-                                              ? "light"
-                                              : "filled"
-                                          }
-                                          loading={
-                                            primaryAction.kind === "merge"
-                                              ? controller.mergeTicketMutation
-                                                  .isPending &&
-                                                controller.mergeTicketMutation
-                                                  .variables === ticket.id
-                                              : primaryAction.kind ===
-                                                  "create_pr"
-                                                ? controller
-                                                    .createPullRequestMutation
-                                                    .isPending &&
-                                                  controller
-                                                    .createPullRequestMutation
-                                                    .variables === ticket.id
-                                                : false
-                                          }
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            if (
-                                              primaryAction.kind === "merge"
-                                            ) {
-                                              controller.mergeTicketMutation.mutate(
-                                                ticket.id,
-                                              );
-                                              return;
-                                            }
-
-                                            if (
-                                              primaryAction.kind === "create_pr"
-                                            ) {
-                                              controller.createPullRequestMutation.mutate(
-                                                ticket.id,
-                                              );
-                                              return;
-                                            }
-
-                                            if (
-                                              primaryAction.kind ===
-                                                "open_pr" &&
-                                              hasActiveLinkedPullRequest(
-                                                ticket.linked_pr,
-                                              )
-                                            ) {
-                                              window.open(
-                                                ticket.linked_pr.url,
-                                                "_blank",
-                                                "noopener,noreferrer",
-                                              );
-                                            }
+                                      <Stack gap={2}>
+                                        <Box
+                                          style={{
+                                            fontWeight: 700,
+                                            lineHeight: 1.35,
                                           }}
                                         >
-                                          {primaryAction.label}
-                                        </Button>
+                                          <Text component="span" inherit>
+                                            #{ticket.id}{" "}
+                                          </Text>
+                                          <MarkdownContent
+                                            content={ticket.title}
+                                            inline
+                                            onTicketReferenceNavigate={
+                                              controller.navigateToTicketReference
+                                            }
+                                            ticketReferences={
+                                              ticket.ticket_references ?? []
+                                            }
+                                          />
+                                        </Box>
+                                        <Text className="board-card-meta">
+                                          {ticket.ticket_type} •{" "}
+                                          {ticket.target_branch}
+                                        </Text>
+                                      </Stack>
+                                      <Group gap={6} align="center">
+                                        {aiReviewActive ? (
+                                          <Badge variant="light" color="violet">
+                                            AI review in progress
+                                          </Badge>
+                                        ) : null}
+                                        <Badge
+                                          variant="light"
+                                          color={ticketStatusColor(
+                                            ticket.status,
+                                          )}
+                                        >
+                                          {humanizeTicketStatus(ticket.status)}
+                                        </Badge>
+                                        <TicketMenu
+                                          controller={controller}
+                                          project={controller.selectedProject}
+                                          ticket={ticket}
+                                          ticketSession={ticketSession}
+                                        />
                                       </Group>
-                                    );
-                                  })()
-                                ) : null}
-                              </Stack>
-                            </Box>
-                          );
-                        })
-                      )}
-                    </Box>
-                  </Box>
-                );
-              })}
+                                    </Group>
+                                    {diffLineSummary ? (
+                                      <Group gap={6} wrap="wrap">
+                                        <Badge variant="outline" color="gray">
+                                          {diffLineSummary.files}{" "}
+                                          {diffLineSummary.files === 1
+                                            ? "file changed"
+                                            : "files changed"}
+                                        </Badge>
+                                        <Badge variant="outline" color="green">
+                                          +{diffLineSummary.additions}
+                                        </Badge>
+                                        <Badge variant="outline" color="red">
+                                          -{diffLineSummary.deletions}
+                                        </Badge>
+                                      </Group>
+                                    ) : null}
+                                    <MarkdownContent
+                                      className="markdown-muted markdown-small"
+                                      content={getBoardTicketDescriptionPreview(
+                                        ticket.description,
+                                      )}
+                                      onTicketReferenceNavigate={
+                                        controller.navigateToTicketReference
+                                      }
+                                      ticketReferences={
+                                        ticket.ticket_references ?? []
+                                      }
+                                    />
+                                    {ticket.linked_pr ? (
+                                      <Group gap={8} wrap="wrap">
+                                        <Badge
+                                          variant="outline"
+                                          color={
+                                            ticket.linked_pr.state === "merged"
+                                              ? "green"
+                                              : ticket.linked_pr
+                                                    .review_status ===
+                                                  "changes_requested"
+                                                ? "red"
+                                                : ticket.linked_pr
+                                                      .review_status ===
+                                                    "approved"
+                                                  ? "green"
+                                                  : "blue"
+                                          }
+                                        >
+                                          PR #{ticket.linked_pr.number}
+                                        </Badge>
+                                        <Text size="xs" c="dimmed">
+                                          {describePullRequestStatus(
+                                            ticket.linked_pr,
+                                          )}
+                                        </Text>
+                                        <Text
+                                          component="a"
+                                          href={ticket.linked_pr.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          size="xs"
+                                          c="blue"
+                                          onClick={(event) =>
+                                            event.stopPropagation()
+                                          }
+                                        >
+                                          Open PR
+                                        </Text>
+                                      </Group>
+                                    ) : null}
+                                    {ticketSession ? (
+                                      <Group gap={8}>
+                                        <Badge
+                                          variant="outline"
+                                          color={sessionStatusColor(
+                                            ticketSession.status,
+                                          )}
+                                        >
+                                          {humanizeSessionStatus(
+                                            ticketSession.status,
+                                          )}
+                                        </Badge>
+                                        {ticketSession.status === "queued" ? (
+                                          <Text size="xs" c="dimmed">
+                                            Waiting for a running slot
+                                          </Text>
+                                        ) : null}
+                                      </Group>
+                                    ) : null}
+                                    <TicketWorkspaceActions
+                                      controller={controller}
+                                      ticket={ticket}
+                                    />
+
+                                    {showDeleteError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.deleteTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showArchiveError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.archiveTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showResumeError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.resumeTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showRestartError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.restartTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showStopError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.stopTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showEditError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.editReadyTicketMutation
+                                            .error?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showMergeError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.mergeTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showCreatePrError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.createPullRequestMutation
+                                            .error?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+                                    {showStartPlanError || showStartNowError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.startTicketMutation.error
+                                            ?.message
+                                        }
+                                      </Text>
+                                    ) : null}
+
+                                    {column === "ready" ? (
+                                      <Group
+                                        justify="flex-end"
+                                        align="flex-end"
+                                        gap="xs"
+                                      >
+                                        <Group gap="xs">
+                                          <Button
+                                            variant="light"
+                                            size="xs"
+                                            loading={
+                                              controller.startTicketMutation
+                                                .isPending &&
+                                              controller.startTicketMutation
+                                                .variables?.ticketId ===
+                                                ticket.id &&
+                                              controller.startTicketMutation
+                                                .variables.planningEnabled
+                                            }
+                                            onClick={() =>
+                                              controller.startTicketMutation.mutate(
+                                                {
+                                                  ticketId: ticket.id,
+                                                  planningEnabled: true,
+                                                },
+                                              )
+                                            }
+                                          >
+                                            Start with Plan
+                                          </Button>
+                                          <Button
+                                            size="xs"
+                                            loading={
+                                              controller.startTicketMutation
+                                                .isPending &&
+                                              controller.startTicketMutation
+                                                .variables?.ticketId ===
+                                                ticket.id &&
+                                              !controller.startTicketMutation
+                                                .variables.planningEnabled
+                                            }
+                                            onClick={() =>
+                                              controller.startTicketMutation.mutate(
+                                                {
+                                                  ticketId: ticket.id,
+                                                  planningEnabled: false,
+                                                },
+                                              )
+                                            }
+                                          >
+                                            Start Now
+                                          </Button>
+                                        </Group>
+                                      </Group>
+                                    ) : column === "review" ? (
+                                      (() => {
+                                        const reviewActions =
+                                          resolveReviewCardActions(
+                                            controller.selectedProject,
+                                            ticket,
+                                          );
+                                        const primaryAction =
+                                          reviewActions.primary;
+                                        if (!primaryAction) {
+                                          return null;
+                                        }
+
+                                        return (
+                                          <Group justify="flex-end" gap="xs">
+                                            <Button
+                                              size="xs"
+                                              variant={
+                                                primaryAction.kind === "open_pr"
+                                                  ? "light"
+                                                  : "filled"
+                                              }
+                                              loading={
+                                                primaryAction.kind === "merge"
+                                                  ? controller
+                                                      .mergeTicketMutation
+                                                      .isPending &&
+                                                    controller
+                                                      .mergeTicketMutation
+                                                      .variables === ticket.id
+                                                  : primaryAction.kind ===
+                                                      "create_pr"
+                                                    ? controller
+                                                        .createPullRequestMutation
+                                                        .isPending &&
+                                                      controller
+                                                        .createPullRequestMutation
+                                                        .variables === ticket.id
+                                                    : false
+                                              }
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                if (
+                                                  primaryAction.kind === "merge"
+                                                ) {
+                                                  controller.mergeTicketMutation.mutate(
+                                                    ticket.id,
+                                                  );
+                                                  return;
+                                                }
+
+                                                if (
+                                                  primaryAction.kind ===
+                                                  "create_pr"
+                                                ) {
+                                                  controller.createPullRequestMutation.mutate(
+                                                    ticket.id,
+                                                  );
+                                                  return;
+                                                }
+
+                                                if (
+                                                  primaryAction.kind ===
+                                                    "open_pr" &&
+                                                  hasActiveLinkedPullRequest(
+                                                    ticket.linked_pr,
+                                                  )
+                                                ) {
+                                                  window.open(
+                                                    ticket.linked_pr.url,
+                                                    "_blank",
+                                                    "noopener,noreferrer",
+                                                  );
+                                                }
+                                              }}
+                                            >
+                                              {primaryAction.label}
+                                            </Button>
+                                          </Group>
+                                        );
+                                      })()
+                                    ) : null}
+                                  </Stack>
+                                </Box>
+                              );
+                            })
+                          )}
+                        </BoardColumnScrollArea>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
             </Box>
           </Box>
         )}
