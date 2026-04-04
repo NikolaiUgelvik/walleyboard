@@ -9,8 +9,6 @@ import type {
 import { apiBaseUrl } from "../../lib/api-base-url.js";
 import type { DiffLayout } from "./shared-types.js";
 
-export const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
-
 const lastOpenProjectStorageKey = "walleyboard:last-open-project-id";
 export const diffLayoutStorageKey = "walleyboard.ticket-workspace.diff-layout";
 const inboxReadStateStorageKey = "walleyboard:inbox-read-state";

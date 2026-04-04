@@ -102,7 +102,6 @@ export function useTicketAiReviewStatus(
         fetchOptionalJson<ReviewRunResponse>(
           `/tickets/${ticket.id}/review-run`,
         ),
-      refetchInterval: 2_000,
       retry: false,
     })),
   });

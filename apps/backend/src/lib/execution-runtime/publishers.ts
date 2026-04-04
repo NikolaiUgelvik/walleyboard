@@ -1,6 +1,7 @@
 import type {
   DraftTicketState,
   ExecutionSession,
+  ReviewRun,
   SessionResponse,
   StructuredEvent,
   TicketFrontmatter,
@@ -87,6 +88,21 @@ export function publishTicketUpdated(
   eventHub.publish(
     makeProtocolEvent("ticket.updated", "ticket", String(ticket.id), {
       ticket,
+    }),
+  );
+}
+
+export function publishReviewRunUpdated(
+  eventHub: EventHub,
+  reviewRun: ReviewRun | undefined,
+): void {
+  if (!reviewRun) {
+    return;
+  }
+
+  eventHub.publish(
+    makeProtocolEvent("review_run.updated", "review_run", reviewRun.id, {
+      review_run: reviewRun,
     }),
   );
 }

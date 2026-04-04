@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 
-import { apiBaseUrl } from "../lib/api-base-url.js";
+import { connectWalleyboardSocket } from "../lib/socket-io.js";
 import {
   buildTicketWorkspaceTerminalOptions,
   resolveTerminalTheme,
@@ -21,11 +21,6 @@ type TicketWorkspaceTerminalProps = {
   surfaceLabel: "ticket" | "repository";
   worktreePath: string | null;
 };
-
-function resolveTerminalSocketUrl(socketPath: string): string {
-  const base = apiBaseUrl.replace(/^http/, "ws");
-  return `${base}${socketPath}`;
-}
 
 export function TicketWorkspaceTerminal({
   socketPath,
@@ -57,16 +52,21 @@ export function TicketWorkspaceTerminal({
       buildTicketWorkspaceTerminalOptions(terminalThemeRef.current),
     );
     const fitAddon = new FitAddon();
-    const socket = new WebSocket(resolveTerminalSocketUrl(socketPath));
+    const socket = connectWalleyboardSocket("/terminals", {
+      auth: {
+        socketPath,
+      },
+    });
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
-      if (socket.readyState !== WebSocket.OPEN) {
+      if (!socket.connected) {
         return;
       }
 
-      socket.send(
+      socket.emit(
+        "terminal.message",
         JSON.stringify({
           type: "terminal.resize",
           cols: terminal.cols,
@@ -81,7 +81,8 @@ export function TicketWorkspaceTerminal({
     resizeObserver.observe(container);
 
     const sendResize = () => {
-      socket.send(
+      socket.emit(
+        "terminal.message",
         JSON.stringify({
           type: "terminal.resize",
           cols: terminal.cols,
@@ -90,13 +91,13 @@ export function TicketWorkspaceTerminal({
       );
     };
 
-    socket.addEventListener("open", () => {
+    socket.on("connect", () => {
       setError(null);
       sendResize();
     });
-    socket.addEventListener("message", (event) => {
+    socket.on("terminal.message", (rawMessage: string) => {
       try {
-        const message = JSON.parse(String(event.data)) as
+        const message = JSON.parse(String(rawMessage)) as
           | {
               type?: "terminal.started";
               worktree_path?: string | null;
@@ -141,16 +142,17 @@ export function TicketWorkspaceTerminal({
         setError("Unable to read terminal output");
       }
     });
-    socket.addEventListener("error", () => {
+    socket.on("connect_error", () => {
       setError("The workspace terminal could not connect.");
     });
 
     const disposable = terminal.onData((data: string) => {
-      if (socket.readyState !== WebSocket.OPEN) {
+      if (!socket.connected) {
         return;
       }
 
-      socket.send(
+      socket.emit(
+        "terminal.message",
         JSON.stringify({
           type: "terminal.input",
           data,
@@ -161,7 +163,7 @@ export function TicketWorkspaceTerminal({
     return () => {
       resizeObserver.disconnect();
       disposable.dispose();
-      socket.close();
+      socket.disconnect();
       fitAddonRef.current = null;
       terminalRef.current = null;
       terminal.dispose();

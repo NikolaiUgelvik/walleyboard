@@ -40,7 +40,6 @@ export function useWalleyBoardServerState(input: {
       queryKey: ["projects", project.id, "tickets"],
       queryFn: () =>
         fetchJson<TicketsResponse>(`/projects/${project.id}/tickets`),
-      refetchInterval: 2_000,
     })),
   });
 
@@ -97,7 +96,6 @@ export function useWalleyBoardServerState(input: {
     queryFn: () =>
       fetchJson<DraftsResponse>(`/projects/${input.selectedProjectId}/drafts`),
     enabled: input.selectedProjectId !== null,
-    refetchInterval: input.selectedProjectId === null ? false : 2_000,
   });
 
   const ticketsQuery = useQuery({
@@ -107,7 +105,6 @@ export function useWalleyBoardServerState(input: {
         `/projects/${input.selectedProjectId}/tickets`,
       ),
     enabled: input.selectedProjectId !== null,
-    refetchInterval: input.selectedProjectId === null ? false : 2_000,
   });
 
   const archivedTicketsQuery = useQuery({
@@ -117,10 +114,6 @@ export function useWalleyBoardServerState(input: {
         `/projects/${input.selectedProjectId}/archived-tickets`,
       ),
     enabled: input.selectedProjectId !== null && input.archiveModalOpen,
-    refetchInterval:
-      input.selectedProjectId === null || !input.archiveModalOpen
-        ? false
-        : 2_000,
   });
 
   const draftEventsQuery = useQuery({
@@ -128,7 +121,6 @@ export function useWalleyBoardServerState(input: {
     queryFn: () =>
       fetchJson<DraftEventsResponse>(`/drafts/${input.selectedDraftId}/events`),
     enabled: input.selectedDraftId !== null,
-    refetchInterval: input.selectedDraftId === null ? false : 2_000,
     retry: false,
   });
 
@@ -140,7 +132,6 @@ export function useWalleyBoardServerState(input: {
         queryFn: () =>
           fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
         enabled: ticket.session_id !== null,
-        refetchInterval: 2_000,
       })),
   });
 
@@ -149,7 +140,6 @@ export function useWalleyBoardServerState(input: {
     queryFn: () =>
       fetchJson<SessionResponse>(`/sessions/${input.selectedSessionId}`),
     enabled: input.selectedSessionId !== null,
-    refetchInterval: input.selectedSessionId === null ? false : 2_000,
   });
 
   const sessionLogsQuery = useQuery({
@@ -159,7 +149,6 @@ export function useWalleyBoardServerState(input: {
         `/sessions/${input.selectedSessionId}/logs`,
       ),
     enabled: input.selectedSessionId !== null,
-    refetchInterval: input.selectedSessionId === null ? false : 2_000,
   });
 
   return {

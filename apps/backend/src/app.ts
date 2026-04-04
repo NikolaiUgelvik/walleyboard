@@ -1,4 +1,3 @@
-import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
 
@@ -17,6 +16,7 @@ import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
+import { createSocketServer } from "./lib/socket-server.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import type { Store } from "./lib/store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
@@ -25,7 +25,6 @@ import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { ticketRoutes } from "./routes/tickets.js";
-import { websocketRoutes } from "./routes/ws.js";
 
 function shouldSkipStartupDockerCleanup(): boolean {
   return process.env.WALLEYBOARD_SKIP_STARTUP_DOCKER_CLEANUP === "1";
@@ -74,6 +73,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   const agentReviewService = new AgentReviewService({
     eventHub,
     executionRuntime,
+    store,
+  });
+  const socketServer = createSocketServer({
+    eventHub,
+    executionRuntime,
+    server: app.server,
     store,
   });
   const ticketWorkspaceService =
@@ -135,7 +140,6 @@ export async function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  await app.register(websocket);
   await app.register(fastifyRateLimit, globalRateLimitOptions());
   await app.register(healthRoutes, {
     dockerRuntime,
@@ -163,9 +167,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     executionRuntime,
     getClaudeCodeAvailability,
   });
-  await app.register(websocketRoutes, { eventHub });
 
   app.addHook("onClose", async () => {
+    socketServer.close();
     githubPullRequestService.stop();
     executionRuntime.dispose();
   });

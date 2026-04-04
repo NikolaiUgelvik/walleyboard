@@ -37,6 +37,7 @@ import { inspectWorktreeRecoveryState } from "./execution-runtime/inspect-worktr
 import type { MergeRecoveryKind } from "./execution-runtime/merge-recovery.js";
 import {
   publishDraftUpdated,
+  publishReviewRunUpdated,
   publishSessionOutput,
   publishSessionUpdated,
   publishStructuredEvent,
@@ -382,9 +383,10 @@ export class ExecutionRuntime {
       },
       dockerRuntime: this.#dockerRuntime,
       onPreparedRun: ({ prompt }) => {
-        this.#store.updateReviewRun(input.reviewRunId, {
+        const reviewRun = this.#store.updateReviewRun(input.reviewRunId, {
           prompt,
         });
+        publishReviewRunUpdated(this.#eventHub, reviewRun);
       },
       project: input.project,
       repository: input.repository,

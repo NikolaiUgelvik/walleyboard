@@ -36,11 +36,6 @@ export function useTicketReviewQueries(input: {
     enabled:
       input.selectedSessionTicketId !== null &&
       input.selectedSessionTicketStatus === "review",
-    refetchInterval:
-      input.selectedSessionTicketId !== null &&
-      input.selectedSessionTicketStatus === "review"
-        ? 2_000
-        : false,
     retry: false,
   });
 
@@ -53,11 +48,6 @@ export function useTicketReviewQueries(input: {
     enabled:
       input.selectedSessionTicketId !== null &&
       input.selectedSessionTicketStatus === "review",
-    refetchInterval:
-      input.selectedSessionTicketId !== null &&
-      input.selectedSessionTicketStatus === "review"
-        ? 2_000
-        : false,
   });
 
   const ticketWorkspaceDiffQuery = useQuery({

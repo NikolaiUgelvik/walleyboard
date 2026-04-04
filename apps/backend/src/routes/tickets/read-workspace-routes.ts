@@ -45,7 +45,7 @@ function readPersistedWorkspaceDiff(
 
 export function registerTicketReadWorkspaceRoutes(
   app: FastifyInstance,
-  { executionRuntime, store, ticketWorkspaceService }: TicketRouteDependencies,
+  { store, ticketWorkspaceService }: TicketRouteDependencies,
 ) {
   app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId",
@@ -266,21 +266,6 @@ export function registerTicketReadWorkspaceRoutes(
       reply.send({
         preview: ticketWorkspaceService.getPreview(ticket.id),
       });
-    },
-  );
-
-  app.get<{ Params: { ticketId: string } }>(
-    "/tickets/:ticketId/workspace/terminal",
-    { websocket: true },
-    (socket, request) => {
-      handleTicketWorkspaceTerminalConnection(
-        socket as TerminalSocket,
-        request.params.ticketId,
-        {
-          executionRuntime,
-          store,
-        },
-      );
     },
   );
 }

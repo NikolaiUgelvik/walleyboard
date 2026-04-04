@@ -14,7 +14,6 @@ export function useGlobalDrafts(projects: Project[]) {
       queryKey: ["projects", project.id, "drafts"],
       queryFn: () =>
         fetchJson<DraftsResponse>(`/projects/${project.id}/drafts`),
-      refetchInterval: 2_000,
     })),
   });
 
@@ -32,7 +31,6 @@ export function useDraftRefinementActivity(drafts: DraftTicketState[]) {
       queryKey: ["drafts", draft.id, "events"],
       queryFn: () =>
         fetchJson<DraftEventsResponse>(`/drafts/${draft.id}/events`),
-      refetchInterval: 2_000,
       retry: false,
     })),
   });

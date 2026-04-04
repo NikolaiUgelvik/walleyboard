@@ -10,6 +10,7 @@ import type {
 
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import {
+  publishReviewRunUpdated,
   publishSessionUpdated,
   shouldPublishPreExecutionSessionUpdate,
 } from "./execution-runtime/publishers.js";
@@ -73,11 +74,15 @@ export class AgentReviewService {
 
     const latestReviewRun = this.#store.getLatestReviewRun(ticketId);
     if (latestReviewRun?.status === "running") {
-      this.#store.updateReviewRun(latestReviewRun.id, {
-        status: "failed",
-        failure_message:
-          "The previous agent review run was interrupted before completion.",
-      });
+      const interruptedReviewRun = this.#store.updateReviewRun(
+        latestReviewRun.id,
+        {
+          status: "failed",
+          failure_message:
+            "The previous agent review run was interrupted before completion.",
+        },
+      );
+      publishReviewRunUpdated(this.#eventHub, interruptedReviewRun);
     }
 
     const context = this.#loadReviewLoopContext(ticketId);
@@ -121,11 +126,12 @@ export class AgentReviewService {
           ticket: context.ticket,
         });
 
-        this.#store.updateReviewRun(reviewRun.id, {
+        const completedReviewRun = this.#store.updateReviewRun(reviewRun.id, {
           status: "completed",
           adapter_session_ref: reviewResult.adapterSessionRef,
           report: reviewResult.report,
         });
+        publishReviewRunUpdated(this.#eventHub, completedReviewRun);
 
         const actionableFindingCount =
           reviewResult.report.actionable_findings.length;
@@ -187,10 +193,11 @@ export class AgentReviewService {
           error instanceof Error
             ? error.message
             : "Agent review failed unexpectedly.";
-        this.#store.updateReviewRun(reviewRun.id, {
+        const failedReviewRun = this.#store.updateReviewRun(reviewRun.id, {
           status: "failed",
           failure_message: message,
         });
+        publishReviewRunUpdated(this.#eventHub, failedReviewRun);
         this.#appendSessionOutput(
           context.session.id,
           context.session.current_attempt_id,
@@ -305,12 +312,14 @@ export class AgentReviewService {
       }
     }
 
-    return this.#store.createReviewRun({
+    const reviewRun = this.#store.createReviewRun({
       ticket_id: context.ticket.id,
       review_package_id: context.reviewPackage.id,
       implementation_session_id: context.session.id,
       trigger_source: trigger,
     });
+    publishReviewRunUpdated(this.#eventHub, reviewRun);
+    return reviewRun;
   }
 
   #formatRequestedChanges(report: ReviewReport): string {

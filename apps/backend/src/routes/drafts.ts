@@ -594,11 +594,13 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
       }
 
       try {
+        const existingDraft = store.getDraft(request.params.draftId);
         const ticket = store.confirmDraft(request.params.draftId, input);
 
         eventHub.publish(
           makeProtocolEvent("draft.ready", "draft", request.params.draftId, {
             draft_id: request.params.draftId,
+            project_id: existingDraft?.project_id,
             ticket_id: ticket.id,
           }),
         );

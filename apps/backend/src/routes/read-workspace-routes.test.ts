@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
@@ -168,7 +167,6 @@ async function createApp(
     ...(dependencies.executionRuntime ?? {}),
   };
   const app = Fastify();
-  await app.register(websocket);
   await app.register(fastifyRateLimit, { global: false });
   const ticketWorkspaceService = {
     ...(dependencies.ticketWorkspaceService ?? {}),

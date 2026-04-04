@@ -277,6 +277,7 @@ export const eventTypeSchema = z.enum([
   "draft.updated",
   "draft.deleted",
   "draft.ready",
+  "review_run.updated",
   "session.updated",
   "session.output",
   "session.checkpoint_requested",

@@ -257,22 +257,6 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       );
     },
   );
-
-  app.get<{ Params: { projectId: string; repositoryId: string } }>(
-    "/projects/:projectId/repositories/:repositoryId/workspace/terminal",
-    { websocket: true },
-    (socket, request) => {
-      const { repository } = getProjectRepositoryPair(
-        request.params.projectId,
-        request.params.repositoryId,
-      );
-      handleRepositoryWorkspaceTerminalConnection(socket as TerminalSocket, {
-        executionRuntime,
-        repository,
-      });
-    },
-  );
-
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/repository-branches",
     { preHandler: repositoryRouteRateLimit(app) },

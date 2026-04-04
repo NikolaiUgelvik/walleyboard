@@ -32,10 +32,14 @@ class ResizeObserverStub {
   unobserve(): void {}
 }
 
-class WebSocketStub {
-  onmessage: ((event: MessageEvent<string>) => void) | null = null;
-
-  close(): void {}
+function createSocketFactoryStub() {
+  return () =>
+    ({
+      connected: true,
+      disconnect() {},
+      emit() {},
+      on() {},
+    }) as const;
 }
 
 type ScheduledHandle = {
@@ -107,7 +111,10 @@ function installDom() {
     installGlobal("ResizeObserver", ResizeObserverStub),
     installGlobal("ShadowRoot", window.ShadowRoot),
     installGlobal("SVGElement", window.SVGElement),
-    installGlobal("WebSocket", WebSocketStub),
+    installGlobal(
+      "__WALLEYBOARD_SOCKET_IO_FACTORY__",
+      createSocketFactoryStub(),
+    ),
   ];
   const pendingCallbacks = new Map<number, () => void>();
   let nextAsyncId = 1;
