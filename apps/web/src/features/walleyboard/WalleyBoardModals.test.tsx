@@ -428,7 +428,6 @@ function ControllerModalHarness({
         agentAdapter: controller.projectOptionsAgentAdapter,
         projectId: project.id,
         color: controller.projectOptionsPersistedColor,
-        executionBackend: controller.projectOptionsExecutionBackend,
         disabledMcpServers: controller.projectOptionsDisabledMcpServers,
         automaticAgentReview: controller.projectOptionsAutomaticAgentReview,
         automaticAgentReviewRunLimit:
@@ -983,7 +982,6 @@ test("edit project modal submits the updated color through the controller workfl
         disabledMcpServers: [],
         draftAnalysisModel: null,
         draftAnalysisReasoningEffort: null,
-        executionBackend: "docker",
         postWorktreeCommand: null,
         preWorktreeCommand: null,
         previewStartCommand: null,

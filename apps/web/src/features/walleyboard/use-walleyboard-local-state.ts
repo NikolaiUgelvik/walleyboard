@@ -2,7 +2,6 @@ import { useState } from "react";
 import type {
   AgentAdapter,
   DraftTicketState,
-  ExecutionBackend,
   ReviewAction,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
@@ -26,8 +25,6 @@ export function useProjectOptionsState() {
   >(null);
   const [projectOptionsAgentAdapter, setProjectOptionsAgentAdapter] =
     useState<AgentAdapter>("codex");
-  const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
-    useState<ExecutionBackend>("docker");
   const [
     projectOptionsDisabledMcpServers,
     setProjectOptionsDisabledMcpServers,
@@ -91,7 +88,6 @@ export function useProjectOptionsState() {
     projectOptionsDraftModelCustom,
     projectOptionsDraftModelPreset,
     projectOptionsDraftReasoningEffort,
-    projectOptionsExecutionBackend,
     projectOptionsFormError,
     projectOptionsPostWorktreeCommand,
     projectOptionsPreWorktreeCommand,
@@ -111,7 +107,6 @@ export function useProjectOptionsState() {
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,
-    setProjectOptionsExecutionBackend,
     setProjectOptionsFormError,
     setProjectOptionsPostWorktreeCommand,
     setProjectOptionsPreWorktreeCommand,

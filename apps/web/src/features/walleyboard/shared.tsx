@@ -15,7 +15,6 @@ import {
 import { IconCheck } from "@tabler/icons-react";
 import type {
   AgentAdapter,
-  ExecutionBackend,
   ReviewAction,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -99,9 +98,6 @@ export const reasoningEffortOptions = [
   { value: "high", label: "High" },
   { value: "xhigh", label: "Extra high" },
 ];
-export const executionBackendOptions = [
-  { label: "Docker", value: "docker" },
-] satisfies Array<{ label: string; value: ExecutionBackend }>;
 export const reviewActionOptions = [
   { label: "Direct merge", value: "direct_merge" },
   { label: "Create pull request", value: "pull_request" },

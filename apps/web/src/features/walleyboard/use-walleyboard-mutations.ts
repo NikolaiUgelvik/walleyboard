@@ -4,7 +4,6 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   AgentAdapter,
   CommandAck,
-  ExecutionBackend,
   Project,
   ReasoningEffort,
   RepositoryConfig,
@@ -185,7 +184,6 @@ export function useWalleyBoardMutations({
       agentAdapter: AgentAdapter;
       projectId: string;
       color: string;
-      executionBackend: ExecutionBackend;
       disabledMcpServers: string[];
       automaticAgentReview: boolean;
       automaticAgentReviewRunLimit: number;
@@ -205,7 +203,6 @@ export function useWalleyBoardMutations({
       saveProjectOptionsRequest(input.projectId, {
         color: input.color,
         agent_adapter: input.agentAdapter,
-        execution_backend: input.executionBackend,
         disabled_mcp_servers: input.disabledMcpServers,
         automatic_agent_review: input.automaticAgentReview,
         automatic_agent_review_run_limit: input.automaticAgentReviewRunLimit,

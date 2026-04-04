@@ -1,6 +1,5 @@
 import type {
   AgentAdapter,
-  ExecutionBackend,
   Project,
   ReviewAction,
 } from "../../../../../packages/contracts/src/index.js";
@@ -11,7 +10,6 @@ type ProjectOptionsDirtyInput = {
   color: string;
   draftModelValue: string | null;
   draftReasoningEffortValue: string | null;
-  executionBackend: ExecutionBackend;
   disabledMcpServers: string[];
   postWorktreeCommandValue: string | null;
   preWorktreeCommandValue: string | null;
@@ -37,7 +35,6 @@ export function hasProjectOptionsDirty(
   return (
     input.color !== normalizeProjectColor(project.color) ||
     input.selectedAgentAdapter !== project.agent_adapter ||
-    input.executionBackend !== project.execution_backend ||
     !(
       input.disabledMcpServers.length === project.disabled_mcp_servers.length &&
       input.disabledMcpServers.every(

@@ -16,7 +16,6 @@ import {
 } from "@mantine/core";
 
 import {
-  executionBackendOptions,
   getModelPresetOptions,
   modelPlaceholder,
   ProjectAgentAdapterSelect,
@@ -91,27 +90,13 @@ export function ProjectConfigurationModals({
               </Stack>
 
               <Stack gap="xs">
-                <Text fw={600}>Execution backend</Text>
-                <SegmentedControl
-                  data={executionBackendOptions}
-                  value={controller.projectOptionsExecutionBackend}
-                  onChange={(value) => {
-                    if (value !== "docker") {
-                      return;
-                    }
-
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsExecutionBackend(value);
-                  }}
-                />
                 <Text size="sm" c="dimmed">
-                  Docker is required for ticket execution. WalleyBoard prepares
-                  an isolated checkout and runs draft analysis plus ticket
-                  sessions inside the managed runtime container.
+                  Docker is always used for ticket execution. WalleyBoard
+                  prepares an isolated checkout and runs draft analysis plus
+                  ticket sessions inside the managed runtime container.
                 </Text>
                 <Text size="sm" c="dimmed">
-                  Codex and Claude Code both run inside the Docker runtime.
+                  Codex and Claude Code both run inside that Docker runtime.
                   Claude Code is only selectable when the backend can confirm
                   the Claude CLI is installed and usable.
                 </Text>

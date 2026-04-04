@@ -1,7 +1,6 @@
 import type {
   AgentAdapter,
   CommandAck,
-  ExecutionBackend,
   ReasoningEffort,
   ReviewAction,
   UploadDraftArtifactResponse,
@@ -271,7 +270,6 @@ export async function saveProjectOptionsRequest(
   body: {
     color: string;
     agent_adapter: AgentAdapter;
-    execution_backend: ExecutionBackend;
     disabled_mcp_servers: string[];
     automatic_agent_review: boolean;
     automatic_agent_review_run_limit: number;

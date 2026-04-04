@@ -1,7 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type {
   AgentAdapter,
-  ExecutionBackend,
   Project,
   RepositoryConfig,
   ReviewAction,
@@ -63,7 +62,6 @@ export function resetProjectOptionsModal(input: {
   setProjectOptionsColorManuallySelected: StateSetter<boolean>;
   setProjectOptionsDefaultReviewAction: StateSetter<ReviewAction>;
   setProjectOptionsDisabledMcpServers: StateSetter<string[]>;
-  setProjectOptionsExecutionBackend: StateSetter<ExecutionBackend>;
   setProjectOptionsFormError: StateSetter<string | null>;
   setProjectOptionsPreviewStartCommand: StateSetter<string>;
   setProjectOptionsProjectId: StateSetter<string | null>;
@@ -75,7 +73,6 @@ export function resetProjectOptionsModal(input: {
   input.setProjectOptionsColor(defaultProjectColor);
   input.setProjectOptionsColorManuallySelected(false);
   input.setProjectOptionsAgentAdapter("codex");
-  input.setProjectOptionsExecutionBackend("docker");
   input.setProjectOptionsDisabledMcpServers([]);
   input.setProjectOptionsAutomaticAgentReview(false);
   input.setProjectOptionsAutomaticAgentReviewRunLimit(1);
@@ -104,7 +101,6 @@ export function populateProjectOptionsModal(input: {
   setProjectOptionsDraftModelCustom: StateSetter<string>;
   setProjectOptionsDraftModelPreset: StateSetter<ProjectModelPreset>;
   setProjectOptionsDraftReasoningEffort: StateSetter<ProjectReasoningEffortSelection>;
-  setProjectOptionsExecutionBackend: StateSetter<ExecutionBackend>;
   setProjectOptionsFormError: StateSetter<string | null>;
   setProjectOptionsPostWorktreeCommand: StateSetter<string>;
   setProjectOptionsPreWorktreeCommand: StateSetter<string>;
@@ -121,7 +117,6 @@ export function populateProjectOptionsModal(input: {
   input.setProjectOptionsColor(input.project.color);
   input.setProjectOptionsColorManuallySelected(false);
   input.setProjectOptionsAgentAdapter(input.project.agent_adapter);
-  input.setProjectOptionsExecutionBackend(input.project.execution_backend);
   input.setProjectOptionsDisabledMcpServers(
     [...input.project.disabled_mcp_servers].sort((left, right) =>
       left.localeCompare(right),
