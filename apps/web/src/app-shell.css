@@ -709,7 +709,7 @@ body {
   .walleyboard-shell {
     height: 100dvh;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
   }
 
   .walleyboard-layout {
@@ -725,7 +725,7 @@ body {
 
   .walleyboard-rail,
   .walleyboard-detail {
-    overflow-y: visible;
+    overflow-y: auto;
   }
 
   .walleyboard-main {
@@ -742,21 +742,23 @@ body {
     flex: 1;
     min-height: 0;
     overflow-x: auto;
-    overflow-y: visible;
+    overflow-y: hidden;
   }
 
   .board-grid {
-    height: auto;
+    height: 100%;
+    min-height: 0;
     align-items: stretch;
   }
 
   .board-column {
-    height: auto;
-    overflow: visible;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .board-column-stack {
-    overflow-y: visible;
+    overflow-y: auto;
   }
 }
 

@@ -423,7 +423,7 @@ function createWalleyBoardController(): WalleyBoardController {
   } as unknown as WalleyBoardController;
 }
 
-test("board shell keeps scroll ownership at the shell and stretches empty columns", () => {
+test("board columns own vertical scrolling while the shell stays fixed", () => {
   const controller = createWalleyBoardController();
   const markup = renderToStaticMarkup(
     <MantineProvider>
@@ -450,8 +450,8 @@ test("board shell keeps scroll ownership at the shell and stretches empty column
   assertRuleIncludes(stylesheet, ".board-empty", ["flex: 1"]);
   assertRuleIncludes(desktopRules, ".walleyboard-shell", [
     "height: 100dvh",
-    "overflow-y: auto",
     "overflow-x: hidden",
+    "overflow-y: hidden",
   ]);
   assertRuleIncludes(desktopRules, ".walleyboard-layout", [
     "height: 100%",
@@ -463,23 +463,26 @@ test("board shell keeps scroll ownership at the shell and stretches empty column
   ]);
   assertRuleIncludes(desktopRules, ".board-scroller", [
     "overflow-x: auto",
-    "overflow-y: visible",
+    "overflow-y: hidden",
   ]);
-  assertRuleIncludes(desktopRules, ".board-grid", ["align-items: stretch"]);
+  assertRuleIncludes(desktopRules, ".board-grid", [
+    "height: 100%",
+    "min-height: 0",
+    "align-items: stretch",
+  ]);
   assertRuleIncludes(desktopRules, ".board-column", [
-    "height: auto",
-    "overflow: visible",
+    "height: 100%",
+    "min-height: 0",
+    "overflow: hidden",
   ]);
-  assertRuleIncludes(desktopRules, ".board-column-stack", [
-    "overflow-y: visible",
-  ]);
+  assertRuleIncludes(desktopRules, ".board-column-stack", ["overflow-y: auto"]);
   assert.match(
     desktopRules,
     /\.walleyboard-rail,\s*\.walleyboard-main,\s*\.walleyboard-detail\s*\{[^}]*min-height:\s*0\s*;/,
   );
   assert.match(
     desktopRules,
-    /\.walleyboard-rail,\s*\.walleyboard-detail\s*\{[^}]*overflow-y:\s*visible\s*;/,
+    /\.walleyboard-rail,\s*\.walleyboard-detail\s*\{[^}]*overflow-y:\s*auto\s*;/,
   );
 });
 
@@ -631,7 +634,7 @@ test("ready tickets expose an edit action in the overflow menu", async () => {
   }
 });
 
-test("inspector-open layout keeps the shell as the only vertical scroll owner", async () => {
+test("inspector-open layout keeps the shell fixed and leaves vertical scrolling to interior panes", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
   Object.assign(controller as Record<string, unknown>, {
@@ -673,13 +676,21 @@ test("inspector-open layout keeps the shell as the only vertical scroll owner", 
     );
     assert.equal(
       harness.window.getComputedStyle(shell).overflowY,
-      "auto",
-      "Expected the board shell to own vertical scrolling",
+      "hidden",
+      "Expected the board shell to stay fixed on desktop",
     );
     assert.equal(
       harness.window.getComputedStyle(detail).overflowY,
-      "visible",
-      "Expected the detail pane to avoid its own vertical scrollbar",
+      "auto",
+      "Expected the detail pane to own its own vertical scrolling",
+    );
+
+    const columnStack = harness.mountNode.querySelector(".board-column-stack");
+    assert.ok(columnStack, "Expected a board column stack to render");
+    assert.equal(
+      harness.window.getComputedStyle(columnStack).overflowY,
+      "auto",
+      "Expected each board column stack to own its own vertical scrolling",
     );
   } finally {
     await act(async () => {
