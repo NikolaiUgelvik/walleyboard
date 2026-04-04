@@ -849,6 +849,7 @@ test("edit project modal submits the updated color through the controller workfl
         automaticAgentReviewRunLimit: 1,
         color: "#F97316",
         defaultReviewAction: "direct_merge",
+        disabledMcpServers: [],
         draftAnalysisModel: null,
         draftAnalysisReasoningEffort: null,
         executionBackend: "host",
@@ -860,6 +861,44 @@ test("edit project modal submits the updated color through the controller workfl
         ticketWorkModel: null,
         ticketWorkReasoningEffort: null,
       });
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      restoreFetch();
+    }
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test("edit project modal renders Codex MCP server settings", async () => {
+  const harness = installDom();
+
+  try {
+    const project = createProject({
+      disabled_mcp_servers: ["sentry"],
+    });
+    const repository = createRepository({
+      project_id: project.id,
+    });
+    const { restoreFetch, root } = await renderControllerModalHarness({
+      harness,
+      mode: "edit",
+      project,
+      repository,
+    });
+
+    try {
+      const modalText = harness.window.document.body.textContent ?? "";
+
+      assert.match(modalText, /Codex MCP servers/);
+      assert.match(modalText, /context7/);
+      assert.match(modalText, /sentry/);
+      assert.match(
+        modalText,
+        /These toggles currently apply to Docker-backed Codex runs/,
+      );
     } finally {
       await act(async () => {
         root.unmount();

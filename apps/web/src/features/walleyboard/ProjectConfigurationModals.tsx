@@ -164,6 +164,65 @@ export function ProjectConfigurationModals({
               </Stack>
 
               <Stack gap="sm">
+                <Text fw={600}>Codex MCP servers</Text>
+                {controller.projectOptionsAgentAdapter === "codex" ? (
+                  controller.codexMcpServers.length === 0 ? (
+                    <Text size="sm" c="dimmed">
+                      No Codex MCP servers are configured in
+                      `~/.codex/config.toml`.
+                    </Text>
+                  ) : (
+                    <>
+                      <Text size="sm" c="dimmed">
+                        These toggles currently apply to Docker-backed Codex
+                        runs by overlaying a filtered `config.toml` inside the
+                        managed container. Host runs still use your normal
+                        `~/.codex` configuration.
+                      </Text>
+                      {controller.codexMcpServers.map((server) => {
+                        const enabled =
+                          !controller.projectOptionsDisabledMcpServers.includes(
+                            server,
+                          );
+
+                        return (
+                          <Switch
+                            key={server}
+                            checked={enabled}
+                            label={server}
+                            onChange={(event) => {
+                              controller.setProjectOptionsFormError(null);
+                              controller.updateProjectMutation.reset();
+                              const nextDisabledServers = event.currentTarget
+                                .checked
+                                ? controller.projectOptionsDisabledMcpServers.filter(
+                                    (value) => value !== server,
+                                  )
+                                : [
+                                    ...controller.projectOptionsDisabledMcpServers,
+                                    server,
+                                  ];
+
+                              controller.setProjectOptionsDisabledMcpServers(
+                                [...nextDisabledServers].sort((left, right) =>
+                                  left.localeCompare(right),
+                                ),
+                              );
+                            }}
+                          />
+                        );
+                      })}
+                    </>
+                  )
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    MCP selection is currently only available for Codex
+                    projects.
+                  </Text>
+                )}
+              </Stack>
+
+              <Stack gap="sm">
                 <Switch
                   label="Automatic agent review"
                   description="Automatically start the existing agent review flow when a ticket enters In review."
