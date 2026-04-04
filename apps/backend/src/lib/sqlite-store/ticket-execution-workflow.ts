@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type { ExecutionPlanStatus } from "../../../../../packages/contracts/src/index.js";
@@ -68,74 +69,59 @@ export class TicketExecutionWorkflowService {
         ? "Execution session created, worktree prepared, and a plan requested from the agent."
         : "Execution session created, worktree prepared, and the agent launch requested.";
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET status = ?, session_id = ?, working_branch = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        "in_progress",
-        sessionId,
-        runtime.workingBranch,
-        timestamp,
-        ticketId,
-      );
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET status = ${"in_progress"},
+          session_id = ${sessionId},
+          working_branch = ${runtime.workingBranch},
+          updated_at = ${timestamp}
+      WHERE id = ${ticketId}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO execution_sessions (
-            id, ticket_id, project_id, repo_id, agent_adapter, worktree_path, adapter_session_ref, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
-            latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
-            started_at, completed_at, last_heartbeat_at, last_summary
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO execution_sessions (
+        id, ticket_id, project_id, repo_id, agent_adapter, worktree_path, adapter_session_ref, status, planning_enabled, plan_status, plan_summary, current_attempt_id,
+        latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
+        started_at, completed_at, last_heartbeat_at, last_summary
+      ) VALUES (
+        ${sessionId},
+        ${ticket.id},
+        ${ticket.project},
+        ${ticket.repo},
+        ${project.agent_adapter},
+        ${runtime.worktreePath},
+        ${null},
+        ${shouldQueue ? "queued" : "awaiting_input"},
+        ${planningEnabled ? 1 : 0},
+        ${planStatus},
+        ${null},
+        ${attemptId},
+        ${null},
+        ${null},
+        ${shouldQueue ? timestamp : null},
+        ${timestamp},
+        ${null},
+        ${timestamp},
+        ${summary}
       )
-      .run(
-        sessionId,
-        ticket.id,
-        ticket.project,
-        ticket.repo,
-        project.agent_adapter,
-        runtime.worktreePath,
-        null,
-        shouldQueue ? "queued" : "awaiting_input",
-        planningEnabled ? 1 : 0,
-        planStatus,
-        null,
-        attemptId,
-        null,
-        null,
-        shouldQueue ? timestamp : null,
-        timestamp,
-        null,
-        timestamp,
-        summary,
-      );
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO execution_attempts (
+        id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+      ) VALUES (
+        ${attemptId},
+        ${sessionId},
+        ${1},
+        ${"queued"},
+        ${null},
+        ${null},
+        ${null},
+        ${timestamp},
+        ${null},
+        ${null}
       )
-      .run(
-        attemptId,
-        sessionId,
-        1,
-        "queued",
-        null,
-        null,
-        null,
-        timestamp,
-        null,
-        null,
-      );
+    `);
 
     const logs = [
       `Session created for ticket #${ticket.id}: ${ticket.title}`,
@@ -228,15 +214,13 @@ export class TicketExecutionWorkflowService {
       ? formatMarkdownLog("Execution stopped by user", reasonBody)
       : "Execution was stopped by user and can be resumed from the existing worktree.";
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?, last_heartbeat_at = ?, last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run("interrupted", timestamp, summary, session.id);
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${"interrupted"},
+          last_heartbeat_at = ${timestamp},
+          last_summary = ${summary}
+      WHERE id = ${session.id}
+    `);
 
     const attempt = session.current_attempt_id
       ? (this.sessions.updateExecutionAttempt(session.current_attempt_id, {
@@ -335,71 +319,54 @@ export class TicketExecutionWorkflowService {
       ? "Review feedback was recorded. The session is queued and will relaunch on the existing worktree when a project slot opens."
       : "Review feedback was recorded and the execution session is relaunching on the existing worktree.";
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO requested_change_notes (
-            id, ticket_id, review_package_id, author_type, body, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO requested_change_notes (
+        id, ticket_id, review_package_id, author_type, body, created_at
+      ) VALUES (
+        ${noteId},
+        ${ticketId},
+        ${reviewPackage.id},
+        ${authorType},
+        ${body},
+        ${timestamp}
       )
-      .run(noteId, ticketId, reviewPackage.id, authorType, body, timestamp);
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET status = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run("in_progress", timestamp, ticketId);
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET status = ${"in_progress"},
+          updated_at = ${timestamp}
+      WHERE id = ${ticketId}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?,
-              queue_entered_at = ?,
-              current_attempt_id = ?,
-              latest_requested_change_note_id = ?,
-              completed_at = ?,
-              last_heartbeat_at = ?,
-              last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        shouldQueue ? "queued" : "awaiting_input",
-        shouldQueue ? timestamp : null,
-        attemptId,
-        noteId,
-        null,
-        timestamp,
-        summary,
-        session.id,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${shouldQueue ? "queued" : "awaiting_input"},
+          queue_entered_at = ${shouldQueue ? timestamp : null},
+          current_attempt_id = ${attemptId},
+          latest_requested_change_note_id = ${noteId},
+          completed_at = ${null},
+          last_heartbeat_at = ${timestamp},
+          last_summary = ${summary}
+      WHERE id = ${session.id}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO execution_attempts (
+        id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+      ) VALUES (
+        ${attemptId},
+        ${session.id},
+        ${attemptNumber},
+        ${"queued"},
+        ${null},
+        ${null},
+        ${null},
+        ${timestamp},
+        ${null},
+        ${null}
       )
-      .run(
-        attemptId,
-        session.id,
-        attemptNumber,
-        "queued",
-        null,
-        null,
-        null,
-        timestamp,
-        null,
-        null,
-      );
+    `);
 
     const logs = [
       formatMarkdownLog("Requested changes recorded", body),
@@ -488,46 +455,35 @@ export class TicketExecutionWorkflowService {
     const timestamp = nowIso();
     const summary = formatMarkdownLog("Merge conflict detected", body);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO requested_change_notes (
-            id, ticket_id, review_package_id, author_type, body, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO requested_change_notes (
+        id, ticket_id, review_package_id, author_type, body, created_at
+      ) VALUES (
+        ${noteId},
+        ${ticketId},
+        ${reviewPackage?.id ?? null},
+        ${"system"},
+        ${body},
+        ${timestamp}
       )
-      .run(
-        noteId,
-        ticketId,
-        reviewPackage?.id ?? null,
-        "system",
-        body,
-        timestamp,
-      );
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET status = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run("in_progress", timestamp, ticketId);
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET status = ${"in_progress"},
+          updated_at = ${timestamp}
+      WHERE id = ${ticketId}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?,
-              latest_requested_change_note_id = ?,
-              completed_at = ?,
-              last_heartbeat_at = ?,
-              last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run("failed", noteId, timestamp, timestamp, summary, session.id);
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${"failed"},
+          latest_requested_change_note_id = ${noteId},
+          completed_at = ${timestamp},
+          last_heartbeat_at = ${timestamp},
+          last_summary = ${summary}
+      WHERE id = ${session.id}
+    `);
 
     const logs = [
       formatMarkdownLog("Merge conflict note recorded", body),
@@ -631,53 +587,37 @@ export class TicketExecutionWorkflowService {
         ? "Execution resume requested. The session is queued and will start when a project slot opens."
         : "Execution resume requested on the existing worktree.";
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?,
-              queue_entered_at = ?,
-              plan_status = ?,
-              plan_summary = ?,
-              current_attempt_id = ?,
-              completed_at = ?,
-              last_heartbeat_at = ?,
-              last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        shouldQueue ? "queued" : "awaiting_input",
-        shouldQueue ? timestamp : null,
-        nextPlanStatus,
-        nextPlanStatus === "drafting" ? null : session.plan_summary,
-        attemptId,
-        null,
-        timestamp,
-        summary,
-        session.id,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${shouldQueue ? "queued" : "awaiting_input"},
+          queue_entered_at = ${shouldQueue ? timestamp : null},
+          plan_status = ${nextPlanStatus},
+          plan_summary = ${
+            nextPlanStatus === "drafting" ? null : session.plan_summary
+          },
+          current_attempt_id = ${attemptId},
+          completed_at = ${null},
+          last_heartbeat_at = ${timestamp},
+          last_summary = ${summary}
+      WHERE id = ${session.id}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO execution_attempts (
+        id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+      ) VALUES (
+        ${attemptId},
+        ${session.id},
+        ${attemptNumber},
+        ${"queued"},
+        ${null},
+        ${null},
+        ${null},
+        ${timestamp},
+        ${null},
+        ${null}
       )
-      .run(
-        attemptId,
-        session.id,
-        attemptNumber,
-        "queued",
-        null,
-        null,
-        null,
-        timestamp,
-        null,
-        null,
-      );
+    `);
 
     const logs = [
       reasonBody
@@ -764,67 +704,44 @@ export class TicketExecutionWorkflowService {
         ? "Fresh restart requested. The session is queued and will start when a project slot opens."
         : "Fresh restart requested. A new worktree is ready and execution will start from scratch.";
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET working_branch = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(runtime.workingBranch, timestamp, ticketId);
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET working_branch = ${runtime.workingBranch},
+          updated_at = ${timestamp}
+      WHERE id = ${ticketId}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET worktree_path = ?,
-              adapter_session_ref = ?,
-              status = ?,
-              queue_entered_at = ?,
-              plan_status = ?,
-              plan_summary = ?,
-              current_attempt_id = ?,
-              completed_at = ?,
-              last_heartbeat_at = ?,
-              last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        runtime.worktreePath,
-        null,
-        shouldQueue ? "queued" : "awaiting_input",
-        shouldQueue ? timestamp : null,
-        nextPlanStatus,
-        null,
-        attemptId,
-        null,
-        timestamp,
-        summary,
-        session.id,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET worktree_path = ${runtime.worktreePath},
+          adapter_session_ref = ${null},
+          status = ${shouldQueue ? "queued" : "awaiting_input"},
+          queue_entered_at = ${shouldQueue ? timestamp : null},
+          plan_status = ${nextPlanStatus},
+          plan_summary = ${null},
+          current_attempt_id = ${attemptId},
+          completed_at = ${null},
+          last_heartbeat_at = ${timestamp},
+          last_summary = ${summary}
+      WHERE id = ${session.id}
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO execution_attempts (
+        id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+      ) VALUES (
+        ${attemptId},
+        ${session.id},
+        ${attemptNumber},
+        ${"queued"},
+        ${null},
+        ${null},
+        ${null},
+        ${timestamp},
+        ${null},
+        ${null}
       )
-      .run(
-        attemptId,
-        session.id,
-        attemptNumber,
-        "queued",
-        null,
-        null,
-        null,
-        timestamp,
-        null,
-        null,
-      );
+    `);
 
     const logs = [
       reasonBody

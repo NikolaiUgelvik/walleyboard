@@ -7,13 +7,13 @@ import { handleTicketWorkspaceTerminalConnection } from "../routes/tickets/read-
 import type { TerminalSocket } from "../routes/workspace-terminal-socket.js";
 import type { EventHub } from "./event-hub.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
-import type { Store } from "./store.js";
+import type { SocketServerPersistence } from "./store.js";
 
 type CreateSocketServerInput = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
   server: HttpServer;
-  store: Store;
+  store: SocketServerPersistence;
 };
 
 type ParsedTerminalSocketPath =

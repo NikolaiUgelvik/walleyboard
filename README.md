@@ -18,12 +18,12 @@ Runtime state lives under `~/.walleyboard/`, with `walleyboard.sqlite` as the so
 - `apps/backend`: local Fastify backend, WebSocket transport, route scaffolding, and execution service boundaries
 - `apps/web`: React + Mantine frontend shell for the WalleyBoard UI
 - `packages/contracts`: shared Zod schemas and protocol contracts used by backend and frontend
-- `packages/db`: reference Drizzle schema for the local SQLite model; the runtime source of truth lives in `apps/backend/src/lib/sqlite-store`
+- `packages/db`: canonical Drizzle schema, checked-in migrations, and SQLite bootstrap for the local WalleyBoard database
 - `docs`: implementation notes that turn the PRD into module-level build guidance
 
 ## Current Structure
 
-- `apps/backend/src/lib/sqlite-store`: SQLite bootstrap helpers plus focused repositories and workflow services for projects, drafts, tickets, sessions, events, and review artifacts
+- `apps/backend/src/lib/sqlite-store`: Drizzle-backed persistence services for projects, drafts, tickets, sessions, structured events, and review artifacts
 - `apps/backend/src/lib/execution-runtime`: the `ExecutionRuntime` facade plus focused helpers for prompts, CLI args, validation, event publishing, and process/session coordination
 - `apps/backend/src/routes/tickets`: ticket route registration split by concern so read/workspace, execution, lifecycle, and review flows stay isolated
 - `apps/web/src/features/walleyboard`: single-screen UI composition, feature-scoped controllers, websocket cache syncing, and extracted board, inspector, and modal modules

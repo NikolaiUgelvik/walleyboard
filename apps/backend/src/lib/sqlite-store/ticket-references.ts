@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   collectTicketReferenceIds,
   type TicketReference,
@@ -15,22 +16,19 @@ export function resolveTicketReferences(
   if (referenceIds.length === 0) {
     return [];
   }
-
-  const placeholders = referenceIds.map(() => "?").join(", ");
-  const rows = context.db
-    .prepare(
-      `
-        SELECT id, title, status
-        FROM tickets
-        WHERE id IN (${placeholders})
-          AND archived_at IS NULL
-      `,
-    )
-    .all(...referenceIds) as Array<{
+  const rows = context.db.all<{
     id: number;
     title: string;
     status: TicketReference["status"];
-  }>;
+  }>(sql`
+    SELECT id, title, status
+    FROM tickets
+    WHERE id IN (${sql.join(
+      referenceIds.map((referenceId) => sql`${referenceId}`),
+      sql`, `,
+    )})
+      AND archived_at IS NULL
+  `);
 
   const referenceById = new Map(
     rows.map((row) => [

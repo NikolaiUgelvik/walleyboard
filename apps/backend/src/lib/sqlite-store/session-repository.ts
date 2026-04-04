@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type {
   ExecutionAttempt,
   ExecutionSession,
@@ -45,27 +46,31 @@ export class SessionRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
   getSession(sessionId: string): ExecutionSession | undefined {
-    const row = this.context.db
-      .prepare("SELECT * FROM execution_sessions WHERE id = ?")
-      .get(sessionId) as Record<string, unknown> | undefined;
+    const row = this.context.db.get<Record<string, unknown>>(sql`
+      SELECT *
+      FROM execution_sessions
+      WHERE id = ${sessionId}
+    `);
     return row ? mapExecutionSession(row) : undefined;
   }
 
   getSessionLogs(sessionId: string): string[] {
-    const rows = this.context.db
-      .prepare(
-        "SELECT line FROM session_logs WHERE session_id = ? ORDER BY id ASC",
-      )
-      .all(sessionId) as Array<{ line: string }>;
+    const rows = this.context.db.all<{ line: string }>(sql`
+      SELECT line
+      FROM session_logs
+      WHERE session_id = ${sessionId}
+      ORDER BY id ASC
+    `);
     return rows.map((row) => row.line);
   }
 
   listSessionAttempts(sessionId: string): ExecutionAttempt[] {
-    const rows = this.context.db
-      .prepare(
-        "SELECT * FROM execution_attempts WHERE session_id = ? ORDER BY attempt_number ASC",
-      )
-      .all(sessionId) as Record<string, unknown>[];
+    const rows = this.context.db.all<Record<string, unknown>>(sql`
+      SELECT *
+      FROM execution_attempts
+      WHERE session_id = ${sessionId}
+      ORDER BY attempt_number ASC
+    `);
     return rows.map(mapExecutionAttempt);
   }
 
@@ -84,15 +89,13 @@ export class SessionRepository {
       formatMarkdownLog("User input recorded", body),
     );
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET last_heartbeat_at = ?, last_summary = ?, status = ?
-          WHERE id = ?
-        `,
-      )
-      .run(timestamp, summary, "awaiting_input", sessionId);
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET last_heartbeat_at = ${timestamp},
+          last_summary = ${summary},
+          status = ${"awaiting_input"}
+      WHERE id = ${sessionId}
+    `);
 
     this.context.recordStructuredEvent(
       "session",
@@ -119,28 +122,19 @@ export class SessionRepository {
       return undefined;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?,
-              plan_status = ?,
-              plan_summary = ?,
-              last_heartbeat_at = ?,
-              last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        input.status ?? existingSession.status,
-        input.plan_status ?? existingSession.plan_status,
-        input.plan_summary !== undefined
-          ? input.plan_summary
-          : existingSession.plan_summary,
-        nowIso(),
-        input.last_summary ?? existingSession.last_summary,
-        sessionId,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${input.status ?? existingSession.status},
+          plan_status = ${input.plan_status ?? existingSession.plan_status},
+          plan_summary = ${
+            input.plan_summary !== undefined
+              ? input.plan_summary
+              : existingSession.plan_summary
+          },
+          last_heartbeat_at = ${nowIso()},
+          last_summary = ${input.last_summary ?? existingSession.last_summary}
+      WHERE id = ${sessionId}
+    `);
 
     return this.getSession(sessionId);
   }
@@ -155,20 +149,13 @@ export class SessionRepository {
       return undefined;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?, last_heartbeat_at = ?, last_summary = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        status,
-        nowIso(),
-        lastSummary ?? existingSession.last_summary,
-        sessionId,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${status},
+          last_heartbeat_at = ${nowIso()},
+          last_summary = ${lastSummary ?? existingSession.last_summary}
+      WHERE id = ${sessionId}
+    `);
 
     return this.getSession(sessionId);
   }
@@ -186,15 +173,12 @@ export class SessionRepository {
       return existingSession;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET worktree_path = ?, last_heartbeat_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(worktreePath, nowIso(), sessionId);
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET worktree_path = ${worktreePath},
+          last_heartbeat_at = ${nowIso()}
+      WHERE id = ${sessionId}
+    `);
 
     return this.getSession(sessionId);
   }
@@ -212,15 +196,12 @@ export class SessionRepository {
       return existingSession;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET adapter_session_ref = ?, last_heartbeat_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(adapterSessionRef, nowIso(), sessionId);
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET adapter_session_ref = ${adapterSessionRef},
+          last_heartbeat_at = ${nowIso()}
+      WHERE id = ${sessionId}
+    `);
 
     return this.getSession(sessionId);
   }
@@ -233,32 +214,26 @@ export class SessionRepository {
       return undefined;
     }
 
-    const queuedSession = this.context.db
-      .prepare(
-        `
-          SELECT id
-          FROM execution_sessions
-          WHERE project_id = ?
-            AND status = 'queued'
-          ORDER BY queue_entered_at ASC, started_at ASC, id ASC
-          LIMIT 1
-        `,
-      )
-      .get(project.id) as { id: string } | undefined;
+    const queuedSession = this.context.db.get<{ id: string }>(sql`
+      SELECT id
+      FROM execution_sessions
+      WHERE project_id = ${project.id}
+        AND status = 'queued'
+      ORDER BY queue_entered_at ASC, started_at ASC, id ASC
+      LIMIT 1
+    `);
 
     if (!queuedSession) {
       return undefined;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?, queue_entered_at = ?, last_heartbeat_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run("awaiting_input", null, nowIso(), queuedSession.id);
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${"awaiting_input"},
+          queue_entered_at = ${null},
+          last_heartbeat_at = ${nowIso()}
+      WHERE id = ${queuedSession.id}
+    `);
 
     return this.getSession(queuedSession.id);
   }
@@ -272,27 +247,18 @@ export class SessionRepository {
       return undefined;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET status = ?,
-              last_heartbeat_at = ?,
-              completed_at = ?,
-              last_summary = ?,
-              latest_review_package_id = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        input.status,
-        nowIso(),
-        nowIso(),
-        input.last_summary ?? existingSession.last_summary,
-        input.latest_review_package_id ??
-          existingSession.latest_review_package_id,
-        sessionId,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_sessions
+      SET status = ${input.status},
+          last_heartbeat_at = ${nowIso()},
+          completed_at = ${nowIso()},
+          last_summary = ${input.last_summary ?? existingSession.last_summary},
+          latest_review_package_id = ${
+            input.latest_review_package_id ??
+            existingSession.latest_review_package_id
+          }
+      WHERE id = ${sessionId}
+    `);
 
     return this.getSession(sessionId);
   }
@@ -301,9 +267,11 @@ export class SessionRepository {
     attemptId: string,
     input: UpdateExecutionAttemptInput,
   ): ExecutionAttempt | undefined {
-    const row = this.context.db
-      .prepare("SELECT * FROM execution_attempts WHERE id = ?")
-      .get(attemptId) as Record<string, unknown> | undefined;
+    const row = this.context.db.get<Record<string, unknown>>(sql`
+      SELECT *
+      FROM execution_attempts
+      WHERE id = ${attemptId}
+    `);
     if (!row) {
       return undefined;
     }
@@ -312,48 +280,48 @@ export class SessionRepository {
     const nextStatus = input.status ?? existingAttempt.status;
     const shouldEnd = input.status !== undefined && input.status !== "running";
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE execution_attempts
-          SET status = ?,
-              prompt_kind = ?,
-              prompt = ?,
-              pty_pid = ?,
-              ended_at = ?,
-              end_reason = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        nextStatus,
-        input.prompt_kind !== undefined
-          ? input.prompt_kind
-          : existingAttempt.prompt_kind,
-        input.prompt !== undefined ? input.prompt : existingAttempt.prompt,
-        input.pty_pid !== undefined ? input.pty_pid : existingAttempt.pty_pid,
-        shouldEnd ? nowIso() : existingAttempt.ended_at,
-        input.end_reason ?? existingAttempt.end_reason,
-        attemptId,
-      );
+    this.context.db.run(sql`
+      UPDATE execution_attempts
+      SET status = ${nextStatus},
+          prompt_kind = ${
+            input.prompt_kind !== undefined
+              ? input.prompt_kind
+              : existingAttempt.prompt_kind
+          },
+          prompt = ${
+            input.prompt !== undefined ? input.prompt : existingAttempt.prompt
+          },
+          pty_pid = ${
+            input.pty_pid !== undefined
+              ? input.pty_pid
+              : existingAttempt.pty_pid
+          },
+          ended_at = ${shouldEnd ? nowIso() : existingAttempt.ended_at},
+          end_reason = ${input.end_reason ?? existingAttempt.end_reason}
+      WHERE id = ${attemptId}
+    `);
 
-    const updatedRow = this.context.db
-      .prepare("SELECT * FROM execution_attempts WHERE id = ?")
-      .get(attemptId) as Record<string, unknown> | undefined;
+    const updatedRow = this.context.db.get<Record<string, unknown>>(sql`
+      SELECT *
+      FROM execution_attempts
+      WHERE id = ${attemptId}
+    `);
     return updatedRow ? mapExecutionAttempt(updatedRow) : undefined;
   }
 
   recoverInterruptedSessions(): StartupRecoveryResult {
-    const rows = this.context.db
-      .prepare(
-        `
-          SELECT *
-          FROM execution_sessions
-          WHERE status IN ('queued', 'running', 'paused_checkpoint', 'paused_user_control', 'awaiting_input')
-          ORDER BY started_at ASC, id ASC
-        `,
+    const rows = this.context.db.all<Record<string, unknown>>(sql`
+      SELECT *
+      FROM execution_sessions
+      WHERE status IN (
+        'queued',
+        'running',
+        'paused_checkpoint',
+        'paused_user_control',
+        'awaiting_input'
       )
-      .all() as Record<string, unknown>[];
+      ORDER BY started_at ASC, id ASC
+    `);
 
     const interruptedSessions: ExecutionSession[] = [];
     const activeSessionIds: string[] = [];
@@ -361,11 +329,11 @@ export class SessionRepository {
     for (const row of rows) {
       const session = mapExecutionSession(row);
       const activeAttemptRow = session.current_attempt_id
-        ? (this.context.db
-            .prepare("SELECT pty_pid FROM execution_attempts WHERE id = ?")
-            .get(session.current_attempt_id) as
-            | { pty_pid: number | null }
-            | undefined)
+        ? this.context.db.get<{ pty_pid: number | null }>(sql`
+            SELECT pty_pid
+            FROM execution_attempts
+            WHERE id = ${session.current_attempt_id}
+          `)
         : undefined;
 
       if (isTrackedProcessAlive(activeAttemptRow?.pty_pid)) {
@@ -377,17 +345,13 @@ export class SessionRepository {
       const summary =
         "The backend restarted while this session was active. The session was marked interrupted and can be resumed on the existing worktree.";
 
-      this.context.db
-        .prepare(
-          `
-            UPDATE execution_sessions
-            SET status = ?,
-                last_heartbeat_at = ?,
-                last_summary = ?
-            WHERE id = ?
-          `,
-        )
-        .run("interrupted", timestamp, summary, session.id);
+      this.context.db.run(sql`
+        UPDATE execution_sessions
+        SET status = ${"interrupted"},
+            last_heartbeat_at = ${timestamp},
+            last_summary = ${summary}
+        WHERE id = ${session.id}
+      `);
 
       if (session.current_attempt_id) {
         this.updateExecutionAttempt(session.current_attempt_id, {

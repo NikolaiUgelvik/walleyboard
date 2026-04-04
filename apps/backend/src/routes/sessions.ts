@@ -20,13 +20,13 @@ import {
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
 import { commandRouteRateLimit } from "../lib/rate-limit.js";
-import type { Store } from "../lib/store.js";
+import type { SessionRoutePersistence } from "../lib/store.js";
 
 type SessionRouteOptions = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
   getClaudeCodeAvailability?: GetClaudeCodeAvailability;
-  store: Store;
+  store: SessionRoutePersistence;
 };
 
 export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (

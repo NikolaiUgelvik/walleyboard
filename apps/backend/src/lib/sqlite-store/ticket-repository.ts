@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type {
   PullRequestRef,
   TicketFrontmatter,
@@ -25,42 +26,27 @@ export class TicketRepository {
     options: ListProjectTicketsOptions = {},
   ): TicketFrontmatter[] {
     const { archivedOnly = false, includeArchived = false } = options;
-    const statement = archivedOnly
-      ? this.context.db.prepare(
-          `
-            SELECT *
-            FROM tickets
-            WHERE project_id = ?
-              AND archived_at IS NOT NULL
-            ORDER BY updated_at DESC, id DESC
-          `,
-        )
+    const archivedClause = archivedOnly
+      ? sql`AND archived_at IS NOT NULL`
       : includeArchived
-        ? this.context.db.prepare(
-            `
-              SELECT *
-              FROM tickets
-              WHERE project_id = ?
-              ORDER BY updated_at DESC, id DESC
-            `,
-          )
-        : this.context.db.prepare(
-            `
-              SELECT *
-              FROM tickets
-              WHERE project_id = ?
-                AND archived_at IS NULL
-              ORDER BY updated_at DESC, id DESC
-            `,
-          );
-    const rows = statement.all(projectId) as Record<string, unknown>[];
+        ? sql.empty()
+        : sql`AND archived_at IS NULL`;
+    const rows = this.context.db.all<Record<string, unknown>>(sql`
+      SELECT *
+      FROM tickets
+      WHERE project_id = ${projectId}
+        ${archivedClause}
+      ORDER BY updated_at DESC, id DESC
+    `);
     return rows.map((row) => this.#mapTicketRow(row));
   }
 
   getTicket(ticketId: number): TicketFrontmatter | undefined {
-    const row = this.context.db
-      .prepare("SELECT * FROM tickets WHERE id = ?")
-      .get(ticketId) as Record<string, unknown> | undefined;
+    const row = this.context.db.get<Record<string, unknown>>(sql`
+      SELECT *
+      FROM tickets
+      WHERE id = ${ticketId}
+    `);
     return row ? this.#mapTicketRow(row) : undefined;
   }
 
@@ -73,15 +59,12 @@ export class TicketRepository {
       return undefined;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET status = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(status, nowIso(), ticketId);
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET status = ${status},
+          updated_at = ${nowIso()}
+      WHERE id = ${ticketId}
+    `);
 
     return this.getTicket(ticketId);
   }
@@ -95,29 +78,25 @@ export class TicketRepository {
       return undefined;
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET linked_pr = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        linkedPr === null ? null : stringifyJson(linkedPr),
-        nowIso(),
-        ticketId,
-      );
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET linked_pr = ${linkedPr === null ? null : stringifyJson(linkedPr)},
+          updated_at = ${nowIso()}
+      WHERE id = ${ticketId}
+    `);
 
     return this.getTicket(ticketId);
   }
 
   archiveTicket(ticketId: number): TicketFrontmatter | undefined {
-    const ticketRow = this.context.db
-      .prepare("SELECT status, archived_at FROM tickets WHERE id = ?")
-      .get(ticketId) as
-      | { status: string; archived_at: string | null }
-      | undefined;
+    const ticketRow = this.context.db.get<{
+      status: string;
+      archived_at: string | null;
+    }>(sql`
+      SELECT status, archived_at
+      FROM tickets
+      WHERE id = ${ticketId}
+    `);
 
     if (!ticketRow) {
       return undefined;
@@ -132,23 +111,22 @@ export class TicketRepository {
     }
 
     const timestamp = nowIso();
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET archived_at = ?, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(timestamp, timestamp, ticketId);
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET archived_at = ${timestamp},
+          updated_at = ${timestamp}
+      WHERE id = ${ticketId}
+    `);
 
     return this.getTicket(ticketId);
   }
 
   restoreTicket(ticketId: number): TicketFrontmatter | undefined {
-    const ticketRow = this.context.db
-      .prepare("SELECT archived_at FROM tickets WHERE id = ?")
-      .get(ticketId) as { archived_at: string | null } | undefined;
+    const ticketRow = this.context.db.get<{ archived_at: string | null }>(sql`
+      SELECT archived_at
+      FROM tickets
+      WHERE id = ${ticketId}
+    `);
 
     if (!ticketRow) {
       return undefined;
@@ -159,15 +137,12 @@ export class TicketRepository {
     }
 
     const timestamp = nowIso();
-    this.context.db
-      .prepare(
-        `
-          UPDATE tickets
-          SET archived_at = NULL, updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(timestamp, ticketId);
+    this.context.db.run(sql`
+      UPDATE tickets
+      SET archived_at = NULL,
+          updated_at = ${timestamp}
+      WHERE id = ${ticketId}
+    `);
 
     return this.getTicket(ticketId);
   }
@@ -178,97 +153,92 @@ export class TicketRepository {
       return undefined;
     }
 
-    const reviewPackageRows = this.context.db
-      .prepare("SELECT id FROM review_packages WHERE ticket_id = ?")
-      .all(ticketId) as Array<{ id: string }>;
+    const reviewPackageRows = this.context.db.all<{ id: string }>(sql`
+      SELECT id
+      FROM review_packages
+      WHERE ticket_id = ${ticketId}
+    `);
     const reviewPackageIds = reviewPackageRows.map((row) => row.id);
-    const reviewRunRows = this.context.db
-      .prepare("SELECT id FROM review_runs WHERE ticket_id = ?")
-      .all(ticketId) as Array<{ id: string }>;
+    const reviewRunRows = this.context.db.all<{ id: string }>(sql`
+      SELECT id
+      FROM review_runs
+      WHERE ticket_id = ${ticketId}
+    `);
     const reviewRunIds = reviewRunRows.map((row) => row.id);
 
     const sessionId = ticket.session_id;
     const attemptRows =
       sessionId === null
         ? []
-        : (this.context.db
-            .prepare("SELECT id FROM execution_attempts WHERE session_id = ?")
-            .all(sessionId) as Array<{ id: string }>);
+        : this.context.db.all<{ id: string }>(sql`
+            SELECT id
+            FROM execution_attempts
+            WHERE session_id = ${sessionId}
+          `);
     const attemptIds = attemptRows.map((row) => row.id);
 
-    this.context.db
-      .prepare("DELETE FROM requested_change_notes WHERE ticket_id = ?")
-      .run(ticketId);
-    this.context.db
-      .prepare("DELETE FROM review_packages WHERE ticket_id = ?")
-      .run(ticketId);
-    this.context.db
-      .prepare("DELETE FROM review_runs WHERE ticket_id = ?")
-      .run(ticketId);
+    this.context.db.run(sql`
+      DELETE FROM requested_change_notes
+      WHERE ticket_id = ${ticketId}
+    `);
+    this.context.db.run(sql`
+      DELETE FROM review_packages
+      WHERE ticket_id = ${ticketId}
+    `);
+    this.context.db.run(sql`
+      DELETE FROM review_runs
+      WHERE ticket_id = ${ticketId}
+    `);
 
     if (sessionId) {
-      this.context.db
-        .prepare("DELETE FROM session_logs WHERE session_id = ?")
-        .run(sessionId);
-      this.context.db
-        .prepare("DELETE FROM execution_attempts WHERE session_id = ?")
-        .run(sessionId);
-      this.context.db
-        .prepare("DELETE FROM execution_sessions WHERE id = ?")
-        .run(sessionId);
-      this.context.db
-        .prepare(
-          `
-            DELETE FROM structured_events
-            WHERE entity_type = 'session' AND entity_id = ?
-          `,
-        )
-        .run(sessionId);
+      this.context.db.run(sql`
+        DELETE FROM session_logs
+        WHERE session_id = ${sessionId}
+      `);
+      this.context.db.run(sql`
+        DELETE FROM execution_attempts
+        WHERE session_id = ${sessionId}
+      `);
+      this.context.db.run(sql`
+        DELETE FROM execution_sessions
+        WHERE id = ${sessionId}
+      `);
+      this.context.db.run(sql`
+        DELETE FROM structured_events
+        WHERE entity_type = 'session' AND entity_id = ${sessionId}
+      `);
     }
 
     for (const reviewPackageId of reviewPackageIds) {
-      this.context.db
-        .prepare(
-          `
-            DELETE FROM structured_events
-            WHERE entity_type = 'review_package' AND entity_id = ?
-          `,
-        )
-        .run(reviewPackageId);
+      this.context.db.run(sql`
+        DELETE FROM structured_events
+        WHERE entity_type = 'review_package' AND entity_id = ${reviewPackageId}
+      `);
     }
 
     for (const reviewRunId of reviewRunIds) {
-      this.context.db
-        .prepare(
-          `
-            DELETE FROM structured_events
-            WHERE entity_type = 'review_run' AND entity_id = ?
-          `,
-        )
-        .run(reviewRunId);
+      this.context.db.run(sql`
+        DELETE FROM structured_events
+        WHERE entity_type = 'review_run' AND entity_id = ${reviewRunId}
+      `);
     }
 
     for (const attemptId of attemptIds) {
-      this.context.db
-        .prepare(
-          `
-            DELETE FROM structured_events
-            WHERE entity_type = 'attempt' AND entity_id = ?
-          `,
-        )
-        .run(attemptId);
+      this.context.db.run(sql`
+        DELETE FROM structured_events
+        WHERE entity_type = 'attempt' AND entity_id = ${attemptId}
+      `);
     }
 
-    this.context.db
-      .prepare(
-        `
-          DELETE FROM structured_events
-          WHERE entity_type = 'ticket' AND entity_id = ?
-        `,
-      )
-      .run(String(ticketId));
+    this.context.db.run(sql`
+      DELETE FROM structured_events
+      WHERE entity_type = 'ticket' AND entity_id = ${String(ticketId)}
+    `);
 
-    this.context.db.prepare("DELETE FROM tickets WHERE id = ?").run(ticketId);
+    this.context.db.run(sql`
+      DELETE FROM tickets
+      WHERE id = ${ticketId}
+    `);
 
     return ticket;
   }

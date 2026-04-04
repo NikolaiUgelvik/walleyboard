@@ -15,12 +15,12 @@ import {
   shouldPublishPreExecutionSessionUpdate,
 } from "./execution-runtime/publishers.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
-import type { RestartTicketResult, Store } from "./store.js";
+import type { AgentReviewPersistence, RestartTicketResult } from "./store.js";
 
 type AgentReviewServiceOptions = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
-  store: Store;
+  store: AgentReviewPersistence;
 };
 
 type ReviewLoopContext = {
@@ -45,7 +45,7 @@ export class AutomaticReviewRunLimitReachedError extends Error {
 export class AgentReviewService {
   readonly #eventHub: EventHub;
   readonly #executionRuntime: ExecutionRuntime;
-  readonly #store: Store;
+  readonly #store: AgentReviewPersistence;
   readonly #activeTicketIds = new Set<number>();
 
   constructor({

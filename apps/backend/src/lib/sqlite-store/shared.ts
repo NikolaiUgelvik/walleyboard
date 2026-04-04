@@ -1,8 +1,11 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-
+import {
+  createMigratedWalleyboardDatabase,
+  type WalleyboardDatabase,
+  type WalleyboardDatabaseHandle,
+} from "@walleyboard/db";
+import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+
 import type {
   DraftTicketState,
   ExecutionAttempt,
@@ -35,6 +38,8 @@ export type JsonValue =
   | number
   | boolean
   | null;
+
+type SqliteRow = Record<string, unknown>;
 
 export const slotOccupyingExecutionSessionStatuses = [
   "awaiting_input",
@@ -227,18 +232,14 @@ export function deriveWorkingBranch(
   return `${prefix}/ticket-${ticketId}-${slugify(title).slice(0, 24)}`;
 }
 
-export function mapProject(row: Record<string, unknown>): Project {
+export function mapProject(row: SqliteRow): Project {
   return {
     id: String(row.id),
     slug: String(row.slug),
     name: String(row.name),
     color: normalizeProjectColor(row.color as string | null | undefined),
     agent_adapter:
-      row.agent_adapter === "codex"
-        ? "codex"
-        : row.agent_adapter === "claude-code"
-          ? "claude-code"
-          : "codex",
+      row.agent_adapter === "claude-code" ? "claude-code" : "codex",
     execution_backend: "docker",
     disabled_mcp_servers: parseJson<unknown[]>(row.disabled_mcp_servers, [])
       .filter((server): server is string => typeof server === "string")
@@ -292,7 +293,7 @@ export function mapProject(row: Record<string, unknown>): Project {
   };
 }
 
-export function mapRepository(row: Record<string, unknown>): RepositoryConfig {
+export function mapRepository(row: SqliteRow): RepositoryConfig {
   return {
     id: String(row.id),
     project_id: String(row.project_id),
@@ -310,7 +311,7 @@ export function mapRepository(row: Record<string, unknown>): RepositoryConfig {
 }
 
 export function mapDraft(
-  row: Record<string, unknown>,
+  row: SqliteRow,
   ticketReferences: TicketReference[] = [],
 ): DraftTicketState {
   return {
@@ -356,7 +357,7 @@ export function mapDraft(
 }
 
 export function mapTicket(
-  row: Record<string, unknown>,
+  row: SqliteRow,
   ticketReferences: TicketReference[] = [],
 ): TicketFrontmatter {
   return {
@@ -380,9 +381,7 @@ export function mapTicket(
   };
 }
 
-export function mapStructuredEvent(
-  row: Record<string, unknown>,
-): StructuredEvent {
+export function mapStructuredEvent(row: SqliteRow): StructuredEvent {
   return {
     id: String(row.id),
     occurred_at: String(row.occurred_at),
@@ -393,20 +392,14 @@ export function mapStructuredEvent(
   };
 }
 
-export function mapExecutionSession(
-  row: Record<string, unknown>,
-): ExecutionSession {
+export function mapExecutionSession(row: SqliteRow): ExecutionSession {
   return {
     id: String(row.id),
     ticket_id: Number(row.ticket_id),
     project_id: String(row.project_id),
     repo_id: String(row.repo_id),
     agent_adapter:
-      row.agent_adapter === "codex"
-        ? "codex"
-        : row.agent_adapter === "claude-code"
-          ? "claude-code"
-          : "codex",
+      row.agent_adapter === "claude-code" ? "claude-code" : "codex",
     worktree_path:
       row.worktree_path === null ? null : String(row.worktree_path),
     adapter_session_ref:
@@ -435,9 +428,7 @@ export function mapExecutionSession(
   };
 }
 
-export function mapExecutionAttempt(
-  row: Record<string, unknown>,
-): ExecutionAttempt {
+export function mapExecutionAttempt(row: SqliteRow): ExecutionAttempt {
   return {
     id: String(row.id),
     session_id: String(row.session_id),
@@ -458,7 +449,7 @@ export function mapExecutionAttempt(
   };
 }
 
-export function mapReviewPackage(row: Record<string, unknown>): ReviewPackage {
+export function mapReviewPackage(row: SqliteRow): ReviewPackage {
   return {
     id: String(row.id),
     ticket_id: Number(row.ticket_id),
@@ -472,7 +463,7 @@ export function mapReviewPackage(row: Record<string, unknown>): ReviewPackage {
   };
 }
 
-export function mapReviewRun(row: Record<string, unknown>): ReviewRun {
+export function mapReviewRun(row: SqliteRow): ReviewRun {
   return {
     id: String(row.id),
     ticket_id: Number(row.ticket_id),
@@ -494,9 +485,7 @@ export function mapReviewRun(row: Record<string, unknown>): ReviewRun {
   };
 }
 
-export function mapRequestedChangeNote(
-  row: Record<string, unknown>,
-): RequestedChangeNote {
+export function mapRequestedChangeNote(row: SqliteRow): RequestedChangeNote {
   return {
     id: String(row.id),
     ticket_id: Number(row.ticket_id),
@@ -509,30 +498,40 @@ export function mapRequestedChangeNote(
 }
 
 export class SqliteStoreContext {
-  readonly #db: DatabaseSync;
+  readonly #databasePath: string;
+  readonly #databaseHandle: WalleyboardDatabaseHandle;
+  readonly #db: WalleyboardDatabase;
 
   constructor(databasePath?: string) {
-    const resolvedPath =
+    this.#databasePath =
       databasePath ?? resolveWalleyBoardPath("walleyboard.sqlite");
-    mkdirSync(dirname(resolvedPath), { recursive: true });
-    this.#db = new DatabaseSync(resolvedPath);
-    this.#db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
-    this.#initSchema();
+    this.#databaseHandle = createMigratedWalleyboardDatabase(
+      this.#databasePath,
+    );
+    this.#db = this.#databaseHandle.db;
   }
 
-  get db(): DatabaseSync {
+  get databasePath(): string {
+    return this.#databasePath;
+  }
+
+  get db() {
     return this.#db;
   }
 
+  close(): void {
+    this.#databaseHandle.sqlite.close();
+  }
+
+  transaction<T>(operation: () => T): T {
+    return this.#databaseHandle.sqlite.transaction(operation)();
+  }
+
   appendSessionLog(sessionId: string, line: string): void {
-    this.#db
-      .prepare(
-        `
-          INSERT INTO session_logs (session_id, line, created_at)
-          VALUES (?, ?, ?)
-        `,
-      )
-      .run(sessionId, line, nowIso());
+    this.#db.run(sql`
+      INSERT INTO session_logs (session_id, line, created_at)
+      VALUES (${sessionId}, ${line}, ${nowIso()})
+    `);
   }
 
   recordStructuredEvent(
@@ -550,22 +549,18 @@ export class SqliteStoreContext {
       payload,
     };
 
-    this.#db
-      .prepare(
-        `
-          INSERT INTO structured_events (
-            id, occurred_at, entity_type, entity_id, event_type, payload
-          ) VALUES (?, ?, ?, ?, ?, ?)
-        `,
+    this.#db.run(sql`
+      INSERT INTO structured_events (
+        id, occurred_at, entity_type, entity_id, event_type, payload
+      ) VALUES (
+        ${event.id},
+        ${event.occurred_at},
+        ${event.entity_type},
+        ${event.entity_id},
+        ${event.event_type},
+        ${stringifyJson(event.payload)}
       )
-      .run(
-        event.id,
-        event.occurred_at,
-        event.entity_type,
-        event.entity_id,
-        event.event_type,
-        stringifyJson(event.payload),
-      );
+    `);
 
     return event;
   }
@@ -574,562 +569,32 @@ export class SqliteStoreContext {
     projectId: string,
     excludedSessionId?: string,
   ): number {
-    const row = this.#db
-      .prepare(
-        `
-          SELECT COUNT(*) AS count
-          FROM execution_sessions
-          WHERE project_id = ?
-            ${excludedSessionId ? "AND id != ?" : ""}
-            AND status IN (${slotOccupyingExecutionSessionStatuses.map(() => "?").join(", ")})
-        `,
-      )
-      .get(
-        projectId,
-        ...(excludedSessionId ? [excludedSessionId] : []),
-        ...slotOccupyingExecutionSessionStatuses,
-      ) as { count: number };
+    const excludedClause =
+      excludedSessionId === undefined
+        ? sql.empty()
+        : sql`AND id != ${excludedSessionId}`;
+    const statusList = sql.join(
+      slotOccupyingExecutionSessionStatuses.map((status) => sql`${status}`),
+      sql`, `,
+    );
+    const row = this.#db.get<{ count: number }>(sql`
+      SELECT COUNT(*) AS count
+      FROM execution_sessions
+      WHERE project_id = ${projectId}
+        ${excludedClause}
+        AND status IN (${statusList})
+    `);
 
-    return Number(row.count);
+    return Number(row?.count ?? 0);
   }
 
   nextAttemptNumber(sessionId: string): number {
-    const row = this.#db
-      .prepare(
-        `
-          SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt_number
-          FROM execution_attempts
-          WHERE session_id = ?
-        `,
-      )
-      .get(sessionId) as { max_attempt_number: number };
-
-    return Number(row.max_attempt_number) + 1;
-  }
-
-  #initSchema() {
-    this.#db.exec(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        color TEXT,
-        agent_adapter TEXT NOT NULL DEFAULT 'codex',
-        execution_backend TEXT NOT NULL DEFAULT 'docker',
-        disabled_mcp_servers TEXT NOT NULL DEFAULT '[]',
-        automatic_agent_review INTEGER NOT NULL DEFAULT 0,
-        automatic_agent_review_run_limit INTEGER NOT NULL DEFAULT 1,
-        default_review_action TEXT NOT NULL DEFAULT 'direct_merge',
-        default_target_branch TEXT,
-        preview_start_command TEXT,
-        pre_worktree_command TEXT,
-        post_worktree_command TEXT,
-        draft_analysis_model TEXT,
-        draft_analysis_reasoning_effort TEXT,
-        ticket_work_model TEXT,
-        ticket_work_reasoning_effort TEXT,
-        max_concurrent_sessions INTEGER NOT NULL DEFAULT 4,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS repositories (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        path TEXT NOT NULL,
-        target_branch TEXT,
-        setup_hook TEXT,
-        cleanup_hook TEXT,
-        validation_profile TEXT NOT NULL,
-        extra_env_allowlist TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS draft_ticket_states (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        artifact_scope_id TEXT NOT NULL,
-        title_draft TEXT NOT NULL,
-        description_draft TEXT NOT NULL,
-        proposed_repo_id TEXT,
-        confirmed_repo_id TEXT,
-        proposed_ticket_type TEXT,
-        proposed_acceptance_criteria TEXT NOT NULL,
-        wizard_status TEXT NOT NULL,
-        split_proposal_summary TEXT,
-        source_ticket_id INTEGER,
-        target_branch TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS tickets (
-        id INTEGER PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        repo_id TEXT NOT NULL,
-        artifact_scope_id TEXT NOT NULL,
-        status TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL DEFAULT '',
-        ticket_type TEXT NOT NULL,
-        acceptance_criteria TEXT NOT NULL DEFAULT '[]',
-        working_branch TEXT,
-        target_branch TEXT NOT NULL,
-        linked_pr TEXT,
-        session_id TEXT,
-        archived_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-        FOREIGN KEY (repo_id) REFERENCES repositories(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS execution_sessions (
-        id TEXT PRIMARY KEY,
-        ticket_id INTEGER NOT NULL,
-        project_id TEXT NOT NULL,
-        repo_id TEXT NOT NULL,
-        agent_adapter TEXT NOT NULL DEFAULT 'codex',
-        worktree_path TEXT,
-        adapter_session_ref TEXT,
-        status TEXT NOT NULL,
-        planning_enabled INTEGER NOT NULL,
-        plan_status TEXT NOT NULL DEFAULT 'not_requested',
-        plan_summary TEXT,
-        current_attempt_id TEXT,
-        latest_requested_change_note_id TEXT,
-        latest_review_package_id TEXT,
-        queue_entered_at TEXT,
-        started_at TEXT,
-        completed_at TEXT,
-        last_heartbeat_at TEXT,
-        last_summary TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS execution_attempts (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        attempt_number INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        prompt_kind TEXT,
-        prompt TEXT,
-        pty_pid INTEGER,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        end_reason TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS structured_events (
-        id TEXT PRIMARY KEY,
-        occurred_at TEXT NOT NULL,
-        entity_type TEXT NOT NULL,
-        entity_id TEXT NOT NULL,
-        event_type TEXT NOT NULL,
-        payload TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS review_packages (
-        id TEXT PRIMARY KEY,
-        ticket_id INTEGER NOT NULL,
-        session_id TEXT NOT NULL,
-        diff_ref TEXT NOT NULL,
-        commit_refs TEXT NOT NULL,
-        change_summary TEXT NOT NULL,
-        validation_results TEXT NOT NULL,
-        remaining_risks TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS review_runs (
-        id TEXT PRIMARY KEY,
-        ticket_id INTEGER NOT NULL,
-        review_package_id TEXT NOT NULL,
-        implementation_session_id TEXT NOT NULL,
-        trigger_source TEXT NOT NULL DEFAULT 'manual',
-        status TEXT NOT NULL,
-        adapter_session_ref TEXT,
-        prompt TEXT,
-        report TEXT,
-        failure_message TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        completed_at TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS requested_change_notes (
-        id TEXT PRIMARY KEY,
-        ticket_id INTEGER NOT NULL,
-        review_package_id TEXT,
-        author_type TEXT NOT NULL,
-        body TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS session_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        line TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_repositories_project_id ON repositories(project_id);
-      CREATE INDEX IF NOT EXISTS idx_drafts_project_id ON draft_ticket_states(project_id);
-      CREATE INDEX IF NOT EXISTS idx_tickets_project_id ON tickets(project_id);
-      CREATE INDEX IF NOT EXISTS idx_review_runs_ticket_id ON review_runs(ticket_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_events_entity ON structured_events(entity_type, entity_id, occurred_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_session_logs_session_id ON session_logs(session_id, id ASC);
+    const row = this.#db.get<{ max_attempt_number: number | null }>(sql`
+      SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt_number
+      FROM execution_attempts
+      WHERE session_id = ${sessionId}
     `);
 
-    this.#renameColumnIfPresent(
-      "execution_sessions",
-      "codex_session_id",
-      "adapter_session_ref",
-    );
-    this.#ensureColumn(
-      "projects",
-      "agent_adapter",
-      "TEXT NOT NULL DEFAULT 'codex'",
-    );
-    this.#ensureColumn(
-      "execution_sessions",
-      "agent_adapter",
-      "TEXT NOT NULL DEFAULT 'codex'",
-    );
-    this.#ensureColumn("execution_sessions", "worktree_path", "TEXT");
-    this.#ensureColumn("execution_sessions", "adapter_session_ref", "TEXT");
-    this.#ensureColumn(
-      "execution_sessions",
-      "plan_status",
-      "TEXT NOT NULL DEFAULT 'not_requested'",
-    );
-    this.#ensureColumn("execution_sessions", "plan_summary", "TEXT");
-    this.#ensureColumn("execution_attempts", "prompt_kind", "TEXT");
-    this.#ensureColumn("execution_attempts", "prompt", "TEXT");
-    this.#ensureColumn("tickets", "description", "TEXT NOT NULL DEFAULT ''");
-    this.#ensureColumn(
-      "tickets",
-      "acceptance_criteria",
-      "TEXT NOT NULL DEFAULT '[]'",
-    );
-    this.#ensureColumn("tickets", "archived_at", "TEXT");
-    this.#ensureColumn("draft_ticket_states", "artifact_scope_id", "TEXT");
-    this.#ensureColumn("draft_ticket_states", "source_ticket_id", "INTEGER");
-    this.#ensureColumn("draft_ticket_states", "target_branch", "TEXT");
-    this.#ensureColumn("tickets", "artifact_scope_id", "TEXT");
-    this.#ensureColumn("projects", "draft_analysis_model", "TEXT");
-    this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
-    this.#ensureColumn("projects", "ticket_work_model", "TEXT");
-    this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
-    this.#ensureColumn("projects", "color", "TEXT");
-    this.#ensureColumn("projects", "preview_start_command", "TEXT");
-    this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
-    this.#ensureColumn("projects", "post_worktree_command", "TEXT");
-    this.#ensureColumn(
-      "projects",
-      "execution_backend",
-      "TEXT NOT NULL DEFAULT 'docker'",
-    );
-    this.#ensureColumn(
-      "projects",
-      "disabled_mcp_servers",
-      "TEXT NOT NULL DEFAULT '[]'",
-    );
-    this.#ensureColumn(
-      "projects",
-      "default_review_action",
-      "TEXT NOT NULL DEFAULT 'direct_merge'",
-    );
-    this.#ensureColumn(
-      "projects",
-      "automatic_agent_review",
-      "INTEGER NOT NULL DEFAULT 0",
-    );
-    this.#ensureColumn(
-      "projects",
-      "automatic_agent_review_run_limit",
-      "INTEGER NOT NULL DEFAULT 1",
-    );
-    this.#ensureColumn(
-      "review_runs",
-      "trigger_source",
-      "TEXT NOT NULL DEFAULT 'manual'",
-    );
-    this.#ensureColumn("review_runs", "prompt", "TEXT");
-    this.#backfillArtifactScopes();
-    this.#backfillAgentAdapterDefaults();
-    this.#backfillProjectConcurrencyDefaults();
-    this.#backfillProjectExecutionBackendDefaults();
-    this.#backfillProjectDisabledMcpServersDefaults();
-    this.#backfillProjectAutomaticAgentReviewDefaults();
-    this.#backfillProjectAutomaticAgentReviewRunLimitDefaults();
-    this.#backfillProjectReviewActionDefaults();
-    this.#backfillTicketContext();
-  }
-
-  #ensureColumn(
-    tableName: string,
-    columnName: string,
-    definition: string,
-  ): void {
-    const columns = this.#listColumns(tableName);
-
-    if (columns.some((column) => column.name === columnName)) {
-      return;
-    }
-
-    this.#db.exec(
-      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`,
-    );
-  }
-
-  #renameColumnIfPresent(
-    tableName: string,
-    fromColumn: string,
-    toColumn: string,
-  ): void {
-    const columns = this.#listColumns(tableName);
-    const hasFromColumn = columns.some((column) => column.name === fromColumn);
-    const hasToColumn = columns.some((column) => column.name === toColumn);
-
-    if (!hasFromColumn || hasToColumn) {
-      return;
-    }
-
-    this.#db.exec(
-      `ALTER TABLE ${tableName} RENAME COLUMN ${fromColumn} TO ${toColumn};`,
-    );
-  }
-
-  #listColumns(tableName: string): Array<{ name: string }> {
-    return this.#db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
-      name: string;
-    }>;
-  }
-
-  #backfillTicketContext(): void {
-    const ticketsNeedingContext = this.#db
-      .prepare(
-        `
-          SELECT id, description, acceptance_criteria
-          FROM tickets
-          WHERE description = '' OR acceptance_criteria = '[]'
-        `,
-      )
-      .all() as Array<{
-      id: number;
-      description: string;
-      acceptance_criteria: string;
-    }>;
-
-    for (const ticket of ticketsNeedingContext) {
-      const eventRow = this.#db
-        .prepare(
-          `
-            SELECT payload
-            FROM structured_events
-            WHERE entity_type = 'ticket'
-              AND entity_id = ?
-              AND event_type = 'ticket.created'
-            ORDER BY occurred_at DESC
-            LIMIT 1
-          `,
-        )
-        .get(String(ticket.id)) as { payload: string } | undefined;
-
-      if (!eventRow) {
-        continue;
-      }
-
-      const payload = parseJson(eventRow.payload, {}) as {
-        description?: unknown;
-        acceptance_criteria?: unknown;
-      };
-      const description =
-        ticket.description.length > 0
-          ? ticket.description
-          : typeof payload.description === "string"
-            ? payload.description
-            : "";
-      const acceptanceCriteria =
-        ticket.acceptance_criteria !== "[]"
-          ? ticket.acceptance_criteria
-          : stringifyJson(
-              Array.isArray(payload.acceptance_criteria)
-                ? preserveMarkdownList(
-                    payload.acceptance_criteria.filter(
-                      (criterion): criterion is string =>
-                        typeof criterion === "string",
-                    ),
-                  )
-                : [],
-            );
-
-      this.#db
-        .prepare(
-          `
-            UPDATE tickets
-            SET description = ?, acceptance_criteria = ?
-            WHERE id = ?
-          `,
-        )
-        .run(description, acceptanceCriteria, ticket.id);
-    }
-  }
-
-  #backfillProjectConcurrencyDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET max_concurrent_sessions = ?
-          WHERE max_concurrent_sessions = 1
-        `,
-      )
-      .run(defaultMaxConcurrentSessions);
-  }
-
-  #backfillProjectExecutionBackendDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET execution_backend = 'docker'
-          WHERE execution_backend IS NULL
-             OR execution_backend = ''
-             OR execution_backend != 'docker'
-        `,
-      )
-      .run();
-  }
-
-  #backfillProjectDisabledMcpServersDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET disabled_mcp_servers = '[]'
-          WHERE disabled_mcp_servers IS NULL OR disabled_mcp_servers = ''
-        `,
-      )
-      .run();
-  }
-
-  #backfillProjectAutomaticAgentReviewDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET automatic_agent_review = 0
-          WHERE automatic_agent_review IS NULL
-        `,
-      )
-      .run();
-  }
-
-  #backfillProjectAutomaticAgentReviewRunLimitDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET automatic_agent_review_run_limit = 1
-          WHERE automatic_agent_review_run_limit IS NULL
-             OR automatic_agent_review_run_limit < 1
-        `,
-      )
-      .run();
-  }
-
-  #backfillProjectReviewActionDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET default_review_action = 'direct_merge'
-          WHERE default_review_action IS NULL OR default_review_action = ''
-        `,
-      )
-      .run();
-  }
-
-  #backfillAgentAdapterDefaults(): void {
-    this.#db
-      .prepare(
-        `
-          UPDATE projects
-          SET agent_adapter = 'codex'
-          WHERE agent_adapter IS NULL
-             OR agent_adapter = ''
-             OR (
-               agent_adapter != 'codex'
-               AND agent_adapter != 'claude-code'
-             )
-        `,
-      )
-      .run();
-
-    this.#db
-      .prepare(
-        `
-          UPDATE execution_sessions
-          SET agent_adapter = 'codex'
-          WHERE agent_adapter IS NULL
-             OR agent_adapter = ''
-             OR (
-               agent_adapter != 'codex'
-               AND agent_adapter != 'claude-code'
-             )
-        `,
-      )
-      .run();
-  }
-
-  #backfillArtifactScopes(): void {
-    const draftRows = this.#db
-      .prepare(
-        `
-          SELECT id
-          FROM draft_ticket_states
-          WHERE artifact_scope_id IS NULL OR artifact_scope_id = ''
-        `,
-      )
-      .all() as Array<{ id: string }>;
-
-    for (const row of draftRows) {
-      this.#db
-        .prepare(
-          `
-            UPDATE draft_ticket_states
-            SET artifact_scope_id = ?
-            WHERE id = ?
-          `,
-        )
-        .run(nanoid(), row.id);
-    }
-
-    const ticketRows = this.#db
-      .prepare(
-        `
-          SELECT id
-          FROM tickets
-          WHERE artifact_scope_id IS NULL OR artifact_scope_id = ''
-        `,
-      )
-      .all() as Array<{ id: number }>;
-
-    for (const row of ticketRows) {
-      this.#db
-        .prepare(
-          `
-            UPDATE tickets
-            SET artifact_scope_id = ?
-            WHERE id = ?
-          `,
-        )
-        .run(nanoid(), row.id);
-    }
+    return Number(row?.max_attempt_number ?? 0) + 1;
   }
 }

@@ -26,7 +26,7 @@ import {
   fileRouteRateLimit,
 } from "../lib/rate-limit.js";
 import { TicketReferenceValidationError } from "../lib/sqlite-store/ticket-references.js";
-import type { Store } from "../lib/store.js";
+import type { DraftRoutePersistence } from "../lib/store.js";
 import {
   buildTicketArtifactFilePath,
   ensureTicketArtifactScopeDir,
@@ -38,10 +38,10 @@ import {
 type DraftRouteOptions = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
-  store: Store;
+  store: DraftRoutePersistence;
 };
 
-function resolveDraftContext(store: Store, draftId: string) {
+function resolveDraftContext(store: DraftRoutePersistence, draftId: string) {
   const draft = store.getDraft(draftId);
   if (!draft) {
     throw new Error("Draft not found");

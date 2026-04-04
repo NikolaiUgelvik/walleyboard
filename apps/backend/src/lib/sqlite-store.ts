@@ -30,21 +30,27 @@ import type {
   ConfirmDraftInput,
   CreateReviewPackageInput,
   CreateReviewRunInput,
+  DraftPersistence,
   ListProjectTicketsOptions,
   MergeConflictResult,
   PreparedExecutionRuntime,
+  ProjectPersistence,
   RestartTicketResult,
+  ReviewPersistence,
+  SessionPersistence,
   StartTicketResult,
   StartupRecoveryResult,
   StopTicketResult,
-  Store,
+  TicketPersistence,
   UpdateDraftRecordInput,
   UpdateExecutionAttemptInput,
   UpdateReviewRunInput,
   UpdateSessionPlanInput,
+  WalleyboardPersistence,
 } from "./store.js";
 
-export class SqliteStore implements Store {
+export class SqliteStore implements WalleyboardPersistence {
+  static readonly #openStores = new Set<SqliteStore>();
   readonly #context: SqliteStoreContext;
   readonly #projects: ProjectRepository;
   readonly #drafts: DraftRepository;
@@ -55,8 +61,21 @@ export class SqliteStore implements Store {
   readonly #draftWorkflow: DraftWorkflowService;
   readonly #projectWorkflow: ProjectWorkflowService;
   readonly #ticketExecutionWorkflow: TicketExecutionWorkflowService;
+  readonly projects: ProjectPersistence;
+  readonly drafts: DraftPersistence;
+  readonly tickets: TicketPersistence;
+  readonly reviews: ReviewPersistence;
+  readonly sessions: SessionPersistence;
+  #closed = false;
+
+  static closeAllOpenStores(): void {
+    for (const store of [...SqliteStore.#openStores]) {
+      store.close();
+    }
+  }
 
   constructor(databasePath?: string) {
+    SqliteStore.#openStores.add(this);
     this.#context = new SqliteStoreContext(databasePath);
     this.#projects = new ProjectRepository(this.#context);
     this.#drafts = new DraftRepository(this.#context);
@@ -84,6 +103,105 @@ export class SqliteStore implements Store {
       this.#sessions,
       this.#reviews,
     );
+    this.projects = {
+      createProject: (input) => this.createProject(input),
+      deleteProject: (projectId) => this.deleteProject(projectId),
+      getProject: (projectId) => this.getProject(projectId),
+      getRepository: (repositoryId) => this.getRepository(repositoryId),
+      listProjectRepositories: (projectId) =>
+        this.listProjectRepositories(projectId),
+      listProjects: () => this.listProjects(),
+      updateProject: (projectId, input) => this.updateProject(projectId, input),
+    };
+    this.drafts = {
+      confirmDraft: (draftId, input) => this.confirmDraft(draftId, input),
+      createDraft: (input) => this.createDraft(input),
+      deleteDraft: (draftId) => this.deleteDraft(draftId),
+      editReadyTicket: (ticketId) => this.editReadyTicket(ticketId),
+      getDraft: (draftId) => this.getDraft(draftId),
+      getDraftEvents: (draftId) => this.getDraftEvents(draftId),
+      listProjectDrafts: (projectId) => this.listProjectDrafts(projectId),
+      recordDraftEvent: (draftId, eventType, payload) =>
+        this.recordDraftEvent(draftId, eventType, payload),
+      refineDraft: (draftId, instruction) =>
+        this.refineDraft(draftId, instruction),
+      updateDraft: (draftId, input) => this.updateDraft(draftId, input),
+    };
+    this.tickets = {
+      archiveTicket: (ticketId) => this.archiveTicket(ticketId),
+      deleteTicket: (ticketId) => this.deleteTicket(ticketId),
+      getTicket: (ticketId) => this.getTicket(ticketId),
+      getTicketEvents: (ticketId) => this.getTicketEvents(ticketId),
+      listProjectTickets: (projectId, options) =>
+        this.listProjectTickets(projectId, options),
+      recordMergeConflict: (ticketId, body) =>
+        this.recordMergeConflict(ticketId, body),
+      recordTicketEvent: (ticketId, eventType, payload) =>
+        this.recordTicketEvent(ticketId, eventType, payload),
+      requestTicketChanges: (ticketId, body, authorType) =>
+        this.requestTicketChanges(ticketId, body, authorType),
+      restartInterruptedTicket: (ticketId, runtime, reason) =>
+        this.restartInterruptedTicket(ticketId, runtime, reason),
+      restoreTicket: (ticketId) => this.restoreTicket(ticketId),
+      resumeTicket: (ticketId, reason) => this.resumeTicket(ticketId, reason),
+      startTicket: (ticketId, planningEnabled, runtime) =>
+        this.startTicket(ticketId, planningEnabled, runtime),
+      stopTicket: (ticketId, reason) => this.stopTicket(ticketId, reason),
+      updateTicketLinkedPr: (ticketId, linkedPr) =>
+        this.updateTicketLinkedPr(ticketId, linkedPr),
+      updateTicketStatus: (ticketId, status) =>
+        this.updateTicketStatus(ticketId, status),
+    };
+    this.reviews = {
+      countAutomaticReviewRuns: (ticketId) =>
+        this.countAutomaticReviewRuns(ticketId),
+      createReviewPackage: (input) => this.createReviewPackage(input),
+      createReviewRun: (input) => this.createReviewRun(input),
+      getLatestReviewRun: (ticketId) => this.getLatestReviewRun(ticketId),
+      getRequestedChangeNote: (noteId) => this.getRequestedChangeNote(noteId),
+      getReviewPackage: (ticketId) => this.getReviewPackage(ticketId),
+      listReviewRuns: (ticketId) => this.listReviewRuns(ticketId),
+      updateReviewRun: (reviewRunId, input) =>
+        this.updateReviewRun(reviewRunId, input),
+    };
+    this.sessions = {
+      addSessionInput: (sessionId, body) =>
+        this.addSessionInput(sessionId, body),
+      appendSessionLog: (sessionId, line) =>
+        this.appendSessionLog(sessionId, line),
+      claimNextQueuedSession: (projectId) =>
+        this.claimNextQueuedSession(projectId),
+      completeSession: (sessionId, input) =>
+        this.completeSession(sessionId, input),
+      getSession: (sessionId) => this.getSession(sessionId),
+      getSessionLogs: (sessionId) => this.getSessionLogs(sessionId),
+      listSessionAttempts: (sessionId) => this.listSessionAttempts(sessionId),
+      recoverInterruptedSessions: () => this.recoverInterruptedSessions(),
+      updateExecutionAttempt: (attemptId, input) =>
+        this.updateExecutionAttempt(attemptId, input),
+      updateSessionAdapterSessionRef: (sessionId, adapterSessionRef) =>
+        this.updateSessionAdapterSessionRef(sessionId, adapterSessionRef),
+      updateSessionPlan: (sessionId, input) =>
+        this.updateSessionPlan(sessionId, input),
+      updateSessionStatus: (sessionId, status, lastSummary) =>
+        this.updateSessionStatus(sessionId, status, lastSummary),
+      updateSessionWorktreePath: (sessionId, worktreePath) =>
+        this.updateSessionWorktreePath(sessionId, worktreePath),
+    };
+  }
+
+  withTransaction<T>(operation: (persistence: WalleyboardPersistence) => T): T {
+    return this.#context.transaction(() => operation(this));
+  }
+
+  close(): void {
+    if (this.#closed) {
+      return;
+    }
+
+    this.#closed = true;
+    SqliteStore.#openStores.delete(this);
+    this.#context.close();
   }
 
   appendSessionLog(sessionId: string, line: string): number {
@@ -372,3 +490,7 @@ export class SqliteStore implements Store {
     return this.#reviews.getRequestedChangeNote(noteId);
   }
 }
+
+process.once("beforeExit", () => {
+  SqliteStore.closeAllOpenStores();
+});

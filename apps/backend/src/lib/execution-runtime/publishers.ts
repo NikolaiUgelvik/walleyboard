@@ -8,7 +8,7 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { type EventHub, makeProtocolEvent } from "../event-hub.js";
-import type { Store } from "../store.js";
+import type { SessionPersistence } from "../store.js";
 
 export function buildSessionResponse(
   session: ExecutionSession,
@@ -109,7 +109,7 @@ export function publishReviewRunUpdated(
 
 export function publishSessionOutput(
   eventHub: EventHub,
-  store: Store,
+  store: SessionPersistence,
   sessionId: string,
   attemptId: string,
   line: string,

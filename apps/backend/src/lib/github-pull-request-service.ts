@@ -18,7 +18,7 @@ import {
   shouldPublishPreExecutionSessionUpdate,
 } from "./execution-runtime/publishers.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
-import type { Store } from "./store.js";
+import type { GitHubPullRequestPersistence } from "./store.js";
 import type { TicketWorkspaceService } from "./ticket-workspace-service.js";
 import { nowIso } from "./time.js";
 import {
@@ -77,7 +77,7 @@ type PullRequestSchedule = {
 type ReviewRouteDependencies = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
-  store: Store;
+  store: GitHubPullRequestPersistence;
   ticketWorkspaceService: TicketWorkspaceService;
 };
 
@@ -576,7 +576,7 @@ function extractLatestRequestedChangesReview(
   };
 }
 
-function projectTicketPairs(store: Store): Array<{
+function projectTicketPairs(store: GitHubPullRequestPersistence): Array<{
   project: Project;
   ticket: TicketFrontmatter;
 }> {

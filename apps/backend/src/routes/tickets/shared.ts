@@ -6,7 +6,7 @@ import {
 import { type EventHub, makeProtocolEvent } from "../../lib/event-hub.js";
 import type { ExecutionRuntime } from "../../lib/execution-runtime.js";
 import type { GitHubPullRequestService } from "../../lib/github-pull-request-service.js";
-import type { Store } from "../../lib/store.js";
+import type { TicketRoutePersistence } from "../../lib/store.js";
 import type { TicketWorkspaceService } from "../../lib/ticket-workspace-service.js";
 
 export type TicketRouteOptions = {
@@ -15,7 +15,7 @@ export type TicketRouteOptions = {
   executionRuntime: ExecutionRuntime;
   githubPullRequestService: GitHubPullRequestService;
   getClaudeCodeAvailability?: GetClaudeCodeAvailability;
-  store: Store;
+  store: TicketRoutePersistence;
   ticketWorkspaceService: TicketWorkspaceService;
 };
 

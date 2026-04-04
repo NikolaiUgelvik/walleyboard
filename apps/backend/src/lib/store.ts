@@ -128,7 +128,7 @@ export type ListProjectTicketsOptions = {
   archivedOnly?: boolean;
 };
 
-export interface Store {
+export interface ProjectPersistence {
   listProjects(): Project[];
   getProject(projectId: string): Project | undefined;
   getRepository(repositoryId: string): RepositoryConfig | undefined;
@@ -139,11 +139,10 @@ export interface Store {
   updateProject(projectId: string, input: UpdateProjectInput): Project;
   deleteProject(projectId: string): Project | undefined;
   listProjectRepositories(projectId: string): RepositoryConfig[];
+}
+
+export interface DraftPersistence {
   listProjectDrafts(projectId: string): DraftTicketState[];
-  listProjectTickets(
-    projectId: string,
-    options?: ListProjectTicketsOptions,
-  ): TicketFrontmatter[];
   createDraft(input: CreateDraftInput): DraftTicketState;
   getDraft(draftId: string): DraftTicketState | undefined;
   updateDraft(draftId: string, input: UpdateDraftRecordInput): DraftTicketState;
@@ -157,11 +156,14 @@ export interface Store {
   ): StructuredEvent;
   confirmDraft(draftId: string, input: ConfirmDraftInput): TicketFrontmatter;
   editReadyTicket(ticketId: number): DraftTicketState;
+}
+
+export interface TicketPersistence {
+  listProjectTickets(
+    projectId: string,
+    options?: ListProjectTicketsOptions,
+  ): TicketFrontmatter[];
   getTicket(ticketId: number): TicketFrontmatter | undefined;
-  getReviewPackage(ticketId: number): ReviewPackage | undefined;
-  getLatestReviewRun(ticketId: number): ReviewRun | undefined;
-  listReviewRuns(ticketId: number): ReviewRun[];
-  countAutomaticReviewRuns(ticketId: number): number;
   startTicket(
     ticketId: number,
     planningEnabled: boolean,
@@ -180,6 +182,40 @@ export interface Store {
     runtime: PreparedExecutionRuntime,
     reason?: string,
   ): RestartTicketResult;
+  updateTicketStatus(
+    ticketId: number,
+    status: TicketFrontmatter["status"],
+  ): TicketFrontmatter | undefined;
+  updateTicketLinkedPr(
+    ticketId: number,
+    linkedPr: PullRequestRef | null,
+  ): TicketFrontmatter | undefined;
+  getTicketEvents(ticketId: number): StructuredEvent[];
+  recordTicketEvent(
+    ticketId: number,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): StructuredEvent;
+  archiveTicket(ticketId: number): TicketFrontmatter | undefined;
+  restoreTicket(ticketId: number): TicketFrontmatter | undefined;
+  deleteTicket(ticketId: number): TicketFrontmatter | undefined;
+}
+
+export interface ReviewPersistence {
+  getReviewPackage(ticketId: number): ReviewPackage | undefined;
+  getLatestReviewRun(ticketId: number): ReviewRun | undefined;
+  listReviewRuns(ticketId: number): ReviewRun[];
+  countAutomaticReviewRuns(ticketId: number): number;
+  createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
+  createReviewRun(input: CreateReviewRunInput): ReviewRun;
+  updateReviewRun(
+    reviewRunId: string,
+    input: UpdateReviewRunInput,
+  ): ReviewRun | undefined;
+  getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined;
+}
+
+export interface SessionPersistence {
   addSessionInput(sessionId: string, body: string): ExecutionSession;
   updateSessionPlan(
     sessionId: string,
@@ -208,32 +244,61 @@ export interface Store {
     attemptId: string,
     input: UpdateExecutionAttemptInput,
   ): ExecutionAttempt | undefined;
-  createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
-  createReviewRun(input: CreateReviewRunInput): ReviewRun;
-  updateReviewRun(
-    reviewRunId: string,
-    input: UpdateReviewRunInput,
-  ): ReviewRun | undefined;
   recoverInterruptedSessions(): StartupRecoveryResult;
-  updateTicketStatus(
-    ticketId: number,
-    status: TicketFrontmatter["status"],
-  ): TicketFrontmatter | undefined;
-  updateTicketLinkedPr(
-    ticketId: number,
-    linkedPr: PullRequestRef | null,
-  ): TicketFrontmatter | undefined;
   listSessionAttempts(sessionId: string): ExecutionAttempt[];
   getSession(sessionId: string): ExecutionSession | undefined;
   getSessionLogs(sessionId: string): string[];
-  getTicketEvents(ticketId: number): StructuredEvent[];
-  recordTicketEvent(
-    ticketId: number,
-    eventType: string,
-    payload: Record<string, unknown>,
-  ): StructuredEvent;
-  archiveTicket(ticketId: number): TicketFrontmatter | undefined;
-  restoreTicket(ticketId: number): TicketFrontmatter | undefined;
-  deleteTicket(ticketId: number): TicketFrontmatter | undefined;
-  getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined;
 }
+
+export interface WalleyboardPersistence
+  extends ProjectPersistence,
+    DraftPersistence,
+    TicketPersistence,
+    ReviewPersistence,
+    SessionPersistence {
+  projects: ProjectPersistence;
+  drafts: DraftPersistence;
+  tickets: TicketPersistence;
+  reviews: ReviewPersistence;
+  sessions: SessionPersistence;
+  withTransaction<T>(operation: (persistence: WalleyboardPersistence) => T): T;
+  close(): void;
+}
+
+export type AgentReviewPersistence = ProjectPersistence &
+  ReviewPersistence &
+  SessionPersistence &
+  TicketPersistence;
+
+export type ExecutionRuntimePersistence = DraftPersistence &
+  ProjectPersistence &
+  ReviewPersistence &
+  SessionPersistence &
+  TicketPersistence;
+
+export type DraftRoutePersistence = DraftPersistence & ProjectPersistence;
+
+export type GitHubPullRequestPersistence = ProjectPersistence &
+  ReviewPersistence &
+  SessionPersistence &
+  TicketPersistence;
+
+export type ProjectRoutePersistence = DraftPersistence &
+  ProjectPersistence &
+  SessionPersistence &
+  TicketPersistence;
+
+export type SessionRoutePersistence = ProjectPersistence &
+  SessionPersistence &
+  TicketPersistence;
+
+export type SocketServerPersistence = ProjectPersistence &
+  ReviewPersistence &
+  SessionPersistence &
+  TicketPersistence;
+
+export type TicketRoutePersistence = DraftPersistence &
+  ProjectPersistence &
+  ReviewPersistence &
+  SessionPersistence &
+  TicketPersistence;

@@ -8,7 +8,7 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { type EventHub, makeProtocolEvent } from "../event-hub.js";
-import type { Store } from "../store.js";
+import type { SessionPersistence } from "../store.js";
 import { nowIso } from "../time.js";
 import {
   buildValidationLogPath,
@@ -19,7 +19,7 @@ import { publishSessionOutput } from "./publishers.js";
 
 export async function runValidationProfile(input: {
   eventHub: EventHub;
-  store: Store;
+  store: SessionPersistence;
   project: Project;
   repository: RepositoryConfig;
   ticketId: number;

@@ -1,7 +1,7 @@
 import { type IPty, spawn as spawnPty } from "node-pty";
 
 import type { EventHub } from "../event-hub.js";
-import type { Store } from "../store.js";
+import type { SessionPersistence } from "../store.js";
 import { buildProcessEnv } from "./helpers.js";
 import { publishSessionOutput } from "./publishers.js";
 import { resolveTrackedExit } from "./waiters.js";
@@ -99,7 +99,7 @@ export function startTrackedManualTerminal(input: {
   manualTerminals: Map<string, { pty: IPty; attemptId: string | null }>;
   sessionId: string;
   stoppingManualTerminals: Map<string, string>;
-  store: Store;
+  store: SessionPersistence;
   worktreePath: string;
 }): void {
   if (input.manualTerminals.has(input.sessionId)) {

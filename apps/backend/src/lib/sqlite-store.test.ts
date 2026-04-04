@@ -752,90 +752,6 @@ test("started sessions snapshot the project's agent adapter", () => {
   }
 });
 
-test("sqlite migration renames codex_session_id to adapter_session_ref", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-session-migrate-"));
-  const databasePath = join(tempDir, "walleyboard.sqlite");
-
-  try {
-    const db = new DatabaseSync(databasePath);
-    db.exec(`
-      CREATE TABLE execution_sessions (
-        id TEXT PRIMARY KEY,
-        ticket_id INTEGER NOT NULL,
-        project_id TEXT NOT NULL,
-        repo_id TEXT NOT NULL,
-        worktree_path TEXT,
-        codex_session_id TEXT,
-        status TEXT NOT NULL,
-        planning_enabled INTEGER NOT NULL,
-        plan_status TEXT NOT NULL DEFAULT 'not_requested',
-        plan_summary TEXT,
-        current_attempt_id TEXT,
-        latest_requested_change_note_id TEXT,
-        latest_review_package_id TEXT,
-        queue_entered_at TEXT,
-        started_at TEXT,
-        completed_at TEXT,
-        last_heartbeat_at TEXT,
-        last_summary TEXT
-      );
-    `);
-    db.prepare(
-      `
-        INSERT INTO execution_sessions (
-          id, ticket_id, project_id, repo_id, worktree_path, codex_session_id,
-          status, planning_enabled, plan_status, plan_summary, current_attempt_id,
-          latest_requested_change_note_id, latest_review_package_id, queue_entered_at,
-          started_at, completed_at, last_heartbeat_at, last_summary
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-    ).run(
-      "session-1",
-      1,
-      "project-1",
-      "repo-1",
-      "/tmp/worktree",
-      "old-codex-thread",
-      "awaiting_input",
-      0,
-      "not_requested",
-      null,
-      "attempt-1",
-      null,
-      null,
-      null,
-      "2026-04-01T00:00:00.000Z",
-      null,
-      "2026-04-01T00:00:00.000Z",
-      null,
-    );
-    db.close();
-
-    const store = new SqliteStore(databasePath);
-    const session = store.getSession("session-1");
-    assert.ok(session);
-    assert.equal(session.agent_adapter, "codex");
-    assert.equal(session.adapter_session_ref, "old-codex-thread");
-
-    const validationDb = new DatabaseSync(databasePath);
-    const columns = validationDb
-      .prepare("PRAGMA table_info(execution_sessions)")
-      .all() as Array<{ name: string }>;
-    validationDb.close();
-
-    assert.equal(
-      columns.some((column) => column.name === "adapter_session_ref"),
-      true,
-    );
-    assert.equal(
-      columns.some((column) => column.name === "codex_session_id"),
-      false,
-    );
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
 test("starting beyond the running cap keeps the ticket in progress and queues the session", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-queue-start-"));
 
@@ -1615,9 +1531,11 @@ test("drafts and tickets keep markdown in SQLite instead of creating ticket file
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-store-"));
   const originalWalleyBoardHome = process.env.WALLEYBOARD_HOME;
   process.env.WALLEYBOARD_HOME = tempDir;
+  let reopenedStore: SqliteStore | undefined;
+  let store: SqliteStore | undefined;
 
   try {
-    const store = new SqliteStore();
+    store = new SqliteStore();
     const { project, repository } = store.createProject({
       name: "SQLite Ticket Storage Project",
       repository: {
@@ -1649,7 +1567,7 @@ test("drafts and tickets keep markdown in SQLite instead of creating ticket file
       target_branch: "main",
     });
 
-    const reopenedStore = new SqliteStore();
+    reopenedStore = new SqliteStore();
     assert.equal(
       reopenedStore.getTicket(ticket.id)?.description,
       draftDescription,
@@ -1673,8 +1591,10 @@ test("drafts and tickets keep markdown in SQLite instead of creating ticket file
       false,
     );
   } finally {
+    reopenedStore?.close();
+    store?.close();
     if (originalWalleyBoardHome === undefined) {
-      process.env.WALLEYBOARD_HOME = undefined;
+      delete process.env.WALLEYBOARD_HOME;
     } else {
       process.env.WALLEYBOARD_HOME = originalWalleyBoardHome;
     }

@@ -73,7 +73,6 @@ import {
   resolveTrackedExit,
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
-import type { Store } from "./store.js";
 
 type ReviewReadyInput = {
   project: Project;
@@ -88,7 +87,7 @@ export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
   readonly #dockerRuntime: DockerRuntime;
   readonly #eventHub: EventHub;
-  readonly #store: Store;
+  readonly #store: ExecutionRuntimeOptions["store"];
   readonly #activeSessions = new Map<string, IPty>();
   readonly #activeDraftRuns = new Map<
     string,

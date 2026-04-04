@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type {
@@ -45,32 +46,39 @@ export class ProjectRepository {
   }
 
   listProjects(): Project[] {
-    const rows = this.context.db
-      .prepare("SELECT * FROM projects ORDER BY updated_at DESC, name ASC")
-      .all() as Record<string, unknown>[];
+    const rows = this.context.db.all<Record<string, unknown>>(sql`
+      SELECT *
+      FROM projects
+      ORDER BY updated_at DESC, name ASC
+    `);
     return rows.map(mapProject);
   }
 
   getProject(projectId: string): Project | undefined {
-    const row = this.context.db
-      .prepare("SELECT * FROM projects WHERE id = ?")
-      .get(projectId) as Record<string, unknown> | undefined;
+    const row = this.context.db.get<Record<string, unknown>>(sql`
+      SELECT *
+      FROM projects
+      WHERE id = ${projectId}
+    `);
     return row ? mapProject(row) : undefined;
   }
 
   getRepository(repositoryId: string): RepositoryConfig | undefined {
-    const row = this.context.db
-      .prepare("SELECT * FROM repositories WHERE id = ?")
-      .get(repositoryId) as Record<string, unknown> | undefined;
+    const row = this.context.db.get<Record<string, unknown>>(sql`
+      SELECT *
+      FROM repositories
+      WHERE id = ${repositoryId}
+    `);
     return row ? mapRepository(row) : undefined;
   }
 
   listProjectRepositories(projectId: string): RepositoryConfig[] {
-    const rows = this.context.db
-      .prepare(
-        "SELECT * FROM repositories WHERE project_id = ? ORDER BY created_at ASC",
-      )
-      .all(projectId) as Record<string, unknown>[];
+    const rows = this.context.db.all<Record<string, unknown>>(sql`
+      SELECT *
+      FROM repositories
+      WHERE project_id = ${projectId}
+      ORDER BY created_at ASC
+    `);
     return rows.map(mapRepository);
   }
 
@@ -85,60 +93,51 @@ export class ProjectRepository {
     const color = normalizeProjectColor(input.color);
     const defaultTargetBranch = input.default_target_branch ?? "main";
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO projects (
-            id, slug, name, color, agent_adapter, execution_backend, disabled_mcp_servers, automatic_agent_review, default_target_branch, pre_worktree_command,
-            automatic_agent_review_run_limit, post_worktree_command, preview_start_command, default_review_action,
-            draft_analysis_model, draft_analysis_reasoning_effort,
-            ticket_work_model, ticket_work_reasoning_effort,
-            max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+    this.context.db.run(sql`
+      INSERT INTO projects (
+        id, slug, name, color, agent_adapter, execution_backend, disabled_mcp_servers, automatic_agent_review, default_target_branch, pre_worktree_command,
+        automatic_agent_review_run_limit, post_worktree_command, preview_start_command, default_review_action,
+        draft_analysis_model, draft_analysis_reasoning_effort,
+        ticket_work_model, ticket_work_reasoning_effort,
+        max_concurrent_sessions, created_at, updated_at
+      ) VALUES (
+        ${projectId},
+        ${slug},
+        ${input.name.trim()},
+        ${color},
+        ${"codex"},
+        ${"docker"},
+        ${stringifyJson([])},
+        ${0},
+        ${defaultTargetBranch},
+        ${null},
+        ${1},
+        ${null},
+        ${null},
+        ${"direct_merge"},
+        ${null},
+        ${null},
+        ${null},
+        ${null},
+        ${defaultMaxConcurrentSessions},
+        ${timestamp},
+        ${timestamp}
       )
-      .run(
-        projectId,
-        slug,
-        input.name.trim(),
-        color,
-        "codex",
-        "docker",
-        stringifyJson([]),
-        0,
-        defaultTargetBranch,
-        null,
-        1,
-        null,
-        null,
-        "direct_merge",
-        null,
-        null,
-        null,
-        null,
-        defaultMaxConcurrentSessions,
-        timestamp,
-        timestamp,
-      );
+    `);
 
-    this.context.db
-      .prepare(
-        `
-          INSERT INTO repositories (
-            id, project_id, name, path, target_branch, setup_hook, cleanup_hook,
-            validation_profile, extra_env_allowlist, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      )
-      .run(
-        repositoryId,
-        projectId,
-        input.repository.name.trim(),
-        input.repository.path,
-        input.repository.target_branch ?? defaultTargetBranch,
-        null,
-        null,
-        stringifyJson(
+    this.context.db.run(sql`
+      INSERT INTO repositories (
+        id, project_id, name, path, target_branch, setup_hook, cleanup_hook,
+        validation_profile, extra_env_allowlist, created_at, updated_at
+      ) VALUES (
+        ${repositoryId},
+        ${projectId},
+        ${input.repository.name.trim()},
+        ${input.repository.path},
+        ${input.repository.target_branch ?? defaultTargetBranch},
+        ${null},
+        ${null},
+        ${stringifyJson(
           (input.repository.validation_commands ?? []).map(
             (command, index) => ({
               id: nanoid(),
@@ -150,11 +149,12 @@ export class ProjectRepository {
               shell: true,
             }),
           ),
-        ),
-        stringifyJson([]),
-        timestamp,
-        timestamp,
-      );
+        )},
+        ${stringifyJson([])},
+        ${timestamp},
+        ${timestamp}
+      )
+    `);
 
     return {
       project: requireValue(
@@ -254,62 +254,33 @@ export class ProjectRepository {
       }
     }
 
-    this.context.db
-      .prepare(
-        `
-          UPDATE projects
-          SET color = ?,
-              agent_adapter = ?,
-              execution_backend = ?,
-              disabled_mcp_servers = ?,
-              automatic_agent_review = ?,
-              automatic_agent_review_run_limit = ?,
-              default_review_action = ?,
-              preview_start_command = ?,
-              pre_worktree_command = ?,
-              post_worktree_command = ?,
-              draft_analysis_model = ?,
-              draft_analysis_reasoning_effort = ?,
-              ticket_work_model = ?,
-              ticket_work_reasoning_effort = ?,
-              updated_at = ?
-          WHERE id = ?
-        `,
-      )
-      .run(
-        color,
-        agentAdapter,
-        executionBackend,
-        stringifyJson(disabledMcpServers),
-        automaticAgentReview ? 1 : 0,
-        automaticAgentReviewRunLimit,
-        defaultReviewAction,
-        previewStartCommand,
-        preWorktreeCommand,
-        postWorktreeCommand,
-        draftAnalysisModel,
-        draftAnalysisReasoningEffort,
-        ticketWorkModel,
-        ticketWorkReasoningEffort,
-        timestamp,
-        projectId,
-      );
+    this.context.db.run(sql`
+      UPDATE projects
+      SET color = ${color},
+          agent_adapter = ${agentAdapter},
+          execution_backend = ${executionBackend},
+          disabled_mcp_servers = ${stringifyJson(disabledMcpServers)},
+          automatic_agent_review = ${automaticAgentReview ? 1 : 0},
+          automatic_agent_review_run_limit = ${automaticAgentReviewRunLimit},
+          default_review_action = ${defaultReviewAction},
+          preview_start_command = ${previewStartCommand},
+          pre_worktree_command = ${preWorktreeCommand},
+          post_worktree_command = ${postWorktreeCommand},
+          draft_analysis_model = ${draftAnalysisModel},
+          draft_analysis_reasoning_effort = ${draftAnalysisReasoningEffort},
+          ticket_work_model = ${ticketWorkModel},
+          ticket_work_reasoning_effort = ${ticketWorkReasoningEffort},
+          updated_at = ${timestamp}
+      WHERE id = ${projectId}
+    `);
 
     for (const repositoryUpdate of repositoryTargetBranchUpdates) {
-      this.context.db
-        .prepare(
-          `
-            UPDATE repositories
-            SET target_branch = ?,
-                updated_at = ?
-            WHERE id = ?
-          `,
-        )
-        .run(
-          repositoryUpdate.target_branch,
-          timestamp,
-          repositoryUpdate.repository_id,
-        );
+      this.context.db.run(sql`
+        UPDATE repositories
+        SET target_branch = ${repositoryUpdate.target_branch},
+            updated_at = ${timestamp}
+        WHERE id = ${repositoryUpdate.repository_id}
+      `);
     }
 
     return requireValue(

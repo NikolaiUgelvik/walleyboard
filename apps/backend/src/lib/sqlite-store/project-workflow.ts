@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Project } from "../../../../../packages/contracts/src/index.js";
 
 import type { DraftRepository } from "./draft-repository.js";
@@ -29,10 +30,14 @@ export class ProjectWorkflowService {
       this.tickets.deleteTicket(ticket.id);
     }
 
-    this.context.db
-      .prepare("DELETE FROM repositories WHERE project_id = ?")
-      .run(projectId);
-    this.context.db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+    this.context.db.run(sql`
+      DELETE FROM repositories
+      WHERE project_id = ${projectId}
+    `);
+    this.context.db.run(sql`
+      DELETE FROM projects
+      WHERE id = ${projectId}
+    `);
 
     return project;
   }

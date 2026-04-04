@@ -18,7 +18,7 @@ import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
 import { createSocketServer } from "./lib/socket-server.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
-import type { Store } from "./lib/store.js";
+import type { WalleyboardPersistence } from "./lib/store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { healthRoutes } from "./routes/health.js";
@@ -31,6 +31,7 @@ function shouldSkipStartupDockerCleanup(): boolean {
 }
 
 export type CreateAppOptions = {
+  databasePath?: string;
   dockerRuntime?: DockerRuntime;
   eventHub?: EventHub;
   executionRuntime?: ExecutionRuntime;
@@ -39,7 +40,7 @@ export type CreateAppOptions = {
   port?: number;
   probeClaudeCodeAvailability?: () => ClaudeCodeAvailability;
   skipStartupDockerCleanup?: boolean;
-  store?: Store;
+  store?: WalleyboardPersistence;
   ticketWorkspaceService?: TicketWorkspaceService;
 };
 
@@ -52,7 +53,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   });
 
   const eventHub = options.eventHub ?? new EventHub();
-  const store = options.store ?? new SqliteStore();
+  const store = options.store ?? new SqliteStore(options.databasePath);
   const dockerRuntime = options.dockerRuntime ?? new DockerRuntimeManager();
   const getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(
     options.probeClaudeCodeAvailability ??
@@ -172,6 +173,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     socketServer.close();
     githubPullRequestService.stop();
     executionRuntime.dispose();
+    store.close();
   });
 
   return app;

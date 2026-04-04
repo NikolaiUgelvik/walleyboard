@@ -17,7 +17,10 @@ import {
   commandRouteRateLimit,
   repositoryRouteRateLimit,
 } from "../lib/rate-limit.js";
-import type { Store } from "../lib/store.js";
+import type {
+  ProjectPersistence,
+  ProjectRoutePersistence,
+} from "../lib/store.js";
 import { removeProjectArtifacts } from "../lib/ticket-artifacts.js";
 import type {
   RepositoryWorkspacePreview,
@@ -34,7 +37,7 @@ import {
 } from "./workspace-terminal-socket.js";
 
 type ProjectRouteOptions = {
-  store: Store;
+  store: ProjectRoutePersistence;
   executionRuntime: ExecutionRuntime;
   ticketWorkspaceService: TicketWorkspaceService;
   getClaudeCodeAvailability?: GetClaudeCodeAvailability;
@@ -44,7 +47,7 @@ export function handleRepositoryWorkspaceTerminalConnection(
   socket: TerminalSocket,
   input: {
     executionRuntime: ExecutionRuntime;
-    repository: ReturnType<Store["getRepository"]>;
+    repository: ReturnType<ProjectPersistence["getRepository"]>;
   },
 ): void {
   const repository = input.repository;
@@ -91,8 +94,8 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     projectId: string,
     repositoryId: string,
   ): {
-    project: ReturnType<Store["getProject"]>;
-    repository: ReturnType<Store["getRepository"]>;
+    project: ReturnType<ProjectPersistence["getProject"]>;
+    repository: ReturnType<ProjectPersistence["getRepository"]>;
   } => {
     const project = store.getProject(projectId);
     const repository = store.getRepository(repositoryId);

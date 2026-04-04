@@ -13,6 +13,7 @@ import {
   commandRouteRateLimit,
   repositoryRouteRateLimit,
 } from "../../lib/rate-limit.js";
+import type { SessionPersistence, TicketPersistence } from "../../lib/store.js";
 import {
   attachWorkspaceTerminalSocket,
   type TerminalSocket,
@@ -291,7 +292,11 @@ function sendSocketError(socket: TerminalSocket, message: string): void {
 export function handleTicketWorkspaceTerminalConnection(
   socket: TerminalSocket,
   rawTicketId: string,
-  dependencies: Pick<TicketRouteDependencies, "executionRuntime" | "store">,
+  dependencies: {
+    executionRuntime: TicketRouteDependencies["executionRuntime"];
+    store: Pick<SessionPersistence, "getSession"> &
+      Pick<TicketPersistence, "getTicket">;
+  },
 ): void {
   const ticketId = parsePositiveInt(rawTicketId);
   if (!ticketId) {
