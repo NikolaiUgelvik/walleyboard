@@ -6,13 +6,17 @@ import { ClaudeCodeAdapter } from "./lib/agent-adapters/claude-code-adapter.js";
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { AgentReviewService } from "./lib/agent-review-service.js";
-import { DockerRuntimeManager } from "./lib/docker-runtime.js";
+import {
+  type DockerRuntime,
+  DockerRuntimeManager,
+} from "./lib/docker-runtime.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
+import type { Store } from "./lib/store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { healthRoutes } from "./routes/health.js";
@@ -25,42 +29,60 @@ function shouldSkipStartupDockerCleanup(): boolean {
   return process.env.WALLEYBOARD_SKIP_STARTUP_DOCKER_CLEANUP === "1";
 }
 
-export async function createApp() {
-  const host = process.env.HOST ?? "127.0.0.1";
-  const port = Number.parseInt(process.env.PORT ?? "4000", 10);
+export type CreateAppOptions = {
+  dockerRuntime?: DockerRuntime;
+  eventHub?: EventHub;
+  executionRuntime?: ExecutionRuntime;
+  githubPullRequestService?: GitHubPullRequestService;
+  host?: string;
+  port?: number;
+  skipStartupDockerCleanup?: boolean;
+  store?: Store;
+  ticketWorkspaceService?: TicketWorkspaceService;
+};
+
+export async function createApp(options: CreateAppOptions = {}) {
+  const host = options.host ?? process.env.HOST ?? "127.0.0.1";
+  const port = options.port ?? Number.parseInt(process.env.PORT ?? "4000", 10);
   const apiHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const app = Fastify({
     logger: true,
   });
 
-  const eventHub = new EventHub();
-  const store = new SqliteStore();
-  const dockerRuntime = new DockerRuntimeManager();
+  const eventHub = options.eventHub ?? new EventHub();
+  const store = options.store ?? new SqliteStore();
+  const dockerRuntime = options.dockerRuntime ?? new DockerRuntimeManager();
   const adapterRegistry = new AgentAdapterRegistry([
     new CodexCliAdapter(),
     new ClaudeCodeAdapter(),
   ]);
-  const executionRuntime = new ExecutionRuntime({
-    adapterRegistry,
-    dockerRuntime,
-    eventHub,
-    store,
-  });
+  const executionRuntime =
+    options.executionRuntime ??
+    new ExecutionRuntime({
+      adapterRegistry,
+      dockerRuntime,
+      eventHub,
+      store,
+    });
   const agentReviewService = new AgentReviewService({
     eventHub,
     executionRuntime,
     store,
   });
-  const ticketWorkspaceService = new TicketWorkspaceService({
-    apiBaseUrl: `http://${apiHost}:${port}`,
-    eventHub,
-  });
-  const githubPullRequestService = new GitHubPullRequestService({
-    eventHub,
-    executionRuntime,
-    store,
-    ticketWorkspaceService,
-  });
+  const ticketWorkspaceService =
+    options.ticketWorkspaceService ??
+    new TicketWorkspaceService({
+      apiBaseUrl: `http://${apiHost}:${port}`,
+      eventHub,
+    });
+  const githubPullRequestService =
+    options.githubPullRequestService ??
+    new GitHubPullRequestService({
+      eventHub,
+      executionRuntime,
+      store,
+      ticketWorkspaceService,
+    });
   executionRuntime.setReviewReadyHandler((input) =>
     runReviewFollowUp(input, {
       agentReviewService,
@@ -69,8 +91,10 @@ export async function createApp() {
   );
   githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();
+  const skipStartupDockerCleanup =
+    options.skipStartupDockerCleanup ?? shouldSkipStartupDockerCleanup();
 
-  if (!shouldSkipStartupDockerCleanup()) {
+  if (!skipStartupDockerCleanup) {
     try {
       dockerRuntime.cleanupStaleContainers({
         preserveSessionIds: recovery.activeSessionIds,

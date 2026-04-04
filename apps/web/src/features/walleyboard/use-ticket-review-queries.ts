@@ -1,15 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
-import {
-  fetchJson,
-  fetchOptionalJson,
-  type ReviewPackageResponse,
-  type ReviewRunResponse,
-  type ReviewRunsResponse,
-  type TicketWorkspaceDiffResponse,
-  type WorkspaceModalKind,
-} from "./shared.js";
+import { fetchJson, fetchOptionalJson } from "./shared-api.js";
+import type {
+  ReviewPackageResponse,
+  ReviewRunResponse,
+  ReviewRunsResponse,
+  TicketWorkspaceDiffResponse,
+  WorkspaceModalKind,
+} from "./shared-types.js";
 
 export function useTicketReviewQueries(input: {
   selectedSessionTicketId: number | null;

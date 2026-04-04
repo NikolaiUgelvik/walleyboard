@@ -1,6 +1,6 @@
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
-import { focusElementById } from "./shared.js";
+import { focusElementById } from "./shared-utils.js";
 
 export function navigateToTicketReference(input: {
   globalTickets: TicketFrontmatter[];

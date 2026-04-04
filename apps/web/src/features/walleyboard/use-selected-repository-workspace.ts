@@ -5,14 +5,13 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
-import {
-  fetchJson,
-  postJson,
-  type RepositoryWorkspacePreview,
-  type RepositoryWorkspacePreviewResponse,
-  type WorkspaceModalKind,
-  type WorkspaceTerminalContext,
-} from "./shared.js";
+import { fetchJson, postJson } from "./shared-api.js";
+import type {
+  RepositoryWorkspacePreview,
+  RepositoryWorkspacePreviewResponse,
+  WorkspaceModalKind,
+  WorkspaceTerminalContext,
+} from "./shared-types.js";
 
 export function buildProjectTerminalContext(input: {
   projectId: string;

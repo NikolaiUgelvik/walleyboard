@@ -13,7 +13,7 @@ import {
 } from "../../../../../packages/contracts/src/index.js";
 
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
-import type { DockerRuntimeManager } from "../docker-runtime.js";
+import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildProcessEnv,
   buildReviewRunOutputPath,
@@ -26,7 +26,7 @@ export async function runTicketReviewSession(input: {
   activeReviewRuns: Map<string, { kill(signal?: NodeJS.Signals): unknown }>;
   adapter: AgentCliAdapter;
   cleanupExecutionEnvironment: (sessionId: string) => void;
-  dockerRuntime: DockerRuntimeManager;
+  dockerRuntime: DockerRuntime;
   project: Project;
   repository: RepositoryConfig;
   reviewPackage: ReviewPackage;

@@ -28,10 +28,8 @@ import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
+import { boardColumnMeta, boardColumns, ColorSchemeControl } from "./shared.js";
 import {
-  boardColumnMeta,
-  boardColumns,
-  ColorSchemeControl,
   describePullRequestStatus,
   hasActiveLinkedPullRequest,
   humanizeSessionStatus,
@@ -40,7 +38,7 @@ import {
   resolveReviewCardActions,
   sessionStatusColor,
   ticketStatusColor,
-} from "./shared.js";
+} from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
 function TicketMenu({

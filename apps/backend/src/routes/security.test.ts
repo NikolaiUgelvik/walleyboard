@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 
-import { createApp } from "../app.js";
+import { createIsolatedApp } from "../test-support/create-isolated-app.js";
 
 function setEnv(name: string, value: string): () => void {
   const previous = process.env[name];
@@ -20,44 +17,36 @@ function setEnv(name: string, value: string): () => void {
 }
 
 test("createApp rate limits repeated requests", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-rate-limit-"));
-  const restoreWalleyBoardHome = setEnv(
-    "WALLEYBOARD_HOME",
-    join(tempDir, ".walleyboard-home"),
-  );
   const restoreRateLimitMax = setEnv("RATE_LIMIT_MAX", "2");
   const restoreRateLimitTimeWindow = setEnv(
     "RATE_LIMIT_TIME_WINDOW",
     "1 minute",
   );
+  const { app, close, dockerRuntime } = await createIsolatedApp({
+    skipStartupDockerCleanup: false,
+  });
 
   try {
-    const app = await createApp();
+    const firstResponse = await app.inject({
+      method: "GET",
+      url: "/health",
+    });
+    const secondResponse = await app.inject({
+      method: "GET",
+      url: "/health",
+    });
+    const thirdResponse = await app.inject({
+      method: "GET",
+      url: "/health",
+    });
 
-    try {
-      const firstResponse = await app.inject({
-        method: "GET",
-        url: "/health",
-      });
-      const secondResponse = await app.inject({
-        method: "GET",
-        url: "/health",
-      });
-      const thirdResponse = await app.inject({
-        method: "GET",
-        url: "/health",
-      });
-
-      assert.equal(firstResponse.statusCode, 200);
-      assert.equal(secondResponse.statusCode, 200);
-      assert.equal(thirdResponse.statusCode, 429);
-    } finally {
-      await app.close();
-    }
+    assert.equal(firstResponse.statusCode, 200);
+    assert.equal(secondResponse.statusCode, 200);
+    assert.equal(thirdResponse.statusCode, 429);
+    assert.equal(dockerRuntime.cleanupStaleContainersCalls.length, 1);
   } finally {
+    await close();
     restoreRateLimitTimeWindow();
     restoreRateLimitMax();
-    restoreWalleyBoardHome();
-    rmSync(tempDir, { recursive: true, force: true });
   }
 });

@@ -13,6 +13,12 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
+import {
+  patchJson,
+  postJson,
+  saveProjectOptionsRequest,
+  uploadDraftArtifactRequest,
+} from "./shared-api.js";
 import type {
   ArchiveActionFeedback,
   DraftsResponse,
@@ -21,16 +27,8 @@ import type {
   ReviewRunResponse,
   TicketsResponse,
   TicketWorkspacePreviewResponse,
-} from "./shared.js";
-import {
-  deriveRepositoryName,
-  patchJson,
-  postJson,
-  saveProjectOptionsRequest,
-  slugify,
-  uploadDraftArtifactRequest,
-  upsertById,
-} from "./shared.js";
+} from "./shared-types.js";
+import { deriveRepositoryName, slugify, upsertById } from "./shared-utils.js";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 

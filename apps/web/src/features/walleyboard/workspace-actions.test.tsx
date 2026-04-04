@@ -20,7 +20,7 @@ import {
   TicketWorkspaceActions,
 } from "./BoardView.js";
 import { TicketWorkspaceSummaryRow } from "./InspectorPane.js";
-import type { RepositoryWorkspacePreview } from "./shared.js";
+import type { RepositoryWorkspacePreview } from "./shared-types.js";
 import { buildProjectTerminalContext } from "./use-selected-repository-workspace.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 import {

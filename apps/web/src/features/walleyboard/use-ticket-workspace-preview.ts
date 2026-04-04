@@ -5,7 +5,8 @@ import type {
   TicketWorkspacePreview,
 } from "../../../../../packages/contracts/src/index.js";
 
-import { fetchJson, type TicketWorkspacePreviewResponse } from "./shared.js";
+import { fetchJson } from "./shared-api.js";
+import type { TicketWorkspacePreviewResponse } from "./shared-types.js";
 
 type StartPreviewMutation = {
   mutateAsync: (ticketId: number) => Promise<TicketWorkspacePreviewResponse>;

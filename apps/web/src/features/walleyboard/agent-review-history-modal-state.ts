@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
-import type { InspectorState } from "./shared.js";
+import type { InspectorState } from "./shared-types.js";
 
 export function useAgentReviewHistoryModalState(input: {
   inspectorKind: InspectorState["kind"];

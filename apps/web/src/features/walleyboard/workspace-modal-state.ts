@@ -1,4 +1,4 @@
-import type { WorkspaceModalKind } from "./shared.js";
+import type { WorkspaceModalKind } from "./shared-types.js";
 
 type TerminalSessionSnapshot = {
   worktree_path: string | null;

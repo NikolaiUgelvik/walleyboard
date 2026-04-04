@@ -9,7 +9,7 @@ import type {
 import {
   describePullRequestStatus,
   resolveReviewCardActions,
-} from "../features/walleyboard/shared.js";
+} from "../features/walleyboard/shared-utils.js";
 
 function createProject(overrides: Partial<Project> = {}): Project {
   const project: Project = {

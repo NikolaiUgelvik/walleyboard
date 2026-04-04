@@ -4,12 +4,9 @@ import type {
   Project,
 } from "../../../../../packages/contracts/src/index.js";
 
-import {
-  type DraftEventsResponse,
-  type DraftsResponse,
-  fetchJson,
-  parseDraftEventMeta,
-} from "./shared.js";
+import { fetchJson } from "./shared-api.js";
+import type { DraftEventsResponse, DraftsResponse } from "./shared-types.js";
+import { parseDraftEventMeta } from "./shared-utils.js";
 
 export function useGlobalDrafts(projects: Project[]) {
   const globalDraftsQueries = useQueries({

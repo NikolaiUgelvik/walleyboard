@@ -33,6 +33,50 @@ export type DockerCapability = {
   error: string | null;
 };
 
+export interface DockerRuntime {
+  getHealth(): DockerCapability;
+  assertAvailable(): DockerCapability;
+  cleanupStaleContainers(input?: {
+    preserveSessionIds?: Iterable<string>;
+  }): void;
+  ensureSessionContainer(input: {
+    dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
+    sessionId: string;
+    projectId: string;
+    ticketId: number;
+    worktreePath: string;
+  }): {
+    id: string;
+    name: string;
+    projectId: string;
+    ticketId: number;
+    worktreePath: string;
+  };
+  spawnPtyInSession(
+    sessionId: string,
+    command: string,
+    args: string[],
+    options: {
+      cols: number;
+      rows: number;
+      cwd: string;
+      env: Record<string, string>;
+      name: string;
+    },
+  ): IPty;
+  spawnProcessInSession(
+    sessionId: string,
+    command: string,
+    args: string[],
+    options: {
+      cwd: string;
+      env: Record<string, string>;
+    },
+  ): ChildProcessWithoutNullStreams;
+  cleanupSessionContainer(sessionId: string): void;
+  dispose(): void;
+}
+
 type SessionContainer = {
   dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
   id: string;
@@ -69,7 +113,7 @@ function buildContainerName(repoRootHash: string, sessionId: string): string {
   return `walleyboard-${repoRootHash.slice(0, 12)}-${sessionId}`;
 }
 
-export class DockerRuntimeManager {
+export class DockerRuntimeManager implements DockerRuntime {
   readonly #execFileSyncImpl: typeof execFileSync;
   readonly #spawnImpl: typeof spawn;
   readonly #spawnPtyImpl: typeof spawnPty;
@@ -312,8 +356,6 @@ export class DockerRuntimeManager {
     for (const sessionId of [...this.#sessionContainers.keys()]) {
       this.cleanupSessionContainer(sessionId);
     }
-
-    this.cleanupStaleContainers();
   }
 
   #requireSessionContainer(sessionId: string): SessionContainer {

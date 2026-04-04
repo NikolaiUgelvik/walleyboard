@@ -8,7 +8,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
-import type { DockerRuntimeManager } from "../docker-runtime.js";
+import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildMergeConflictSummaryPath,
   buildProcessEnv,
@@ -27,7 +27,7 @@ export async function runMergeRecovery(input: {
   adapter: AgentCliAdapter;
   cleanupExecutionEnvironment: (sessionId: string) => void;
   conflictedFiles: string[];
-  dockerRuntime: DockerRuntimeManager;
+  dockerRuntime: DockerRuntime;
   failureMessage: string;
   project: Project;
   recoveryKind: MergeRecoveryKind;

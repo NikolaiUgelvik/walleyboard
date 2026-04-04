@@ -4,8 +4,12 @@ import type {
   ExecutionSession,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
-import type { InspectorState, WorkspaceTerminalContext } from "./shared.js";
-import { focusElementById, type WorkspaceModalKind } from "./shared.js";
+import type {
+  InspectorState,
+  WorkspaceModalKind,
+  WorkspaceTerminalContext,
+} from "./shared-types.js";
+import { focusElementById } from "./shared-utils.js";
 
 export function createWorkspaceModalControls(input: {
   initializeNewDraftEditor: (projectId: string | null) => void;

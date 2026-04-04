@@ -9,7 +9,7 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
-
+import { websocketUrl } from "./shared-api.js";
 import type {
   DraftEventsResponse,
   DraftsResponse,
@@ -18,8 +18,8 @@ import type {
   SessionLogsResponse,
   SessionResponse,
   TicketsResponse,
-} from "./shared.js";
-import { parseDraftEventMeta, upsertById, websocketUrl } from "./shared.js";
+} from "./shared-types.js";
+import { parseDraftEventMeta, upsertById } from "./shared-utils.js";
 
 export function useProtocolEventSync({
   queryClient,

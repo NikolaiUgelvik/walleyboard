@@ -1,7 +1,7 @@
 import { Loader, Tabs, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import type { WorkspaceTerminalContext } from "./shared.js";
+import type { WorkspaceTerminalContext } from "./shared-types.js";
 import type { resolveWorkspaceTerminalPanelState } from "./workspace-modal-state.js";
 
 export type WorkspaceTerminalComponentProps = {

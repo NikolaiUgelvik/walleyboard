@@ -249,3 +249,67 @@ test("cleanupStaleContainers preserves containers for active session ids", () =>
   assert.ok(rmCommand);
   assert.deepEqual(rmCommand.args, ["rm", "-f", "container-1"]);
 });
+
+test("dispose only cleans up tracked session containers", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-dispose-"));
+  const commands: Array<{ command: string; args: string[] }> = [];
+
+  try {
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => join(tempDir, ".test-agent"),
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        commands.push({ command, args });
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "{}";
+        }
+
+        if (args[0] === "rm") {
+          return "";
+        }
+
+        if (args[0] === "run") {
+          return "container-id";
+        }
+
+        if (args[0] === "ps") {
+          return "container-1|com.walleyboard.session_id=session-1";
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      repoRoot: tempDir,
+    });
+
+    runtime.ensureSessionContainer({
+      dockerSpec: {
+        imageTag: "example/test-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/test-agent",
+        configMountPath: "/home/test-agent/.test-agent",
+      },
+      sessionId: "session-1",
+      projectId: "project-1",
+      ticketId: 42,
+      worktreePath: join(tempDir, "workspace"),
+    });
+
+    commands.length = 0;
+    runtime.dispose();
+
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0]?.command, "docker");
+    assert.equal(commands[0]?.args[0], "rm");
+    assert.equal(commands[0]?.args[1], "-f");
+    assert.match(
+      commands[0]?.args[2] ?? "",
+      /^walleyboard-[a-f0-9]{12}-session-1$/,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

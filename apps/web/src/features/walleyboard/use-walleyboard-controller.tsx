@@ -1,22 +1,15 @@
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { type ClipboardEvent, useEffect, useState } from "react";
 import type {
-  AgentAdapter,
-  DraftTicketState,
-  ExecutionBackend,
   ExecutionSession,
-  HealthResponse,
   Project,
   RepositoryBranchChoices,
-  RepositoryBranchesResponse,
-  ReviewAction,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
 import {
   buildPendingDraftEditorSync,
   emptyDraftEditorFields,
-  type PendingDraftEditorSync,
   resolveDraftEditorSync,
 } from "../../lib/draft-editor-sync.js";
 import { deriveInboxItems } from "../../lib/inbox-items.js";
@@ -28,29 +21,29 @@ import {
 import { hasProjectOptionsDirty } from "./project-options-dirty.js";
 import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
-  type ArchiveActionFeedback,
-  arraysEqual,
   blobToBase64,
   buildMarkdownImageInsertion,
-  collectRepositoryTargetBranchUpdates,
-  type DraftEventsResponse,
-  type DraftsResponse,
   diffLayoutStorageKey,
   fetchJson,
+  readLastOpenProjectId,
+  writeLastOpenProjectId,
+} from "./shared-api.js";
+import type {
+  ArchiveActionFeedback,
+  DraftsResponse,
+  NewDraftAction,
+  RepositoriesResponse,
+  SessionResponse,
+} from "./shared-types.js";
+import {
+  arraysEqual,
+  collectRepositoryTargetBranchUpdates,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
-  type InspectorState,
   mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
-  type NewDraftAction,
-  type ProjectModelPreset,
-  type ProjectReasoningEffortSelection,
-  type ProjectsResponse,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
-  type RepositoriesResponse,
-  readDiffLayoutPreference,
-  readLastOpenProjectId,
   repositoryTargetBranchesEqual,
   resolveOptionalProjectCommandValue,
   resolveProjectCustomModelValue,
@@ -59,13 +52,7 @@ import {
   resolveProjectReasoningEffortSelection,
   resolveProjectReasoningEffortValue,
   resolveVisibleBoardItems,
-  type SessionLogsResponse,
-  type SessionResponse,
-  type TicketsResponse,
-  type WorkspaceModalKind,
-  type WorkspaceTerminalContext,
-  writeLastOpenProjectId,
-} from "./shared.js";
+} from "./shared-utils.js";
 import { navigateToTicketReference } from "./ticket-reference-navigation.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
@@ -74,7 +61,12 @@ import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
 import { useTicketDiffLineSummary } from "./use-ticket-diff-line-summary.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
-import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
+import {
+  useDraftWorkspaceState,
+  useProjectOptionsState,
+} from "./use-walleyboard-local-state.js";
+import { useWalleyBoardMutationWiring } from "./use-walleyboard-mutation-wiring.js";
+import { useWalleyBoardServerState } from "./use-walleyboard-server-state.js";
 import { createWorkspaceModalControls } from "./workspace-modal-controls.js";
 import {
   resolveSelectedWorkspaceTicketId,
@@ -88,108 +80,94 @@ export function useWalleyBoardController() {
   );
   const [projectSelectionHydrated, setProjectSelectionHydrated] =
     useState(false);
-  const [inspectorState, setInspectorState] = useState<InspectorState>({
-    kind: "hidden",
-  });
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [archiveActionFeedback, setArchiveActionFeedback] =
     useState<ArchiveActionFeedback | null>(null);
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
-    string | null
-  >(null);
-  const [projectOptionsAgentAdapter, setProjectOptionsAgentAdapter] =
-    useState<AgentAdapter>("codex");
-  const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
-    useState<ExecutionBackend>("host");
-  const [
+  const {
+    projectModalOpen,
+    projectOptionsAgentAdapter,
     projectOptionsAutomaticAgentReview,
-    setProjectOptionsAutomaticAgentReview,
-  ] = useState(false);
-  const [
     projectOptionsAutomaticAgentReviewRunLimit,
-    setProjectOptionsAutomaticAgentReviewRunLimit,
-  ] = useState(1);
-  const [
     projectOptionsDefaultReviewAction,
-    setProjectOptionsDefaultReviewAction,
-  ] = useState<ReviewAction>("direct_merge");
-  const [projectOptionsDraftModelPreset, setProjectOptionsDraftModelPreset] =
-    useState<ProjectModelPreset>("default");
-  const [projectOptionsDraftModelCustom, setProjectOptionsDraftModelCustom] =
-    useState("");
-  const [
+    projectOptionsDraftModelCustom,
+    projectOptionsDraftModelPreset,
     projectOptionsDraftReasoningEffort,
-    setProjectOptionsDraftReasoningEffort,
-  ] = useState<ProjectReasoningEffortSelection>("default");
-  const [projectOptionsTicketModelPreset, setProjectOptionsTicketModelPreset] =
-    useState<ProjectModelPreset>("default");
-  const [projectOptionsTicketModelCustom, setProjectOptionsTicketModelCustom] =
-    useState("");
-  const [
-    projectOptionsTicketReasoningEffort,
-    setProjectOptionsTicketReasoningEffort,
-  ] = useState<ProjectReasoningEffortSelection>("default");
-  const [
-    projectOptionsPreWorktreeCommand,
-    setProjectOptionsPreWorktreeCommand,
-  ] = useState("");
-  const [
-    projectOptionsPreviewStartCommand,
-    setProjectOptionsPreviewStartCommand,
-  ] = useState("");
-  const [
+    projectOptionsExecutionBackend,
+    projectOptionsFormError,
     projectOptionsPostWorktreeCommand,
-    setProjectOptionsPostWorktreeCommand,
-  ] = useState("");
-  const [
+    projectOptionsPreWorktreeCommand,
+    projectOptionsPreviewStartCommand,
+    projectOptionsProjectId,
     projectOptionsRepositoryTargetBranches,
+    projectOptionsTicketModelCustom,
+    projectOptionsTicketModelPreset,
+    projectOptionsTicketReasoningEffort,
+    setProjectModalOpen,
+    setProjectOptionsAgentAdapter,
+    setProjectOptionsAutomaticAgentReview,
+    setProjectOptionsAutomaticAgentReviewRunLimit,
+    setProjectOptionsDefaultReviewAction,
+    setProjectOptionsDraftModelCustom,
+    setProjectOptionsDraftModelPreset,
+    setProjectOptionsDraftReasoningEffort,
+    setProjectOptionsExecutionBackend,
+    setProjectOptionsFormError,
+    setProjectOptionsPostWorktreeCommand,
+    setProjectOptionsPreWorktreeCommand,
+    setProjectOptionsPreviewStartCommand,
+    setProjectOptionsProjectId,
     setProjectOptionsRepositoryTargetBranches,
-  ] = useState<Record<string, string>>({});
-  const [projectOptionsFormError, setProjectOptionsFormError] = useState<
-    string | null
-  >(null);
+    setProjectOptionsTicketModelCustom,
+    setProjectOptionsTicketModelPreset,
+    setProjectOptionsTicketReasoningEffort,
+  } = useProjectOptionsState();
   const [projectDeleteConfirmText, setProjectDeleteConfirmText] = useState("");
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [validationCommandsText, setValidationCommandsText] = useState("");
-  const [draftEditorProjectId, setDraftEditorProjectId] = useState<
-    string | null
-  >(null);
-  const [draftEditorSourceId, setDraftEditorSourceId] = useState<string | null>(
-    null,
-  );
-  const [draftEditorArtifactScopeId, setDraftEditorArtifactScopeId] = useState<
-    string | null
-  >(null);
-  const [draftEditorTitle, setDraftEditorTitle] = useState("");
-  const [draftEditorDescription, setDraftEditorDescription] = useState("");
-  const [draftEditorTicketType, setDraftEditorTicketType] =
-    useState<DraftTicketState["proposed_ticket_type"]>(null);
-  const [draftEditorAcceptanceCriteria, setDraftEditorAcceptanceCriteria] =
-    useState("");
-  const [draftEditorUploadError, setDraftEditorUploadError] = useState<
-    string | null
-  >(null);
-  const [pendingDraftEditorSync, setPendingDraftEditorSync] =
-    useState<PendingDraftEditorSync | null>(null);
-  const [pendingNewDraftAction, setPendingNewDraftAction] =
-    useState<NewDraftAction | null>(null);
-  const [requestedChangesBody, setRequestedChangesBody] = useState("");
-  const [planFeedbackBody, setPlanFeedbackBody] = useState("");
-  const [resumeReason, setResumeReason] = useState("");
-  const [terminalCommand, setTerminalCommand] = useState("");
-  const [workspaceModal, setWorkspaceModal] =
-    useState<WorkspaceModalKind | null>(null);
-  const [workspaceTicket, setWorkspaceTicket] =
-    useState<TicketFrontmatter | null>(null);
-  const [workspaceTerminalContext, setWorkspaceTerminalContext] =
-    useState<WorkspaceTerminalContext | null>(null);
-  const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] = useState<
-    "split" | "stacked"
-  >(() => readDiffLayoutPreference());
-  const [boardSearch, setBoardSearch] = useState("");
+  const {
+    boardSearch,
+    draftEditorAcceptanceCriteria,
+    draftEditorArtifactScopeId,
+    draftEditorDescription,
+    draftEditorProjectId,
+    draftEditorSourceId,
+    draftEditorTicketType,
+    draftEditorTitle,
+    draftEditorUploadError,
+    inspectorState,
+    pendingDraftEditorSync,
+    pendingNewDraftAction,
+    planFeedbackBody,
+    requestedChangesBody,
+    resumeReason,
+    setBoardSearch,
+    setDraftEditorAcceptanceCriteria,
+    setDraftEditorArtifactScopeId,
+    setDraftEditorDescription,
+    setDraftEditorProjectId,
+    setDraftEditorSourceId,
+    setDraftEditorTicketType,
+    setDraftEditorTitle,
+    setDraftEditorUploadError,
+    setInspectorState,
+    setPendingDraftEditorSync,
+    setPendingNewDraftAction,
+    setPlanFeedbackBody,
+    setRequestedChangesBody,
+    setResumeReason,
+    setTerminalCommand,
+    setTicketWorkspaceDiffLayout,
+    setWorkspaceModal,
+    setWorkspaceTerminalContext,
+    setWorkspaceTicket,
+    terminalCommand,
+    ticketWorkspaceDiffLayout,
+    workspaceModal,
+    workspaceTerminalContext,
+    workspaceTicket,
+  } = useDraftWorkspaceState();
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
@@ -202,28 +180,31 @@ export function useWalleyBoardController() {
     setArchiveActionFeedback(null);
   };
 
-  const healthQuery = useQuery({
-    queryKey: ["health"],
-    queryFn: () => fetchJson<HealthResponse>("/health"),
-    retry: false,
+  const {
+    archivedTicketsQuery,
+    draftEditorRepositoriesQuery,
+    draftEventsQuery,
+    draftsQuery,
+    globalTicketsQueries,
+    healthQuery,
+    projectOptionsBranchesQuery,
+    projectOptionsRepositoriesQuery,
+    projectsQuery,
+    repositoriesQuery,
+    sessionLogsQuery,
+    sessionQuery,
+    sessionSummaries,
+    ticketsQuery,
+  } = useWalleyBoardServerState({
+    archiveModalOpen,
+    draftEditorProjectId,
+    projectOptionsProjectId,
+    selectedDraftId,
+    selectedProjectId,
+    selectedSessionId,
   });
   const dockerHealth = healthQuery.data?.docker ?? null;
   const claudeCodeHealth = healthQuery.data?.claude_code ?? null;
-
-  const projectsQuery = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => fetchJson<ProjectsResponse>("/projects"),
-    retry: false,
-  });
-
-  const globalTicketsQueries = useQueries({
-    queries: (projectsQuery.data?.projects ?? []).map((project) => ({
-      queryKey: ["projects", project.id, "tickets"],
-      queryFn: () =>
-        fetchJson<TicketsResponse>(`/projects/${project.id}/tickets`),
-      refetchInterval: 2_000,
-    })),
-  });
 
   const globalTickets = globalTicketsQueries.flatMap(
     (query) => query.data?.tickets ?? [],
@@ -245,97 +226,6 @@ export function useWalleyBoardController() {
         queryKey: ["sessions", ticket.session_id],
         queryFn: () =>
           fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
-        refetchInterval: 2_000,
-      })),
-  });
-  const repositoriesQuery = useQuery({
-    queryKey: ["projects", selectedProjectId, "repositories"],
-    queryFn: () =>
-      fetchJson<RepositoriesResponse>(
-        `/projects/${selectedProjectId}/repositories`,
-      ),
-    enabled: selectedProjectId !== null,
-  });
-
-  const draftEditorRepositoriesQuery = useQuery({
-    queryKey: [
-      "projects",
-      draftEditorProjectId,
-      "repositories",
-      "draft-editor",
-    ],
-    queryFn: () =>
-      fetchJson<RepositoriesResponse>(
-        `/projects/${draftEditorProjectId}/repositories`,
-      ),
-    enabled:
-      draftEditorProjectId !== null &&
-      draftEditorProjectId !== selectedProjectId,
-  });
-
-  const projectOptionsRepositoriesQuery = useQuery({
-    queryKey: ["projects", projectOptionsProjectId, "repositories"],
-    queryFn: () =>
-      fetchJson<RepositoriesResponse>(
-        `/projects/${projectOptionsProjectId}/repositories`,
-      ),
-    enabled: projectOptionsProjectId !== null,
-  });
-
-  const projectOptionsBranchesQuery = useQuery({
-    queryKey: ["projects", projectOptionsProjectId, "repository-branches"],
-    queryFn: () =>
-      fetchJson<RepositoryBranchesResponse>(
-        `/projects/${projectOptionsProjectId}/repository-branches`,
-      ),
-    enabled: projectOptionsProjectId !== null,
-    retry: false,
-  });
-
-  const draftsQuery = useQuery({
-    queryKey: ["projects", selectedProjectId, "drafts"],
-    queryFn: () =>
-      fetchJson<DraftsResponse>(`/projects/${selectedProjectId}/drafts`),
-    enabled: selectedProjectId !== null,
-    refetchInterval: selectedProjectId === null ? false : 2_000,
-  });
-
-  const ticketsQuery = useQuery({
-    queryKey: ["projects", selectedProjectId, "tickets"],
-    queryFn: () =>
-      fetchJson<TicketsResponse>(`/projects/${selectedProjectId}/tickets`),
-    enabled: selectedProjectId !== null,
-    refetchInterval: selectedProjectId === null ? false : 2_000,
-  });
-
-  const archivedTicketsQuery = useQuery({
-    queryKey: ["projects", selectedProjectId, "tickets", "archived"],
-    queryFn: () =>
-      fetchJson<TicketsResponse>(
-        `/projects/${selectedProjectId}/archived-tickets`,
-      ),
-    enabled: selectedProjectId !== null && archiveModalOpen,
-    refetchInterval:
-      selectedProjectId === null || !archiveModalOpen ? false : 2_000,
-  });
-
-  const draftEventsQuery = useQuery({
-    queryKey: ["drafts", selectedDraftId, "events"],
-    queryFn: () =>
-      fetchJson<DraftEventsResponse>(`/drafts/${selectedDraftId}/events`),
-    enabled: selectedDraftId !== null,
-    refetchInterval: selectedDraftId === null ? false : 2_000,
-    retry: false,
-  });
-
-  const sessionSummaries = useQueries({
-    queries: (ticketsQuery.data?.tickets ?? [])
-      .filter((ticket) => ticket.session_id !== null)
-      .map((ticket) => ({
-        queryKey: ["sessions", ticket.session_id],
-        queryFn: () =>
-          fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
-        enabled: ticket.session_id !== null,
         refetchInterval: 2_000,
       })),
   });
@@ -400,7 +290,13 @@ export function useWalleyBoardController() {
       setProjectOptionsFormError(null);
       setProjectDeleteConfirmText("");
     }
-  }, [projectOptionsProjectId, projectsQuery.data?.projects]);
+  }, [
+    projectOptionsProjectId,
+    projectsQuery.data?.projects,
+    setProjectOptionsProjectId,
+    setProjectOptionsFormError,
+    setProjectOptionsRepositoryTargetBranches,
+  ]);
 
   useEffect(() => {
     if (projectOptionsRepositoriesQuery.data === undefined) {
@@ -424,6 +320,7 @@ export function useWalleyBoardController() {
     projectOptionsProjectId,
     projectOptionsRepositoriesQuery.data,
     projectsQuery.data,
+    setProjectOptionsRepositoryTargetBranches,
   ]);
 
   useEffect(() => {
@@ -457,6 +354,7 @@ export function useWalleyBoardController() {
     inspectorState,
     selectedProjectId,
     ticketsQuery.data?.tickets,
+    setInspectorState,
   ]);
 
   useEffect(() => {
@@ -488,22 +386,12 @@ export function useWalleyBoardController() {
     ) {
       setWorkspaceModal(null);
     }
-  }, [inspectorState.kind, workspaceModal, workspaceTerminalContext]);
-
-  const sessionQuery = useQuery({
-    queryKey: ["sessions", selectedSessionId],
-    queryFn: () => fetchJson<SessionResponse>(`/sessions/${selectedSessionId}`),
-    enabled: selectedSessionId !== null,
-    refetchInterval: selectedSessionId === null ? false : 2_000,
-  });
-
-  const sessionLogsQuery = useQuery({
-    queryKey: ["sessions", selectedSessionId, "logs"],
-    queryFn: () =>
-      fetchJson<SessionLogsResponse>(`/sessions/${selectedSessionId}/logs`),
-    enabled: selectedSessionId !== null,
-    refetchInterval: selectedSessionId === null ? false : 2_000,
-  });
+  }, [
+    inspectorState.kind,
+    workspaceModal,
+    workspaceTerminalContext,
+    setWorkspaceModal,
+  ]);
 
   const tickets = ticketsQuery.data?.tickets ?? [];
   const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(tickets);
@@ -573,7 +461,7 @@ export function useWalleyBoardController() {
     actionItemKeys,
     inboxQueriesSettled,
   });
-  const mutations = useWalleyBoardMutations({
+  const mutations = useWalleyBoardMutationWiring({
     queryClient,
     pendingDraftEditorSync,
     selectedDraftId,
@@ -982,6 +870,12 @@ export function useWalleyBoardController() {
     inspectorState.kind,
     pendingDraftEditorSync,
     selectedDraft,
+    setPendingDraftEditorSync,
+    setDraftEditorAcceptanceCriteria,
+    setDraftEditorTitle,
+    setDraftEditorTicketType,
+    setDraftEditorSourceId,
+    setDraftEditorDescription,
   ]);
 
   useEffect(() => {
@@ -1001,7 +895,13 @@ export function useWalleyBoardController() {
     setDraftEditorProjectId(null);
     setDraftEditorArtifactScopeId(null);
     setDraftEditorUploadError(null);
-  }, [inspectorState.kind, selectedDraft]);
+  }, [
+    inspectorState.kind,
+    selectedDraft,
+    setDraftEditorUploadError,
+    setDraftEditorProjectId,
+    setDraftEditorArtifactScopeId,
+  ]);
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);

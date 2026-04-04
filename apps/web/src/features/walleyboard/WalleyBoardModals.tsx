@@ -20,16 +20,18 @@ import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspaceTerminal } from "../../components/TicketWorkspaceTerminal.js";
 import {
-  buildRepositoryBranchOptions,
   executionBackendOptions,
   getModelPresetOptions,
   modelPlaceholder,
   ProjectAgentAdapterSelect,
   reasoningEffortOptions,
-  resolveRepositoryTargetBranch,
   reviewActionOptions,
-  slugify,
 } from "./shared.js";
+import {
+  buildRepositoryBranchOptions,
+  resolveRepositoryTargetBranch,
+  slugify,
+} from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 import { WorkspaceTerminalContent } from "./WorkspaceTerminalContent.js";
 import {

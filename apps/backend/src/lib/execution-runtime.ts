@@ -14,7 +14,7 @@ import type {
 
 import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
 import type { AgentCliAdapter } from "./agent-adapters/types.js";
-import type { DockerRuntimeManager } from "./docker-runtime.js";
+import type { DockerRuntime } from "./docker-runtime.js";
 import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import {
@@ -151,7 +151,7 @@ function inspectWorktreeRecoveryState(
 
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
-  readonly #dockerRuntime: DockerRuntimeManager;
+  readonly #dockerRuntime: DockerRuntime;
   readonly #eventHub: EventHub;
   readonly #store: Store;
   readonly #activeSessions = new Map<string, IPty>();

@@ -24,18 +24,20 @@ import {
   agentLabel,
   DraftEventResultView,
   DraftQuestionsResultView,
+  MarkdownListItems,
+} from "./shared.js";
+import {
   describePullRequestStatus,
   formatTimestamp,
   hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
-  MarkdownListItems,
   parseDraftEventMeta,
   resolveReviewCardActions,
   sessionStatusColor,
   ticketStatusColor,
-} from "./shared.js";
+} from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
 export function TicketWorkspaceSummaryRow({

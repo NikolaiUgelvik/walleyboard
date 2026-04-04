@@ -2,11 +2,11 @@ import { existsSync } from "node:fs";
 import type { FastifyPluginAsync } from "fastify";
 
 import { resolveClaudeCliPath } from "../lib/agent-adapters/claude-code-adapter.js";
-import type { DockerRuntimeManager } from "../lib/docker-runtime.js";
+import type { DockerRuntime } from "../lib/docker-runtime.js";
 import { nowIso } from "../lib/time.js";
 
 type HealthRouteOptions = {
-  dockerRuntime: DockerRuntimeManager;
+  dockerRuntime: DockerRuntime;
 };
 
 // Claude Code availability uses the same resolveClaudeCliPath() that the

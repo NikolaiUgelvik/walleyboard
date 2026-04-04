@@ -1,7 +1,8 @@
 import { useQueries } from "@tanstack/react-query";
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
-import { fetchOptionalJson, type ReviewRunResponse } from "./shared.js";
+import { fetchOptionalJson } from "./shared-api.js";
+import type { ReviewRunResponse } from "./shared-types.js";
 
 export function getTicketsWithAiReviewSessions(
   tickets: TicketFrontmatter[],
