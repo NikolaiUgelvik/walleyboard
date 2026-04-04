@@ -12,7 +12,7 @@ import {
   emptyDraftEditorFields,
   resolveDraftEditorSync,
 } from "../../lib/draft-editor-sync.js";
-import { deriveInboxItems } from "../../lib/inbox-items.js";
+import { deriveInboxState } from "../../lib/inbox-items.js";
 import { useAgentReviewHistoryModalState } from "./agent-review-history-modal-state.js";
 import {
   resolveNextInspectorState,
@@ -397,7 +397,7 @@ export function useWalleyBoardController() {
     reviewRunQueriesSettled,
     ticketAiReviewActiveById,
     ticketAiReviewResolvedById,
-  } = useTicketAiReviewStatus(globalTickets);
+  } = useTicketAiReviewStatus(globalTickets, projectRecords);
   const selectedSessionTicketId =
     tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
     null;
@@ -439,15 +439,15 @@ export function useWalleyBoardController() {
       .filter((value): value is SessionResponse => value !== undefined)
       .map((item) => [item.session.id, item]),
   );
-  const actionItems = deriveInboxItems({
-    drafts: globalDrafts,
-    projects: projectRecords,
-    tickets: globalTickets,
-    sessionsById: globalSessionById,
-    ticketAiReviewActiveById,
-    ticketAiReviewResolvedById,
-  });
-  const actionItemKeys = actionItems.map((item) => item.key);
+  const { items: actionItems, notificationKeys: actionItemKeys } =
+    deriveInboxState({
+      drafts: globalDrafts,
+      projects: projectRecords,
+      tickets: globalTickets,
+      sessionsById: globalSessionById,
+      ticketAiReviewActiveById,
+      ticketAiReviewResolvedById,
+    });
   const inboxQueriesSettled =
     projectsLoaded &&
     globalDraftsQueries.every((query) => !query.isPending) &&

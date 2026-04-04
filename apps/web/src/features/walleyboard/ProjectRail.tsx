@@ -127,10 +127,10 @@ export function ProjectRail({
   const inboxItemCount = controller.actionItems.length;
   const hasInboxItems = inboxItemCount > 0;
   const inboxAriaLabel = hasInboxItems
-    ? `Open inbox, ${inboxItemCount} actionable inbox ${
+    ? `Open notifications, ${inboxItemCount} actionable notification ${
         inboxItemCount === 1 ? "item" : "items"
       }`
-    : "Open inbox";
+    : "Open notifications";
   const railAccentColor = hasInboxItems ? "#D97706" : "#64748B";
 
   return (
@@ -162,7 +162,7 @@ export function ProjectRail({
           <Popover.Dropdown className="project-inbox-popover">
             <Stack gap="xs">
               <Text fw={700} size="sm">
-                Inbox
+                Notifications
               </Text>
               {hasInboxItems ? (
                 controller.actionItems.map((item) => (
@@ -201,7 +201,7 @@ export function ProjectRail({
                 ))
               ) : (
                 <Text size="sm" c="dimmed">
-                  No actionable inbox items.
+                  No actionable notifications.
                 </Text>
               )}
             </Stack>

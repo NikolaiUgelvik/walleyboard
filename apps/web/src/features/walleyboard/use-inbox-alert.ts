@@ -14,6 +14,7 @@ export function useInboxAlert({
   const inboxAlertAudioRef = useRef<HTMLAudioElement | null>(null);
   const previousInboxItemKeysRef = useRef<string[] | null>(null);
   const ignoredInboxItemKeysRef = useRef<Set<string>>(new Set());
+  const seenInboxItemKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -40,13 +41,18 @@ export function useInboxAlert({
 
     const previousInboxItemKeys = previousInboxItemKeysRef.current;
     const ignoredInboxItemKeys = ignoredInboxItemKeysRef.current;
+    const seenInboxItemKeys = seenInboxItemKeysRef.current;
     previousInboxItemKeysRef.current = actionItemKeys;
 
     const shouldPlayAlert = hasNewInboxItems(
       previousInboxItemKeys,
       actionItemKeys,
       ignoredInboxItemKeys,
+      seenInboxItemKeys,
     );
+    for (const key of actionItemKeys) {
+      seenInboxItemKeys.add(key);
+    }
     ignoredInboxItemKeys.clear();
 
     if (!shouldPlayAlert) {

@@ -26,6 +26,11 @@ export type InboxItem = {
   projectName: string;
 };
 
+type DerivedInboxItem = InboxItem & {
+  notificationKey: string;
+  updatedAt: string;
+};
+
 function hasActiveLinkedPullRequest(
   linkedPr: TicketFrontmatter["linked_pr"],
 ): boolean {
@@ -52,13 +57,27 @@ export function deriveInboxItems(input: {
   ticketAiReviewActiveById?: ReadonlyMap<number, boolean>;
   ticketAiReviewResolvedById?: ReadonlyMap<number, boolean>;
 }): InboxItem[] {
+  return deriveInboxState(input).items;
+}
+
+export function deriveInboxState(input: {
+  drafts: DraftTicketState[];
+  projects: Project[];
+  tickets: TicketFrontmatter[];
+  sessionsById: Map<string, SessionResponse>;
+  ticketAiReviewActiveById?: ReadonlyMap<number, boolean>;
+  ticketAiReviewResolvedById?: ReadonlyMap<number, boolean>;
+}): {
+  items: InboxItem[];
+  notificationKeys: string[];
+} {
   const projectNameById = new Map(
     input.projects.map((project) => [project.id, project.name]),
   );
   const ticketAiReviewActiveById = input.ticketAiReviewActiveById ?? new Map();
   const ticketAiReviewResolvedById =
     input.ticketAiReviewResolvedById ?? new Map();
-  const items = [] as Array<InboxItem & { updatedAt: string }>;
+  const items = [] as DerivedInboxItem[];
 
   for (const draft of input.drafts) {
     if (draft.wizard_status !== "awaiting_confirmation") {
@@ -69,6 +88,7 @@ export function deriveInboxItems(input: {
       projectNameById.get(draft.project_id) ?? "Unknown project";
     items.push({
       key: `draft-${draft.id}`,
+      notificationKey: `draft-${draft.id}:${draft.updated_at}`,
       color: "blue",
       title: "Draft ready to review",
       message: `Review the refined draft for **${draft.title_draft}**.`,
@@ -98,12 +118,14 @@ export function deriveInboxItems(input: {
 
     if (
       ticket.status === "review" &&
+      session &&
       ticket.session_id &&
       ticketAiReviewResolved &&
       !hasActiveLinkedPullRequest(ticket.linked_pr)
     ) {
       items.push({
         key: `review-${ticket.id}`,
+        notificationKey: `review-${ticket.id}:${session.id}:${session.current_attempt_id ?? "none"}`,
         color: "blue",
         title: `Review ready for ticket #${ticket.id}`,
         message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
@@ -141,6 +163,13 @@ export function deriveInboxItems(input: {
 
       items.push({
         key: `session-${ticket.id}`,
+        notificationKey:
+          `session-${ticket.id}:` +
+          `${session.id}:` +
+          `${session.current_attempt_id ?? "none"}:` +
+          `${session.status}:` +
+          `${session.plan_status}:` +
+          `${session.latest_requested_change_note_id ?? "none"}`,
         color: "yellow",
         title,
         message,
@@ -161,5 +190,11 @@ export function deriveInboxItems(input: {
       : right.key.localeCompare(left.key);
   });
 
-  return items.map(({ updatedAt: _updatedAt, ...item }) => item);
+  return {
+    items: items.map(
+      ({ notificationKey: _notificationKey, updatedAt: _updatedAt, ...item }) =>
+        item,
+    ),
+    notificationKeys: items.map((item) => item.notificationKey),
+  };
 }

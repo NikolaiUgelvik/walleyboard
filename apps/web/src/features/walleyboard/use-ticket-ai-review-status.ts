@@ -1,5 +1,8 @@
 import { useQueries } from "@tanstack/react-query";
-import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
+import type {
+  Project,
+  TicketFrontmatter,
+} from "../../../../../packages/contracts/src/index.js";
 
 import { fetchOptionalJson } from "./shared-api.js";
 import type { ReviewRunResponse } from "./shared-types.js";
@@ -22,12 +25,15 @@ type TicketAiReviewStatus = {
   reviewRunQueriesSettled: boolean;
 };
 
-function isReviewRunQueryResolved(query: {
-  data: ReviewRunResponse | null | undefined;
-  status: "pending" | "error" | "success";
-}): boolean {
+function isReviewRunQueryResolvedForTicket(
+  query: {
+    data: ReviewRunResponse | null | undefined;
+    status: "pending" | "error" | "success";
+  },
+  requireReviewRunRecord: boolean,
+): boolean {
   if (query.status === "success") {
-    return true;
+    return !requireReviewRunRecord || query.data?.review_run != null;
   }
 
   const reviewRun = query.data?.review_run ?? null;
@@ -39,6 +45,7 @@ function isReviewRunQueryResolved(query: {
 }
 
 export function deriveTicketAiReviewStatus(input: {
+  automaticAgentReviewByProjectId?: ReadonlyMap<string, boolean>;
   reviewRunQueries: Array<{
     data: ReviewRunResponse | null | undefined;
     status: "pending" | "error" | "success";
@@ -47,31 +54,47 @@ export function deriveTicketAiReviewStatus(input: {
 }): TicketAiReviewStatus {
   const ticketAiReviewActiveById = new Map<number, boolean>();
   const ticketAiReviewResolvedById = new Map<number, boolean>();
+  const automaticAgentReviewByProjectId =
+    input.automaticAgentReviewByProjectId ?? new Map<string, boolean>();
 
   for (const [index, ticket] of input.reviewTickets.entries()) {
     const query = input.reviewRunQueries[index];
     const reviewRun = query?.data?.review_run ?? null;
+    const requireReviewRunRecord =
+      ticket.status === "review" &&
+      automaticAgentReviewByProjectId.get(ticket.project) === true;
 
     ticketAiReviewActiveById.set(ticket.id, reviewRun?.status === "running");
     ticketAiReviewResolvedById.set(
       ticket.id,
-      query !== undefined && isReviewRunQueryResolved(query),
+      query !== undefined &&
+        isReviewRunQueryResolvedForTicket(query, requireReviewRunRecord),
     );
   }
 
   return {
     ticketAiReviewActiveById,
     ticketAiReviewResolvedById,
-    reviewRunQueriesSettled: input.reviewRunQueries.every(
-      isReviewRunQueryResolved,
+    reviewRunQueriesSettled: input.reviewRunQueries.every((query, index) =>
+      isReviewRunQueryResolvedForTicket(
+        query,
+        input.reviewTickets[index]?.status === "review" &&
+          automaticAgentReviewByProjectId.get(
+            input.reviewTickets[index]?.project ?? "",
+          ) === true,
+      ),
     ),
   };
 }
 
 export function useTicketAiReviewStatus(
   tickets: TicketFrontmatter[],
+  projects: Project[],
 ): TicketAiReviewStatus {
   const reviewTickets = getTicketsWithAiReviewSessions(tickets);
+  const automaticAgentReviewByProjectId = new Map(
+    projects.map((project) => [project.id, project.automatic_agent_review]),
+  );
   const reviewRunQueries = useQueries({
     queries: reviewTickets.map((ticket) => ({
       queryKey: ["tickets", ticket.id, "review-run"],
@@ -85,6 +108,7 @@ export function useTicketAiReviewStatus(
   });
 
   return deriveTicketAiReviewStatus({
+    automaticAgentReviewByProjectId,
     reviewRunQueries,
     reviewTickets,
   });

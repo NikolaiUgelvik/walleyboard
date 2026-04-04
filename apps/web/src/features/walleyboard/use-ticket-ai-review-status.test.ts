@@ -141,3 +141,36 @@ test("treats errored review-run lookups with last known data as settled", () => 
   assert.equal(status.ticketAiReviewResolvedById.get(32), true);
   assert.equal(status.reviewRunQueriesSettled, true);
 });
+
+test("keeps automatic AI-review tickets unresolved until a review run record exists", () => {
+  const reviewTickets = getTicketsWithAiReviewSessions([
+    createTicket({ id: 41, session_id: "session-41", project: "project-auto" }),
+    createTicket({
+      id: 42,
+      session_id: "session-42",
+      project: "project-manual",
+    }),
+  ]);
+
+  const status = deriveTicketAiReviewStatus({
+    automaticAgentReviewByProjectId: new Map([
+      ["project-auto", true],
+      ["project-manual", false],
+    ]),
+    reviewRunQueries: [
+      {
+        data: null,
+        status: "success",
+      },
+      {
+        data: null,
+        status: "success",
+      },
+    ],
+    reviewTickets,
+  });
+
+  assert.equal(status.ticketAiReviewResolvedById.get(41), false);
+  assert.equal(status.ticketAiReviewResolvedById.get(42), true);
+  assert.equal(status.reviewRunQueriesSettled, false);
+});

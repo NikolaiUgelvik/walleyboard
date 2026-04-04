@@ -35,16 +35,24 @@ test("does not alert when inbox items are only removed", () => {
   );
 });
 
-test("alerts when an item disappears and later reappears", () => {
-  const keysAfterRemoval = ["session-1"];
+test("does not alert when the same notification instance disappears and reappears", () => {
+  const keysAfterRemoval = ["session-1:attempt-1"];
 
   assert.equal(
-    hasNewInboxItems(["session-1", "review-2"], keysAfterRemoval),
+    hasNewInboxItems(
+      ["session-1:attempt-1", "review-2:attempt-4"],
+      keysAfterRemoval,
+    ),
     false,
   );
   assert.equal(
-    hasNewInboxItems(keysAfterRemoval, ["session-1", "review-2"]),
-    true,
+    hasNewInboxItems(
+      keysAfterRemoval,
+      ["session-1:attempt-1", "review-2:attempt-4"],
+      new Set(),
+      new Set(["session-1:attempt-1", "review-2:attempt-4"]),
+    ),
+    false,
   );
 });
 
@@ -56,5 +64,12 @@ test("does not alert for newly added items that are explicitly ignored", () => {
       new Set(["review-2"]),
     ),
     false,
+  );
+});
+
+test("alerts when the same ticket returns with a new notification instance", () => {
+  assert.equal(
+    hasNewInboxItems(["review-2:attempt-4"], ["review-2:attempt-5"]),
+    true,
   );
 });
