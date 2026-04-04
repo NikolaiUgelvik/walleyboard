@@ -244,7 +244,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     name: "Project One",
     color: "#2563EB",
     agent_adapter: "codex",
-    execution_backend: "host",
+    execution_backend: "docker",
     disabled_mcp_servers: [],
     automatic_agent_review: false,
     automatic_agent_review_run_limit: 1,
@@ -417,10 +417,7 @@ function ControllerModalHarness({
         agentAdapter: controller.projectOptionsAgentAdapter,
         projectId: project.id,
         color: controller.projectOptionsColor,
-        executionBackend:
-          controller.projectOptionsAgentAdapter === "claude-code"
-            ? "host"
-            : controller.projectOptionsExecutionBackend,
+        executionBackend: controller.projectOptionsExecutionBackend,
         disabledMcpServers: controller.projectOptionsDisabledMcpServers,
         automaticAgentReview: controller.projectOptionsAutomaticAgentReview,
         automaticAgentReviewRunLimit:
@@ -852,7 +849,7 @@ test("edit project modal submits the updated color through the controller workfl
         disabledMcpServers: [],
         draftAnalysisModel: null,
         draftAnalysisReasoningEffort: null,
-        executionBackend: "host",
+        executionBackend: "docker",
         postWorktreeCommand: null,
         preWorktreeCommand: null,
         previewStartCommand: null,

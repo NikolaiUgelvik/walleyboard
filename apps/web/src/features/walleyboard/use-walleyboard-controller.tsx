@@ -904,7 +904,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(null);
     setProjectOptionsColor(defaultProjectColor);
     setProjectOptionsAgentAdapter("codex");
-    setProjectOptionsExecutionBackend("host");
+    setProjectOptionsExecutionBackend("docker");
     setProjectOptionsDisabledMcpServers([]);
     setProjectOptionsAutomaticAgentReview(false);
     setProjectOptionsAutomaticAgentReviewRunLimit(1);
@@ -1020,10 +1020,7 @@ export function useWalleyBoardController() {
       agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
       color: normalizeProjectColor(projectOptionsColor),
-      executionBackend:
-        projectOptionsAgentAdapter === "claude-code"
-          ? "host"
-          : projectOptionsExecutionBackend,
+      executionBackend: projectOptionsExecutionBackend,
       disabledMcpServers: [...projectOptionsDisabledMcpServers].sort(
         (left, right) => left.localeCompare(right),
       ),

@@ -19,8 +19,6 @@ import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import {
   buildDraftAnalysisOutputPath,
-  buildMergeConflictSummaryPath,
-  buildOutputSummaryPath,
   buildProcessEnv,
   buildWorkspaceOutputPath,
   extractPersistedAttemptGuidance,
@@ -201,7 +199,11 @@ export class ExecutionRuntime {
   }
 
   assertProjectExecutionBackendAvailable(project: Project): void {
-    if (project.execution_backend !== "docker") return;
+    if (project.execution_backend !== "docker") {
+      throw new Error(
+        "Host execution is no longer supported. Configure the project to use Docker.",
+      );
+    }
     this.#dockerRuntime.assertAvailable();
   }
 
@@ -849,18 +851,13 @@ export class ExecutionRuntime {
       executionMode === "implementation"
         ? inspectWorktreeRecoveryState(session.worktree_path)
         : null;
-    const useDockerRuntime = project.execution_backend === "docker";
     const outputSummaryPath = recoveryState
-      ? useDockerRuntime
-        ? buildWorkspaceOutputPath(
-            session.worktree_path,
-            session.id,
-            "merge-conflict",
-          )
-        : buildMergeConflictSummaryPath(project, ticket.id, session.id)
-      : useDockerRuntime
-        ? buildWorkspaceOutputPath(session.worktree_path, session.id)
-        : buildOutputSummaryPath(project, ticket.id, session.id);
+      ? buildWorkspaceOutputPath(
+          session.worktree_path,
+          session.id,
+          "merge-conflict",
+        )
+      : buildWorkspaceOutputPath(session.worktree_path, session.id);
     const run = recoveryState
       ? adapter.buildMergeConflictRun({
           conflictedFiles: recoveryState.conflictedFiles,
@@ -873,7 +870,7 @@ export class ExecutionRuntime {
           stage: recoveryState.stage,
           targetBranch: ticket.target_branch ?? repository.target_branch,
           ticket,
-          useDockerRuntime,
+          useDockerRuntime: true,
         })
       : adapter.buildExecutionRun({
           executionMode,
@@ -884,7 +881,7 @@ export class ExecutionRuntime {
           repository,
           session,
           ticket,
-          useDockerRuntime,
+          useDockerRuntime: true,
         });
     this.#store.updateExecutionAttempt(attemptId, {
       prompt_kind: recoveryState
@@ -907,42 +904,32 @@ export class ExecutionRuntime {
     let child: IPty;
 
     try {
-      if (useDockerRuntime) {
-        if (!run.dockerSpec) {
-          throw new Error(
-            `${adapter.label} does not provide a Docker execution configuration.`,
-          );
-        }
-        this.#dockerRuntime.ensureSessionContainer({
-          configTomlPath:
-            adapter.id === "codex" ? writeCodexConfigOverride(project) : null,
-          dockerSpec: run.dockerSpec,
-          sessionId: session.id,
-          projectId: project.id,
-          ticketId: ticket.id,
-          worktreePath: session.worktree_path,
-        });
-        child = this.#dockerRuntime.spawnPtyInSession(
-          session.id,
-          run.command,
-          run.args,
-          {
-            cwd: session.worktree_path,
-            env: ptyEnv,
-            cols: 120,
-            rows: 32,
-            name: "xterm-256color",
-          },
+      if (!run.dockerSpec) {
+        throw new Error(
+          `${adapter.label} does not provide a Docker execution configuration.`,
         );
-      } else {
-        child = spawnPty(run.command, run.args, {
+      }
+      this.#dockerRuntime.ensureSessionContainer({
+        configTomlPath:
+          adapter.id === "codex" ? writeCodexConfigOverride(project) : null,
+        dockerSpec: run.dockerSpec,
+        sessionId: session.id,
+        projectId: project.id,
+        ticketId: ticket.id,
+        worktreePath: session.worktree_path,
+      });
+      child = this.#dockerRuntime.spawnPtyInSession(
+        session.id,
+        run.command,
+        run.args,
+        {
           cwd: session.worktree_path,
           env: ptyEnv,
           cols: 120,
           rows: 32,
           name: "xterm-256color",
-        });
-      }
+        },
+      );
     } catch (error) {
       const message =
         error instanceof Error
@@ -980,9 +967,7 @@ export class ExecutionRuntime {
       this.#store,
       session.id,
       attemptId,
-      useDockerRuntime
-        ? `Launching ${adapter.label}${recoveryState ? " merge recovery" : ""} in Docker for ${session.worktree_path}`
-        : `Launching ${adapter.label}${recoveryState ? " merge recovery" : ""} in ${session.worktree_path}`,
+      `Launching ${adapter.label}${recoveryState ? " merge recovery" : ""} in Docker for ${session.worktree_path}`,
     );
     if (recoveryState) {
       publishSessionOutput(
@@ -1112,9 +1097,7 @@ export class ExecutionRuntime {
     };
 
     const shouldSuppressDockerAdapterLine = (line: string) =>
-      useDockerRuntime &&
-      adapter.id === "codex" &&
-      line.startsWith("[codex raw]");
+      adapter.id === "codex" && line.startsWith("[codex raw]");
 
     const recordSuppressedDockerFailureDetail = (line: string) => {
       const detail = line.replace(/^\[codex raw\]\s*/, "").trim();

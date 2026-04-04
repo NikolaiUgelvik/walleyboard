@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { type IPty, spawn as spawnPty } from "node-pty";
+import { type IPty } from "node-pty";
 
 import type {
   ExecutionSession,
@@ -11,7 +11,6 @@ import { writeCodexConfigOverride } from "../agent-adapters/codex-config.js";
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
-  buildMergeConflictSummaryPath,
   buildProcessEnv,
   buildWorkspaceOutputPath,
   hasMeaningfulContent,
@@ -48,14 +47,11 @@ export async function runMergeRecovery(input: {
     throw new Error("Execution session has no prepared worktree");
   }
 
-  const useDockerRuntime = input.project.execution_backend === "docker";
-  const outputSummaryPath = useDockerRuntime
-    ? buildWorkspaceOutputPath(worktreePath, input.session.id, "merge-conflict")
-    : buildMergeConflictSummaryPath(
-        input.project,
-        input.ticket.id,
-        input.session.id,
-      );
+  const outputSummaryPath = buildWorkspaceOutputPath(
+    worktreePath,
+    input.session.id,
+    "merge-conflict",
+  );
   const run = input.adapter.buildMergeConflictRun({
     conflictedFiles: input.conflictedFiles,
     failureMessage: input.failureMessage,
@@ -67,7 +63,7 @@ export async function runMergeRecovery(input: {
     stage: input.stage,
     targetBranch: input.targetBranch,
     ticket: input.ticket,
-    useDockerRuntime,
+    useDockerRuntime: true,
   });
   const { model, reasoningEffort } = input.adapter.resolveModelSelection(
     input.project,
@@ -104,52 +100,40 @@ export async function runMergeRecovery(input: {
         return;
       }
       settled = true;
-      if (useDockerRuntime) {
-        input.cleanupExecutionEnvironment(input.session.id);
-      }
+      input.cleanupExecutionEnvironment(input.session.id);
       resolve(result);
     };
 
     let child: IPty;
     try {
-      if (useDockerRuntime) {
-        if (!run.dockerSpec) {
-          throw new Error(
-            `${input.adapter.label} does not provide a Docker execution configuration.`,
-          );
-        }
-        input.dockerRuntime.ensureSessionContainer({
-          configTomlPath:
-            input.adapter.id === "codex"
-              ? writeCodexConfigOverride(input.project)
-              : null,
-          dockerSpec: run.dockerSpec,
-          sessionId: input.session.id,
-          projectId: input.project.id,
-          ticketId: input.ticket.id,
-          worktreePath,
-        });
-        child = input.dockerRuntime.spawnPtyInSession(
-          input.session.id,
-          run.command,
-          run.args,
-          {
-            cols: 120,
-            rows: 32,
-            cwd: worktreePath,
-            env: ptyEnv,
-            name: "xterm-256color",
-          },
+      if (!run.dockerSpec) {
+        throw new Error(
+          `${input.adapter.label} does not provide a Docker execution configuration.`,
         );
-      } else {
-        child = spawnPty(run.command, run.args, {
-          cwd: worktreePath,
-          env: ptyEnv,
+      }
+      input.dockerRuntime.ensureSessionContainer({
+        configTomlPath:
+          input.adapter.id === "codex"
+            ? writeCodexConfigOverride(input.project)
+            : null,
+        dockerSpec: run.dockerSpec,
+        sessionId: input.session.id,
+        projectId: input.project.id,
+        ticketId: input.ticket.id,
+        worktreePath,
+      });
+      child = input.dockerRuntime.spawnPtyInSession(
+        input.session.id,
+        run.command,
+        run.args,
+        {
           cols: 120,
           rows: 32,
+          cwd: worktreePath,
+          env: ptyEnv,
           name: "xterm-256color",
-        });
-      }
+        },
+      );
     } catch (error) {
       const message =
         error instanceof Error

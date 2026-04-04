@@ -95,7 +95,6 @@ export const reasoningEffortOptions = [
   { value: "xhigh", label: "Extra high" },
 ];
 export const executionBackendOptions = [
-  { label: "Host", value: "host" },
   { label: "Docker", value: "docker" },
 ] satisfies Array<{ label: string; value: ExecutionBackend }>;
 export const reviewActionOptions = [

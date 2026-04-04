@@ -5,7 +5,7 @@ export const projectsTable = sqliteTable("projects", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   color: text("color"),
-  executionBackend: text("execution_backend").notNull().default("host"),
+  executionBackend: text("execution_backend").notNull().default("docker"),
   defaultReviewAction: text("default_review_action")
     .notNull()
     .default("direct_merge"),

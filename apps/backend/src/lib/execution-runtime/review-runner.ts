@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { type IPty, spawn as spawnPty } from "node-pty";
+import { type IPty } from "node-pty";
 
 import {
   type ExecutionSession,
@@ -16,7 +16,6 @@ import type { AgentCliAdapter } from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildProcessEnv,
-  buildReviewRunOutputPath,
   buildWorkspaceOutputPath,
   hasMeaningfulContent,
   streamPtyLines,
@@ -44,14 +43,11 @@ export async function runTicketReviewSession(input: {
     throw new Error("Execution session has no prepared worktree");
   }
 
-  const useDockerRuntime = input.project.execution_backend === "docker";
-  const outputPath = useDockerRuntime
-    ? buildWorkspaceOutputPath(worktreePath, input.reviewRunId, "review")
-    : buildReviewRunOutputPath(
-        input.project,
-        input.ticket.id,
-        input.reviewRunId,
-      );
+  const outputPath = buildWorkspaceOutputPath(
+    worktreePath,
+    input.reviewRunId,
+    "review",
+  );
   const run = input.adapter.buildReviewRun({
     outputPath,
     project: input.project,
@@ -59,14 +55,12 @@ export async function runTicketReviewSession(input: {
     reviewPackage: input.reviewPackage,
     session: input.session,
     ticket: input.ticket,
-    useDockerRuntime,
+    useDockerRuntime: true,
   });
   input.onPreparedRun?.({ prompt: run.prompt });
   const reviewSessionId = `review-${input.reviewRunId}`;
   const launchLines = [
-    useDockerRuntime
-      ? `Launching ${input.adapter.label} review run in Docker for ${worktreePath}`
-      : `Launching ${input.adapter.label} review run in ${worktreePath}`,
+    `Launching ${input.adapter.label} review run in Docker for ${worktreePath}`,
     `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
   ];
   for (const line of launchLines) {
@@ -76,44 +70,34 @@ export async function runTicketReviewSession(input: {
   return await new Promise((resolve, reject) => {
     let child: IPty;
     try {
-      if (useDockerRuntime) {
-        if (!run.dockerSpec) {
-          throw new Error(
-            `${input.adapter.label} does not provide a Docker execution configuration.`,
-          );
-        }
-        input.dockerRuntime.ensureSessionContainer({
-          configTomlPath:
-            input.adapter.id === "codex"
-              ? writeCodexConfigOverride(input.project)
-              : null,
-          dockerSpec: run.dockerSpec,
-          sessionId: reviewSessionId,
-          projectId: input.project.id,
-          ticketId: input.ticket.id,
-          worktreePath,
-        });
-        child = input.dockerRuntime.spawnPtyInSession(
-          reviewSessionId,
-          run.command,
-          run.args,
-          {
-            cols: 120,
-            rows: 32,
-            cwd: worktreePath,
-            env: buildProcessEnv(),
-            name: "xterm-256color",
-          },
+      if (!run.dockerSpec) {
+        throw new Error(
+          `${input.adapter.label} does not provide a Docker execution configuration.`,
         );
-      } else {
-        child = spawnPty(run.command, run.args, {
-          cwd: worktreePath,
-          env: buildProcessEnv(),
+      }
+      input.dockerRuntime.ensureSessionContainer({
+        configTomlPath:
+          input.adapter.id === "codex"
+            ? writeCodexConfigOverride(input.project)
+            : null,
+        dockerSpec: run.dockerSpec,
+        sessionId: reviewSessionId,
+        projectId: input.project.id,
+        ticketId: input.ticket.id,
+        worktreePath,
+      });
+      child = input.dockerRuntime.spawnPtyInSession(
+        reviewSessionId,
+        run.command,
+        run.args,
+        {
           cols: 120,
           rows: 32,
+          cwd: worktreePath,
+          env: buildProcessEnv(),
           name: "xterm-256color",
-        });
-      }
+        },
+      );
     } catch (error) {
       reject(
         error instanceof Error
@@ -139,9 +123,7 @@ export async function runTicketReviewSession(input: {
       }
       settled = true;
       input.activeReviewRuns.delete(input.reviewRunId);
-      if (useDockerRuntime) {
-        input.cleanupExecutionEnvironment(reviewSessionId);
-      }
+      input.cleanupExecutionEnvironment(reviewSessionId);
       try {
         resolve(handler());
       } catch (error) {
@@ -180,9 +162,7 @@ export async function runTicketReviewSession(input: {
 
       if (exitCode !== 0) {
         input.activeReviewRuns.delete(input.reviewRunId);
-        if (useDockerRuntime) {
-          input.cleanupExecutionEnvironment(reviewSessionId);
-        }
+        input.cleanupExecutionEnvironment(reviewSessionId);
         reject(
           new Error(
             input.adapter.formatExitReason(

@@ -242,7 +242,7 @@ export function mapProject(row: Record<string, unknown>): Project {
         : row.agent_adapter === "claude-code"
           ? "claude-code"
           : "codex",
-    execution_backend: row.execution_backend === "docker" ? "docker" : "host",
+    execution_backend: "docker",
     disabled_mcp_servers: parseJson<unknown[]>(row.disabled_mcp_servers, [])
       .filter((server): server is string => typeof server === "string")
       .map((server) => server.trim())
@@ -618,7 +618,7 @@ export class SqliteStoreContext {
         name TEXT NOT NULL,
         color TEXT,
         agent_adapter TEXT NOT NULL DEFAULT 'codex',
-        execution_backend TEXT NOT NULL DEFAULT 'host',
+        execution_backend TEXT NOT NULL DEFAULT 'docker',
         disabled_mcp_servers TEXT NOT NULL DEFAULT '[]',
         automatic_agent_review INTEGER NOT NULL DEFAULT 0,
         automatic_agent_review_run_limit INTEGER NOT NULL DEFAULT 1,
@@ -834,7 +834,7 @@ export class SqliteStoreContext {
     this.#ensureColumn(
       "projects",
       "execution_backend",
-      "TEXT NOT NULL DEFAULT 'host'",
+      "TEXT NOT NULL DEFAULT 'docker'",
     );
     this.#ensureColumn(
       "projects",
@@ -1000,8 +1000,10 @@ export class SqliteStoreContext {
       .prepare(
         `
           UPDATE projects
-          SET execution_backend = 'host'
-          WHERE execution_backend IS NULL OR execution_backend = ''
+          SET execution_backend = 'docker'
+          WHERE execution_backend IS NULL
+             OR execution_backend = ''
+             OR execution_backend != 'docker'
         `,
       )
       .run();

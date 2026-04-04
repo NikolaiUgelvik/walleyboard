@@ -34,7 +34,7 @@ Implemented now:
 
 - local Fastify + React app with shared contracts, SQLite persistence, and websocket-driven board/session updates
 - board workflow with `Draft`, `Ready`, `In progress`, `In review`, and `Done`
-- project options for host or Docker-backed execution, model overrides, and pre/post-worktree commands
+- project options for Docker-backed ticket execution, model overrides, and pre/post-worktree commands
 - draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session and worktree
@@ -67,18 +67,18 @@ Not yet implemented:
 
 ## Required Command Line Tools
 
-Install these on the host machine before starting WalleyBoard:
+Install these before starting WalleyBoard:
 
 - `node` 22 or newer, with the bundled `npm`
 - `bash`
 - `git`
 - `codex`
+- `docker`
 
-WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. The default agent integration runs the real `codex` CLI for draft refinement and ticket execution, so the backend expects `codex` to be installed and already authenticated in your normal shell environment.
+WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. Ticket execution is Docker-only: the backend prepares an isolated checkout, builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile) on first use, and launches the agent inside that container. The default agent integration runs the real `codex` CLI, so the backend expects `codex` to be installed and already authenticated in your normal shell environment, and Docker must be installed with a running daemon.
 
 ## Optional Command Line Tools
 
-- `docker`: only needed if you want a project to run ticket work inside a managed container instead of on the host
 - `claude`: only needed if you want to use the Claude Code adapter instead of Codex
 
 If you want Claude Code support, create `~/.walleyboard/claude-cli-path` and put the absolute path to your `claude` binary in that file. WalleyBoard uses that exact path for both health checks and runtime execution.
@@ -102,20 +102,20 @@ If you want one command to restart both local servers, use `./restart.sh`.
 
 Logs and pid files for this helper live under `~/.walleyboard/dev/`.
 
-## Optional Docker Support
+## Docker Requirement
 
-Docker is optional. The app itself runs directly on your host machine; Docker only affects ticket execution for projects configured with the `Docker` execution backend.
+Docker is a hard requirement for ticket execution. Host execution is no longer supported.
 
-To use Docker-backed execution:
+Minimum Docker setup:
 
 1. Install Docker Desktop or Docker Engine.
-2. Make sure the Docker daemon is running and `docker version` succeeds in your shell.
-3. Start WalleyBoard normally with `npm run dev:backend` and `npm run dev:web`.
-4. In project settings, choose the `Docker` execution backend for a Codex-backed project.
+2. Start the Docker daemon.
+3. Confirm `docker version` succeeds in the same shell environment where you run `npm run dev:backend`.
+4. Keep enough local Docker permissions to build and run the WalleyBoard runtime image.
 
-On the first Docker-backed run, WalleyBoard builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile). That image installs Node, Git, ripgrep, and the Codex CLI, then mounts the ticket worktree at `/workspace` and your host `~/.codex` directory into the container so Codex can reuse your existing configuration.
+On the first ticket run, WalleyBoard builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile). That image installs Node, Git, ripgrep, and the Codex CLI, then mounts the ticket worktree at `/workspace` and your host `~/.codex` directory into the container so Codex can reuse your existing configuration.
 
-`Claude Code` does not currently support the Docker execution backend in WalleyBoard, so Docker projects should use the `Codex` adapter.
+`Claude Code` does not currently provide a Docker execution configuration in WalleyBoard, so `Codex` is the supported adapter for Docker-backed ticket execution.
 
 ## Quality Gates
 

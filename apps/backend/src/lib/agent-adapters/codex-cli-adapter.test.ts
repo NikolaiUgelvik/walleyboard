@@ -189,7 +189,7 @@ test("CodexCliAdapter.buildMergeConflictRun resumes an existing adapter session 
   );
 });
 
-test("CodexCliAdapter.buildReviewRun uses read-only sandbox on host", () => {
+test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is disabled", () => {
   const adapter = new CodexCliAdapter();
 
   const run = adapter.buildReviewRun({

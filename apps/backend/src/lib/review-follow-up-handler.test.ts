@@ -14,7 +14,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     name: "Project",
     color: "#2563EB",
     agent_adapter: "codex",
-    execution_backend: "host",
+    execution_backend: "docker",
     disabled_mcp_servers: [],
     automatic_agent_review: false,
     automatic_agent_review_run_limit: 1,

@@ -27,7 +27,7 @@ export function useProjectOptionsState() {
   const [projectOptionsAgentAdapter, setProjectOptionsAgentAdapter] =
     useState<AgentAdapter>("codex");
   const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
-    useState<ExecutionBackend>("host");
+    useState<ExecutionBackend>("docker");
   const [
     projectOptionsDisabledMcpServers,
     setProjectOptionsDisabledMcpServers,

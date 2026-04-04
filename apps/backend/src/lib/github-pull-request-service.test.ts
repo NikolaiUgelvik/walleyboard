@@ -40,7 +40,7 @@ function configureGitIdentity(repoPath: string): void {
 function createTicketFixture(
   tempDir: string,
   options?: {
-    executionBackend?: "host" | "docker";
+    executionBackend?: "docker";
     targetBranch?: string;
   },
 ) {

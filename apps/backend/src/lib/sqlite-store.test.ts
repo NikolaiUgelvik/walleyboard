@@ -520,7 +520,7 @@ test("editing a ready ticket preserves its id and target branch when re-promoted
   }
 });
 
-test("projects default to host execution and persist execution backend updates", () => {
+test("projects default to Docker execution and backfill legacy host backend records", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-backend-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");
 
@@ -534,14 +534,20 @@ test("projects default to host execution and persist execution backend updates",
       },
     });
 
-    assert.equal(store.getProject(project.id)?.execution_backend, "host");
+    assert.equal(store.getProject(project.id)?.execution_backend, "docker");
     assert.equal(store.getProject(project.id)?.agent_adapter, "codex");
 
-    store.updateProject(project.id, {
-      execution_backend: "docker",
-    });
-
-    assert.equal(store.getProject(project.id)?.execution_backend, "docker");
+    const rawDb = new DatabaseSync(databasePath);
+    rawDb
+      .prepare(
+        `
+          UPDATE projects
+          SET execution_backend = 'host'
+          WHERE id = ?
+        `,
+      )
+      .run(project.id);
+    rawDb.close();
 
     const reloadedStore = new SqliteStore(databasePath);
     assert.equal(

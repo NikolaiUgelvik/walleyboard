@@ -88,32 +88,17 @@ export function ProjectConfigurationModals({
                     controller.setProjectOptionsAgentAdapter(value);
                     controller.setProjectOptionsDraftModelPreset("default");
                     controller.setProjectOptionsTicketModelPreset("default");
-                    if (value === "claude-code") {
-                      controller.setProjectOptionsExecutionBackend("host");
-                    }
                   }}
                 />
               </Stack>
 
-              {/* Docker is not supported for Claude Code. This UI guard is the
-                  primary enforcement point - we intentionally skip server-side
-                  cross-field validation since our threat model does not cover
-                  users bypassing the UI via raw API calls. The runtime still
-                  produces a clear error if the combination is somehow reached. */}
               <Stack gap="xs">
                 <Text fw={600}>Execution backend</Text>
                 <SegmentedControl
                   data={executionBackendOptions}
-                  disabled={
-                    controller.projectOptionsAgentAdapter === "claude-code"
-                  }
-                  value={
-                    controller.projectOptionsAgentAdapter === "claude-code"
-                      ? "host"
-                      : controller.projectOptionsExecutionBackend
-                  }
+                  value={controller.projectOptionsExecutionBackend}
                   onChange={(value) => {
-                    if (value !== "host" && value !== "docker") {
+                    if (value !== "docker") {
                       return;
                     }
 
@@ -122,17 +107,18 @@ export function ProjectConfigurationModals({
                     controller.setProjectOptionsExecutionBackend(value);
                   }}
                 />
+                <Text size="sm" c="dimmed">
+                  Docker is required for ticket execution. WalleyBoard prepares
+                  an isolated checkout and runs the ticket session inside the
+                  managed runtime container.
+                </Text>
                 {controller.projectOptionsAgentAdapter === "claude-code" ? (
                   <Text size="sm" c="dimmed">
-                    Docker execution is not yet supported for Claude Code.
+                    Claude Code does not currently provide a Docker execution
+                    configuration in WalleyBoard, so Codex is the supported
+                    adapter for ticket execution.
                   </Text>
-                ) : (
-                  <Text size="sm" c="dimmed">
-                    Docker runs ticket-scoped agent work inside a managed Ubuntu
-                    container. The ticket-card worktree terminal and validation
-                    still run on the host in this first version.
-                  </Text>
-                )}
+                ) : null}
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
                     <Text size="sm" c="dimmed">
@@ -151,8 +137,8 @@ export function ProjectConfigurationModals({
                       {controller.dockerHealth.error
                         ? `: ${controller.dockerHealth.error}`
                         : "."}{" "}
-                      You can still save Docker mode, but ticket start and
-                      resume will be rejected until Docker is reachable again.
+                      Ticket start and resume remain blocked until Docker is
+                      reachable again.
                     </Text>
                   )
                 ) : controller.healthQuery.isError ? (

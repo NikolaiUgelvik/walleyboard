@@ -341,50 +341,22 @@ export function prepareRepositoryTargetBranchWorkspace(
     targetBranch,
   );
 
-  if (project.execution_backend === "docker") {
-    try {
-      runGitAtRoot([
-        "clone",
-        "--quiet",
-        "--no-hardlinks",
-        "--branch",
-        refreshedTarget.mergeBackBranch,
-        repository.path,
-        worktreeRoot,
-      ]);
-      copyGitIdentity(repository.path, worktreeRoot);
-      addWorkspaceExclude(worktreeRoot, ".walleyboard/");
-      return worktreeRoot;
-    } catch (error) {
-      if (existsSync(worktreeRoot)) {
-        removeStandaloneWorkspace(worktreeRoot);
-      }
-
-      throw error;
-    }
-  }
-
   try {
-    runGit(repository.path, [
-      "worktree",
-      "add",
+    runGitAtRoot([
+      "clone",
+      "--quiet",
+      "--no-hardlinks",
+      "--branch",
+      refreshedTarget.mergeBackBranch,
+      repository.path,
       worktreeRoot,
-      refreshedTarget.syncRef,
     ]);
+    copyGitIdentity(repository.path, worktreeRoot);
     addWorkspaceExclude(worktreeRoot, ".walleyboard/");
     return worktreeRoot;
   } catch (error) {
     if (existsSync(worktreeRoot)) {
-      try {
-        runGit(repository.path, [
-          "worktree",
-          "remove",
-          "--force",
-          worktreeRoot,
-        ]);
-      } catch {
-        // Keep the original error. Cleanup failures can be handled manually.
-      }
+      removeStandaloneWorkspace(worktreeRoot);
     }
 
     throw error;
@@ -417,63 +389,22 @@ export function prepareWorktree(
     targetBranch,
   );
 
-  if (project.execution_backend === "docker") {
-    try {
-      runGitAtRoot([
-        "clone",
-        "--quiet",
-        "--no-hardlinks",
-        "--branch",
-        refreshedTarget.mergeBackBranch,
-        repository.path,
-        worktreeRoot,
-      ]);
-      copyGitIdentity(repository.path, worktreeRoot);
-      runGit(worktreeRoot, ["checkout", "-b", workingBranch]);
-      addWorkspaceExclude(worktreeRoot, ".walleyboard/");
-    } catch (error) {
-      if (existsSync(worktreeRoot)) {
-        removeStandaloneWorkspace(worktreeRoot);
-      }
-
-      throw error;
-    }
-
-    const logs = [
-      `Verified git repository: ${repository.path}`,
-      ...refreshedTarget.logs,
-      `Cloned isolated repository checkout: ${worktreeRoot}`,
-      `Created working branch ${workingBranch} from ${refreshedTarget.mergeBackBranch}`,
-    ];
-
-    return {
-      workingBranch,
-      worktreePath: worktreeRoot,
-      logs,
-    };
-  }
-
   try {
-    runGit(repository.path, [
-      "worktree",
-      "add",
-      "-b",
-      workingBranch,
+    runGitAtRoot([
+      "clone",
+      "--quiet",
+      "--no-hardlinks",
+      "--branch",
+      refreshedTarget.mergeBackBranch,
+      repository.path,
       worktreeRoot,
-      refreshedTarget.syncRef,
     ]);
+    copyGitIdentity(repository.path, worktreeRoot);
+    runGit(worktreeRoot, ["checkout", "-b", workingBranch]);
+    addWorkspaceExclude(worktreeRoot, ".walleyboard/");
   } catch (error) {
     if (existsSync(worktreeRoot)) {
-      try {
-        runGit(repository.path, [
-          "worktree",
-          "remove",
-          "--force",
-          worktreeRoot,
-        ]);
-      } catch {
-        // Keep the original error. Cleanup failures can be handled manually.
-      }
+      removeStandaloneWorkspace(worktreeRoot);
     }
 
     throw error;
@@ -482,8 +413,8 @@ export function prepareWorktree(
   const logs = [
     `Verified git repository: ${repository.path}`,
     ...refreshedTarget.logs,
-    `Checked out target branch: ${refreshedTarget.syncRef}`,
-    `Created git worktree: ${worktreeRoot}`,
+    `Cloned isolated repository checkout: ${worktreeRoot}`,
+    `Created working branch ${workingBranch} from ${refreshedTarget.mergeBackBranch}`,
   ];
 
   return {

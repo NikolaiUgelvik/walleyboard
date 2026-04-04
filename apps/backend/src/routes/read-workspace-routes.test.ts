@@ -247,7 +247,7 @@ function createProject(): Project {
     name: "Project",
     color: "#2563EB",
     agent_adapter: "codex",
-    execution_backend: "host",
+    execution_backend: "docker",
     disabled_mcp_servers: [],
     automatic_agent_review: false,
     automatic_agent_review_run_limit: 1,
@@ -630,7 +630,12 @@ test("workspace terminal stays available after execution starts in the same work
             command: "bash",
             args: ["-lc", "sleep 30"],
             prompt: "sleep 30",
-            dockerSpec: null,
+            dockerSpec: {
+              imageTag: "walleyboard/test-runtime:latest",
+              dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+              homePath: "/home/codex",
+              configMountPath: "/home/codex/.codex",
+            },
             outputPath: input.outputPath,
           };
         },
@@ -661,13 +666,28 @@ test("workspace terminal stays available after execution starts in the same work
     ]),
     dockerRuntime: {
       assertAvailable() {
-        throw new Error("Docker is not used in this test");
+        return {
+          installed: true,
+          available: true,
+          client_version: "1.0.0",
+          server_version: "1.0.0",
+          error: null,
+        };
       },
       cleanupSessionContainer() {},
       dispose() {},
       ensureSessionContainer() {},
       spawnPtyInSession() {
-        throw new Error("Docker is not used in this test");
+        return spawnPty("bash", ["-lc", "sleep 30"], {
+          cwd: tempDir,
+          env: {
+            ...process.env,
+            TERM: "xterm-256color",
+          },
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        });
       },
     } as never,
     eventHub: {

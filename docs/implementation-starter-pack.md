@@ -38,7 +38,7 @@ Implemented now:
 
 - local Fastify + React app with shared contracts, SQLite persistence, and websocket-driven board/session updates
 - board workflow with `Draft`, `Ready`, `In progress`, `In review`, and `Done`
-- project options for host or Docker-backed execution, model overrides, and pre/post-worktree commands
+- project options for Docker-backed ticket execution, model overrides, and pre/post-worktree commands
 - draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session/worktree
@@ -159,7 +159,8 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 ## Current Implementation Notes
 
 - Project setup is real and persisted in SQLite, and repository validation commands can be configured during project setup.
-- Projects can choose a host or Docker execution backend, plus project-level pre/post-worktree commands and model overrides.
+- Projects use Docker as the only execution backend, plus project-level pre/post-worktree commands and model overrides.
+- Minimum ticket-execution setup is Docker Desktop or Docker Engine installed, a running daemon, and `docker version` succeeding in the backend shell environment.
 - Draft and ticket Markdown are persisted in SQLite-backed records, while filesystem writes are reserved for artifacts, logs, summaries, and worktrees.
 - Production source files are kept under a hard 1500-line cap through `scripts/check-production-file-sizes.mjs`, and the root lint workflow runs that gate before Biome.
 - Board-visible work now uses the `Draft`, `Ready`, `In progress`, `In review`, and `Done` flow, with websocket updates keeping drafts, tickets, sessions, and review packages current in the UI.

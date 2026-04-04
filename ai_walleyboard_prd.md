@@ -1079,11 +1079,12 @@ Notes on persisted ownership:
 
 ### 8.7 Codex Execution Environment
 - Each execution session must run through Codex CLI as the execution runtime.
-- The current implementation supports both `host` and `docker` execution backends selected per project.
+- Docker is the only supported execution backend for ticket execution.
 - Codex should provide the execution sandbox and command policy boundary for autonomous work.
 - The walleyboard should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
 - Planning-first runs should launch Codex with read-only behavior.
 - Implementation runs should launch Codex with workspace-write behavior against the prepared worktree.
+- Minimum Docker setup must be documented as: Docker Desktop or Docker Engine installed, the daemon running, and `docker version` succeeding in the same shell environment as the backend.
 - Validation commands and hooks should continue to run as backend-owned subprocesses against that same worktree.
 - The walleyboard should not add a second OS-level sandbox layer in v1.
 
