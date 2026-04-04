@@ -1,7 +1,3 @@
-import { execFileSync } from "node:child_process";
-import { accessSync, constants, existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
 import type { z } from "zod";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
@@ -11,6 +7,8 @@ import {
   truncate,
 } from "../execution-runtime/helpers.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
+import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
+import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -30,146 +28,6 @@ import type {
   PreparedAgentRun,
   ReviewRunInput,
 } from "./types.js";
-
-const claudeDockerSpec = {
-  imageTag: "walleyboard/codex-runtime:ubuntu-24.04-node-24",
-  dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
-  homePath: "/home/codex",
-  configMountPath: "/home/codex/.claude",
-} as const;
-
-export function resolveClaudeConfigHome(): string {
-  return join(homedir(), ".claude");
-}
-
-export type ClaudeCodeAvailability = {
-  available: boolean;
-  detected_path: string | null;
-  error: string | null;
-};
-
-type ClaudeCodeAvailabilityDependencies = {
-  configHomePath?: string;
-  env?: NodeJS.ProcessEnv;
-  execFileSyncImpl?: typeof execFileSync;
-};
-
-function findExecutableOnPath(
-  command: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
-  const pathValue = env.PATH;
-  if (!pathValue) {
-    return null;
-  }
-
-  const executableSuffixes =
-    process.platform === "win32"
-      ? (env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM")
-          .split(";")
-          .filter((suffix) => suffix.length > 0)
-      : [""];
-
-  for (const directory of pathValue.split(delimiter)) {
-    if (directory.length === 0) {
-      continue;
-    }
-
-    for (const suffix of executableSuffixes) {
-      const candidate = join(directory, `${command}${suffix}`);
-      try {
-        accessSync(candidate, constants.X_OK);
-        return candidate;
-      } catch {
-        // Continue scanning PATH until an executable match is found.
-      }
-    }
-  }
-
-  return null;
-}
-
-function formatClaudeCodeAvailabilityError(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Claude Code CLI is installed but could not be executed.";
-  }
-
-  const execError = error as Error & {
-    stderr?: Buffer | string;
-  };
-  const stderr =
-    typeof execError.stderr === "string"
-      ? execError.stderr.trim()
-      : Buffer.isBuffer(execError.stderr)
-        ? execError.stderr.toString("utf8").trim()
-        : "";
-  if (stderr.length > 0) {
-    return `Claude Code CLI is unavailable: ${truncate(stderr, 240)}`;
-  }
-
-  return `Claude Code CLI is unavailable: ${execError.message}`;
-}
-
-function validateClaudeConfigHome(configHomePath: string): string | null {
-  if (!existsSync(configHomePath)) {
-    return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} does not exist.`;
-  }
-
-  try {
-    if (readdirSync(configHomePath).length === 0) {
-      return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} is empty.`;
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "could not be read";
-    return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} could not be read (${message}).`;
-  }
-
-  return null;
-}
-
-export function probeClaudeCodeAvailability(
-  dependencies: ClaudeCodeAvailabilityDependencies = {},
-): ClaudeCodeAvailability {
-  const executablePath = findExecutableOnPath("claude", dependencies.env);
-  if (!executablePath) {
-    return {
-      available: false,
-      detected_path: null,
-      error: "Claude Code CLI is not installed or not on PATH.",
-    };
-  }
-
-  const configHomePath =
-    dependencies.configHomePath ?? resolveClaudeConfigHome();
-  const configError = validateClaudeConfigHome(configHomePath);
-  if (configError) {
-    return {
-      available: false,
-      detected_path: executablePath,
-      error: configError,
-    };
-  }
-
-  const execFileSyncImpl = dependencies.execFileSyncImpl ?? execFileSync;
-  try {
-    execFileSyncImpl(executablePath, ["--version"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return {
-      available: true,
-      detected_path: executablePath,
-      error: null,
-    };
-  } catch (error) {
-    return {
-      available: false,
-      detected_path: executablePath,
-      error: formatClaudeCodeAvailabilityError(error),
-    };
-  }
-}
 
 // Claude Code permission modes. Every run builder must use one of these to
 // set permission args. This is the single place where permission policy is
@@ -625,7 +483,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       args,
       prompt,
       outputPath,
-      dockerSpec: claudeDockerSpec,
+      dockerSpec: claudeCodeDockerSpec,
     };
   }
 
@@ -684,7 +542,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       args,
       prompt,
       outputPath,
-      dockerSpec: claudeDockerSpec,
+      dockerSpec: claudeCodeDockerSpec,
     };
   }
 
@@ -730,7 +588,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       args,
       prompt,
       outputPath,
-      dockerSpec: claudeDockerSpec,
+      dockerSpec: claudeCodeDockerSpec,
     };
   }
 
@@ -764,7 +622,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       args,
       prompt,
       outputPath,
-      dockerSpec: claudeDockerSpec,
+      dockerSpec: claudeCodeDockerSpec,
     };
   }
 

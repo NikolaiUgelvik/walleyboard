@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -26,6 +26,122 @@ test("getHealth reports Docker availability from docker version", () => {
     server_version: "29.3.1",
     error: null,
   });
+});
+
+test("getClaudeCodeAvailability reports Claude available from the Docker runtime", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-runtime-"));
+  const configHomePath = join(tempDir, ".claude");
+
+  mkdirSync(configHomePath, { recursive: true });
+  writeFileSync(join(configHomePath, "settings.json"), "{}\n", "utf8");
+
+  try {
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => configHomePath,
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        assert.equal(command, "docker");
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "{}";
+        }
+
+        if (args[0] === "run") {
+          return "/usr/local/bin/claude\n";
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      repoRoot: tempDir,
+    });
+
+    assert.deepEqual(runtime.getClaudeCodeAvailability(), {
+      available: true,
+      detected_path: "/usr/local/bin/claude",
+      error: null,
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("getClaudeCodeAvailability reports a useful error when Claude is unavailable in Docker", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-claude-runtime-error-"),
+  );
+  const configHomePath = join(tempDir, ".claude");
+
+  mkdirSync(configHomePath, { recursive: true });
+  writeFileSync(join(configHomePath, "settings.json"), "{}\n", "utf8");
+
+  try {
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => configHomePath,
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        assert.equal(command, "docker");
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "{}";
+        }
+
+        if (args[0] === "run") {
+          throw Object.assign(new Error("spawn failed"), {
+            stdout: Buffer.from("/usr/local/bin/claude\n"),
+            stderr: Buffer.from("permission denied"),
+          });
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      repoRoot: tempDir,
+    });
+
+    assert.deepEqual(runtime.getClaudeCodeAvailability(), {
+      available: false,
+      detected_path: "/usr/local/bin/claude",
+      error: "Claude Code CLI is unavailable: permission denied",
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("getClaudeCodeAvailability reports Claude unavailable when config is missing", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-claude-runtime-missing-config-"),
+  );
+  const configHomePath = join(tempDir, ".claude");
+
+  try {
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => configHomePath,
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        assert.equal(command, "docker");
+        assert.deepEqual(args, [
+          "version",
+          "--format",
+          "{{.Client.Version}}|{{.Server.Version}}",
+        ]);
+        return "29.3.1|29.3.1";
+      }) as never,
+      repoRoot: tempDir,
+    });
+
+    assert.deepEqual(runtime.getClaudeCodeAvailability(), {
+      available: false,
+      detected_path: null,
+      error: `Claude Code CLI is unavailable: Claude config directory ${configHomePath} does not exist.`,
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("ensureSessionContainer uses the adapter docker spec for image and config mounts", () => {

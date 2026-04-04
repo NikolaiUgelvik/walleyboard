@@ -141,6 +141,9 @@ export class ExecutionRuntime {
       );
     }
     this.#dockerRuntime.assertAvailable();
+    if (project.agent_adapter === "claude-code") {
+      this.#dockerRuntime.assertClaudeCodeAvailable();
+    }
   }
 
   cleanupExecutionEnvironment(sessionId: string): void {
@@ -269,20 +272,20 @@ export class ExecutionRuntime {
         continue;
       }
 
-      publishSessionOutput(
-        this.#eventHub,
-        this.#store,
-        session.id,
-        attemptId,
-        "A project execution slot opened. Launching this queued session.",
-      );
-      publishSessionUpdated(
-        this.#eventHub,
-        session,
-        this.hasActiveExecution(session.id),
-      );
-
       try {
+        this.assertProjectExecutionBackendAvailable(project);
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          session.id,
+          attemptId,
+          "A project execution slot opened. Launching this queued session.",
+        );
+        publishSessionUpdated(
+          this.#eventHub,
+          session,
+          this.hasActiveExecution(session.id),
+        );
         this.startExecution({
           project,
           repository,
@@ -360,6 +363,8 @@ export class ExecutionRuntime {
     adapterSessionRef: string | null;
     report: ReviewReport;
   }> {
+    this.assertProjectExecutionBackendAvailable(input.project);
+
     return runTicketReviewSession({
       activeReviewRuns: this.#activeReviewRuns,
       adapter: this.#getSessionAdapter(input.session),
@@ -529,6 +534,8 @@ export class ExecutionRuntime {
     if (this.#activeDraftRuns.has(draft.id)) {
       throw new Error("Draft analysis already running");
     }
+
+    this.assertProjectExecutionBackendAvailable(project);
 
     const adapter = this.#getProjectAdapter(project);
     const runId = nanoid();
@@ -789,6 +796,7 @@ export class ExecutionRuntime {
     if (session.status === "queued") {
       return;
     }
+    this.assertProjectExecutionBackendAvailable(project);
     if (!session.worktree_path) {
       throw new Error("Execution session has no worktree path");
     }

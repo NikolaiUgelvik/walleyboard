@@ -68,3 +68,74 @@ test("confirm route rejects missing ticket references before promotion", async (
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("draft analysis routes return 409 when Claude is unavailable", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-draft-routes-"));
+  const claudeUnavailableError =
+    "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.";
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project } = store.createProject({
+      name: "Claude Draft Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    store.updateProject(project.id, {
+      agent_adapter: "claude-code",
+    });
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Claude draft analysis",
+      description: "Fail before launching an unavailable Claude run.",
+    });
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(draftRoutes, {
+      eventHub: new EventHub(),
+      executionRuntime: {
+        hasActiveDraftRun() {
+          return false;
+        },
+        runDraftFeasibility() {
+          throw new Error(claudeUnavailableError);
+        },
+        runDraftRefinement() {
+          throw new Error(claudeUnavailableError);
+        },
+      } as never,
+      store,
+    });
+
+    const refineResponse = await app.inject({
+      method: "POST",
+      url: `/drafts/${draft.id}/refine`,
+      payload: {
+        instruction: "Tighten the scope.",
+      },
+    });
+    assert.equal(refineResponse.statusCode, 409);
+    assert.deepEqual(refineResponse.json(), {
+      error: claudeUnavailableError,
+    });
+
+    const questionsResponse = await app.inject({
+      method: "POST",
+      url: `/drafts/${draft.id}/questions`,
+      payload: {
+        instruction: "Find missing details.",
+      },
+    });
+    assert.equal(questionsResponse.statusCode, 409);
+    assert.deepEqual(questionsResponse.json(), {
+      error: claudeUnavailableError,
+    });
+
+    await app.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

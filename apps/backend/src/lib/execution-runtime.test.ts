@@ -36,7 +36,7 @@ function runGit(repoPath: string, args: string[]) {
   }).trim();
 }
 
-function createProject(): Project {
+function createProject(overrides: Partial<Project> = {}): Project {
   return {
     id: "project-1",
     slug: "project-1",
@@ -59,6 +59,7 @@ function createProject(): Project {
     max_concurrent_sessions: 4,
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -443,6 +444,130 @@ test("draft refinement launches the configured adapter command inside Docker", (
     } else {
       process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
     }
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("queued Claude sessions fail before launch when Claude is unavailable", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
+  const worktreePath = join(tempDir, "workspace");
+  mkdirSync(worktreePath, { recursive: true });
+
+  const sessionLogs: string[] = [];
+  const attemptUpdates: Array<{
+    attemptId: string;
+    input: Record<string, unknown>;
+  }> = [];
+  const completedSessions: Array<Record<string, unknown>> = [];
+  let queuedSessionClaimed = false;
+  let ensureSessionContainerCalls = 0;
+
+  const queuedSession: ExecutionSession = {
+    ...createSession(worktreePath),
+    agent_adapter: "claude-code",
+    status: "queued",
+    queue_entered_at: "2026-04-01T00:00:00.000Z",
+  };
+  const project = createProject({
+    agent_adapter: "claude-code",
+  });
+  const dockerRuntime = {
+    assertAvailable() {
+      return {
+        installed: true,
+        available: true,
+        client_version: "29.3.1",
+        server_version: "29.3.1",
+        error: null,
+      };
+    },
+    assertClaudeCodeAvailable() {
+      throw new Error(
+        "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+      );
+    },
+    cleanupSessionContainer() {},
+    dispose() {},
+    ensureSessionContainer() {
+      ensureSessionContainerCalls += 1;
+    },
+  };
+  const store = {
+    appendSessionLog(_sessionId: string, line: string) {
+      sessionLogs.push(line);
+      return sessionLogs.length;
+    },
+    claimNextQueuedSession() {
+      if (queuedSessionClaimed) {
+        return undefined;
+      }
+
+      queuedSessionClaimed = true;
+      return {
+        ...queuedSession,
+        status: "awaiting_input",
+        queue_entered_at: null,
+      };
+    },
+    completeSession(_sessionId: string, input: Record<string, unknown>) {
+      completedSessions.push(input);
+      return {
+        ...queuedSession,
+        status: input.status,
+        last_summary: input.last_summary,
+      };
+    },
+    getProject() {
+      return project;
+    },
+    getRepository() {
+      return createRepository(tempDir);
+    },
+    getTicket() {
+      return createTicket();
+    },
+    updateExecutionAttempt(attemptId: string, input: Record<string, unknown>) {
+      attemptUpdates.push({ attemptId, input });
+      return undefined;
+    },
+  };
+  const eventHub = {
+    publish() {},
+  };
+
+  try {
+    const runtime = new ExecutionRuntime({
+      adapterRegistry: new AgentAdapterRegistry([]),
+      dockerRuntime: dockerRuntime as never,
+      eventHub: eventHub as never,
+      store: store as never,
+    });
+
+    runtime.startQueuedSessions(project.id);
+
+    assert.equal(ensureSessionContainerCalls, 0);
+    assert.deepEqual(attemptUpdates, [
+      {
+        attemptId: "attempt-1",
+        input: {
+          status: "failed",
+          end_reason:
+            "Queued execution failed to start: Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+        },
+      },
+    ]);
+    assert.deepEqual(completedSessions, [
+      {
+        status: "failed",
+        last_summary:
+          "Queued execution failed to start: Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+      },
+    ]);
+    assert.match(
+      sessionLogs.join("\n"),
+      /Queued execution failed to start: Claude Code CLI is unavailable/,
+    );
+  } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

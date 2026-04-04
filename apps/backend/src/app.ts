@@ -2,10 +2,8 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
 
-import {
-  ClaudeCodeAdapter,
-  type ClaudeCodeAvailability,
-} from "./lib/agent-adapters/claude-code-adapter.js";
+import { ClaudeCodeAdapter } from "./lib/agent-adapters/claude-code-adapter.js";
+import type { ClaudeCodeAvailability } from "./lib/agent-adapters/claude-code-runtime.js";
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { AgentReviewService } from "./lib/agent-review-service.js";
@@ -58,7 +56,8 @@ export async function createApp(options: CreateAppOptions = {}) {
   const store = options.store ?? new SqliteStore();
   const dockerRuntime = options.dockerRuntime ?? new DockerRuntimeManager();
   const getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(
-    options.probeClaudeCodeAvailability,
+    options.probeClaudeCodeAvailability ??
+      (() => dockerRuntime.getClaudeCodeAvailability()),
   );
   const adapterRegistry = new AgentAdapterRegistry([
     new CodexCliAdapter(),

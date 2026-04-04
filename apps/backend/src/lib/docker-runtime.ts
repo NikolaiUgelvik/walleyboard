@@ -4,11 +4,15 @@ import {
   spawn,
 } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
 import { type IPty, spawn as spawnPty } from "node-pty";
+import {
+  type ClaudeCodeAvailability,
+  claudeCodeDockerSpec,
+} from "./agent-adapters/claude-code-runtime.js";
 import type { PreparedAgentRun } from "./agent-adapters/types.js";
 import { resolveWalleyBoardHome } from "./walleyboard-paths.js";
 
@@ -38,6 +42,8 @@ export type DockerCapability = {
 export interface DockerRuntime {
   getHealth(): DockerCapability;
   assertAvailable(): DockerCapability;
+  getClaudeCodeAvailability(): ClaudeCodeAvailability;
+  assertClaudeCodeAvailable(): ClaudeCodeAvailability;
   cleanupStaleContainers(input?: {
     preserveSessionIds?: Iterable<string>;
   }): void;
@@ -110,6 +116,38 @@ function toText(value: Buffer | string | undefined): string {
   }
 
   return value ? value.toString("utf8").trim() : "";
+}
+
+function formatClaudeCodeAvailabilityError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Claude Code CLI is installed but could not be executed.";
+  }
+
+  const execError = error as ExecFileSyncError;
+  const stderr = toText(execError.stderr);
+  if (stderr.length > 0) {
+    return `Claude Code CLI is unavailable: ${stderr}`;
+  }
+
+  return `Claude Code CLI is unavailable: ${error.message}`;
+}
+
+function validateClaudeConfigHome(configHomePath: string): string | null {
+  if (!existsSync(configHomePath)) {
+    return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} does not exist.`;
+  }
+
+  try {
+    if (readdirSync(configHomePath).length === 0) {
+      return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} is empty.`;
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "could not be read";
+    return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} could not be read (${message}).`;
+  }
+
+  return null;
 }
 
 function buildContainerName(repoRootHash: string, sessionId: string): string {
@@ -237,6 +275,87 @@ export class DockerRuntimeManager implements DockerRuntime {
     }
 
     return health;
+  }
+
+  getClaudeCodeAvailability(): ClaudeCodeAvailability {
+    const dockerHealth = this.getHealth();
+    if (!dockerHealth.available) {
+      return {
+        available: false,
+        detected_path: null,
+        error:
+          dockerHealth.error ??
+          "Docker is configured for this project, but the daemon is unavailable.",
+      };
+    }
+
+    const configHomePath = this.#resolveConfigHomePath(
+      claudeCodeDockerSpec.configMountPath,
+    );
+    const configError = validateClaudeConfigHome(configHomePath);
+    if (configError) {
+      return {
+        available: false,
+        detected_path: null,
+        error: configError,
+      };
+    }
+
+    try {
+      this.#ensureRuntimeImage(claudeCodeDockerSpec);
+      const output = this.#runDocker([
+        "run",
+        "--rm",
+        "--user",
+        `${this.#uid}:${this.#gid}`,
+        ...buildConfigMountSpecs({
+          configHomePath,
+          configMountPath: claudeCodeDockerSpec.configMountPath,
+        }).flatMap((mountSpec) => ["--mount", mountSpec]),
+        "-e",
+        `HOME=${claudeCodeDockerSpec.homePath}`,
+        claudeCodeDockerSpec.imageTag,
+        "bash",
+        "-lc",
+        "command -v claude && claude --version >/dev/null",
+      ]);
+      const detectedPath =
+        output
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => line.length > 0) ?? null;
+
+      return {
+        available: true,
+        detected_path: detectedPath,
+        error: null,
+      };
+    } catch (error) {
+      const execError = error as ExecFileSyncError;
+      const detectedPath =
+        toText(execError.stdout)
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => line.length > 0) ?? null;
+
+      return {
+        available: false,
+        detected_path: detectedPath,
+        error: formatClaudeCodeAvailabilityError(error),
+      };
+    }
+  }
+
+  assertClaudeCodeAvailable(): ClaudeCodeAvailability {
+    const availability = this.getClaudeCodeAvailability();
+    if (!availability.available) {
+      throw new Error(
+        availability.error ??
+          "Claude Code CLI is unavailable for this project.",
+      );
+    }
+
+    return availability;
   }
 
   cleanupStaleContainers(input?: {

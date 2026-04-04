@@ -1050,6 +1050,9 @@ export class GitHubPullRequestService {
     const session = this.#requireSession(ticket);
     const project = this.#requireProject(ticket.project);
     const repository = this.#requireRepository(ticket.repo);
+    this.#dependencies.executionRuntime.assertProjectExecutionBackendAvailable(
+      project,
+    );
     const detailedReview = this.#fetchDetailedRequestedChanges(
       session.worktree_path ?? repository.path,
       {

@@ -1,16 +1,17 @@
 import type { Project } from "../../../../packages/contracts/src/index.js";
 
-import {
-  type ClaudeCodeAvailability,
-  probeClaudeCodeAvailability,
-} from "./agent-adapters/claude-code-adapter.js";
+import type { ClaudeCodeAvailability } from "./agent-adapters/claude-code-runtime.js";
 
 export type GetClaudeCodeAvailability = () => ClaudeCodeAvailability;
 
 const claudeCodeAvailabilityCacheTtlMs = 60_000;
 
 export function createClaudeCodeAvailabilityGetter(
-  probe: () => ClaudeCodeAvailability = probeClaudeCodeAvailability,
+  probe: GetClaudeCodeAvailability = () => ({
+    available: false,
+    detected_path: null,
+    error: "Claude Code availability probe is not configured.",
+  }),
 ): GetClaudeCodeAvailability {
   let cachedAvailability: ClaudeCodeAvailability | null = null;
   let cachedAt = 0;

@@ -50,13 +50,21 @@ export function registerTicketReviewRoutes(
       }
 
       try {
-        const restartResult = store.requestTicketChanges(ticketId, input.body);
-        const project = store.getProject(restartResult.ticket.project);
+        const ticket = store.getTicket(ticketId);
+        if (!ticket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        const project = store.getProject(ticket.project);
         if (!project) {
           reply.code(404).send({ error: "Project not found" });
           return;
         }
 
+        executionRuntime.assertProjectExecutionBackendAvailable(project);
+
+        const restartResult = store.requestTicketChanges(ticketId, input.body);
         const repository = store.getRepository(restartResult.ticket.repo);
         if (!repository) {
           reply.code(404).send({ error: "Repository not found" });

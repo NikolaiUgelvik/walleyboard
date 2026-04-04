@@ -421,7 +421,13 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
         const message =
           error instanceof Error ? error.message : "Unable to refine draft";
         reply
-          .code(message === "Draft analysis already running" ? 409 : 404)
+          .code(
+            message === "Draft not found" ||
+              message === "Project not found" ||
+              message === "Repository not found"
+              ? 404
+              : 409,
+          )
           .send({
             error: message,
           });
@@ -564,7 +570,13 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
             ? error.message
             : "Unable to start draft feasibility check";
         reply
-          .code(message === "Draft analysis already running" ? 409 : 404)
+          .code(
+            message === "Draft not found" ||
+              message === "Project not found" ||
+              message === "Repository not found"
+              ? 404
+              : 409,
+          )
           .send({
             error: message,
           });

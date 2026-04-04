@@ -138,6 +138,7 @@ function createService(
   store: SqliteStore,
   runGhCommand: (args: string[], cwd: string) => string,
   options?: {
+    onAssertProjectExecutionBackendAvailable?: () => void;
     onStartExecution?: (input: {
       sessionId: string;
       ticketId: number;
@@ -159,6 +160,9 @@ function createService(
   const previewStops: number[] = [];
   const disposedTickets: number[] = [];
   const executionRuntime = {
+    assertProjectExecutionBackendAvailable() {
+      options?.onAssertProjectExecutionBackendAvailable?.();
+    },
     closeWorkspaceTerminals(sessionId: string, exitMessage: string) {
       closedWorkspaceTerminals.push({ sessionId, exitMessage });
     },
@@ -727,6 +731,109 @@ test("changes requested resumes the same session and follow-up sync pushes commi
       updatedHead,
     );
     assert.equal(ghCalls.length, 4);
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("changes requested does not restart Claude when the execution backend is unavailable", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-requested-claude-unavailable-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+  const claudeUnavailableError =
+    "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.";
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    fixture.store.updateProject(fixture.project.id, {
+      agent_adapter: "claude-code",
+    });
+
+    const originalHead = runGit(fixture.runtime.worktreePath, [
+      "rev-parse",
+      "HEAD",
+    ]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 27,
+      url: "https://github.com/acme/repo/pull/27",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: originalHead,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    const ghCalls: string[][] = [];
+    const { executionStarts, service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            ghCalls.push(args);
+            assert.equal(args[0], "api");
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_27: {
+                  number: 27,
+                  url: "https://github.com/acme/repo/pull/27",
+                  state: "OPEN",
+                  reviewDecision: "CHANGES_REQUESTED",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: originalHead,
+                  reviews: {
+                    nodes: [
+                      {
+                        state: "CHANGES_REQUESTED",
+                        submittedAt: "2026-04-02T10:00:00.000Z",
+                        author: {
+                          login: "reviewer1",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+      {
+        onAssertProjectExecutionBackendAvailable() {
+          throw new Error(claudeUnavailableError);
+        },
+      },
+    );
+
+    await assert.rejects(
+      service.reconcileTicket(fixture.ticket.id),
+      new RegExp(claudeUnavailableError.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+
+    const ticketAfterFailure = fixture.store.getTicket(fixture.ticket.id);
+    const sessionAfterFailure = fixture.store.getSession(fixture.session.id);
+    assert.equal(ticketAfterFailure?.status, "review");
+    assert.equal(executionStarts.length, 0);
+    assert.equal(
+      sessionAfterFailure?.latest_requested_change_note_id ?? null,
+      null,
+    );
+    assert.equal(
+      fixture.store.listSessionAttempts(fixture.session.id).length,
+      1,
+    );
+    assert.equal(ghCalls.length, 1);
   } finally {
     restoreWalleyBoardHome();
     rmSync(tempDir, { recursive: true, force: true });

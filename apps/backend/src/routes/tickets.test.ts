@@ -1107,3 +1107,113 @@ test("resume route blocks Claude projects when Claude is unavailable", async () 
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("request-changes blocks Claude relaunch when Claude is unavailable", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-ticket-request-changes-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+  const claudeUnavailableError =
+    "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.";
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Claude request changes project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    const started = store.startTicket(ticket.id, false, {
+      logs: ["Started ticket session"],
+      workingBranch: "claude/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+    });
+    const reviewPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Implements the requested ticket.",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.completeSession(started.session.id, {
+      status: "completed",
+      last_summary: "Ready for review.",
+      latest_review_package_id: reviewPackage.id,
+    });
+
+    const rawDb = new DatabaseSync(databasePath);
+    rawDb
+      .prepare("UPDATE projects SET agent_adapter = 'claude-code' WHERE id = ?")
+      .run(project.id);
+    rawDb.close();
+
+    let startExecutionCalls = 0;
+    const app = Fastify();
+
+    try {
+      await app.register(fastifyRateLimit, { global: false });
+      await app.register(ticketRoutes, {
+        agentReviewService: {
+          startReviewLoop() {
+            throw new Error("Not used in this test");
+          },
+        } as never,
+        eventHub: new EventHub(),
+        executionRuntime: {
+          assertProjectExecutionBackendAvailable() {
+            throw new Error(claudeUnavailableError);
+          },
+          hasActiveExecution() {
+            return false;
+          },
+          startExecution() {
+            startExecutionCalls += 1;
+          },
+        } as never,
+        githubPullRequestService: {
+          async createPullRequest() {
+            throw new Error("Not used in this test");
+          },
+          async reconcileTicket() {
+            throw new Error("Not used in this test");
+          },
+        } as never,
+        store,
+        ticketWorkspaceService: {
+          async disposeTicket() {},
+          async stopPreviewAndWait() {},
+        } as never,
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/tickets/${ticket.id}/request-changes`,
+        payload: {
+          body: "Address the failing review findings.",
+        },
+      });
+
+      assert.equal(response.statusCode, 409);
+      assert.deepEqual(response.json(), {
+        error: claudeUnavailableError,
+      });
+      assert.equal(startExecutionCalls, 0);
+      assert.equal(store.getTicket(ticket.id)?.status, "review");
+      assert.equal(
+        store.getSession(started.session.id)?.latest_requested_change_note_id,
+        null,
+      );
+      assert.equal(store.listSessionAttempts(started.session.id).length, 1);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

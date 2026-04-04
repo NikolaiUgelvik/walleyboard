@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import type { IPty } from "node-pty";
 
 import { type CreateAppOptions, createApp } from "../app.js";
+import type { ClaudeCodeAvailability } from "../lib/agent-adapters/claude-code-runtime.js";
 import type { DockerCapability, DockerRuntime } from "../lib/docker-runtime.js";
 
 type CleanupStaleContainersCall = {
@@ -35,6 +36,11 @@ export function createTestDockerRuntime(
   const cleanupSessionContainerCalls: string[] = [];
   const ensureSessionContainerCalls: string[] = [];
   let disposeCalls = 0;
+  const claudeCodeAvailability: ClaudeCodeAvailability = {
+    available: true,
+    detected_path: "/usr/local/bin/claude",
+    error: null,
+  };
 
   const runtime: TestDockerRuntime = {
     get cleanupSessionContainerCalls() {
@@ -61,6 +67,19 @@ export function createTestDockerRuntime(
       }
 
       return health;
+    },
+    getClaudeCodeAvailability() {
+      return claudeCodeAvailability;
+    },
+    assertClaudeCodeAvailable() {
+      if (!claudeCodeAvailability.available) {
+        throw new Error(
+          claudeCodeAvailability.error ??
+            "Claude Code CLI is unavailable for this project.",
+        );
+      }
+
+      return claudeCodeAvailability;
     },
     cleanupStaleContainers(input) {
       cleanupStaleContainersCalls.push({

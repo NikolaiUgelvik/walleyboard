@@ -330,6 +330,8 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             return;
           }
 
+          executionRuntime.assertProjectExecutionBackendAvailable(project);
+
           const approved = input.approved === true;
           const feedbackBody =
             input.body.trim().length > 0

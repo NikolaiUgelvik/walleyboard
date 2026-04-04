@@ -96,6 +96,7 @@ test("AgentReviewService reruns review until no actionable findings remain", asy
     let reviewInvocationCount = 0;
     let resumedReviewPackageCount = 0;
     const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
       hasActiveExecution() {
         return false;
       },
@@ -238,6 +239,7 @@ test("AgentReviewService stops automatic reruns at the configured limit without 
     let reviewInvocationCount = 0;
     let resumedReviewPackageCount = 0;
     const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
       hasActiveExecution() {
         return false;
       },
@@ -322,6 +324,111 @@ test("AgentReviewService stops automatic reruns at the configured limit without 
     assert.equal(reviewRuns[0]?.status, "completed");
     assert.equal(reviewRuns[1]?.status, "completed");
     assert.equal(reviewRuns[1]?.report?.actionable_findings.length, 0);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("AgentReviewService does not restart implementation when Claude becomes unavailable", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-agent-review-unavailable-"),
+  );
+  const claudeUnavailableError =
+    "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.";
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Claude Review Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    store.updateProject(project.id, {
+      agent_adapter: "claude-code",
+    });
+
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Block unavailable Claude restarts",
+      description: "Fail the review loop before relaunching Claude.",
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Do not relaunch when Claude is unavailable."],
+      target_branch: "main",
+    });
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "claude/ticket-review-loop",
+      worktreePath: join(tempDir, "worktrees", "ticket-review-loop"),
+      logs: ["Started ticket session"],
+    });
+    const reviewPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Implements the requested ticket.",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.completeSession(started.session.id, {
+      status: "completed",
+      last_summary: "Initial implementation finished.",
+      latest_review_package_id: reviewPackage.id,
+    });
+
+    let availabilityChecks = 0;
+    let startExecutionCalls = 0;
+    const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {
+        availabilityChecks += 1;
+        if (availabilityChecks > 1) {
+          throw new Error(claudeUnavailableError);
+        }
+      },
+      hasActiveExecution() {
+        return false;
+      },
+      async runTicketReview() {
+        return {
+          adapterSessionRef: "review-session-1",
+          report: createActionableReport(
+            "The first review found a service-boundary problem.",
+          ),
+        };
+      },
+      startExecution() {
+        startExecutionCalls += 1;
+      },
+    };
+
+    const service = new AgentReviewService({
+      eventHub: new EventHub(),
+      executionRuntime: executionRuntime as never,
+      store,
+    });
+
+    service.startReviewLoop(ticket.id);
+
+    await waitFor(() => !service.hasActiveReviewLoop(ticket.id));
+
+    const latestReviewRun = store.getLatestReviewRun(ticket.id);
+    assert.ok(latestReviewRun);
+    assert.equal(latestReviewRun.status, "failed");
+    assert.equal(latestReviewRun.failure_message, claudeUnavailableError);
+    assert.equal(startExecutionCalls, 0);
+    assert.equal(store.getTicket(ticket.id)?.status, "review");
+    assert.equal(
+      store.getSession(started.session.id)?.latest_requested_change_note_id,
+      null,
+    );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
