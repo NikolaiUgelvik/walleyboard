@@ -34,14 +34,18 @@ export const executionBackendSchema = z.enum(["docker"]);
 export const reviewActionSchema = z.enum(["direct_merge", "pull_request"]);
 export const projectColorPalette = [
   "#2563EB",
+  "#4F46E5",
   "#0EA5E9",
   "#14B8A6",
   "#22C55E",
+  "#65A30D",
+  "#CA8A04",
   "#D97706",
   "#F97316",
+  "#DC2626",
+  "#E11D48",
   "#EC4899",
   "#8B5CF6",
-  "#64748B",
 ] as const;
 export const defaultProjectColor = projectColorPalette[0];
 export const projectColorSchema = z.enum(projectColorPalette);
