@@ -572,7 +572,7 @@ test("project rail renders compact tiles with initials, titles, and the create t
     ...createProject(),
     id: "project-2",
     slug: "project-2",
-    name: "Workspace Automation",
+    name: "Platform Ops",
     color: "#22C55E",
   };
   Object.assign(controller as Record<string, unknown>, {
@@ -609,9 +609,48 @@ test("project rail renders compact tiles with initials, titles, and the create t
   assert.match(markup, /aria-label="Open project Web App"/);
   assert.match(markup, /title="Web App"/);
   assert.match(markup, />WA</);
-  assert.match(markup, /title="Workspace Automation"/);
+  assert.match(markup, /aria-label="Open project Platform Ops"/);
+  assert.match(markup, />PO</);
   assert.match(markup, /aria-label="Create project"/);
   assert.match(markup, /--project-tile-color:#0EA5E9/i);
+});
+
+test("project rail disambiguates duplicate initials without relying on hover text", () => {
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    projectsQuery: {
+      isPending: false,
+      isError: false,
+      data: {
+        projects: [
+          {
+            ...createProject(),
+            name: "Web App",
+            color: "#0EA5E9",
+          },
+          {
+            ...createProject(),
+            id: "project-2",
+            slug: "project-2",
+            name: "Workspace Automation",
+            color: "#22C55E",
+          },
+        ],
+      },
+      error: null,
+    },
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <ProjectRail controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, /title="Web App"/);
+  assert.match(markup, /title="Workspace Automation"/);
+  assert.match(markup, />WEB</);
+  assert.match(markup, />WOR</);
 });
 
 test("inbox tile opens a floating overlay and selects inbox items", async () => {

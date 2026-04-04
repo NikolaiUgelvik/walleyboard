@@ -33,6 +33,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     id: "project-1",
     slug: "project-1",
     name: "Project",
+    color: "#2563EB",
     agent_adapter: "claude-code",
     execution_backend: "docker",
     disabled_mcp_servers: [],

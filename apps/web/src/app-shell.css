@@ -288,6 +288,16 @@ body {
   letter-spacing: 0.06em;
 }
 
+.project-tile-label[data-length="3"] {
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.project-tile-label[data-length="4"] {
+  font-size: 14px;
+  letter-spacing: 0.03em;
+}
+
 .project-tile-options {
   position: absolute;
   right: -6px;

@@ -85,6 +85,7 @@ function createProject(slug: string): Project {
     id: "project-id",
     slug,
     name: "Project",
+    color: "#2563EB",
     agent_adapter: "codex",
     execution_backend: "host",
     disabled_mcp_servers: [],

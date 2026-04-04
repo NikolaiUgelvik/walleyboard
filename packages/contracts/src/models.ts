@@ -149,7 +149,7 @@ export const projectSchema = z.object({
   id: opaqueIdSchema,
   slug: z.string().min(1),
   name: z.string().min(1),
-  color: projectColorSchema.optional(),
+  color: projectColorSchema,
   agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
   disabled_mcp_servers: z.array(z.string().min(1)),

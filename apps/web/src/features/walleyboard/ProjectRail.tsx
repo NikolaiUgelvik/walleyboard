@@ -18,6 +18,68 @@ import {
 } from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
+function normalizeProjectTileSource(name: string): string {
+  const source = name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .join("")
+    .toUpperCase();
+
+  return source.length > 0 ? source : "PROJECT";
+}
+
+function deriveProjectTileLabels(
+  projects: Array<{ id: string; name: string }>,
+): Map<string, string> {
+  const groups = new Map<string, Array<{ id: string; source: string }>>();
+
+  for (const project of projects) {
+    const initials = deriveProjectInitials(project.name);
+    const existing = groups.get(initials) ?? [];
+    existing.push({
+      id: project.id,
+      source: normalizeProjectTileSource(project.name),
+    });
+    groups.set(initials, existing);
+  }
+
+  const labels = new Map<string, string>();
+
+  for (const [initials, group] of groups) {
+    if (group.length === 1) {
+      const project = group[0];
+      if (project) {
+        labels.set(project.id, initials);
+      }
+      continue;
+    }
+
+    let resolved = false;
+    for (let length = 3; length <= 4; length += 1) {
+      const prefixes = group.map((project) => project.source.slice(0, length));
+      if (new Set(prefixes).size === group.length) {
+        group.forEach((project, index) => {
+          labels.set(project.id, prefixes[index] ?? initials);
+        });
+        resolved = true;
+        break;
+      }
+    }
+
+    if (resolved) {
+      continue;
+    }
+
+    group.forEach((project, index) => {
+      labels.set(project.id, `${initials}${index + 1}`.slice(0, 4));
+    });
+  }
+
+  return labels;
+}
+
 function ProjectTile({
   active = false,
   attention = false,
@@ -61,6 +123,7 @@ export function ProjectRail({
 }) {
   const [inboxOpen, setInboxOpen] = useState(false);
   const projects = controller.projectsQuery.data?.projects ?? [];
+  const projectTileLabels = deriveProjectTileLabels(projects);
   const hasInboxItems = controller.actionItems.length > 0;
 
   return (
@@ -160,12 +223,17 @@ export function ProjectRail({
                   <ProjectTile
                     active={controller.selectedProjectId === project.id}
                     ariaLabel={`Open project ${project.name}`}
-                    color={project.color ?? "#2563EB"}
+                    color={project.color}
                     onClick={() => controller.selectProject(project.id)}
                     title={project.name}
                   >
-                    <span className="project-tile-label">
-                      {deriveProjectInitials(project.name)}
+                    <span
+                      className="project-tile-label"
+                      data-length={String(
+                        (projectTileLabels.get(project.id) ?? "").length,
+                      )}
+                    >
+                      {projectTileLabels.get(project.id)}
                     </span>
                   </ProjectTile>
                   <ActionIcon
