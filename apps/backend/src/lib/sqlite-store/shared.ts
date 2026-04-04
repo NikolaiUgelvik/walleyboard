@@ -1066,7 +1066,10 @@ export class SqliteStoreContext {
           SET agent_adapter = 'codex'
           WHERE agent_adapter IS NULL
              OR agent_adapter = ''
-             OR agent_adapter != 'codex'
+             OR (
+               agent_adapter != 'codex'
+               AND agent_adapter != 'claude-code'
+             )
         `,
       )
       .run();
@@ -1078,7 +1081,10 @@ export class SqliteStoreContext {
           SET agent_adapter = 'codex'
           WHERE agent_adapter IS NULL
              OR agent_adapter = ''
-             OR agent_adapter != 'codex'
+             OR (
+               agent_adapter != 'codex'
+               AND agent_adapter != 'claude-code'
+             )
         `,
       )
       .run();

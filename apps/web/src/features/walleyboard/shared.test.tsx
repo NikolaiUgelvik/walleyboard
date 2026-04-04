@@ -224,9 +224,14 @@ test("AgentAdapter option label renders the matching icon without changing text"
   assert.match(markup, /\/agent-icons\/claude-code\.svg/);
 });
 
-test("Project Agent CLI options only expose Codex for Docker-only execution", () => {
-  assert.deepEqual(getProjectAgentAdapterOptions(), [
+test("Project Agent CLI options expose Codex and Claude Code for Docker execution", () => {
+  assert.deepEqual(getProjectAgentAdapterOptions(true), [
     { label: "Codex", value: "codex" },
+    { label: "Claude Code", value: "claude-code", disabled: false },
+  ]);
+  assert.deepEqual(getProjectAgentAdapterOptions(false), [
+    { label: "Codex", value: "codex" },
+    { label: "Claude Code", value: "claude-code", disabled: true },
   ]);
 });
 
@@ -239,7 +244,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
       root.render(
         <MantineProvider>
           <ProjectAgentAdapterSelect
-            claudeCodeAvailable={false}
+            claudeCodeAvailable
             value="codex"
             onChange={() => {}}
           />
@@ -279,7 +284,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     const options = Array.from(
       harness.window.document.querySelectorAll<HTMLElement>('[role="option"]'),
     );
-    assert.equal(options.length, 1);
+    assert.equal(options.length, 2);
 
     const codexOption = options.find(
       (option) => option.textContent === "Codex",
@@ -288,6 +293,15 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     assert.equal(
       codexOption.querySelector("img")?.getAttribute("src"),
       "/agent-icons/codex.svg",
+    );
+
+    const claudeOption = options.find(
+      (option) => option.textContent === "Claude Code",
+    );
+    assert.ok(claudeOption);
+    assert.equal(
+      claudeOption.querySelector("img")?.getAttribute("src"),
+      "/agent-icons/claude-code.svg",
     );
   } finally {
     await act(async () => {

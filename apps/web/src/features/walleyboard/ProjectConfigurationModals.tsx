@@ -113,8 +113,10 @@ export function ProjectConfigurationModals({
                   sessions inside the managed runtime container.
                 </Text>
                 <Text size="sm" c="dimmed">
-                  Codex is the only supported agent adapter for this Docker-only
-                  runtime.
+                  Codex and Claude Code both run inside the Docker runtime.
+                  Claude Code additionally needs a host `~/.claude` directory so
+                  WalleyBoard can mount your existing Claude configuration into
+                  the container.
                 </Text>
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
@@ -143,6 +145,24 @@ export function ProjectConfigurationModals({
                     Docker status is unavailable because the backend health
                     check failed.
                   </Text>
+                ) : null}
+                {controller.claudeCodeHealth ? (
+                  controller.claudeCodeHealth.available ? (
+                    <Text size="sm" c="dimmed">
+                      Claude Code Docker config is available
+                      {controller.claudeCodeHealth.configured_path
+                        ? ` (${controller.claudeCodeHealth.configured_path})`
+                        : ""}
+                      .
+                    </Text>
+                  ) : (
+                    <Text size="sm" c="orange">
+                      Claude Code is currently unavailable
+                      {controller.claudeCodeHealth.error
+                        ? `: ${controller.claudeCodeHealth.error}`
+                        : "."}
+                    </Text>
+                  )
                 ) : null}
               </Stack>
 

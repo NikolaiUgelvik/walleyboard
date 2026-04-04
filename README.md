@@ -74,7 +74,7 @@ Install these before starting WalleyBoard:
 - `git`
 - `docker`
 
-WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. Ticket execution is Docker-only: the backend prepares an isolated checkout, builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile) on first use, and launches both draft analysis and ticket execution inside that container. The runtime image installs the `codex` CLI itself; on the host, WalleyBoard only requires a valid `~/.codex` configuration directory so the container can reuse your existing Codex authentication.
+WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. Ticket execution is Docker-only: the backend prepares an isolated checkout, builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile) on first use, and launches both draft analysis and ticket execution inside that container. The runtime image installs the Codex and Claude Code CLIs itself; on the host, WalleyBoard only requires the matching auth/config directory for the adapter you choose so the container can reuse your existing login state.
 
 ## Quick Start
 
@@ -106,9 +106,12 @@ Minimum Docker setup:
 3. Confirm `docker version` succeeds in the same shell environment where you run `npm run dev:backend`.
 4. Keep enough local Docker permissions to build and run the WalleyBoard runtime image.
 
-On the first draft-analysis or ticket-execution run, WalleyBoard builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile). That image installs Node, Git, ripgrep, and the Codex CLI, then mounts the prepared repository checkout at `/workspace` and your host `~/.codex` directory into the container so Codex can reuse your existing configuration.
+On the first draft-analysis or ticket-execution run, WalleyBoard builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile). That image installs Node, Git, ripgrep, the Codex CLI, and the Claude Code CLI. WalleyBoard then mounts the prepared repository checkout at `/workspace` plus the matching host auth/config directory for the selected adapter.
 
-Codex is the only supported agent adapter for WalleyBoard's Docker runtime.
+Supported Docker-backed adapters:
+
+1. `codex`: requires a usable host `~/.codex` directory so the container can reuse your existing Codex configuration.
+2. `claude-code`: requires a usable host `~/.claude` directory so the container can reuse your existing Claude Code configuration.
 
 ## Quality Gates
 

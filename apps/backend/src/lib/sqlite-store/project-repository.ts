@@ -34,9 +34,12 @@ export class ProjectRepository {
       throw new Error("Docker is the only supported execution backend.");
     }
 
-    if (input.agentAdapter !== "codex") {
+    if (
+      input.agentAdapter !== "codex" &&
+      input.agentAdapter !== "claude-code"
+    ) {
       throw new Error(
-        "Codex is the only supported agent adapter for Docker-backed ticket execution.",
+        "WalleyBoard supports only Codex or Claude Code for Docker-backed ticket execution.",
       );
     }
   }

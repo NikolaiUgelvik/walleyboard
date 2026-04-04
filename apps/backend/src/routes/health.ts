@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { FastifyPluginAsync } from "fastify";
 
-import { resolveClaudeCliPath } from "../lib/agent-adapters/claude-code-adapter.js";
+import { resolveClaudeConfigHome } from "../lib/agent-adapters/claude-code-adapter.js";
 import { listConfiguredCodexMcpServers } from "../lib/agent-adapters/codex-config.js";
 import type { DockerRuntime } from "../lib/docker-runtime.js";
 import { nowIso } from "../lib/time.js";
@@ -10,10 +10,6 @@ type HealthRouteOptions = {
   dockerRuntime: DockerRuntime;
 };
 
-// Claude Code availability uses the same resolveClaudeCliPath() that the
-// adapter uses at spawn time, so the health check and the runtime always
-// agree on which binary is being invoked. The result is cached with a TTL
-// so config changes are picked up without a backend restart.
 const claudeCodeCacheTtlMs = 60_000;
 let cachedClaudeCodeHealth: {
   available: boolean;
@@ -21,36 +17,56 @@ let cachedClaudeCodeHealth: {
   error: string | null;
 } | null = null;
 let cachedClaudeCodeHealthAt = 0;
+let cachedClaudeCodeDockerAvailable: boolean | null = null;
+let cachedClaudeCodeConfigHome: string | null = null;
 
-function probeClaudeCodeAvailability(): {
+function probeClaudeCodeAvailability(dockerAvailable: boolean): {
   available: boolean;
   configured_path: string | null;
   error: string | null;
 } {
-  const cliPath = resolveClaudeCliPath();
-  if (!existsSync(cliPath)) {
+  const configHome = resolveClaudeConfigHome();
+  if (!dockerAvailable) {
+    return {
+      available: false,
+      configured_path: existsSync(configHome) ? configHome : null,
+      error: "Docker must be available before Claude Code can run.",
+    };
+  }
+
+  if (!existsSync(configHome)) {
     return {
       available: false,
       configured_path: null,
       error:
-        "Claude CLI not configured. Create ~/.walleyboard/claude-cli-path with the absolute path to the claude binary.",
+        "Claude Code requires a host ~/.claude directory so WalleyBoard can mount your existing Claude configuration into Docker.",
     };
   }
-  return { available: true, configured_path: cliPath, error: null };
+
+  return {
+    available: true,
+    configured_path: configHome,
+    error: null,
+  };
 }
 
-function getClaudeCodeHealth(): {
+function getClaudeCodeHealth(dockerAvailable: boolean): {
   available: boolean;
   configured_path: string | null;
   error: string | null;
 } {
   const now = Date.now();
+  const configHome = resolveClaudeConfigHome();
   if (
     !cachedClaudeCodeHealth ||
-    now - cachedClaudeCodeHealthAt >= claudeCodeCacheTtlMs
+    now - cachedClaudeCodeHealthAt >= claudeCodeCacheTtlMs ||
+    cachedClaudeCodeDockerAvailable !== dockerAvailable ||
+    cachedClaudeCodeConfigHome !== configHome
   ) {
-    cachedClaudeCodeHealth = probeClaudeCodeAvailability();
+    cachedClaudeCodeHealth = probeClaudeCodeAvailability(dockerAvailable);
     cachedClaudeCodeHealthAt = now;
+    cachedClaudeCodeDockerAvailable = dockerAvailable;
+    cachedClaudeCodeConfigHome = configHome;
   }
   return cachedClaudeCodeHealth;
 }
@@ -59,12 +75,16 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
   app,
   { dockerRuntime },
 ) => {
-  app.get("/health", async () => ({
-    ok: true,
-    service: "backend" as const,
-    timestamp: nowIso(),
-    codex_mcp_servers: listConfiguredCodexMcpServers(),
-    docker: dockerRuntime.getHealth(),
-    claude_code: getClaudeCodeHealth(),
-  }));
+  app.get("/health", async () => {
+    const dockerHealth = dockerRuntime.getHealth();
+
+    return {
+      ok: true,
+      service: "backend" as const,
+      timestamp: nowIso(),
+      codex_mcp_servers: listConfiguredCodexMcpServers(),
+      docker: dockerHealth,
+      claude_code: getClaudeCodeHealth(dockerHealth.available),
+    };
+  });
 };

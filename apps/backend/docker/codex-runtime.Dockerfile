@@ -19,7 +19,8 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends nodejs \
   && npm install --global @openai/codex \
-  && mkdir -p /home/codex/.codex \
+  && npm install --global @anthropic-ai/claude-code \
+  && mkdir -p /home/codex/.codex /home/codex/.claude \
   && chmod 0777 /home/codex \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*

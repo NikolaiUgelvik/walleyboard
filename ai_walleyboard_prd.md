@@ -1077,14 +1077,16 @@ Notes on persisted ownership:
 - The default worktree-creation hook policy should be `block`.
 - The default worktree-removal hook policy should be `warn`.
 
-### 8.7 Codex Execution Environment
-- Each execution session must run through Codex CLI as the execution runtime.
+### 8.7 Docker Execution Environment
+- Each execution session must run through a Docker-backed agent CLI runtime.
 - Docker is the only supported execution backend for ticket execution.
-- Codex should provide the execution sandbox and command policy boundary for autonomous work.
+- Supported agent adapters are Codex CLI and Claude Code, both launched inside the managed Docker runtime.
+- The selected agent CLI should provide the execution sandbox and command policy boundary for autonomous work.
 - The walleyboard should own worktree preparation, session lifecycle, launch context, structured event capture, and workflow-level approvals.
-- Planning-first runs should launch Codex with read-only behavior.
-- Implementation runs should launch Codex with workspace-write behavior against the prepared worktree.
+- Planning-first runs should launch the selected agent with read-only behavior.
+- Implementation runs should launch the selected agent with workspace-write behavior against the prepared worktree.
 - Minimum Docker setup must be documented as: Docker Desktop or Docker Engine installed, the daemon running, and `docker version` succeeding in the same shell environment as the backend.
+- Codex runs must mount the host `~/.codex` directory into the container, and Claude Code runs must mount the host `~/.claude` directory into the container.
 - Validation commands and hooks should continue to run as backend-owned subprocesses against that same worktree.
 - The walleyboard should not add a second OS-level sandbox layer in v1.
 
@@ -1277,7 +1279,7 @@ The MVP should prove one reliable end-to-end workflow:
   - repository confirmation
 - One logical execution session per ticket
 - Per-project concurrency limits with queued follow-on starts once the active-session limit is reached
-- Docker-backed ticket execution only, with Codex as the supported agent runtime
+- Docker-backed ticket execution only, with Codex and Claude Code as supported agent runtimes
 - Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
 - Inbox items and alert sounds only for newly actionable human work:

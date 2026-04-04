@@ -161,6 +161,7 @@ Representative current route surface. `create-pr` and `reconcile` are scaffolded
 - Project setup is real and persisted in SQLite, and repository validation commands can be configured during project setup.
 - Projects use Docker as the only execution backend, plus project-level pre/post-worktree commands and model overrides.
 - Minimum ticket-execution setup is Docker Desktop or Docker Engine installed, a running daemon, and `docker version` succeeding in the backend shell environment.
+- Codex runs mount the host `~/.codex` directory into Docker, and Claude Code runs mount the host `~/.claude` directory into Docker.
 - Draft and ticket Markdown are persisted in SQLite-backed records, while filesystem writes are reserved for artifacts, logs, summaries, and worktrees.
 - Production source files are kept under a hard 1500-line cap through `scripts/check-production-file-sizes.mjs`, and the root lint workflow runs that gate before Biome.
 - Board-visible work now uses the `Draft`, `Ready`, `In progress`, `In review`, and `Done` flow, with websocket updates keeping drafts, tickets, sessions, and review packages current in the UI.

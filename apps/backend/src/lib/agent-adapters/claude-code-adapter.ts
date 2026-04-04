@@ -1,13 +1,14 @@
-import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, relative } from "node:path";
 import type { z } from "zod";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
+import { dockerWorkspacePath } from "../docker-runtime.js";
 import {
   hasMeaningfulContent,
   normalizeOptionalModel,
   truncate,
 } from "../execution-runtime/helpers.js";
-import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -28,31 +29,15 @@ import type {
   ReviewRunInput,
 } from "./types.js";
 
-// Resolves the absolute path to the `claude` CLI binary from the config
-// file at ~/.walleyboard/claude-cli-path. Both the health check and the
-// adapter use this single source of truth so they always agree on which
-// binary to invoke.
-//
-// This function never throws. If the config file is missing or empty, it
-// returns a sentinel path that will fail at spawn time with ENOENT. This
-// is intentional: the run builders are called outside try/catch in the
-// execution runtime, so throwing here would leave sessions stuck. By
-// returning a bad path instead, the existing spawn error handling kicks
-// in and properly fails the session with a visible error message.
-const missingCliSentinel = "/walleyboard-claude-cli-not-configured";
+const claudeDockerSpec = {
+  imageTag: "walleyboard/codex-runtime:ubuntu-24.04-node-24",
+  dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+  homePath: "/home/codex",
+  configMountPath: "/home/codex/.claude",
+} as const;
 
-export function resolveClaudeCliPath(): string {
-  const configPath = resolveWalleyBoardPath("claude-cli-path");
-  if (!existsSync(configPath)) {
-    return missingCliSentinel;
-  }
-
-  const cliPath = readFileSync(configPath, "utf8").trim();
-  if (cliPath.length === 0) {
-    return missingCliSentinel;
-  }
-
-  return cliPath;
+export function resolveClaudeConfigHome(): string {
+  return join(homedir(), ".claude");
 }
 
 // Claude Code permission modes. Every run builder must use one of these to
@@ -115,11 +100,11 @@ export function shellEscape(value: string): string {
  * Uses `bash` for broad compatibility across Linux distributions.
  */
 export function buildDraftShellCommand(
-  cliPath: string,
+  command: string,
   claudeArgs: string[],
   outputPath: string,
 ): { command: string; args: string[] } {
-  const parts = [shellEscape(cliPath)];
+  const parts = [shellEscape(command)];
   for (const arg of claudeArgs) {
     parts.push(shellEscape(arg));
   }
@@ -134,6 +119,33 @@ function appendClaudeCodeModelArgs(args: string[], model: string | null): void {
   if (model) {
     args.push("--model", model);
   }
+}
+
+function assertDockerRuntimeEnabled(useDockerRuntime: boolean): void {
+  if (!useDockerRuntime) {
+    throw new Error(
+      "Host execution is no longer supported for Claude Code. Use the Docker runtime.",
+    );
+  }
+}
+
+function resolveDockerOutputPath(
+  outputPath: string,
+  worktreePath: string,
+): string {
+  const relativeOutputPath = relative(worktreePath, outputPath);
+  if (
+    relativeOutputPath.length === 0 ||
+    relativeOutputPath.startsWith("..") ||
+    relativeOutputPath === "." ||
+    relativeOutputPath.includes("../")
+  ) {
+    throw new Error(
+      "Docker-backed Claude Code runs must write output inside the mounted worktree.",
+    );
+  }
+
+  return join(dockerWorkspacePath, relativeOutputPath);
 }
 
 /**
@@ -430,14 +442,14 @@ export function interpretClaudeCodeStreamJsonLine(
 export class ClaudeCodeAdapter implements AgentCliAdapter {
   readonly id = "claude-code" as const;
   readonly label = "Claude Code";
-  readonly #cliPathOverride: string | null;
+  readonly #commandOverride: string | null;
 
-  constructor(cliPathOverride?: string) {
-    this.#cliPathOverride = cliPathOverride ?? null;
+  constructor(commandOverride?: string) {
+    this.#commandOverride = commandOverride ?? null;
   }
 
-  #resolveCliPath(): string {
-    return this.#cliPathOverride ?? resolveClaudeCliPath();
+  #resolveCommand(): string {
+    return this.#commandOverride ?? "claude";
   }
 
   resolveModelSelection(project: Project, scope: "draft" | "ticket") {
@@ -453,7 +465,12 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   }
 
   buildDraftRun(input: DraftRunInput): PreparedAgentRun {
+    assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "draft");
+    const outputPath = resolveDockerOutputPath(
+      input.outputPath,
+      input.repository.path,
+    );
     const prompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
@@ -475,22 +492,30 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     // shell command that redirects stdout to the output file. The runtime
     // reads this file after exit and passes its contents to parseDraftResult.
     const { command, args } = buildDraftShellCommand(
-      this.#resolveCliPath(),
+      this.#resolveCommand(),
       claudeArgs,
-      input.outputPath,
+      outputPath,
     );
 
     return {
       command,
       args,
       prompt,
-      outputPath: input.outputPath,
-      dockerSpec: null,
+      outputPath,
+      dockerSpec: claudeDockerSpec,
     };
   }
 
   buildExecutionRun(input: ExecutionRunInput): PreparedAgentRun {
+    assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
+    const worktreePath = input.session.worktree_path;
+    if (!worktreePath) {
+      throw new Error(
+        "Docker-backed Claude Code runs require a prepared worktree path.",
+      );
+    }
+    const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
     const prompt =
       input.executionMode === "plan"
         ? buildPlanPrompt(
@@ -532,17 +557,24 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     // it falls back to a default message when the file is missing or empty.
     // Session log lines are still captured via PTY onData.
     return {
-      command: this.#resolveCliPath(),
+      command: this.#resolveCommand(),
       args,
       prompt,
-      outputPath: input.outputPath,
-      // Claude Code does not support Docker runtime.
-      dockerSpec: null,
+      outputPath,
+      dockerSpec: claudeDockerSpec,
     };
   }
 
   buildMergeConflictRun(input: MergeConflictRunInput): PreparedAgentRun {
+    assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
+    const worktreePath = input.session.worktree_path;
+    if (!worktreePath) {
+      throw new Error(
+        "Docker-backed Claude Code runs require a prepared worktree path.",
+      );
+    }
+    const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
     const prompt = buildMergeConflictPrompt({
       ticket: input.ticket,
       repository: input.repository,
@@ -571,17 +603,24 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     // output in shell redirection would capture the entire NDJSON transcript
     // instead of a concise final result.
     return {
-      command: this.#resolveCliPath(),
+      command: this.#resolveCommand(),
       args,
       prompt,
-      outputPath: input.outputPath,
-      // Claude Code does not support Docker runtime.
-      dockerSpec: null,
+      outputPath,
+      dockerSpec: claudeDockerSpec,
     };
   }
 
   buildReviewRun(input: ReviewRunInput): PreparedAgentRun {
+    assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
+    const worktreePath = input.session.worktree_path;
+    if (!worktreePath) {
+      throw new Error(
+        "Docker-backed Claude Code runs require a prepared worktree path.",
+      );
+    }
+    const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
     const prompt = buildReviewPrompt({
       repository: input.repository,
       reviewPackage: input.reviewPackage,
@@ -592,17 +631,17 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     appendClaudeCodeModelArgs(claudeArgs, model);
 
     const { command, args } = buildDraftShellCommand(
-      this.#resolveCliPath(),
+      this.#resolveCommand(),
       claudeArgs,
-      input.outputPath,
+      outputPath,
     );
 
     return {
       command,
       args,
       prompt,
-      outputPath: input.outputPath,
-      dockerSpec: null,
+      outputPath,
+      dockerSpec: claudeDockerSpec,
     };
   }
 

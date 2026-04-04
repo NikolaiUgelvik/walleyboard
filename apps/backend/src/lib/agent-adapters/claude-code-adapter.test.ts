@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 import { z } from "zod";
@@ -72,6 +71,10 @@ function createRepository(): RepositoryConfig {
   };
 }
 
+function createWorkspaceOutputPath(name = "output.json"): string {
+  return `/tmp/test-repo/.walleyboard/${name}`;
+}
+
 function createTicket(): TicketFrontmatter {
   return {
     id: 42,
@@ -116,10 +119,10 @@ function createSession(): ExecutionSession {
   };
 }
 
-const testCliPath = "/usr/local/bin/claude";
+const testCliCommand = "claude";
 
-function createAdapter(cliPath?: string): ClaudeCodeAdapter {
-  return new ClaudeCodeAdapter(cliPath ?? testCliPath);
+function createAdapter(command?: string): ClaudeCodeAdapter {
+  return new ClaudeCodeAdapter(command ?? testCliCommand);
 }
 
 function createDraft(): DraftTicketState {
@@ -138,6 +141,17 @@ function createDraft(): DraftTicketState {
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
   };
+}
+
+function assertClaudeDockerSpec(
+  dockerSpec: ReturnType<ClaudeCodeAdapter["buildDraftRun"]>["dockerSpec"],
+): void {
+  assert.deepEqual(dockerSpec, {
+    imageTag: "walleyboard/codex-runtime:ubuntu-24.04-node-24",
+    dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+    homePath: "/home/codex",
+    configMountPath: "/home/codex/.claude",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -797,10 +811,10 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   const run = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "refine",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     repository: createRepository(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.equal(run.command, "bash");
   assert.equal(run.args[0], "-c");
@@ -810,7 +824,8 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   assert.ok(shellCmd.includes("--permission-mode"));
   assert.ok(shellCmd.includes("plan"));
   assert.ok(!shellCmd.includes("dangerously-skip-permissions"));
-  assert.equal(run.dockerSpec, null);
+  assert.equal(run.outputPath, "/workspace/.walleyboard/output.json");
+  assertClaudeDockerSpec(run.dockerSpec);
 });
 
 test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
@@ -818,14 +833,14 @@ test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
   const run = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "questions",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     repository: createRepository(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.equal(run.command, "bash");
   assert.ok((run.args[1] ?? "").includes("claude"));
-  assert.equal(run.dockerSpec, null);
+  assertClaudeDockerSpec(run.dockerSpec);
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
@@ -833,20 +848,20 @@ test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
   const run = adapter.buildExecutionRun({
     executionMode: "plan",
     extraInstructions: [],
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session: createSession(),
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
-  assert.equal(run.command, testCliPath);
+  assert.equal(run.command, testCliCommand);
   assert.ok(run.args.includes("--output-format"));
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "plan");
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
-  assert.equal(run.dockerSpec, null);
+  assertClaudeDockerSpec(run.dockerSpec);
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
@@ -854,20 +869,20 @@ test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session: createSession(),
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
-  assert.equal(run.command, testCliPath);
+  assert.equal(run.command, testCliCommand);
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
-  assert.equal(run.dockerSpec, null);
+  assertClaudeDockerSpec(run.dockerSpec);
 });
 
 test("ClaudeCodeAdapter.buildExecutionRun: includes --resume when adapter_session_ref is set", () => {
@@ -877,13 +892,13 @@ test("ClaudeCodeAdapter.buildExecutionRun: includes --resume when adapter_sessio
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session,
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   const resumeIdx = run.args.indexOf("--resume");
   assert.ok(resumeIdx >= 0, "Expected --resume flag in args");
@@ -898,13 +913,13 @@ test("ClaudeCodeAdapter.buildExecutionRun: no --resume when adapter_session_ref 
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session: createSession(),
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.ok(
     !run.args.includes("--resume"),
@@ -919,13 +934,13 @@ test("ClaudeCodeAdapter.buildExecutionRun: no --resume when adapter_session_ref 
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session,
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.ok(
     !run.args.includes("--resume"),
@@ -939,13 +954,13 @@ test("ClaudeCodeAdapter.buildExecutionRun: permission modes by execution type", 
     const run = adapter.buildExecutionRun({
       executionMode: mode,
       extraInstructions: [],
-      outputPath: "/tmp/output.json",
+      outputPath: createWorkspaceOutputPath(),
       planSummary: null,
       project: createProject(),
       repository: createRepository(),
       session: createSession(),
       ticket: createTicket(),
-      useDockerRuntime: false,
+      useDockerRuntime: true,
     });
     assert.ok(
       run.args.includes("--permission-mode"),
@@ -970,7 +985,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: ["src/index.ts"],
     failureMessage: "CONFLICT in src/index.ts",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -978,14 +993,14 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
     stage: "rebase",
     targetBranch: "main",
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
-  assert.equal(run.command, testCliPath);
+  assert.equal(run.command, testCliCommand);
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
-  assert.equal(run.dockerSpec, null);
+  assertClaudeDockerSpec(run.dockerSpec);
 });
 
 test("ClaudeCodeAdapter.buildMergeConflictRun: includes --resume when adapter_session_ref is set", () => {
@@ -995,7 +1010,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --resume when adapter_se
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: ["src/index.ts"],
     failureMessage: "CONFLICT in src/index.ts",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -1003,7 +1018,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --resume when adapter_se
     stage: "rebase",
     targetBranch: "main",
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   const resumeIdx = run.args.indexOf("--resume");
   assert.ok(resumeIdx >= 0, "Expected --resume flag in args");
@@ -1018,7 +1033,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: no --resume when adapter_session_
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: ["src/index.ts"],
     failureMessage: "CONFLICT in src/index.ts",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -1026,7 +1041,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: no --resume when adapter_session_
     stage: "rebase",
     targetBranch: "main",
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.ok(
     !run.args.includes("--resume"),
@@ -1039,7 +1054,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: merge stage", () => {
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: [],
     failureMessage: "Merge conflict",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -1047,38 +1062,38 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: merge stage", () => {
     stage: "merge",
     targetBranch: "main",
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
-  assert.equal(run.command, testCliPath);
+  assert.equal(run.command, testCliCommand);
   assert.ok(run.args.includes("--output-format"));
   assert.ok(run.args.includes("stream-json"));
 });
 
-test("ClaudeCodeAdapter: all run builders return dockerSpec null", () => {
+test("ClaudeCodeAdapter: all run builders return Docker specs", () => {
   const adapter = createAdapter();
   const draftRun = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "refine",
-    outputPath: "/tmp/o.json",
+    outputPath: createWorkspaceOutputPath("o.json"),
     project: createProject(),
     repository: createRepository(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   const execRun = adapter.buildExecutionRun({
     executionMode: "plan",
     extraInstructions: [],
-    outputPath: "/tmp/o.json",
+    outputPath: createWorkspaceOutputPath("o.json"),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session: createSession(),
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   const mergeRun = adapter.buildMergeConflictRun({
     conflictedFiles: [],
     failureMessage: "fail",
-    outputPath: "/tmp/o.json",
+    outputPath: createWorkspaceOutputPath("o.json"),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -1086,11 +1101,30 @@ test("ClaudeCodeAdapter: all run builders return dockerSpec null", () => {
     stage: "rebase",
     targetBranch: "main",
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
-  assert.equal(draftRun.dockerSpec, null);
-  assert.equal(execRun.dockerSpec, null);
-  assert.equal(mergeRun.dockerSpec, null);
+  assertClaudeDockerSpec(draftRun.dockerSpec);
+  assertClaudeDockerSpec(execRun.dockerSpec);
+  assertClaudeDockerSpec(mergeRun.dockerSpec);
+});
+
+test("ClaudeCodeAdapter rejects host execution paths", () => {
+  const adapter = createAdapter();
+  assert.throws(
+    () =>
+      adapter.buildExecutionRun({
+        executionMode: "plan",
+        extraInstructions: [],
+        outputPath: createWorkspaceOutputPath(),
+        planSummary: null,
+        project: createProject(),
+        repository: createRepository(),
+        session: createSession(),
+        ticket: createTicket(),
+        useDockerRuntime: false,
+      }),
+    /Host execution is no longer supported for Claude Code/,
+  );
 });
 
 test("ClaudeCodeAdapter.interpretOutputLine delegates to interpretClaudeCodeStreamJsonLine", () => {
@@ -1116,13 +1150,13 @@ test("ClaudeCodeAdapter.buildExecutionRun: includes --verbose with stream-json",
   const run = adapter.buildExecutionRun({
     executionMode: "plan",
     extraInstructions: [],
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
     session: createSession(),
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.ok(run.args.includes("stream-json"), "should use stream-json format");
   assert.ok(
@@ -1136,7 +1170,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --verbose with stream-js
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: [],
     failureMessage: "fail",
-    outputPath: "/tmp/output.json",
+    outputPath: createWorkspaceOutputPath(),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -1144,153 +1178,12 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --verbose with stream-js
     stage: "rebase",
     targetBranch: "main",
     ticket: createTicket(),
-    useDockerRuntime: false,
+    useDockerRuntime: true,
   });
   assert.ok(run.args.includes("stream-json"), "should use stream-json format");
   assert.ok(
     run.args.includes("--verbose"),
     "stream-json in print mode requires --verbose",
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Integration test: verify flag combinations against the real Claude CLI.
-// Skipped by default; run with RUN_INTEGRATION_TESTS=1.
-// ---------------------------------------------------------------------------
-
-import { resolveClaudeCliPath } from "./claude-code-adapter.js";
-
-const runIntegration = process.env.RUN_INTEGRATION_TESTS === "1";
-
-test("integration: Claude CLI accepts execution run flags", {
-  skip: !runIntegration,
-}, () => {
-  const cliPath = resolveClaudeCliPath();
-  const adapter = createAdapter(cliPath);
-  const run = adapter.buildExecutionRun({
-    executionMode: "plan",
-    extraInstructions: [],
-    outputPath: "/tmp/walleyboard-test-output.json",
-    planSummary: null,
-    project: createProject(),
-    repository: createRepository(),
-    session: createSession(),
-    ticket: createTicket(),
-    useDockerRuntime: false,
-  });
-  // Replace the long prompt with a trivial one to avoid burning tokens.
-  const promptIdx = run.args.indexOf("-p");
-  const args = [...run.args];
-  args[promptIdx + 1] = "say ok";
-  // --max-turns 1 to exit immediately after the first response.
-  args.push("--max-turns", "1");
-  execFileSync(run.command, args, { timeout: 120_000 });
-});
-
-test("integration: Claude CLI accepts merge conflict run flags", {
-  skip: !runIntegration,
-}, () => {
-  const cliPath = resolveClaudeCliPath();
-  const adapter = createAdapter(cliPath);
-  const run = adapter.buildMergeConflictRun({
-    conflictedFiles: [],
-    failureMessage: "test",
-    outputPath: "/tmp/walleyboard-test-output.json",
-    project: createProject(),
-    recoveryKind: "conflicts",
-    repository: createRepository(),
-    session: createSession(),
-    stage: "rebase",
-    targetBranch: "main",
-    ticket: createTicket(),
-    useDockerRuntime: false,
-  });
-  const promptIdx = run.args.indexOf("-p");
-  const args = [...run.args];
-  args[promptIdx + 1] = "say ok";
-  args.push("--max-turns", "1");
-  execFileSync(run.command, args, { timeout: 120_000 });
-});
-
-test("integration: Claude CLI accepts draft run flags", {
-  skip: !runIntegration,
-}, () => {
-  const cliPath = resolveClaudeCliPath();
-  const adapter = createAdapter(cliPath);
-  const run = adapter.buildDraftRun({
-    draft: createDraft(),
-    mode: "refine",
-    outputPath: "/tmp/walleyboard-test-output.json",
-    project: createProject(),
-    repository: createRepository(),
-    useDockerRuntime: false,
-  });
-  // Draft runs use bash -c "claude ... > output". Extract the inner claude
-  // command and replace the prompt with a trivial one.
-  const innerCmd = run.args[run.args.indexOf("-c") + 1];
-  assert.ok(innerCmd, "expected -c flag to have a following argument");
-  // Verify the shell command invokes claude with --output-format json.
-  assert.ok(
-    innerCmd.includes("--output-format"),
-    "draft run should include --output-format",
-  );
-  // Spawn claude directly with the same flags to validate flag acceptance.
-  const draftArgs = [
-    "-p",
-    "say ok",
-    "--output-format",
-    "json",
-    "--max-turns",
-    "1",
-  ];
-  execFileSync(cliPath, draftArgs, { timeout: 120_000 });
-});
-
-test("integration: stream-json assistant events produce outputContent for plan summary capture", {
-  skip: !runIntegration,
-}, () => {
-  const cliPath = resolveClaudeCliPath();
-  // Spawn claude in stream-json mode and capture output.
-  const output = execFileSync(
-    cliPath,
-    [
-      "-p",
-      "say ok",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--max-turns",
-      "1",
-    ],
-    { timeout: 120_000, encoding: "utf8" },
-  );
-
-  const lines = output.split("\n").filter((l: string) => l.trim().length > 0);
-  let sawAssistantWithOutput = false;
-  let sawResultEvent = false;
-
-  for (const line of lines) {
-    const interpreted = interpretClaudeCodeStreamJsonLine(line);
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (parsed.type === "assistant") {
-        // After the fix, assistant text events should set outputContent.
-        if (hasMeaningfulContent(interpreted.outputContent)) {
-          sawAssistantWithOutput = true;
-        }
-      }
-      if (parsed.type === "result") {
-        sawResultEvent = true;
-      }
-    } catch {
-      // Non-JSON lines are fine.
-    }
-  }
-
-  assert.ok(sawResultEvent, "should have received a result event");
-  assert.ok(
-    sawAssistantWithOutput,
-    "assistant events should set outputContent so plan summaries are captured",
   );
 });
 

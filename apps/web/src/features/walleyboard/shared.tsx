@@ -155,7 +155,7 @@ export function AgentAdapterOptionLabel({
 }
 
 export function ProjectAgentAdapterSelect({
-  claudeCodeAvailable: _claudeCodeAvailable,
+  claudeCodeAvailable,
   value,
   onChange,
 }: {
@@ -166,8 +166,8 @@ export function ProjectAgentAdapterSelect({
   return (
     <Select
       label="Agent CLI"
-      description="Codex is the only supported agent runtime for draft analysis and ticket work."
-      data={getProjectAgentAdapterOptions()}
+      description="Choose the CLI WalleyBoard will run inside the Docker runtime for draft analysis and ticket work."
+      data={getProjectAgentAdapterOptions(claudeCodeAvailable)}
       leftSection={<AgentAdapterIcon adapter={value} />}
       renderOption={({ option }) => (
         <AgentAdapterOptionLabel
@@ -187,8 +187,17 @@ export function ProjectAgentAdapterSelect({
   );
 }
 
-export function getProjectAgentAdapterOptions(): AgentAdapterSelectOption[] {
-  return [{ label: "Codex", value: "codex" }];
+export function getProjectAgentAdapterOptions(
+  claudeCodeAvailable = true,
+): AgentAdapterSelectOption[] {
+  return [
+    { label: "Codex", value: "codex" },
+    {
+      label: "Claude Code",
+      value: "claude-code",
+      disabled: !claudeCodeAvailable,
+    },
+  ];
 }
 
 export function agentLabel(adapter: AgentAdapter): string {
