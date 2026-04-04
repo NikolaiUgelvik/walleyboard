@@ -25,7 +25,6 @@ import type {
 } from "../lib/ticket-workspace-service.js";
 import {
   fetchRepositoryBranches,
-  prepareRepositoryTargetBranchWorkspace,
   removeLocalBranch,
   removePreparedWorktree,
 } from "../lib/worktree-service.js";
@@ -40,6 +39,36 @@ type ProjectRouteOptions = {
   ticketWorkspaceService: TicketWorkspaceService;
   getClaudeCodeAvailability?: GetClaudeCodeAvailability;
 };
+
+export function handleRepositoryWorkspaceTerminalConnection(
+  socket: TerminalSocket,
+  input: {
+    executionRuntime: ExecutionRuntime;
+    repository: ReturnType<Store["getRepository"]>;
+  },
+): void {
+  const repository = input.repository;
+  if (!repository) {
+    socket.send(
+      JSON.stringify({
+        type: "terminal.error",
+        message: "Repository not found",
+      }),
+    );
+    socket.close();
+    return;
+  }
+
+  attachWorkspaceTerminalSocket(socket, {
+    sessionId: `repository-workspace:${repository.id}`,
+    startWorkspaceTerminal: ({ sessionId, worktreePath }) =>
+      input.executionRuntime.startWorkspaceTerminal({
+        sessionId,
+        worktreePath,
+      }),
+    worktreePath: repository.path,
+  });
+}
 
 const activeProjectSessionStatuses = new Set([
   "queued",
@@ -191,14 +220,10 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       }
 
       try {
-        const worktreePath = prepareRepositoryTargetBranchWorkspace(
-          project,
-          repository,
-        );
         const preview = await ticketWorkspaceService.ensureRepositoryPreview({
           repositoryId: repository.id,
           previewStartCommand: project.preview_start_command,
-          worktreePath,
+          worktreePath: repository.path,
         });
         reply.send(buildRepositoryPreviewResponse(repository.id, preview));
       } catch (error) {
@@ -237,52 +262,13 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     "/projects/:projectId/repositories/:repositoryId/workspace/terminal",
     { websocket: true },
     (socket, request) => {
-      const { project, repository } = getProjectRepositoryPair(
+      const { repository } = getProjectRepositoryPair(
         request.params.projectId,
         request.params.repositoryId,
       );
-      if (!project || !repository) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message: "Repository not found",
-          }),
-        );
-        socket.close();
-        return;
-      }
-
-      let worktreePath: string;
-      try {
-        worktreePath = prepareRepositoryTargetBranchWorkspace(
-          project,
-          repository,
-        );
-      } catch (error) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Repository workspace could not be prepared",
-          }),
-        );
-        socket.close();
-        return;
-      }
-
-      attachWorkspaceTerminalSocket(socket as TerminalSocket, {
-        sessionId: `repository-workspace:${repository.id}`,
-        startWorkspaceTerminal: ({
-          sessionId,
-          worktreePath: nextWorktreePath,
-        }) =>
-          executionRuntime.startWorkspaceTerminal({
-            sessionId,
-            worktreePath: nextWorktreePath,
-          }),
-        worktreePath,
+      handleRepositoryWorkspaceTerminalConnection(socket as TerminalSocket, {
+        executionRuntime,
+        repository,
       });
     },
   );

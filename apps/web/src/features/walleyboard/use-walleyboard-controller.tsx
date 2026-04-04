@@ -27,6 +27,7 @@ import {
   useDraftRefinementActivity,
   useGlobalDrafts,
 } from "./draft-queries.js";
+import { createNewDraftActionHandlers } from "./new-draft-actions.js";
 import {
   closeProjectCreationModal,
   openProjectCreationModal,
@@ -1195,15 +1196,20 @@ export function useWalleyBoardController() {
     });
   };
 
-  const openArchiveModal = (): void => {
+  const setArchiveModalVisibility = (open: boolean): void => {
     setArchiveActionFeedback(null);
-    setArchiveModalOpen(true);
+    setArchiveModalOpen(open);
+    if (!open) {
+      mutations.restoreTicketMutation.reset();
+    }
+  };
+
+  const openArchiveModal = (): void => {
+    setArchiveModalVisibility(true);
   };
 
   const closeArchiveModal = (): void => {
-    setArchiveModalOpen(false);
-    setArchiveActionFeedback(null);
-    mutations.restoreTicketMutation.reset();
+    setArchiveModalVisibility(false);
   };
 
   const {
@@ -1231,54 +1237,29 @@ export function useWalleyBoardController() {
     setWorkspaceModal("diff");
   };
 
-  const handleSaveNewDraft = (): void => {
-    void persistNewDraftFromEditor("save");
-  };
-
-  const handleRefineNewDraft = (): void => {
-    void (async () => {
-      const draftId = await persistNewDraftFromEditor("refine");
-      if (!draftId) {
-        return;
-      }
-
-      mutations.refineDraftMutation.mutate(draftId);
-    })();
-  };
-
-  const handleQuestionNewDraft = (): void => {
-    void (async () => {
-      const draftId = await persistNewDraftFromEditor("questions");
-      if (!draftId) {
-        return;
-      }
-
+  const {
+    handleConfirmNewDraft,
+    handleQuestionNewDraft,
+    handleRefineNewDraft,
+    handleSaveNewDraft,
+  } = createNewDraftActionHandlers({
+    draftEditorAcceptanceCriteriaLines,
+    draftEditorDescription,
+    draftEditorProject,
+    draftEditorRepository,
+    draftEditorTicketType,
+    draftEditorTitle,
+    onConfirmDraft: (input) => {
+      mutations.confirmDraftMutation.mutate(input);
+    },
+    onQuestionDraft: (draftId) => {
       mutations.questionDraftMutation.mutate(draftId);
-    })();
-  };
-
-  const handleConfirmNewDraft = (): void => {
-    if (!draftEditorProject || !draftEditorRepository) {
-      return;
-    }
-
-    void (async () => {
-      const draftId = await persistNewDraftFromEditor("confirm");
-      if (!draftId) {
-        return;
-      }
-
-      mutations.confirmDraftMutation.mutate({
-        draftId,
-        title: draftEditorTitle,
-        description: draftEditorDescription,
-        ticketType: draftEditorTicketType,
-        acceptanceCriteria: draftEditorAcceptanceCriteriaLines,
-        repository: draftEditorRepository,
-        project: draftEditorProject,
-      });
-    })();
-  };
+    },
+    onRefineDraft: (draftId) => {
+      mutations.refineDraftMutation.mutate(draftId);
+    },
+    persistNewDraftFromEditor,
+  });
 
   return {
     ...mutations,

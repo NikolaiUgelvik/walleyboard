@@ -6,9 +6,8 @@ import {
   normalizeOptionalModel,
   truncate,
 } from "../execution-runtime/helpers.js";
+import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
-import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
-import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,

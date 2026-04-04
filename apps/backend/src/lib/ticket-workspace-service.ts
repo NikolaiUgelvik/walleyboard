@@ -147,6 +147,39 @@ function parsePackageScripts(
   }
 }
 
+function resolveConfiguredRepositoryPreviewCommand(input: {
+  command: string;
+  port: number;
+  worktreePath: string;
+}): string {
+  const normalizedCommand = input.command.trim();
+  const scripts = parsePackageScripts(input.worktreePath);
+
+  if (normalizedCommand === "npm run dev" && scripts?.dev) {
+    return `npm run dev -- --host 127.0.0.1 --port ${input.port}`;
+  }
+
+  if (normalizedCommand === "npm run dev:web" && scripts?.["dev:web"]) {
+    return `npm run dev:web -- -- --host 127.0.0.1 --port ${input.port}`;
+  }
+
+  if (
+    /^npm\s+--workspace\s+\S+\s+run\s+dev$/.test(normalizedCommand) &&
+    scripts?.dev
+  ) {
+    return `${normalizedCommand} -- --host 127.0.0.1 --port ${input.port}`;
+  }
+
+  if (
+    /^npm\s+--workspace\s+\S+\s+run\s+dev:web$/.test(normalizedCommand) &&
+    scripts?.["dev:web"]
+  ) {
+    return `${normalizedCommand} -- -- --host 127.0.0.1 --port ${input.port}`;
+  }
+
+  return normalizedCommand;
+}
+
 function isGitInternalPath(filename: string | null): boolean {
   if (!filename) {
     return false;
@@ -611,21 +644,26 @@ export class TicketWorkspaceService {
         const previewPort =
           await this.#previewRuntimeDependencies.findAvailablePort();
         const previewUrl = `http://127.0.0.1:${previewPort}`;
+        const previewCommand = resolveConfiguredRepositoryPreviewCommand({
+          command: runtime.previewStartCommand,
+          port: previewPort,
+          worktreePath: runtime.worktreePath,
+        });
 
         const preview = this.#spawnPreviewProcess(runtime, {
-          command: runtime.previewStartCommand,
+          command: previewCommand,
           env: {
             HOST: "127.0.0.1",
             PORT: String(previewPort),
             VITE_API_URL: this.#apiBaseUrl,
           },
-          exitErrorMessage: `Preview command "${runtime.previewStartCommand}" exited`,
+          exitErrorMessage: `Preview command "${previewCommand}" exited`,
           label: "preview",
         });
         await this.#previewRuntimeDependencies.waitForPort(
           previewPort,
           preview.handle,
-          `Preview command "${runtime.previewStartCommand}"`,
+          `Preview command "${previewCommand}"`,
         );
 
         runtime.previewUrl = previewUrl;

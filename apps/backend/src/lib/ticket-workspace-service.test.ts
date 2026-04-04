@@ -350,6 +350,56 @@ test("TicketWorkspaceService starts repository previews with a configured comman
   }
 });
 
+test("TicketWorkspaceService adds host and port flags for configured npm run dev repository previews", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-repository-preview-npm-dev-"),
+  );
+  const worktreePath = join(tempDir, "preview-app");
+  const eventHub = new EventHub();
+  const previewHarness = createPreviewRuntimeHarness();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+    previewRuntimeDependencies: previewHarness.previewRuntimeDependencies,
+  });
+
+  mkdirSync(worktreePath, { recursive: true });
+  writeFileSync(
+    join(worktreePath, "package.json"),
+    JSON.stringify(
+      {
+        name: "preview-app",
+        private: true,
+        type: "module",
+        scripts: {
+          dev: "vite",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  try {
+    const preview = await workspaceService.ensureRepositoryPreview({
+      repositoryId: "repo-43",
+      previewStartCommand: "npm run dev",
+      worktreePath,
+    });
+
+    assert.equal(preview.state, "ready");
+    assert.equal(preview.preview_url, "http://127.0.0.1:4100");
+    assert.equal(
+      previewHarness.spawned[0]?.command,
+      "npm run dev -- --host 127.0.0.1 --port 4100",
+    );
+  } finally {
+    await workspaceService.stopRepositoryPreviewAndWait("repo-43");
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("TicketWorkspaceService reports configured preview command failures clearly", async () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-repository-preview-fail-"),
