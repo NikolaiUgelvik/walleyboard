@@ -1145,6 +1145,122 @@ test("ticket cards place workspace controls under metadata and move statuses int
   assert.ok(diffSummaryIndex < descriptionIndex);
 });
 
+test("ticket cards pin the overflow trigger in a dedicated header slot during AI review", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    id: 42,
+    description: "Keep the menu pinned while AI review is active.",
+    session_id: "session-42",
+    status: "in_progress",
+    title: "Pin overflow trigger to the card corner",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionById: new Map([
+      [
+        ticket.session_id,
+        {
+          adapter_session_ref: null,
+          agent_adapter: "codex",
+          completed_at: null,
+          current_attempt_id: null,
+          id: ticket.session_id,
+          last_heartbeat_at: "2026-04-03T00:00:00.000Z",
+          last_summary: null,
+          latest_requested_change_note_id: null,
+          latest_review_package_id: null,
+          plan_status: "not_requested",
+          plan_summary: null,
+          planning_enabled: false,
+          project_id: ticket.project,
+          queue_entered_at: null,
+          repo_id: ticket.repo,
+          started_at: "2026-04-03T00:00:00.000Z",
+          status: "running",
+          ticket_id: ticket.id,
+          worktree_path: "/tmp/worktree-42",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map([[ticket.id, true]]),
+    ticketDiffLineSummaryByTicketId: new Map([
+      [ticket.id, { additions: 8, deletions: 3, files: 1 }],
+    ]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const card = harness.mountNode.querySelector<HTMLElement>("#ticket-42");
+    const header = card?.querySelector<HTMLElement>(".board-card-header");
+    const headerMain = card?.querySelector<HTMLElement>(
+      ".board-card-header-main",
+    );
+    const headerMenu = card?.querySelector<HTMLElement>(
+      ".board-card-header-menu",
+    );
+    const aiReviewRow = card?.querySelector<HTMLElement>(
+      ".board-card-ai-review",
+    );
+    const menuButton = headerMenu?.querySelector<HTMLButtonElement>(
+      '[aria-label="More actions for ticket 42"]',
+    );
+
+    assert.ok(card, "Expected the ticket card");
+    assert.ok(header, "Expected the dedicated ticket-card header");
+    assert.ok(headerMain, "Expected the header main content slot");
+    assert.ok(headerMenu, "Expected the dedicated header menu slot");
+    assert.ok(aiReviewRow, "Expected the AI review row below the header");
+    assert.equal(header?.children.length, 2);
+    assert.equal(header?.firstElementChild, headerMain);
+    assert.equal(header?.lastElementChild, headerMenu);
+    assert.ok(menuButton, "Expected the overflow trigger inside the menu slot");
+    assert.equal(headerMenu.contains(aiReviewRow), false);
+    assert.match(aiReviewRow.textContent ?? "", /AI review in progress/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
 test("ready tickets expose an edit action in the overflow menu", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();

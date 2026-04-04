@@ -967,11 +967,19 @@ export function BoardView({
                                   }}
                                 >
                                   <Stack gap="xs">
-                                    <Group
-                                      justify="space-between"
-                                      align="flex-start"
+                                    <Box
+                                      className="board-card-header"
+                                      style={{
+                                        alignItems: "flex-start",
+                                        display: "flex",
+                                        gap: 8,
+                                      }}
                                     >
-                                      <Stack gap={2}>
+                                      <Stack
+                                        className="board-card-header-main"
+                                        gap={2}
+                                        style={{ flex: 1, minWidth: 0 }}
+                                      >
                                         <Box
                                           style={{
                                             fontWeight: 700,
@@ -1001,20 +1009,29 @@ export function BoardView({
                                           ticket={ticket}
                                         />
                                       </Stack>
-                                      <Group gap={6} align="flex-start">
-                                        {aiReviewActive ? (
-                                          <Badge variant="light" color="violet">
-                                            AI review in progress
-                                          </Badge>
-                                        ) : null}
+                                      <Box
+                                        className="board-card-header-menu"
+                                        style={{ flex: "0 0 auto" }}
+                                      >
                                         <TicketMenu
                                           controller={controller}
                                           project={controller.selectedProject}
                                           ticket={ticket}
                                           ticketSession={ticketSession}
                                         />
+                                      </Box>
+                                    </Box>
+                                    {aiReviewActive ? (
+                                      <Group
+                                        className="board-card-ai-review"
+                                        gap={6}
+                                        wrap="wrap"
+                                      >
+                                        <Badge variant="light" color="violet">
+                                          AI review in progress
+                                        </Badge>
                                       </Group>
-                                    </Group>
+                                    ) : null}
                                     <Group gap={6} wrap="wrap">
                                       <Badge
                                         variant="light"
