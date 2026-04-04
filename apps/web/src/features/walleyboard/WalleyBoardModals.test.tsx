@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { JSDOM } from "jsdom";
-import React, { act, useEffect, useState } from "react";
+import React, { act, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
+import type {
+  HealthResponse,
+  Project,
+  RepositoryConfig,
+} from "../../../../../packages/contracts/src/index.js";
+
+import { ProjectConfigurationModals } from "./ProjectConfigurationModals.js";
+import { collectRepositoryTargetBranchUpdates } from "./shared-utils.js";
+import {
+  useWalleyBoardController,
+  type WalleyBoardController,
+} from "./use-walleyboard-controller.js";
 import { WorkspaceTerminalContent } from "./WorkspaceTerminalContent.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
@@ -15,6 +28,20 @@ class ResizeObserverStub {
   observe(): void {}
   unobserve(): void {}
 }
+
+class WebSocketStub {
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+
+  close(): void {}
+}
+
+type ScheduledHandle = {
+  id: number;
+  hasRef(): boolean;
+  ref(): ScheduledHandle;
+  unref(): ScheduledHandle;
+  [Symbol.toPrimitive](): number;
+};
 
 function installGlobal(name: string, value: unknown): () => void {
   const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -75,14 +102,16 @@ function installDom() {
     installGlobal("MutationObserver", window.MutationObserver),
     installGlobal("Node", window.Node),
     installGlobal("ResizeObserver", ResizeObserverStub),
+    installGlobal("ShadowRoot", window.ShadowRoot),
     installGlobal("SVGElement", window.SVGElement),
+    installGlobal("WebSocket", WebSocketStub),
   ];
   const pendingCallbacks = new Map<number, () => void>();
   let nextAsyncId = 1;
   const scheduleCallback = (
     callback: TimerHandler,
     args: unknown[],
-  ): number => {
+  ): ScheduledHandle => {
     const id = nextAsyncId;
     nextAsyncId += 1;
     pendingCallbacks.set(id, () => {
@@ -95,9 +124,28 @@ function installDom() {
         "String timers are not supported in this test harness",
       );
     });
-    return id;
+    return {
+      id,
+      hasRef: () => false,
+      ref() {
+        return this;
+      },
+      unref() {
+        return this;
+      },
+      [Symbol.toPrimitive]() {
+        return id;
+      },
+    };
   };
-  const clearScheduledCallback = (id: number): void => {
+  const clearScheduledCallback = (
+    handle: number | ScheduledHandle | null | undefined,
+  ): void => {
+    if (handle === null || handle === undefined) {
+      return;
+    }
+
+    const id = typeof handle === "number" ? handle : handle.id;
     pendingCallbacks.delete(id);
   };
 
@@ -119,17 +167,17 @@ function installDom() {
     callback: TimerHandler,
     _delay?: number,
     ...args: unknown[]
-  ) => scheduleCallback(callback, args)) as typeof window.setTimeout;
-  window.clearTimeout = ((id: number) => {
-    clearScheduledCallback(id);
+  ) => scheduleCallback(callback, args)) as unknown as typeof window.setTimeout;
+  window.clearTimeout = ((handle: number | ScheduledHandle) => {
+    clearScheduledCallback(handle);
   }) as typeof window.clearTimeout;
   window.requestAnimationFrame = ((callback: FrameRequestCallback) =>
     scheduleCallback(
       () => callback(Date.now()),
       [],
-    )) as typeof window.requestAnimationFrame;
-  window.cancelAnimationFrame = ((id: number) => {
-    clearScheduledCallback(id);
+    )) as unknown as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((handle: number | ScheduledHandle) => {
+    clearScheduledCallback(handle);
   }) as typeof window.cancelAnimationFrame;
   restoreGlobals.push(
     installGlobal("getComputedStyle", window.getComputedStyle.bind(window)),
@@ -164,6 +212,343 @@ function installDom() {
         restore();
       }
       dom.window.close();
+    },
+  };
+}
+
+function createHealth(): HealthResponse {
+  return {
+    ok: true,
+    service: "backend",
+    timestamp: "2026-04-03T00:00:00.000Z",
+    docker: {
+      installed: true,
+      available: true,
+      client_version: "1.0.0",
+      server_version: "1.0.0",
+      error: null,
+    },
+    claude_code: {
+      available: false,
+      configured_path: null,
+      error: null,
+    },
+  };
+}
+
+function createProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: "project-1",
+    slug: "project-1",
+    name: "Project One",
+    color: "#2563EB",
+    agent_adapter: "codex",
+    execution_backend: "host",
+    disabled_mcp_servers: [],
+    automatic_agent_review: false,
+    automatic_agent_review_run_limit: 1,
+    default_review_action: "direct_merge",
+    default_target_branch: "main",
+    preview_start_command: null,
+    pre_worktree_command: null,
+    post_worktree_command: null,
+    draft_analysis_model: null,
+    draft_analysis_reasoning_effort: null,
+    ticket_work_model: null,
+    ticket_work_reasoning_effort: null,
+    max_concurrent_sessions: 1,
+    created_at: "2026-04-03T00:00:00.000Z",
+    updated_at: "2026-04-03T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function createRepository(
+  overrides: Partial<RepositoryConfig> = {},
+): RepositoryConfig {
+  return {
+    id: "repo-1",
+    project_id: "project-1",
+    name: "walleyboard",
+    path: "/workspace",
+    target_branch: "main",
+    setup_hook: null,
+    cleanup_hook: null,
+    validation_profile: [],
+    extra_env_allowlist: [],
+    created_at: "2026-04-03T00:00:00.000Z",
+    updated_at: "2026-04-03T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function createQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        gcTime: Number.POSITIVE_INFINITY,
+        retry: false,
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+}
+
+function seedWalleyBoardQueries(
+  queryClient: QueryClient,
+  project: Project,
+  repository: RepositoryConfig,
+): void {
+  queryClient.setQueryData(["health"], createHealth());
+  queryClient.setQueryData(["projects"], {
+    projects: [project],
+  });
+  queryClient.setQueryData(["projects", project.id, "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", project.id, "tickets"], {
+    tickets: [],
+  });
+  queryClient.setQueryData(["projects", project.id, "repositories"], {
+    repositories: [repository],
+  });
+  queryClient.setQueryData(["projects", project.id, "repository-branches"], {
+    repository_branches: [
+      {
+        repository_id: repository.id,
+        repository_name: repository.name,
+        current_target_branch: repository.target_branch,
+        branches: ["main"],
+        error: null,
+      },
+    ],
+  });
+  queryClient.setQueryData(
+    [
+      "projects",
+      project.id,
+      "repositories",
+      repository.id,
+      "workspace",
+      "preview",
+    ],
+    {
+      preview: null,
+    },
+  );
+}
+
+function ControllerModalHarness({
+  mode,
+  onCreateProject,
+  onController,
+  onUpdateProject,
+}: {
+  mode: "create" | "edit";
+  onCreateProject?: (
+    input: Parameters<
+      WalleyBoardController["createProjectMutation"]["mutate"]
+    >[0],
+  ) => void;
+  onController?: (controller: WalleyBoardController) => void;
+  onUpdateProject?: (
+    input: Parameters<
+      WalleyBoardController["updateProjectMutation"]["mutate"]
+    >[0],
+  ) => void;
+}) {
+  const controller = useWalleyBoardController();
+  const openedModalRef = useRef(false);
+
+  useEffect(() => {
+    onController?.(controller);
+  }, [controller, onController]);
+
+  useEffect(() => {
+    if (openedModalRef.current) {
+      return;
+    }
+
+    if (mode === "create") {
+      openedModalRef.current = true;
+      controller.setProjectModalOpen(true);
+      return;
+    }
+
+    const project = controller.projectsQuery.data?.projects[0] ?? null;
+    if (project === null) {
+      return;
+    }
+
+    openedModalRef.current = true;
+    controller.openProjectOptions(project);
+  }, [controller, mode]);
+
+  const wrappedController = {
+    ...controller,
+    createProjectMutation: {
+      ...controller.createProjectMutation,
+      mutate: (
+        input: Parameters<
+          WalleyBoardController["createProjectMutation"]["mutate"]
+        >[0],
+      ) => {
+        onCreateProject?.(input);
+      },
+    },
+    updateProjectMutation: {
+      ...controller.updateProjectMutation,
+      mutate: (
+        input: Parameters<
+          WalleyBoardController["updateProjectMutation"]["mutate"]
+        >[0],
+      ) => {
+        onUpdateProject?.(input);
+      },
+    },
+    saveProjectOptions: () => {
+      const project = controller.projectOptionsProject;
+      if (project === null) {
+        return;
+      }
+
+      onUpdateProject?.({
+        agentAdapter: controller.projectOptionsAgentAdapter,
+        projectId: project.id,
+        color: controller.projectOptionsColor,
+        executionBackend:
+          controller.projectOptionsAgentAdapter === "claude-code"
+            ? "host"
+            : controller.projectOptionsExecutionBackend,
+        automaticAgentReview: controller.projectOptionsAutomaticAgentReview,
+        automaticAgentReviewRunLimit:
+          controller.projectOptionsAutomaticAgentReviewRunLimit,
+        defaultReviewAction: controller.projectOptionsDefaultReviewAction,
+        previewStartCommand: controller.projectOptionsPreviewStartCommandValue,
+        preWorktreeCommand: controller.projectOptionsPreWorktreeCommandValue,
+        postWorktreeCommand: controller.projectOptionsPostWorktreeCommandValue,
+        draftAnalysisModel: controller.projectOptionsDraftModelValue,
+        draftAnalysisReasoningEffort:
+          controller.projectOptionsDraftReasoningEffortValue,
+        ticketWorkModel: controller.projectOptionsTicketModelValue,
+        ticketWorkReasoningEffort:
+          controller.projectOptionsTicketReasoningEffortValue,
+        repositoryTargetBranches: collectRepositoryTargetBranchUpdates({
+          project,
+          repositories: controller.projectOptionsRepositories,
+          repositoryTargetBranches:
+            controller.projectOptionsRepositoryTargetBranches,
+        }),
+      });
+    },
+  } satisfies WalleyBoardController;
+
+  return <ProjectConfigurationModals controller={wrappedController} />;
+}
+
+async function renderControllerModalHarness(input: {
+  harness: ReturnType<typeof installDom>;
+  mode: "create" | "edit";
+  onCreateProject?: (
+    payload: Parameters<
+      WalleyBoardController["createProjectMutation"]["mutate"]
+    >[0],
+  ) => void;
+  onUpdateProject?: (
+    payload: Parameters<
+      WalleyBoardController["updateProjectMutation"]["mutate"]
+    >[0],
+  ) => void;
+  project?: Project;
+  repository?: RepositoryConfig;
+}) {
+  const queryClient = createQueryClient();
+  const project = input.project ?? createProject();
+  const repository = input.repository ?? createRepository();
+  seedWalleyBoardQueries(queryClient, project, repository);
+  const root = createRoot(input.harness.mountNode);
+  const originalFetch = globalThis.fetch;
+  let latestController: WalleyBoardController | null = null;
+
+  globalThis.fetch = (async (request) => {
+    const url = new URL(
+      typeof request === "string"
+        ? request
+        : request instanceof URL
+          ? request.toString()
+          : request.url,
+    );
+
+    switch (url.pathname) {
+      case "/health":
+        return Response.json(createHealth());
+      case "/projects":
+        return Response.json({
+          projects: [project],
+        });
+      case `/projects/${project.id}/drafts`:
+        return Response.json({ drafts: [] });
+      case `/projects/${project.id}/tickets`:
+        return Response.json({ tickets: [] });
+      case `/projects/${project.id}/repositories`:
+        return Response.json({
+          repositories: [repository],
+        });
+      case `/projects/${project.id}/repository-branches`:
+        return Response.json({
+          repository_branches: [
+            {
+              repository_id: repository.id,
+              repository_name: repository.name,
+              current_target_branch: repository.target_branch,
+              branches: ["main"],
+              error: null,
+            },
+          ],
+        });
+      case `/projects/${project.id}/repositories/${repository.id}/workspace/preview`:
+        return Response.json({
+          preview: null,
+        });
+      default:
+        throw new Error(`Unexpected fetch during modal test: ${url.pathname}`);
+    }
+  }) as typeof fetch;
+
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider>
+          <ControllerModalHarness
+            mode={input.mode}
+            onController={(controller) => {
+              latestController = controller;
+            }}
+            {...(input.onCreateProject
+              ? { onCreateProject: input.onCreateProject }
+              : {})}
+            {...(input.onUpdateProject
+              ? { onUpdateProject: input.onUpdateProject }
+              : {})}
+          />
+        </MantineProvider>
+      </QueryClientProvider>,
+    );
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  return {
+    getController() {
+      assert.ok(latestController, "Expected the controller to initialize");
+      return latestController;
+    },
+    root,
+    restoreFetch() {
+      globalThis.fetch = originalFetch;
     },
   };
 }
@@ -328,6 +713,158 @@ test("repository terminal tabs preserve each tab instance and resolved path acro
     await act(async () => {
       root.unmount();
     });
+    harness.cleanup();
+  }
+});
+
+test("create project modal submits the selected color through the controller workflow", async () => {
+  const harness = installDom();
+  let createPayload:
+    | Parameters<WalleyBoardController["createProjectMutation"]["mutate"]>[0]
+    | null = null;
+
+  try {
+    const { getController, restoreFetch, root } =
+      await renderControllerModalHarness({
+        harness,
+        mode: "create",
+        onCreateProject: (payload) => {
+          createPayload = payload;
+        },
+      });
+
+    try {
+      const nameInput = harness.window.document.querySelector<HTMLInputElement>(
+        'input[name="projectName"]',
+      );
+      const colorInput =
+        harness.window.document.querySelector<HTMLInputElement>(
+          'input[name="projectColor"]',
+        );
+      const repositoryInput =
+        harness.window.document.querySelector<HTMLInputElement>(
+          'input[name="repositoryPath"]',
+        );
+      const submitButton = Array.from(
+        harness.window.document.querySelectorAll<HTMLButtonElement>("button"),
+      ).find((button) => button.textContent?.trim() === "Add Project");
+
+      assert.ok(nameInput, "Expected the project name field");
+      assert.ok(colorInput, "Expected the project color field");
+      assert.ok(repositoryInput, "Expected the repository path field");
+      assert.ok(submitButton, "Expected the create project submit button");
+
+      await act(async () => {
+        const controller = getController();
+        controller.setProjectName("WalleyBoard");
+        controller.setProjectColor("#F97316");
+        controller.setRepositoryPath("/workspace");
+      });
+
+      assert.equal(nameInput.value, "WalleyBoard");
+      assert.equal(colorInput.value, "#f97316");
+      assert.equal(repositoryInput.value, "/workspace");
+
+      await act(async () => {
+        submitButton.dispatchEvent(
+          new harness.window.MouseEvent("click", { bubbles: true }),
+        );
+        await Promise.resolve();
+      });
+
+      assert.deepEqual(createPayload, {
+        color: "#F97316",
+        defaultTargetBranch: "main",
+        name: "WalleyBoard",
+        repositoryPath: "/workspace",
+        validationCommands: [],
+      });
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      restoreFetch();
+    }
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test("edit project modal submits the updated color through the controller workflow", async () => {
+  const harness = installDom();
+  let updatePayload:
+    | Parameters<WalleyBoardController["updateProjectMutation"]["mutate"]>[0]
+    | null = null;
+
+  try {
+    const project = createProject({
+      name: "WalleyBoard",
+      color: "#0EA5E9",
+    });
+    const repository = createRepository({
+      project_id: project.id,
+    });
+    const { getController, restoreFetch, root } =
+      await renderControllerModalHarness({
+        harness,
+        mode: "edit",
+        onUpdateProject: (payload) => {
+          updatePayload = payload;
+        },
+        project,
+        repository,
+      });
+
+    try {
+      const colorInput =
+        harness.window.document.querySelector<HTMLInputElement>(
+          'input[type="color"]',
+        );
+      assert.ok(colorInput, "Expected the project options color field");
+
+      await act(async () => {
+        getController().setProjectOptionsColor("#F97316");
+      });
+
+      assert.equal(colorInput.value, "#f97316");
+
+      const saveButton = Array.from(
+        harness.window.document.querySelectorAll<HTMLButtonElement>("button"),
+      ).find((button) => button.textContent?.trim() === "Save Options");
+      assert.ok(saveButton, "Expected the save options button");
+      assert.equal(saveButton.disabled, false);
+
+      await act(async () => {
+        saveButton.dispatchEvent(
+          new harness.window.MouseEvent("click", { bubbles: true }),
+        );
+        await Promise.resolve();
+      });
+
+      assert.deepEqual(updatePayload, {
+        agentAdapter: "codex",
+        automaticAgentReview: false,
+        automaticAgentReviewRunLimit: 1,
+        color: "#F97316",
+        defaultReviewAction: "direct_merge",
+        draftAnalysisModel: null,
+        draftAnalysisReasoningEffort: null,
+        executionBackend: "host",
+        postWorktreeCommand: null,
+        preWorktreeCommand: null,
+        previewStartCommand: null,
+        projectId: project.id,
+        repositoryTargetBranches: [],
+        ticketWorkModel: null,
+        ticketWorkReasoningEffort: null,
+      });
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      restoreFetch();
+    }
+  } finally {
     harness.cleanup();
   }
 });

@@ -561,12 +561,19 @@ test("narrow layout keeps the board region constrained to the shared scroller", 
   );
 });
 
-test("project rail renders compact tiles with initials and the create tile", () => {
+test("project rail renders compact tiles with initials, titles, and the create tile", () => {
   const controller = createWalleyBoardController();
   const project = {
     ...createProject(),
-    name: "WalleyBoard",
+    name: "Web App",
     color: "#0EA5E9",
+  };
+  const secondProject = {
+    ...createProject(),
+    id: "project-2",
+    slug: "project-2",
+    name: "Workspace Automation",
+    color: "#22C55E",
   };
   Object.assign(controller as Record<string, unknown>, {
     actionItems: [
@@ -585,7 +592,7 @@ test("project rail renders compact tiles with initials and the create tile", () 
     projectsQuery: {
       isPending: false,
       isError: false,
-      data: { projects: [project] },
+      data: { projects: [project, secondProject] },
       error: null,
     },
     selectedProject: project,
@@ -599,8 +606,10 @@ test("project rail renders compact tiles with initials and the create tile", () 
 
   assert.match(markup, /aria-label="Open inbox"/);
   assert.match(markup, /data-attention="true"/);
-  assert.match(markup, /aria-label="Open project WalleyBoard"/);
-  assert.match(markup, />WB</);
+  assert.match(markup, /aria-label="Open project Web App"/);
+  assert.match(markup, /title="Web App"/);
+  assert.match(markup, />WA</);
+  assert.match(markup, /title="Workspace Automation"/);
   assert.match(markup, /aria-label="Create project"/);
   assert.match(markup, /--project-tile-color:#0EA5E9/i);
 });
@@ -649,6 +658,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
         new harness.window.MouseEvent("click", { bubbles: true }),
       );
       await Promise.resolve();
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
     });
 
     const overlayItem = await waitForElement(

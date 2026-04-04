@@ -25,6 +25,7 @@ function ProjectTile({
   children,
   color,
   onClick,
+  title,
 }: {
   active?: boolean;
   attention?: boolean;
@@ -32,6 +33,7 @@ function ProjectTile({
   children: ReactNode;
   color: string;
   onClick: () => void;
+  title?: string;
 }) {
   return (
     <UnstyledButton
@@ -39,6 +41,7 @@ function ProjectTile({
       className="project-tile"
       data-active={active ? "true" : "false"}
       data-attention={attention ? "true" : "false"}
+      title={title}
       style={
         {
           "--project-tile-color": normalizeProjectColor(color),
@@ -159,6 +162,7 @@ export function ProjectRail({
                     ariaLabel={`Open project ${project.name}`}
                     color={project.color ?? "#2563EB"}
                     onClick={() => controller.selectProject(project.id)}
+                    title={project.name}
                   >
                     <span className="project-tile-label">
                       {deriveProjectInitials(project.name)}
