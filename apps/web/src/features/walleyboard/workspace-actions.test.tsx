@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import React, {
   isValidElement,
   type ReactElement,
@@ -74,6 +75,23 @@ function collectText(node: ReactNode): string {
   }
 
   return collectText((node.props as { children?: ReactNode }).children ?? null);
+}
+
+function collectActionLabels(tree: ReactNode): string[] {
+  const actionGroup = findElementByProp(
+    tree,
+    "className",
+    "ticket-workspace-action-group",
+  );
+  assert.ok(actionGroup);
+
+  return React.Children.toArray(
+    (actionGroup.props as { children?: ReactNode }).children ?? null,
+  )
+    .filter(isValidElement)
+    .map(
+      (child) => (child.props as { "aria-label"?: string })["aria-label"] ?? "",
+    );
 }
 
 function createTicket(
@@ -321,7 +339,35 @@ test("ticket workspace actions switch preview labels and surface preview errors"
   );
 
   assert.ok(previewAction);
+  assert.equal(
+    isValidElement(
+      (previewAction.props as { children?: ReactNode }).children,
+    ) && (previewAction.props as { children: ReactElement }).children.type,
+    IconPlayerStop,
+  );
   assert.match(collectText(tree), /Browser blocked the preview tab\./);
+});
+
+test("ticket workspace actions render preview first with the play icon by default", () => {
+  const { controller, ticket } = createController();
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+
+  assert.deepEqual(collectActionLabels(tree), [
+    "Preview",
+    "Open activity stream",
+    "Open worktree diff",
+    "Open worktree terminal",
+  ]);
+
+  const previewAction = findElementByProp(tree, "aria-label", "Preview");
+  assert.ok(previewAction);
+  assert.equal(
+    isValidElement(
+      (previewAction.props as { children?: ReactNode }).children,
+    ) && (previewAction.props as { children: ReactElement }).children.type,
+    IconPlayerPlay,
+  );
 });
 
 test("ticket workspace actions keep diff and activity available after worktree cleanup", () => {

@@ -16,6 +16,7 @@ import {
   IconActivityHeartbeat,
   IconBrowser,
   IconFileDiff,
+  IconPlayerPlay,
   IconPlayerStop,
   IconTerminal2,
 } from "@tabler/icons-react";
@@ -312,6 +313,36 @@ export function TicketWorkspaceActions({
     <Stack gap={6}>
       <ActionIcon.Group className="ticket-workspace-action-group">
         <ActionIcon
+          aria-label={previewLabel}
+          disabled={previewDisabled}
+          title={previewLabel}
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.handleTicketPreviewAction(ticket);
+          }}
+        >
+          {previewBusy ? (
+            <Loader size={14} />
+          ) : previewRunning ? (
+            <IconPlayerStop size={16} />
+          ) : (
+            <IconPlayerPlay size={16} />
+          )}
+        </ActionIcon>
+        <ActionIcon
+          aria-label="Open activity stream"
+          disabled={activityDisabled}
+          title="Activity"
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.openTicketWorkspaceModal(ticket, "activity");
+          }}
+        >
+          <IconActivityHeartbeat size={16} />
+        </ActionIcon>
+        <ActionIcon
           aria-label="Open worktree diff"
           disabled={diffDisabled}
           title="Diff"
@@ -334,36 +365,6 @@ export function TicketWorkspaceActions({
           }}
         >
           <IconTerminal2 size={16} />
-        </ActionIcon>
-        <ActionIcon
-          aria-label={previewLabel}
-          disabled={previewDisabled}
-          title={previewLabel}
-          variant="light"
-          onClick={(event) => {
-            event.stopPropagation();
-            controller.handleTicketPreviewAction(ticket);
-          }}
-        >
-          {previewBusy ? (
-            <Loader size={14} />
-          ) : previewRunning ? (
-            <IconPlayerStop size={16} />
-          ) : (
-            <IconBrowser size={16} />
-          )}
-        </ActionIcon>
-        <ActionIcon
-          aria-label="Open activity stream"
-          disabled={activityDisabled}
-          title="Activity"
-          variant="light"
-          onClick={(event) => {
-            event.stopPropagation();
-            controller.openTicketWorkspaceModal(ticket, "activity");
-          }}
-        >
-          <IconActivityHeartbeat size={16} />
         </ActionIcon>
       </ActionIcon.Group>
       {previewError ? (
