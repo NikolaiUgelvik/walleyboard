@@ -24,7 +24,18 @@ const stoppableSessionStatuses = [
   "paused_user_control",
   "awaiting_input",
 ] satisfies ExecutionSession["status"][];
-export const defaultProjectColor = "#2563EB";
+export const projectColorPalette = [
+  "#2563EB",
+  "#0EA5E9",
+  "#14B8A6",
+  "#22C55E",
+  "#D97706",
+  "#F97316",
+  "#EC4899",
+  "#8B5CF6",
+  "#64748B",
+] as const;
+export const defaultProjectColor: string = projectColorPalette[0];
 
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
@@ -52,10 +63,38 @@ export function normalizeProjectColor(
     return defaultProjectColor;
   }
 
-  const trimmed = value.trim();
-  return /^#[0-9A-Fa-f]{6}$/.test(trimmed)
-    ? trimmed.toUpperCase()
+  const normalized = value.trim().toUpperCase();
+  return projectColorPalette.includes(
+    normalized as (typeof projectColorPalette)[number],
+  )
+    ? normalized
     : defaultProjectColor;
+}
+
+export function pickProjectColor(
+  projects: Pick<Project, "color">[],
+  randomNumber = Math.random,
+): string {
+  const usedColors = new Set(
+    projects
+      .map((project) => project.color.trim().toUpperCase())
+      .filter((color) =>
+        projectColorPalette.includes(
+          color as (typeof projectColorPalette)[number],
+        ),
+      ),
+  );
+  const unusedColors = projectColorPalette.filter(
+    (color) => !usedColors.has(color),
+  );
+  const candidateColors =
+    unusedColors.length > 0 ? unusedColors : [...projectColorPalette];
+  const selectedIndex = Math.min(
+    candidateColors.length - 1,
+    Math.floor(randomNumber() * candidateColors.length),
+  );
+
+  return candidateColors[selectedIndex] ?? defaultProjectColor;
 }
 
 export function deriveProjectInitials(name: string): string {

@@ -20,6 +20,7 @@ import {
   getModelPresetOptions,
   modelPlaceholder,
   ProjectAgentAdapterSelect,
+  ProjectColorSwatchPicker,
   reasoningEffortOptions,
   reviewActionOptions,
 } from "./shared.js";
@@ -64,17 +65,14 @@ export function ProjectConfigurationModals({
               </Text>
 
               <Stack gap="xs">
-                <TextInput
-                  label="Project color"
+                <ProjectColorSwatchPicker
                   description="Used for the compact rail tile accent."
-                  type="color"
+                  label="Project color"
                   value={controller.projectOptionsColor}
-                  onChange={(event) => {
+                  onChange={(value) => {
                     controller.setProjectOptionsFormError(null);
                     controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsColor(
-                      event.currentTarget.value.toUpperCase(),
-                    );
+                    controller.setProjectOptionsColor(value);
                   }}
                 />
                 <ProjectAgentAdapterSelect
@@ -674,7 +672,7 @@ export function ProjectConfigurationModals({
 
       <Modal
         opened={controller.projectModalOpen}
-        onClose={() => controller.setProjectModalOpen(false)}
+        onClose={controller.closeProjectModal}
         title="Create project"
         centered
         size="lg"
@@ -709,18 +707,11 @@ export function ProjectConfigurationModals({
               }
               required
             />
-            <TextInput
-              id="project-color"
-              name="projectColor"
-              label="Project color"
+            <ProjectColorSwatchPicker
               description="Used for the compact rail tile accent."
-              type="color"
+              label="Project color"
               value={controller.projectColor}
-              onChange={(event) =>
-                controller.setProjectColor(
-                  event.currentTarget.value.toUpperCase(),
-                )
-              }
+              onChange={controller.setProjectColor}
             />
             <TextInput
               id="repository-path"

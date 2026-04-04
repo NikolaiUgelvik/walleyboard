@@ -281,7 +281,7 @@ export function ProjectRail({
           <ProjectTile
             ariaLabel="Create project"
             color={createProjectTileColor}
-            onClick={() => controller.setProjectModalOpen(true)}
+            onClick={controller.openProjectModal}
           >
             <IconPlus size={22} stroke={1.8} />
           </ProjectTile>

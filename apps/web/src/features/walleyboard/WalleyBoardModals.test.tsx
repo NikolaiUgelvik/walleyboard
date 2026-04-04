@@ -14,7 +14,10 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { ProjectConfigurationModals } from "./ProjectConfigurationModals.js";
-import { collectRepositoryTargetBranchUpdates } from "./shared-utils.js";
+import {
+  collectRepositoryTargetBranchUpdates,
+  projectColorPalette,
+} from "./shared-utils.js";
 import {
   useWalleyBoardController,
   type WalleyBoardController,
@@ -297,12 +300,15 @@ function createQueryClient(): QueryClient {
 
 function seedWalleyBoardQueries(
   queryClient: QueryClient,
-  project: Project,
+  projects: Project[],
   repository: RepositoryConfig,
 ): void {
+  const project = projects[0];
+  assert.ok(project, "Expected at least one project");
+
   queryClient.setQueryData(["health"], createHealth());
   queryClient.setQueryData(["projects"], {
-    projects: [project],
+    projects,
   });
   queryClient.setQueryData(["projects", project.id, "drafts"], {
     drafts: [],
@@ -372,7 +378,7 @@ function ControllerModalHarness({
 
     if (mode === "create") {
       openedModalRef.current = true;
-      controller.setProjectModalOpen(true);
+      controller.openProjectModal();
       return;
     }
 
@@ -458,13 +464,15 @@ async function renderControllerModalHarness(input: {
       WalleyBoardController["updateProjectMutation"]["mutate"]
     >[0],
   ) => void;
+  projects?: Project[];
   project?: Project;
   repository?: RepositoryConfig;
 }) {
   const queryClient = createQueryClient();
   const project = input.project ?? createProject();
+  const projects = input.projects ?? [project];
   const repository = input.repository ?? createRepository();
-  seedWalleyBoardQueries(queryClient, project, repository);
+  seedWalleyBoardQueries(queryClient, projects, repository);
   const root = createRoot(input.harness.mountNode);
   const originalFetch = globalThis.fetch;
   let latestController: WalleyBoardController | null = null;
@@ -483,7 +491,7 @@ async function renderControllerModalHarness(input: {
         return Response.json(createHealth());
       case "/projects":
         return Response.json({
-          projects: [project],
+          projects,
         });
       case `/projects/${project.id}/drafts`:
         return Response.json({ drafts: [] });
@@ -736,10 +744,11 @@ test("create project modal submits the selected color through the controller wor
       const nameInput = harness.window.document.querySelector<HTMLInputElement>(
         'input[name="projectName"]',
       );
-      const colorInput =
-        harness.window.document.querySelector<HTMLInputElement>(
-          'input[name="projectColor"]',
-        );
+      const colorSwatches = Array.from(
+        harness.window.document.querySelectorAll<HTMLButtonElement>(
+          'button[role="radio"][aria-label^="Project color "]',
+        ),
+      );
       const repositoryInput =
         harness.window.document.querySelector<HTMLInputElement>(
           'input[name="repositoryPath"]',
@@ -749,7 +758,11 @@ test("create project modal submits the selected color through the controller wor
       ).find((button) => button.textContent?.trim() === "Add Project");
 
       assert.ok(nameInput, "Expected the project name field");
-      assert.ok(colorInput, "Expected the project color field");
+      assert.equal(colorSwatches.length, projectColorPalette.length);
+      assert.equal(
+        harness.window.document.querySelector('input[type="color"]'),
+        null,
+      );
       assert.ok(repositoryInput, "Expected the repository path field");
       assert.ok(submitButton, "Expected the create project submit button");
 
@@ -761,8 +774,15 @@ test("create project modal submits the selected color through the controller wor
       });
 
       assert.equal(nameInput.value, "WalleyBoard");
-      assert.equal(colorInput.value, "#f97316");
       assert.equal(repositoryInput.value, "/workspace");
+      assert.equal(
+        harness.window.document
+          .querySelector(
+            'button[role="radio"][aria-label="Project color #F97316"]',
+          )
+          ?.getAttribute("aria-checked"),
+        "true",
+      );
 
       await act(async () => {
         submitButton.dispatchEvent(
@@ -785,6 +805,41 @@ test("create project modal submits the selected color through the controller wor
       restoreFetch();
     }
   } finally {
+    harness.cleanup();
+  }
+});
+
+test("create project modal auto-selects a random unused swatch", async () => {
+  const harness = installDom();
+  const originalRandom = Math.random;
+
+  try {
+    Math.random = () => 0;
+    const { getController, restoreFetch, root } =
+      await renderControllerModalHarness({
+        harness,
+        mode: "create",
+        projects: [createProject({ color: projectColorPalette[0] })],
+      });
+
+    try {
+      assert.equal(getController().projectColor, projectColorPalette[1]);
+      assert.equal(
+        harness.window.document
+          .querySelector(
+            `button[role="radio"][aria-label="Project color ${projectColorPalette[1]}"]`,
+          )
+          ?.getAttribute("aria-checked"),
+        "true",
+      );
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      restoreFetch();
+    }
+  } finally {
+    Math.random = originalRandom;
     harness.cleanup();
   }
 });
@@ -815,17 +870,29 @@ test("edit project modal submits the updated color through the controller workfl
       });
 
     try {
-      const colorInput =
-        harness.window.document.querySelector<HTMLInputElement>(
-          'input[type="color"]',
-        );
-      assert.ok(colorInput, "Expected the project options color field");
+      const colorSwatches = Array.from(
+        harness.window.document.querySelectorAll<HTMLButtonElement>(
+          'button[role="radio"][aria-label^="Project color "]',
+        ),
+      );
+      assert.equal(colorSwatches.length, projectColorPalette.length);
+      assert.equal(
+        harness.window.document.querySelector('input[type="color"]'),
+        null,
+      );
 
       await act(async () => {
         getController().setProjectOptionsColor("#F97316");
       });
 
-      assert.equal(colorInput.value, "#f97316");
+      assert.equal(
+        harness.window.document
+          .querySelector(
+            'button[role="radio"][aria-label="Project color #F97316"]',
+          )
+          ?.getAttribute("aria-checked"),
+        "true",
+      );
 
       const saveButton = Array.from(
         harness.window.document.querySelectorAll<HTMLButtonElement>("button"),

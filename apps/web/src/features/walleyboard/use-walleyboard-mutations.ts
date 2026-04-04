@@ -28,7 +28,12 @@ import type {
   TicketsResponse,
   TicketWorkspacePreviewResponse,
 } from "./shared-types.js";
-import { deriveRepositoryName, slugify, upsertById } from "./shared-utils.js";
+import {
+  defaultProjectColor,
+  deriveRepositoryName,
+  slugify,
+  upsertById,
+} from "./shared-utils.js";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -167,7 +172,7 @@ export function useWalleyBoardMutations({
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       selectProject(ack.resource_refs.project_id ?? null);
       setProjectModalOpen(false);
-      setProjectColor("#2563EB");
+      setProjectColor(defaultProjectColor);
       setProjectName("");
       setRepositoryPath("");
       setDefaultBranch("main");

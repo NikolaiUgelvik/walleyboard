@@ -52,6 +52,7 @@ import {
   normalizeProjectColor,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
+  pickProjectColor,
   repositoryTargetBranchesEqual,
   resolveOptionalProjectCommandValue,
   resolveProjectCustomModelValue,
@@ -922,6 +923,17 @@ export function useWalleyBoardController() {
     mutations.deleteProjectMutation.reset();
   };
 
+  const openProjectModal = (): void => {
+    setProjectColor(pickProjectColor(projectRecords));
+    setProjectModalOpen(true);
+    mutations.createProjectMutation.reset();
+  };
+
+  const closeProjectModal = (): void => {
+    setProjectModalOpen(false);
+    mutations.createProjectMutation.reset();
+  };
+
   const openProjectOptions = (project: Project): void => {
     const cachedRepositories =
       queryClient.getQueryData<RepositoriesResponse>([
@@ -1278,6 +1290,7 @@ export function useWalleyBoardController() {
     openTicketWorkspaceModal,
     openDraft,
     openNewDraft,
+    openProjectModal,
     openProjectOptions,
     openTicketSession,
     pendingDraftEditorSync,
@@ -1369,6 +1382,7 @@ export function useWalleyBoardController() {
     sessionLogs,
     sessionLogsQuery,
     sessionQuery,
+    closeProjectModal,
     closeWorkspaceModal,
     workspaceModal,
     workspaceTerminalContext,

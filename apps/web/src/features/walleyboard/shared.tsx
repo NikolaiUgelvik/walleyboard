@@ -2,14 +2,17 @@ import {
   Badge,
   Box,
   Group,
+  Input,
   List,
   SegmentedControl,
   Select,
   Stack,
   Text,
+  UnstyledButton,
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
+import { IconCheck } from "@tabler/icons-react";
 import type {
   AgentAdapter,
   ExecutionBackend,
@@ -21,6 +24,7 @@ import type { DraftQuestionsResult } from "./shared-types.js";
 import {
   parseDraftQuestionsResult,
   parseDraftRefinementResult,
+  projectColorPalette,
 } from "./shared-utils.js";
 
 export const boardColumns = [
@@ -198,6 +202,57 @@ export function getProjectAgentAdapterOptions(
       disabled: !claudeCodeAvailable,
     },
   ];
+}
+
+export function ProjectColorSwatchPicker({
+  description,
+  label,
+  onChange,
+  value,
+}: {
+  description: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <Input.Wrapper description={description} label={label}>
+      <Group aria-label={label} gap="xs" mt={8} role="radiogroup" wrap="wrap">
+        {projectColorPalette.map((color) => {
+          const selected = value === color;
+
+          return (
+            <UnstyledButton
+              key={color}
+              aria-checked={selected}
+              aria-label={`${label} ${color}`}
+              role="radio"
+              type="button"
+              onClick={() => onChange(color)}
+            >
+              <Box
+                style={{
+                  alignItems: "center",
+                  backgroundColor: color,
+                  border: selected
+                    ? "2px solid var(--mantine-color-text)"
+                    : "1px solid var(--mantine-color-default-border)",
+                  borderRadius: "999px",
+                  color: "#fff",
+                  display: "flex",
+                  height: 32,
+                  justifyContent: "center",
+                  width: 32,
+                }}
+              >
+                {selected ? <IconCheck size={16} stroke={2.4} /> : null}
+              </Box>
+            </UnstyledButton>
+          );
+        })}
+      </Group>
+    </Input.Wrapper>
+  );
 }
 
 export function agentLabel(adapter: AgentAdapter): string {
