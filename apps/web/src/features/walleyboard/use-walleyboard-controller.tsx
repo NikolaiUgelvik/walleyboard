@@ -36,7 +36,6 @@ import {
   type DraftEventsResponse,
   type DraftsResponse,
   diffLayoutStorageKey,
-  draftMatchesSearch,
   fetchJson,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
@@ -44,7 +43,6 @@ import {
   mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
   type NewDraftAction,
-  normalizeText,
   type ProjectModelPreset,
   type ProjectReasoningEffortSelection,
   type ProjectsResponse,
@@ -60,10 +58,10 @@ import {
   resolveProjectModelValue,
   resolveProjectReasoningEffortSelection,
   resolveProjectReasoningEffortValue,
+  resolveVisibleBoardItems,
   type SessionLogsResponse,
   type SessionResponse,
   type TicketsResponse,
-  ticketMatchesSearch,
   type WorkspaceModalKind,
   type WorkspaceTerminalContext,
   writeLastOpenProjectId,
@@ -73,6 +71,7 @@ import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useSelectedRepositoryWorkspace } from "./use-selected-repository-workspace.js";
 import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
+import { useTicketDiffLineSummary } from "./use-ticket-diff-line-summary.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
@@ -507,6 +506,7 @@ export function useWalleyBoardController() {
   });
 
   const tickets = ticketsQuery.data?.tickets ?? [];
+  const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(tickets);
   const {
     reviewRunQueriesSettled,
     ticketAiReviewActiveById,
@@ -762,28 +762,12 @@ export function useWalleyBoardController() {
       .filter((value): value is SessionResponse => value !== undefined)
       .map((item) => [item.session.id, item.agent_controls_worktree]),
   );
-
-  const searchNeedle = normalizeText(boardSearch);
-  const visibleDrafts = drafts.filter((draft) =>
-    draftMatchesSearch(draft, searchNeedle),
-  );
-  const visibleTickets = tickets.filter((ticket) =>
-    ticketMatchesSearch(ticket, searchNeedle),
-  );
-
-  const groupedTickets = {
-    draft: [] as TicketFrontmatter[],
-    ready: [] as TicketFrontmatter[],
-    in_progress: [] as TicketFrontmatter[],
-    review: [] as TicketFrontmatter[],
-    done: [] as TicketFrontmatter[],
-  };
-
-  for (const ticket of visibleTickets) {
-    groupedTickets[ticket.status].push(ticket);
-  }
-
-  const doneColumnTickets = groupedTickets.done;
+  const { doneColumnTickets, groupedTickets, visibleDrafts, visibleTickets } =
+    resolveVisibleBoardItems({
+      boardSearch,
+      drafts,
+      tickets,
+    });
 
   const selectedSessionTicketSession = selectedSessionTicket?.session_id
     ? (sessionById.get(selectedSessionTicket.session_id) ?? session)
@@ -1484,6 +1468,7 @@ export function useWalleyBoardController() {
     terminalCommand,
     handleTicketPreviewAction,
     ticketAiReviewActiveById,
+    ticketDiffLineSummaryByTicketId,
     ticketWorkspaceDiff,
     ticketWorkspaceDiffLayout,
     ticketWorkspaceDiffQuery,

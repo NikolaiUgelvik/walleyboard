@@ -410,6 +410,7 @@ function createWalleyBoardController(): WalleyBoardController {
     setInspectorState: () => undefined,
     setProjectModalOpen: () => undefined,
     setTicketWorkspaceDiffLayout: () => undefined,
+    ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspaceDiff: null,
     ticketWorkspaceDiffLayout: "split",
     ticketWorkspaceDiffQuery: {
@@ -542,6 +543,94 @@ test("ticket cards expose stable ids for ticket reference targets", () => {
 
   assert.match(markup, /id="ticket-24"/);
   assert.match(markup, /tabindex="-1"/);
+});
+
+test("ticket cards show diff line summaries only for in-progress and review tickets above the description preview", () => {
+  const controller = createWalleyBoardController();
+  const readyTicket = createTicket({
+    id: 11,
+    description: "Ready ticket description preview",
+    session_id: "session-ready",
+    status: "ready",
+    title: "Ready ticket",
+  });
+  const inProgressTicket = createTicket({
+    id: 12,
+    description: "In-progress ticket description preview",
+    session_id: "session-progress",
+    status: "in_progress",
+    title: "In-progress ticket",
+  });
+  const reviewTicket = createTicket({
+    id: 13,
+    description: "Review ticket description preview",
+    session_id: "session-review",
+    status: "review",
+    title: "Review ticket",
+  });
+  const doneTicket = createTicket({
+    id: 14,
+    description: "Done ticket description preview",
+    session_id: "session-done",
+    status: "done",
+    title: "Done ticket",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [readyTicket],
+      in_progress: [inProgressTicket],
+      review: [reviewTicket],
+      done: [doneTicket],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketDiffLineSummaryByTicketId: new Map([
+      [readyTicket.id, { additions: 99, deletions: 1, files: 9 }],
+      [inProgressTicket.id, { additions: 12, deletions: 4, files: 2 }],
+      [reviewTicket.id, { additions: 7, deletions: 3, files: 1 }],
+      [doneTicket.id, { additions: 20, deletions: 5, files: 4 }],
+    ]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, />2 files changed</);
+  assert.match(markup, />1 file changed</);
+  assert.doesNotMatch(markup, />9 files changed</);
+  assert.doesNotMatch(markup, />4 files changed</);
+
+  assert.ok(
+    markup.indexOf("2 files changed") <
+      markup.indexOf("In-progress ticket description preview"),
+  );
+  assert.ok(
+    markup.indexOf("1 file changed") <
+      markup.indexOf("Review ticket description preview"),
+  );
 });
 
 test("ready tickets expose an edit action in the overflow menu", async () => {

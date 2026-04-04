@@ -1349,6 +1349,46 @@ export function ticketMatchesSearch(
     .includes(needle);
 }
 
+export function resolveVisibleBoardItems(input: {
+  boardSearch: string;
+  drafts: DraftTicketState[];
+  tickets: TicketFrontmatter[];
+}): {
+  doneColumnTickets: TicketFrontmatter[];
+  groupedTickets: Record<
+    "draft" | "ready" | "in_progress" | "review" | "done",
+    TicketFrontmatter[]
+  >;
+  visibleDrafts: DraftTicketState[];
+  visibleTickets: TicketFrontmatter[];
+} {
+  const searchNeedle = normalizeText(input.boardSearch);
+  const visibleDrafts = input.drafts.filter((draft) =>
+    draftMatchesSearch(draft, searchNeedle),
+  );
+  const visibleTickets = input.tickets.filter((ticket) =>
+    ticketMatchesSearch(ticket, searchNeedle),
+  );
+  const groupedTickets = {
+    draft: [] as TicketFrontmatter[],
+    ready: [] as TicketFrontmatter[],
+    in_progress: [] as TicketFrontmatter[],
+    review: [] as TicketFrontmatter[],
+    done: [] as TicketFrontmatter[],
+  };
+
+  for (const ticket of visibleTickets) {
+    groupedTickets[ticket.status].push(ticket);
+  }
+
+  return {
+    doneColumnTickets: groupedTickets.done,
+    groupedTickets,
+    visibleDrafts,
+    visibleTickets,
+  };
+}
+
 export function focusElementById(id: string): void {
   const element = document.getElementById(id);
   if (!element) {

@@ -698,6 +698,13 @@ export function BoardView({
                             (controller.startAgentReviewMutation.isPending &&
                               controller.startAgentReviewMutation.variables ===
                                 ticket.id);
+                          const diffLineSummary =
+                            ticket.status === "in_progress" ||
+                            ticket.status === "review"
+                              ? (controller.ticketDiffLineSummaryByTicketId?.get(
+                                  ticket.id,
+                                ) ?? null)
+                              : null;
 
                           return (
                             <Box
@@ -761,6 +768,22 @@ export function BoardView({
                                     />
                                   </Group>
                                 </Group>
+                                {diffLineSummary ? (
+                                  <Group gap={6} wrap="wrap">
+                                    <Badge variant="outline" color="gray">
+                                      {diffLineSummary.files}{" "}
+                                      {diffLineSummary.files === 1
+                                        ? "file changed"
+                                        : "files changed"}
+                                    </Badge>
+                                    <Badge variant="outline" color="green">
+                                      +{diffLineSummary.additions}
+                                    </Badge>
+                                    <Badge variant="outline" color="red">
+                                      -{diffLineSummary.deletions}
+                                    </Badge>
+                                  </Group>
+                                ) : null}
                                 <MarkdownContent
                                   className="markdown-muted markdown-small"
                                   content={getBoardTicketDescriptionPreview(
