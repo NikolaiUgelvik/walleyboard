@@ -393,11 +393,8 @@ export function useWalleyBoardController() {
 
   const tickets = ticketRecords;
   const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(tickets);
-  const {
-    reviewRunQueriesSettled,
-    ticketAiReviewActiveById,
-    ticketAiReviewResolvedById,
-  } = useTicketAiReviewStatus(globalTickets, projectRecords);
+  const { ticketAiReviewActiveById, ticketAiReviewResolvedById } =
+    useTicketAiReviewStatus(globalTickets, projectRecords);
   const selectedSessionTicketId =
     tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
     null;
@@ -452,8 +449,7 @@ export function useWalleyBoardController() {
     projectsLoaded &&
     globalDraftsQueries.every((query) => !query.isPending) &&
     globalTicketsQueries.every((query) => !query.isPending) &&
-    globalSessionSummaries.every((query) => !query.isPending) &&
-    reviewRunQueriesSettled;
+    globalSessionSummaries.every((query) => !query.isPending);
   const { silenceNextInboxItemKey } = useInboxAlert({
     actionItemKeys,
     inboxQueriesSettled,

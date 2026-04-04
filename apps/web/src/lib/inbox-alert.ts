@@ -9,6 +9,10 @@ export function hasNewInboxItems(
   }
 
   return currentKeys.some(
-    (key) => !knownKeys.has(key) && !ignoredKeys.has(key),
+    (key) =>
+      !knownKeys.has(key) &&
+      !Array.from(ignoredKeys).some(
+        (ignoredKey) => key === ignoredKey || key.startsWith(`${ignoredKey}:`),
+      ),
   );
 }
