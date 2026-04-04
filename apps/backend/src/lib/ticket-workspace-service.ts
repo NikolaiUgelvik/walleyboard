@@ -22,8 +22,8 @@ type WatchRegistration = {
 };
 
 type PreviewProcess = {
-  child: ChildProcess;
   command: string;
+  handle: PreviewProcessHandle;
   label: "backend" | "frontend" | "preview";
 };
 
@@ -51,6 +51,34 @@ type PreviewRuntime = {
   stopping: boolean;
   worktreePath: string;
   logs: string[];
+};
+
+type PreviewProcessHandle = {
+  readonly exitCode: number | null;
+  readonly pid: number | undefined;
+  onStderr: (listener: (chunk: string) => void) => void;
+  onStdout: (listener: (chunk: string) => void) => void;
+  onceExit: (
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ) => void;
+  stop: () => void;
+  stopAndWait: (timeoutMs?: number) => Promise<void>;
+  unref: () => void;
+};
+
+type PreviewRuntimeDependencies = {
+  findAvailablePort: () => Promise<number>;
+  spawnPreviewProcess: (input: {
+    command: string;
+    env: Record<string, string>;
+    worktreePath: string;
+  }) => PreviewProcessHandle;
+  waitForPort: (
+    port: number,
+    handle: PreviewProcessHandle,
+    processDescription: string,
+    timeoutMs?: number,
+  ) => Promise<void>;
 };
 
 function parseGitOutput(error: GitExecError): {
@@ -209,14 +237,14 @@ async function findAvailablePort(): Promise<number> {
 
 async function waitForPort(
   port: number,
-  child: ChildProcess,
+  handle: PreviewProcessHandle,
   processDescription: string,
   timeoutMs = 20_000,
 ): Promise<void> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    if (child.exitCode !== null) {
+    if (handle.exitCode !== null) {
       throw new Error(
         `${processDescription} exited before port ${port} was ready`,
       );
@@ -272,15 +300,88 @@ async function waitForProcessGroupExit(
   }
 }
 
+function stopPreviewProcessGroup(pid: number | undefined): void {
+  if (!pid) {
+    return;
+  }
+
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    // Ignore already-stopped preview processes.
+  }
+}
+
+function createChildPreviewProcessHandle(
+  child: ChildProcess,
+): PreviewProcessHandle {
+  return {
+    get exitCode() {
+      return child.exitCode;
+    },
+    get pid() {
+      return child.pid;
+    },
+    onStderr(listener) {
+      child.stderr?.on("data", (chunk: Buffer | string) => {
+        listener(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+      });
+    },
+    onStdout(listener) {
+      child.stdout?.on("data", (chunk: Buffer | string) => {
+        listener(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+      });
+    },
+    onceExit(listener) {
+      child.once("exit", listener);
+    },
+    stop() {
+      stopPreviewProcessGroup(child.pid);
+    },
+    async stopAndWait(timeoutMs) {
+      if (!child.pid) {
+        return;
+      }
+
+      await waitForProcessGroupExit(child.pid, timeoutMs);
+    },
+    unref() {
+      child.unref();
+    },
+  };
+}
+
 export class TicketWorkspaceService {
   readonly #apiBaseUrl: string;
   readonly #eventHub: EventHub;
   readonly #previews = new Map<string, PreviewRuntime>();
   readonly #watchRegistrations = new Map<number, WatchRegistration>();
+  readonly #previewRuntimeDependencies: PreviewRuntimeDependencies;
 
-  constructor(options: { apiBaseUrl: string; eventHub: EventHub }) {
+  constructor(options: {
+    apiBaseUrl: string;
+    eventHub: EventHub;
+    previewRuntimeDependencies?: Partial<PreviewRuntimeDependencies>;
+  }) {
     this.#apiBaseUrl = options.apiBaseUrl;
     this.#eventHub = options.eventHub;
+    this.#previewRuntimeDependencies = {
+      findAvailablePort,
+      spawnPreviewProcess: ({ command, env, worktreePath }) =>
+        createChildPreviewProcessHandle(
+          spawn("bash", ["-lc", `exec ${command}`], {
+            cwd: worktreePath,
+            detached: true,
+            env: {
+              ...process.env,
+              ...env,
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          }),
+        ),
+      waitForPort,
+      ...options.previewRuntimeDependencies,
+    };
   }
 
   getDiff(input: {
@@ -476,16 +577,7 @@ export class TicketWorkspaceService {
 
     runtime.stopping = true;
     for (const previewProcess of runtime.processes) {
-      const pid = previewProcess.child.pid;
-      if (!pid) {
-        continue;
-      }
-
-      try {
-        process.kill(-pid, "SIGTERM");
-      } catch {
-        // Ignore already-stopped preview processes.
-      }
+      previewProcess.handle.stop();
     }
 
     this.#previews.delete(key);
@@ -500,23 +592,12 @@ export class TicketWorkspaceService {
 
     runtime.stopping = true;
     for (const previewProcess of runtime.processes) {
-      const pid = previewProcess.child.pid;
-      if (!pid) {
-        continue;
-      }
-
-      try {
-        process.kill(-pid, "SIGTERM");
-      } catch {
-        // Ignore already-stopped preview processes.
-      }
+      previewProcess.handle.stop();
     }
 
     await Promise.all(
-      runtime.processes.flatMap((previewProcess) =>
-        previewProcess.child.pid
-          ? [waitForProcessGroupExit(previewProcess.child.pid)]
-          : [],
+      runtime.processes.map((previewProcess) =>
+        previewProcess.handle.stopAndWait(),
       ),
     );
 
@@ -527,7 +608,8 @@ export class TicketWorkspaceService {
   async #startPreview(runtime: PreviewRuntime): Promise<void> {
     if (runtime.repositoryId !== null && runtime.previewStartCommand) {
       try {
-        const previewPort = await findAvailablePort();
+        const previewPort =
+          await this.#previewRuntimeDependencies.findAvailablePort();
         const previewUrl = `http://127.0.0.1:${previewPort}`;
 
         const preview = this.#spawnPreviewProcess(runtime, {
@@ -540,9 +622,9 @@ export class TicketWorkspaceService {
           exitErrorMessage: `Preview command "${runtime.previewStartCommand}" exited`,
           label: "preview",
         });
-        await waitForPort(
+        await this.#previewRuntimeDependencies.waitForPort(
           previewPort,
-          preview.child,
+          preview.handle,
           `Preview command "${runtime.previewStartCommand}"`,
         );
 
@@ -577,8 +659,10 @@ export class TicketWorkspaceService {
 
     try {
       if (scripts["dev:web"] && scripts["dev:backend"]) {
-        const backendPort = await findAvailablePort();
-        const frontendPort = await findAvailablePort();
+        const backendPort =
+          await this.#previewRuntimeDependencies.findAvailablePort();
+        const frontendPort =
+          await this.#previewRuntimeDependencies.findAvailablePort();
         const backendUrl = `http://127.0.0.1:${backendPort}`;
         const previewUrl = `http://127.0.0.1:${frontendPort}`;
 
@@ -591,9 +675,9 @@ export class TicketWorkspaceService {
           exitErrorMessage: "backend preview exited",
           label: "backend",
         });
-        await waitForPort(
+        await this.#previewRuntimeDependencies.waitForPort(
           backendPort,
-          backend.child,
+          backend.handle,
           "Backend preview process",
         );
 
@@ -609,15 +693,16 @@ export class TicketWorkspaceService {
           exitErrorMessage: "frontend preview exited",
           label: "frontend",
         });
-        await waitForPort(
+        await this.#previewRuntimeDependencies.waitForPort(
           frontendPort,
-          frontend.child,
+          frontend.handle,
           "Frontend preview process",
         );
 
         runtime.previewUrl = previewUrl;
       } else if (scripts.dev) {
-        const previewPort = await findAvailablePort();
+        const previewPort =
+          await this.#previewRuntimeDependencies.findAvailablePort();
         const previewUrl = `http://127.0.0.1:${previewPort}`;
 
         const preview = this.#spawnPreviewProcess(runtime, {
@@ -629,11 +714,16 @@ export class TicketWorkspaceService {
           exitErrorMessage: "preview exited",
           label: "preview",
         });
-        await waitForPort(previewPort, preview.child, "Preview process");
+        await this.#previewRuntimeDependencies.waitForPort(
+          previewPort,
+          preview.handle,
+          "Preview process",
+        );
 
         runtime.previewUrl = previewUrl;
       } else if (scripts["dev:web"]) {
-        const frontendPort = await findAvailablePort();
+        const frontendPort =
+          await this.#previewRuntimeDependencies.findAvailablePort();
         const previewUrl = `http://127.0.0.1:${frontendPort}`;
 
         const frontend = this.#spawnPreviewProcess(runtime, {
@@ -646,9 +736,9 @@ export class TicketWorkspaceService {
           exitErrorMessage: "frontend preview exited",
           label: "frontend",
         });
-        await waitForPort(
+        await this.#previewRuntimeDependencies.waitForPort(
           frontendPort,
-          frontend.child,
+          frontend.handle,
           "Frontend preview process",
         );
 
@@ -687,23 +777,19 @@ export class TicketWorkspaceService {
       label: PreviewProcess["label"];
     },
   ): PreviewProcess {
-    const child = spawn("bash", ["-lc", `exec ${input.command}`], {
-      cwd: runtime.worktreePath,
-      detached: true,
-      env: {
-        ...process.env,
-        ...input.env,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
+    const handle = this.#previewRuntimeDependencies.spawnPreviewProcess({
+      command: input.command,
+      env: input.env,
+      worktreePath: runtime.worktreePath,
     });
     const previewProcess: PreviewProcess = {
-      child,
       command: input.command,
+      handle,
       label: input.label,
     };
 
     runtime.processes.push(previewProcess);
-    child.unref();
+    handle.unref();
 
     const appendOutput = (chunk: string) => {
       for (const line of chunk.split(/\r?\n/)) {
@@ -719,13 +805,9 @@ export class TicketWorkspaceService {
       }
     };
 
-    child.stdout?.on("data", (chunk: Buffer | string) => {
-      appendOutput(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
-    });
-    child.stderr?.on("data", (chunk: Buffer | string) => {
-      appendOutput(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
-    });
-    child.once("exit", (code, signal) => {
+    handle.onStdout(appendOutput);
+    handle.onStderr(appendOutput);
+    handle.onceExit((code, signal) => {
       if (runtime.stopping) {
         return;
       }

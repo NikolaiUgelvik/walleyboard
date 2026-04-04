@@ -13,46 +13,11 @@ import {
   commandRouteRateLimit,
   repositoryRouteRateLimit,
 } from "../../lib/rate-limit.js";
+import {
+  attachWorkspaceTerminalSocket,
+  type TerminalSocket,
+} from "../workspace-terminal-socket.js";
 import type { TicketRouteDependencies } from "./shared.js";
-
-type TerminalInputMessage = {
-  type: "terminal.input";
-  data: string;
-};
-
-type TerminalResizeMessage = {
-  type: "terminal.resize";
-  cols: number;
-  rows: number;
-};
-
-function isTerminalInputMessage(value: unknown): value is TerminalInputMessage {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return record.type === "terminal.input" && typeof record.data === "string";
-}
-
-function isTerminalResizeMessage(
-  value: unknown,
-): value is TerminalResizeMessage {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return (
-    record.type === "terminal.resize" &&
-    typeof record.cols === "number" &&
-    Number.isFinite(record.cols) &&
-    record.cols > 0 &&
-    typeof record.rows === "number" &&
-    Number.isFinite(record.rows) &&
-    record.rows > 0
-  );
-}
 
 function readPersistedWorkspaceDiff(
   ticket: TicketFrontmatter,
@@ -313,137 +278,62 @@ export function registerTicketReadWorkspaceRoutes(
     "/tickets/:ticketId/workspace/terminal",
     { websocket: true },
     (socket, request) => {
-      const ticketId = parsePositiveInt(request.params.ticketId);
-      if (!ticketId) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message: "Invalid ticket id",
-          }),
-        );
-        socket.close();
-        return;
-      }
-
-      const ticket = store.getTicket(ticketId);
-      if (!ticket) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message: "Ticket not found",
-          }),
-        );
-        socket.close();
-        return;
-      }
-      if (!ticket.session_id) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message: "Ticket has no prepared workspace yet",
-          }),
-        );
-        socket.close();
-        return;
-      }
-
-      const session = store.getSession(ticket.session_id);
-      if (!session?.worktree_path) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message: "Session has no prepared worktree",
-          }),
-        );
-        socket.close();
-        return;
-      }
-
-      let terminal: ReturnType<typeof executionRuntime.startWorkspaceTerminal>;
-      try {
-        terminal = executionRuntime.startWorkspaceTerminal({
-          sessionId: session.id,
-          worktreePath: session.worktree_path,
-        });
-      } catch (error) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Workspace terminal failed to start",
-          }),
-        );
-        socket.close();
-        return;
-      }
-
-      socket.send(
-        JSON.stringify({
-          type: "terminal.started",
-          worktree_path: session.worktree_path,
-        }),
+      handleTicketWorkspaceTerminalConnection(
+        socket as TerminalSocket,
+        request.params.ticketId,
+        {
+          executionRuntime,
+          store,
+        },
       );
-
-      terminal.pty.onData((data) => {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.output",
-            data,
-          }),
-        );
-      });
-
-      terminal.pty.onExit(({ exitCode, signal }) => {
-        if (terminal.exitMessage) {
-          socket.send(
-            JSON.stringify({
-              type: "terminal.error",
-              message: terminal.exitMessage,
-            }),
-          );
-        }
-        socket.send(
-          JSON.stringify({
-            type: "terminal.exit",
-            exit_code: exitCode,
-            signal,
-          }),
-        );
-        socket.close();
-      });
-
-      socket.on("message", (rawMessage: unknown) => {
-        try {
-          const message = JSON.parse(String(rawMessage)) as unknown;
-
-          if (isTerminalInputMessage(message)) {
-            if (message.data.length > 0) {
-              terminal.pty.write(message.data);
-            }
-            return;
-          }
-
-          if (isTerminalResizeMessage(message)) {
-            terminal.pty.resize(
-              Math.max(1, Math.floor(message.cols)),
-              Math.max(1, Math.floor(message.rows)),
-            );
-          }
-        } catch {
-          socket.send(
-            JSON.stringify({
-              type: "terminal.error",
-              message: "Unable to parse terminal message",
-            }),
-          );
-        }
-      });
-
-      socket.on("close", () => {
-        terminal.pty.kill();
-      });
     },
   );
+}
+
+function sendSocketError(socket: TerminalSocket, message: string): void {
+  socket.send(
+    JSON.stringify({
+      type: "terminal.error",
+      message,
+    }),
+  );
+  socket.close();
+}
+
+export function handleTicketWorkspaceTerminalConnection(
+  socket: TerminalSocket,
+  rawTicketId: string,
+  dependencies: Pick<TicketRouteDependencies, "executionRuntime" | "store">,
+): void {
+  const ticketId = parsePositiveInt(rawTicketId);
+  if (!ticketId) {
+    sendSocketError(socket, "Invalid ticket id");
+    return;
+  }
+
+  const ticket = dependencies.store.getTicket(ticketId);
+  if (!ticket) {
+    sendSocketError(socket, "Ticket not found");
+    return;
+  }
+  if (!ticket.session_id) {
+    sendSocketError(socket, "Ticket has no prepared workspace yet");
+    return;
+  }
+
+  const session = dependencies.store.getSession(ticket.session_id);
+  if (!session?.worktree_path) {
+    sendSocketError(socket, "Session has no prepared worktree");
+    return;
+  }
+
+  attachWorkspaceTerminalSocket(socket, {
+    sessionId: session.id,
+    startWorkspaceTerminal: ({ sessionId, worktreePath }) =>
+      dependencies.executionRuntime.startWorkspaceTerminal({
+        sessionId,
+        worktreePath,
+      }),
+    worktreePath: session.worktree_path,
+  });
 }

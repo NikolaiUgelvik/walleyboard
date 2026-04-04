@@ -21,81 +21,101 @@ import { AgentAdapterRegistry } from "../lib/agent-adapters/registry.js";
 import { EventHub } from "../lib/event-hub.js";
 import type { WorkspaceTerminalRuntime } from "../lib/execution-runtime/terminal-runtime.js";
 import { ExecutionRuntime } from "../lib/execution-runtime.js";
-import { registerTicketReadWorkspaceRoutes } from "./tickets/read-workspace-routes.js";
+import {
+  handleTicketWorkspaceTerminalConnection,
+  registerTicketReadWorkspaceRoutes,
+} from "./tickets/read-workspace-routes.js";
 import type { TicketRouteDependencies } from "./tickets/shared.js";
 
-type WebSocketClient = {
-  addEventListener: (
-    type: "close" | "error" | "message" | "open",
-    listener: (event?: { data?: unknown }) => void,
-  ) => void;
-  close: () => void;
-  send: (data: string) => void;
-};
+class FakeTerminalSocket {
+  #closed = false;
+  #closeListeners = new Set<() => void>();
+  #messageListeners = new Set<(payload?: unknown) => void>();
+  #messageWaiters = new Set<{
+    predicate: (message: Record<string, unknown>) => boolean;
+    reject: (error: Error) => void;
+    resolve: (message: Record<string, unknown>) => void;
+    timeout: NodeJS.Timeout;
+  }>();
+  readonly messages: Array<Record<string, unknown>> = [];
 
-function createWebSocket(url: string): WebSocketClient {
-  const WebSocketConstructor = (
-    globalThis as typeof globalThis & {
-      WebSocket: new (url: string) => WebSocketClient;
+  close(): void {
+    if (this.#closed) {
+      return;
     }
-  ).WebSocket;
-  return new WebSocketConstructor(url);
-}
 
-async function openSocket(url: string): Promise<WebSocketClient> {
-  return await new Promise<WebSocketClient>((resolve, reject) => {
-    const socket = createWebSocket(url);
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out opening workspace terminal socket"));
-    }, 5_000);
+    this.#closed = true;
+    for (const waiter of this.#messageWaiters) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(
+        new Error("Workspace terminal socket closed before the message"),
+      );
+    }
+    this.#messageWaiters.clear();
+    for (const listener of this.#closeListeners) {
+      listener();
+    }
+  }
 
-    socket.addEventListener("open", () => {
-      clearTimeout(timeout);
-      resolve(socket);
-    });
-    socket.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket failed to open"));
-    });
-  });
-}
+  on(event: "close" | "message", listener: (payload?: unknown) => void): void {
+    if (event === "close") {
+      this.#closeListeners.add(() => listener());
+      return;
+    }
 
-async function waitForSocketMessage(
-  socket: WebSocketClient,
-  predicate: (message: Record<string, unknown>) => boolean,
-): Promise<Record<string, unknown>> {
-  return await new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out waiting for workspace terminal message"));
-    }, 5_000);
+    this.#messageListeners.add(listener);
+  }
 
-    socket.addEventListener("message", (event) => {
-      const rawData = typeof event?.data === "string" ? event.data : "";
-      const message = JSON.parse(rawData) as Record<string, unknown>;
-      if (!predicate(message)) {
-        return;
+  send(message: string): void {
+    const parsed = JSON.parse(message) as Record<string, unknown>;
+    this.messages.push(parsed);
+
+    for (const waiter of [...this.#messageWaiters]) {
+      if (!waiter.predicate(parsed)) {
+        continue;
       }
 
-      clearTimeout(timeout);
-      resolve(message);
+      clearTimeout(waiter.timeout);
+      this.#messageWaiters.delete(waiter);
+      waiter.resolve(parsed);
+    }
+  }
+
+  emitMessage(message: Record<string, unknown>): void {
+    const rawMessage = JSON.stringify(message);
+    for (const listener of this.#messageListeners) {
+      listener(rawMessage);
+    }
+  }
+
+  async waitForMessage(
+    predicate: (message: Record<string, unknown>) => boolean,
+  ): Promise<Record<string, unknown>> {
+    const existing = this.messages.find(predicate);
+    if (existing) {
+      return existing;
+    }
+
+    return await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.#messageWaiters.delete(waiter);
+        reject(new Error("Timed out waiting for workspace terminal message"));
+      }, 5_000);
+      const waiter = {
+        predicate,
+        reject,
+        resolve,
+        timeout,
+      };
+
+      this.#messageWaiters.add(waiter);
     });
-    socket.addEventListener("close", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket closed before the message"));
-    });
-    socket.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket errored"));
-    });
-  });
+  }
 }
 
 async function createApp(
   dependencies: Partial<TicketRouteDependencies>,
 ): Promise<FastifyInstance> {
-  const app = Fastify();
-  await app.register(websocket);
-  await app.register(fastifyRateLimit, { global: false });
   const eventHub = dependencies.eventHub ?? new EventHub();
   const store = {
     appendSessionLog() {
@@ -147,6 +167,9 @@ async function createApp(
     },
     ...(dependencies.executionRuntime ?? {}),
   };
+  const app = Fastify();
+  await app.register(websocket);
+  await app.register(fastifyRateLimit, { global: false });
   const ticketWorkspaceService = {
     ...(dependencies.ticketWorkspaceService ?? {}),
   };
@@ -160,6 +183,61 @@ async function createApp(
     ticketWorkspaceService: ticketWorkspaceService as never,
   });
   return app;
+}
+
+function createTerminalDependencies(
+  dependencies: Partial<TicketRouteDependencies>,
+): Pick<TicketRouteDependencies, "executionRuntime" | "store"> {
+  const store = {
+    getSession() {
+      return null;
+    },
+    getTicket() {
+      return null;
+    },
+    ...(dependencies.store ?? {}),
+  };
+  const executionRuntime = {
+    startWorkspaceTerminal({
+      worktreePath,
+    }: {
+      sessionId: string;
+      worktreePath: string;
+    }): WorkspaceTerminalRuntime {
+      return {
+        exitMessage: null,
+        pty: spawnPty("bash", ["--noprofile", "--norc"], {
+          cwd: worktreePath,
+          env: {
+            ...process.env,
+            TERM: "xterm-256color",
+          },
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        }),
+      };
+    },
+    ...(dependencies.executionRuntime ?? {}),
+  };
+
+  return {
+    executionRuntime: executionRuntime as never,
+    store: store as never,
+  };
+}
+
+function openTicketWorkspaceTerminal(
+  rawTicketId: string,
+  dependencies: Partial<TicketRouteDependencies>,
+): FakeTerminalSocket {
+  const socket = new FakeTerminalSocket();
+  handleTicketWorkspaceTerminalConnection(
+    socket,
+    rawTicketId,
+    createTerminalDependencies(dependencies),
+  );
+  return socket;
 }
 
 function createProject(): Project {
@@ -389,7 +467,7 @@ test("workspace preview stop waits for preview shutdown before returning idle", 
 });
 
 test("workspace terminal reports a clear error when the ticket has no prepared worktree", async () => {
-  const app = await createApp({
+  const socket = openTicketWorkspaceTerminal("11", {
     store: {
       getTicket(ticketId: number) {
         return ticketId === 11 ? { id: 11, session_id: null } : null;
@@ -397,31 +475,19 @@ test("workspace terminal reports a clear error when the ticket has no prepared w
     } as never,
   });
 
-  let socket: WebSocketClient | null = null;
-  try {
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    socket = await openSocket(
-      `${address.replace(/^http/, "ws")}/tickets/11/workspace/terminal`,
-    );
+  const message = await socket.waitForMessage(
+    (candidate) => candidate.type === "terminal.error",
+  );
 
-    const message = await waitForSocketMessage(
-      socket,
-      (candidate) => candidate.type === "terminal.error",
-    );
-
-    assert.deepEqual(message, {
-      type: "terminal.error",
-      message: "Ticket has no prepared workspace yet",
-    });
-  } finally {
-    socket?.close();
-    await app.close();
-  }
+  assert.deepEqual(message, {
+    type: "terminal.error",
+    message: "Ticket has no prepared workspace yet",
+  });
 });
 
 test("workspace terminal stays available while the agent still owns the worktree", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-owned-"));
-  const app = await createApp({
+  const socket = openTicketWorkspaceTerminal("13", {
     executionRuntime: {
       hasActiveExecution(sessionId: string) {
         return sessionId === "session-13";
@@ -443,29 +509,20 @@ test("workspace terminal stays available while the agent still owns the worktree
     } as never,
   });
 
-  let socket: WebSocketClient | null = null;
   try {
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    socket = await openSocket(
-      `${address.replace(/^http/, "ws")}/tickets/13/workspace/terminal`,
-    );
-    socket.send(
-      JSON.stringify({
-        type: "terminal.input",
-        data: "exit\r",
-      }),
-    );
+    socket.emitMessage({
+      type: "terminal.input",
+      data: "exit\r",
+    });
 
-    const message = await waitForSocketMessage(
-      socket,
+    const message = await socket.waitForMessage(
       (candidate) => candidate.type === "terminal.exit",
     );
 
     assert.equal(message.type, "terminal.exit");
     assert.equal(message.exit_code, 0);
   } finally {
-    socket?.close();
-    await app.close();
+    socket.close();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -477,7 +534,7 @@ for (const status of ["queued", "awaiting_input"] as const) {
     );
     const sessionId = `session-${status}`;
     const ticketId = status === "queued" ? 21 : 22;
-    const app = await createApp({
+    const socket = openTicketWorkspaceTerminal(String(ticketId), {
       store: {
         getSession(requestedSessionId: string) {
           return requestedSessionId === sessionId
@@ -496,29 +553,20 @@ for (const status of ["queued", "awaiting_input"] as const) {
       } as never,
     });
 
-    let socket: WebSocketClient | null = null;
     try {
-      const address = await app.listen({ host: "127.0.0.1", port: 0 });
-      socket = await openSocket(
-        `${address.replace(/^http/, "ws")}/tickets/${ticketId}/workspace/terminal`,
-      );
-      socket.send(
-        JSON.stringify({
-          type: "terminal.input",
-          data: "exit\r",
-        }),
-      );
+      socket.emitMessage({
+        type: "terminal.input",
+        data: "exit\r",
+      });
 
-      const message = await waitForSocketMessage(
-        socket,
+      const message = await socket.waitForMessage(
         (candidate) => candidate.type === "terminal.exit",
       );
 
       assert.equal(message.type, "terminal.exit");
       assert.equal(message.exit_code, 0);
     } finally {
-      socket?.close();
-      await app.close();
+      socket.close();
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
@@ -526,7 +574,7 @@ for (const status of ["queued", "awaiting_input"] as const) {
 
 test("workspace terminal publishes shell exit messages for worktree sessions", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-"));
-  const app = await createApp({
+  const socket = openTicketWorkspaceTerminal("12", {
     store: {
       getSession(sessionId: string) {
         return sessionId === "session-12"
@@ -543,29 +591,20 @@ test("workspace terminal publishes shell exit messages for worktree sessions", a
     } as never,
   });
 
-  let socket: WebSocketClient | null = null;
   try {
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    socket = await openSocket(
-      `${address.replace(/^http/, "ws")}/tickets/12/workspace/terminal`,
-    );
-    socket.send(
-      JSON.stringify({
-        type: "terminal.input",
-        data: "exit\r",
-      }),
-    );
+    socket.emitMessage({
+      type: "terminal.input",
+      data: "exit\r",
+    });
 
-    const message = await waitForSocketMessage(
-      socket,
+    const message = await socket.waitForMessage(
       (candidate) => candidate.type === "terminal.exit",
     );
 
     assert.equal(message.type, "terminal.exit");
     assert.equal(message.exit_code, 0);
   } finally {
-    socket?.close();
-    await app.close();
+    socket.close();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -673,27 +712,21 @@ test("workspace terminal stays available after execution starts in the same work
       },
     } as never,
   });
-  const app = await createApp({
-    executionRuntime: {
-      hasActiveExecution: runtime.hasActiveExecution.bind(runtime),
-      startWorkspaceTerminal: runtime.startWorkspaceTerminal.bind(runtime),
-    } as never,
-    store: {
-      getSession(sessionId: string) {
-        return sessionId === session.id ? session : null;
-      },
-      getTicket(ticketId: number) {
-        return ticketId === ticket.id ? ticket : null;
-      },
-    } as never,
-  });
-
-  let socket: WebSocketClient | null = null;
   try {
-    const address = await app.listen({ host: "127.0.0.1", port: 0 });
-    socket = await openSocket(
-      `${address.replace(/^http/, "ws")}/tickets/${ticket.id}/workspace/terminal`,
-    );
+    const socket = openTicketWorkspaceTerminal(String(ticket.id), {
+      executionRuntime: {
+        hasActiveExecution: runtime.hasActiveExecution.bind(runtime),
+        startWorkspaceTerminal: runtime.startWorkspaceTerminal.bind(runtime),
+      } as never,
+      store: {
+        getSession(sessionId: string) {
+          return sessionId === session.id ? session : null;
+        },
+        getTicket(ticketId: number) {
+          return ticketId === ticket.id ? ticket : null;
+        },
+      } as never,
+    });
 
     session = {
       ...session,
@@ -709,15 +742,12 @@ test("workspace terminal stays available after execution starts in the same work
 
     assert.equal(runtime.hasActiveExecution(session.id), true);
 
-    socket.send(
-      JSON.stringify({
-        type: "terminal.input",
-        data: "pwd\r",
-      }),
-    );
+    socket.emitMessage({
+      type: "terminal.input",
+      data: "pwd\r",
+    });
 
-    const pwdMessage = await waitForSocketMessage(
-      socket,
+    const pwdMessage = await socket.waitForMessage(
       (candidate) =>
         candidate.type === "terminal.output" &&
         typeof candidate.data === "string" &&
@@ -725,22 +755,18 @@ test("workspace terminal stays available after execution starts in the same work
     );
     assert.equal(pwdMessage.type, "terminal.output");
 
-    socket.send(
-      JSON.stringify({
-        type: "terminal.input",
-        data: "exit\r",
-      }),
-    );
-    await waitForSocketMessage(
-      socket,
+    socket.emitMessage({
+      type: "terminal.input",
+      data: "exit\r",
+    });
+    await socket.waitForMessage(
       (candidate) => candidate.type === "terminal.exit",
     );
+    socket.close();
   } finally {
     if (runtime.hasActiveExecution(session.id)) {
       await runtime.stopExecution(session.id, "Test cleanup.");
     }
-    socket?.close();
-    await app.close();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

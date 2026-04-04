@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
 
@@ -26,72 +25,93 @@ import {
 } from "../lib/execution-runtime/terminal-runtime.js";
 import { SqliteStore } from "../lib/sqlite-store.js";
 import { prepareWorktree } from "../lib/worktree-service.js";
+import { handleTicketWorkspaceTerminalConnection } from "./tickets/read-workspace-routes.js";
 import { ticketRoutes } from "./tickets.js";
 
-type WebSocketClient = {
-  addEventListener: (
-    type: "close" | "error" | "message" | "open",
-    listener: (event?: { data?: unknown }) => void,
-  ) => void;
-  close: () => void;
-  send: (data: string) => void;
-};
+class FakeTerminalSocket {
+  #closed = false;
+  #closeListeners = new Set<() => void>();
+  #messageListeners = new Set<(payload?: unknown) => void>();
+  #messageWaiters = new Set<{
+    predicate: (message: Record<string, unknown>) => boolean;
+    reject: (error: Error) => void;
+    resolve: (message: Record<string, unknown>) => void;
+    timeout: NodeJS.Timeout;
+  }>();
+  readonly messages: Array<Record<string, unknown>> = [];
 
-function createWebSocket(url: string): WebSocketClient {
-  const WebSocketConstructor = (
-    globalThis as typeof globalThis & {
-      WebSocket: new (url: string) => WebSocketClient;
+  close(): void {
+    if (this.#closed) {
+      return;
     }
-  ).WebSocket;
-  return new WebSocketConstructor(url);
-}
 
-async function openSocket(url: string): Promise<WebSocketClient> {
-  return await new Promise<WebSocketClient>((resolve, reject) => {
-    const socket = createWebSocket(url);
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out opening workspace terminal socket"));
-    }, 5_000);
+    this.#closed = true;
+    for (const waiter of this.#messageWaiters) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(
+        new Error("Workspace terminal socket closed before the message"),
+      );
+    }
+    this.#messageWaiters.clear();
+    for (const listener of this.#closeListeners) {
+      listener();
+    }
+  }
 
-    socket.addEventListener("open", () => {
-      clearTimeout(timeout);
-      resolve(socket);
-    });
-    socket.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket failed to open"));
-    });
-  });
-}
+  on(event: "close" | "message", listener: (payload?: unknown) => void): void {
+    if (event === "close") {
+      this.#closeListeners.add(() => listener());
+      return;
+    }
 
-async function waitForSocketMessage(
-  socket: WebSocketClient,
-  predicate: (message: Record<string, unknown>) => boolean,
-): Promise<Record<string, unknown>> {
-  return await new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out waiting for workspace terminal message"));
-    }, 5_000);
+    this.#messageListeners.add(listener);
+  }
 
-    socket.addEventListener("message", (event) => {
-      const rawData = typeof event?.data === "string" ? event.data : "";
-      const message = JSON.parse(rawData) as Record<string, unknown>;
-      if (!predicate(message)) {
-        return;
+  send(message: string): void {
+    const parsed = JSON.parse(message) as Record<string, unknown>;
+    this.messages.push(parsed);
+
+    for (const waiter of [...this.#messageWaiters]) {
+      if (!waiter.predicate(parsed)) {
+        continue;
       }
 
-      clearTimeout(timeout);
-      resolve(message);
+      clearTimeout(waiter.timeout);
+      this.#messageWaiters.delete(waiter);
+      waiter.resolve(parsed);
+    }
+  }
+
+  emitMessage(message: Record<string, unknown>): void {
+    const rawMessage = JSON.stringify(message);
+    for (const listener of this.#messageListeners) {
+      listener(rawMessage);
+    }
+  }
+
+  async waitForMessage(
+    predicate: (message: Record<string, unknown>) => boolean,
+  ): Promise<Record<string, unknown>> {
+    const existing = this.messages.find(predicate);
+    if (existing) {
+      return existing;
+    }
+
+    return await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.#messageWaiters.delete(waiter);
+        reject(new Error("Timed out waiting for workspace terminal message"));
+      }, 5_000);
+      const waiter = {
+        predicate,
+        reject,
+        resolve,
+        timeout,
+      };
+
+      this.#messageWaiters.add(waiter);
     });
-    socket.addEventListener("close", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket closed before the message"));
-    });
-    socket.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Workspace terminal socket errored"));
-    });
-  });
+  }
 }
 
 function setWalleyBoardHome(path: string): () => void {
@@ -731,7 +751,6 @@ test("delete route closes an open workspace terminal before cleaning up the work
     };
 
     const app = Fastify();
-    await app.register(websocket);
     await app.register(fastifyRateLimit, { global: false });
     await app.register(ticketRoutes, {
       agentReviewService: {
@@ -756,47 +775,39 @@ test("delete route closes an open workspace terminal before cleaning up the work
       } as never,
     });
 
-    let socket: WebSocketClient | null = null;
+    const socket = new FakeTerminalSocket();
     try {
-      const address = await app.listen({ host: "127.0.0.1", port: 0 });
-      socket = await openSocket(
-        `${address.replace(/^http/, "ws")}/tickets/${ticket.id}/workspace/terminal`,
-      );
+      handleTicketWorkspaceTerminalConnection(socket, String(ticket.id), {
+        executionRuntime: executionRuntime as never,
+        store,
+      });
 
-      socket.send(
-        JSON.stringify({
-          type: "terminal.input",
-          data: "pwd\r",
-        }),
-      );
-      await waitForSocketMessage(
-        socket,
+      socket.emitMessage({
+        type: "terminal.input",
+        data: "pwd\r",
+      });
+      await socket.waitForMessage(
         (message) =>
           message.type === "terminal.output" &&
           typeof message.data === "string" &&
           message.data.includes(runtime.worktreePath),
       );
 
-      socket.send(
-        JSON.stringify({
-          type: "terminal.input",
-          data: "echo terminal-busy; trap '' HUP; sleep 30\r",
-        }),
-      );
-      await waitForSocketMessage(
-        socket,
+      socket.emitMessage({
+        type: "terminal.input",
+        data: "echo terminal-busy; trap '' HUP; sleep 30\r",
+      });
+      await socket.waitForMessage(
         (message) =>
           message.type === "terminal.output" &&
           typeof message.data === "string" &&
           message.data.includes("terminal-busy"),
       );
 
-      const errorPromise = waitForSocketMessage(
-        socket,
+      const errorPromise = socket.waitForMessage(
         (message) => message.type === "terminal.error",
       );
-      const exitPromise = waitForSocketMessage(
-        socket,
+      const exitPromise = socket.waitForMessage(
         (message) => message.type === "terminal.exit",
       );
 
@@ -823,7 +834,7 @@ test("delete route closes an open workspace terminal before cleaning up the work
       assert.equal(store.getSession(started.session.id), undefined);
       assert.equal(workspaceTerminals.has(started.session.id), false);
     } finally {
-      socket?.close();
+      socket.close();
       await app.close();
     }
   } finally {

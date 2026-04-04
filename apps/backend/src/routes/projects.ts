@@ -24,6 +24,10 @@ import {
   removeLocalBranch,
   removePreparedWorktree,
 } from "../lib/worktree-service.js";
+import {
+  attachWorkspaceTerminalSocket,
+  type TerminalSocket,
+} from "./workspace-terminal-socket.js";
 
 type ProjectRouteOptions = {
   store: Store;
@@ -247,105 +251,17 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         return;
       }
 
-      let terminal: ReturnType<typeof executionRuntime.startWorkspaceTerminal>;
-      try {
-        terminal = executionRuntime.startWorkspaceTerminal({
-          sessionId: `repository-workspace:${repository.id}`,
-          worktreePath,
-        });
-      } catch (error) {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Workspace terminal failed to start",
+      attachWorkspaceTerminalSocket(socket as TerminalSocket, {
+        sessionId: `repository-workspace:${repository.id}`,
+        startWorkspaceTerminal: ({
+          sessionId,
+          worktreePath: nextWorktreePath,
+        }) =>
+          executionRuntime.startWorkspaceTerminal({
+            sessionId,
+            worktreePath: nextWorktreePath,
           }),
-        );
-        socket.close();
-        return;
-      }
-
-      socket.send(
-        JSON.stringify({
-          type: "terminal.started",
-          worktree_path: worktreePath,
-        }),
-      );
-
-      terminal.pty.onData((data) => {
-        socket.send(
-          JSON.stringify({
-            type: "terminal.output",
-            data,
-          }),
-        );
-      });
-
-      terminal.pty.onExit(({ exitCode, signal }) => {
-        if (terminal.exitMessage) {
-          socket.send(
-            JSON.stringify({
-              type: "terminal.error",
-              message: terminal.exitMessage,
-            }),
-          );
-        }
-        socket.send(
-          JSON.stringify({
-            type: "terminal.exit",
-            exit_code: exitCode,
-            signal,
-          }),
-        );
-        socket.close();
-      });
-
-      socket.on("message", (rawMessage: unknown) => {
-        try {
-          const message = JSON.parse(String(rawMessage)) as unknown;
-
-          if (
-            message &&
-            typeof message === "object" &&
-            (message as { type?: string }).type === "terminal.input" &&
-            typeof (message as { data?: string }).data === "string"
-          ) {
-            if ((message as { data: string }).data.length > 0) {
-              terminal.pty.write((message as { data: string }).data);
-            }
-            return;
-          }
-
-          if (
-            message &&
-            typeof message === "object" &&
-            (message as { type?: string }).type === "terminal.resize" &&
-            typeof (message as { cols?: number }).cols === "number" &&
-            typeof (message as { rows?: number }).rows === "number"
-          ) {
-            terminal.pty.resize(
-              Math.max(1, Math.floor((message as { cols: number }).cols)),
-              Math.max(1, Math.floor((message as { rows: number }).rows)),
-            );
-          }
-        } catch {
-          socket.send(
-            JSON.stringify({
-              type: "terminal.error",
-              message: "Unable to parse terminal message",
-            }),
-          );
-        }
-      });
-
-      socket.on("close", () => {
-        try {
-          terminal.pty.kill();
-        } catch {
-          // Ignore already-exited repository terminals.
-        }
+        worktreePath,
       });
     },
   );

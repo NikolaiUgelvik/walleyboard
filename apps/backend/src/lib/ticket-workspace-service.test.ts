@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -21,19 +20,95 @@ function configureGitIdentity(repoPath: string): void {
   runGit(repoPath, ["config", "user.email", "test@example.com"]);
 }
 
-async function canConnect(port: number): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    const socket = net.createConnection({ host: "127.0.0.1", port });
+class FakePreviewProcessHandle {
+  exitCode: number | null = null;
+  readonly onStderrListeners: Array<(chunk: string) => void> = [];
+  readonly onStdoutListeners: Array<(chunk: string) => void> = [];
+  readonly onceExitListeners: Array<
+    (code: number | null, signal: NodeJS.Signals | null) => void
+  > = [];
+  readonly pid: number | undefined;
+  stopCalls = 0;
+  stopAndWaitCalls = 0;
 
-    socket.once("connect", () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once("error", () => {
-      socket.destroy();
-      resolve(false);
-    });
-  });
+  constructor(pid: number) {
+    this.pid = pid;
+  }
+
+  onStderr(listener: (chunk: string) => void): void {
+    this.onStderrListeners.push(listener);
+  }
+
+  onStdout(listener: (chunk: string) => void): void {
+    this.onStdoutListeners.push(listener);
+  }
+
+  onceExit(
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): void {
+    this.onceExitListeners.push(listener);
+  }
+
+  stop(): void {
+    this.stopCalls += 1;
+  }
+
+  async stopAndWait(): Promise<void> {
+    this.stopAndWaitCalls += 1;
+  }
+
+  unref(): void {}
+}
+
+function createPreviewRuntimeHarness(options?: {
+  waitForPort?: (input: {
+    description: string;
+    handle: { exitCode: number | null };
+    port: number;
+  }) => Promise<void>;
+}) {
+  let nextPid = 100;
+  let nextPort = 4_100;
+  const spawned: Array<{
+    command: string;
+    env: Record<string, string>;
+    handle: FakePreviewProcessHandle;
+    worktreePath: string;
+  }> = [];
+
+  return {
+    previewRuntimeDependencies: {
+      async findAvailablePort() {
+        return nextPort++;
+      },
+      spawnPreviewProcess(input: {
+        command: string;
+        env: Record<string, string>;
+        worktreePath: string;
+      }) {
+        const handle = new FakePreviewProcessHandle(nextPid++);
+        spawned.push({
+          ...input,
+          handle,
+        });
+        return handle;
+      },
+      async waitForPort(
+        port: number,
+        handle: { exitCode: number | null },
+        description: string,
+      ) {
+        if (options?.waitForPort) {
+          await options.waitForPort({
+            description,
+            handle,
+            port,
+          });
+        }
+      },
+    },
+    spawned,
+  };
 }
 
 test("TicketWorkspaceService diffs the worktree and publishes live diff updates", async () => {
@@ -116,9 +191,11 @@ test("TicketWorkspaceService starts and stops previews for ticket worktrees", as
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-preview-"));
   const worktreePath = join(tempDir, "preview-app");
   const eventHub = new EventHub();
+  const previewHarness = createPreviewRuntimeHarness();
   const workspaceService = new TicketWorkspaceService({
     apiBaseUrl: "http://127.0.0.1:4000",
     eventHub,
+    previewRuntimeDependencies: previewHarness.previewRuntimeDependencies,
   });
 
   mkdirSync(worktreePath, { recursive: true });
@@ -130,25 +207,12 @@ test("TicketWorkspaceService starts and stops previews for ticket worktrees", as
         private: true,
         type: "module",
         scripts: {
-          dev: "node preview-server.js",
+          dev: "vite",
         },
       },
       null,
       2,
     ),
-    "utf8",
-  );
-  writeFileSync(
-    join(worktreePath, "preview-server.js"),
-    [
-      'import http from "node:http";',
-      "",
-      'const port = Number.parseInt(process.env.PORT ?? "0", 10);',
-      "const server = http.createServer((_request, response) => {",
-      '  response.end("preview ok");',
-      "});",
-      'server.listen(port, "127.0.0.1");',
-    ].join("\n"),
     "utf8",
   );
 
@@ -159,13 +223,13 @@ test("TicketWorkspaceService starts and stops previews for ticket worktrees", as
     });
 
     assert.equal(preview.state, "ready");
-    assert.ok(preview.preview_url);
-
-    const previewResponse = await fetch(preview.preview_url);
-    assert.equal(await previewResponse.text(), "preview ok");
-
-    const previewPort = Number.parseInt(new URL(preview.preview_url).port, 10);
-    assert.equal(await canConnect(previewPort), true);
+    assert.equal(preview.preview_url, "http://127.0.0.1:4100");
+    assert.equal(previewHarness.spawned.length, 1);
+    assert.equal(
+      previewHarness.spawned[0]?.command,
+      "npm run dev -- --host 127.0.0.1 --port 4100",
+    );
+    assert.equal(previewHarness.spawned[0]?.env.PORT, "4100");
 
     await workspaceService.stopPreviewAndWait(41);
 
@@ -177,7 +241,8 @@ test("TicketWorkspaceService starts and stops previews for ticket worktrees", as
       started_at: null,
       error: null,
     });
-    assert.equal(await canConnect(previewPort), false);
+    assert.equal(previewHarness.spawned[0]?.handle.stopCalls, 1);
+    assert.equal(previewHarness.spawned[0]?.handle.stopAndWaitCalls, 1);
   } finally {
     await workspaceService.disposeTicket(41);
     rmSync(tempDir, { recursive: true, force: true });
@@ -190,25 +255,14 @@ test("TicketWorkspaceService starts repository previews with a configured comman
   );
   const worktreePath = join(tempDir, "preview-app");
   const eventHub = new EventHub();
+  const previewHarness = createPreviewRuntimeHarness();
   const workspaceService = new TicketWorkspaceService({
     apiBaseUrl: "http://127.0.0.1:4000",
     eventHub,
+    previewRuntimeDependencies: previewHarness.previewRuntimeDependencies,
   });
 
   mkdirSync(worktreePath, { recursive: true });
-  writeFileSync(
-    join(worktreePath, "preview-server.cjs"),
-    [
-      'const http = require("node:http");',
-      "",
-      'const port = Number.parseInt(process.env.PORT ?? "0", 10);',
-      "const server = http.createServer((_request, response) => {",
-      '  response.end(process.env.VITE_API_URL ? "preview ok" : "missing api url");',
-      "});",
-      'server.listen(port, "127.0.0.1");',
-    ].join("\n"),
-    "utf8",
-  );
 
   try {
     const preview = await workspaceService.ensureRepositoryPreview({
@@ -218,13 +272,12 @@ test("TicketWorkspaceService starts repository previews with a configured comman
     });
 
     assert.equal(preview.state, "ready");
-    assert.ok(preview.preview_url);
-
-    const previewResponse = await fetch(preview.preview_url);
-    assert.equal(await previewResponse.text(), "preview ok");
-
-    const previewPort = Number.parseInt(new URL(preview.preview_url).port, 10);
-    assert.equal(await canConnect(previewPort), true);
+    assert.equal(preview.preview_url, "http://127.0.0.1:4100");
+    assert.equal(previewHarness.spawned[0]?.command, "node preview-server.cjs");
+    assert.equal(
+      previewHarness.spawned[0]?.env.VITE_API_URL,
+      "http://127.0.0.1:4000",
+    );
 
     await workspaceService.stopRepositoryPreviewAndWait("repo-41");
 
@@ -236,7 +289,8 @@ test("TicketWorkspaceService starts repository previews with a configured comman
       started_at: null,
       error: null,
     });
-    assert.equal(await canConnect(previewPort), false);
+    assert.equal(previewHarness.spawned[0]?.handle.stopCalls, 1);
+    assert.equal(previewHarness.spawned[0]?.handle.stopAndWaitCalls, 1);
   } finally {
     await workspaceService.stopRepositoryPreviewAndWait("repo-41");
     rmSync(tempDir, { recursive: true, force: true });
@@ -249,17 +303,18 @@ test("TicketWorkspaceService reports configured preview command failures clearly
   );
   const worktreePath = join(tempDir, "preview-app");
   const eventHub = new EventHub();
+  const previewHarness = createPreviewRuntimeHarness({
+    async waitForPort({ description, port }) {
+      throw new Error(`${description} exited before port ${port} was ready`);
+    },
+  });
   const workspaceService = new TicketWorkspaceService({
     apiBaseUrl: "http://127.0.0.1:4000",
     eventHub,
+    previewRuntimeDependencies: previewHarness.previewRuntimeDependencies,
   });
 
   mkdirSync(worktreePath, { recursive: true });
-  writeFileSync(
-    join(worktreePath, "exit-immediately.cjs"),
-    "process.exit(1);\n",
-    "utf8",
-  );
 
   try {
     const preview = await workspaceService.ensureRepositoryPreview({
