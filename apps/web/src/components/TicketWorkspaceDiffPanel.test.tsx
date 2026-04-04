@@ -262,18 +262,23 @@ async function waitForRenderer(
   mountNode: HTMLElement,
   layout: "split" | "stacked",
   flushWork: () => Promise<void>,
-): Promise<HTMLDivElement> {
+): Promise<HTMLElement> {
   const diffSelector =
     layout === "split"
       ? '[data-diff-type="split"]'
       : '[data-diff-type="single"][data-overflow="scroll"]';
-  const renderer = await waitForElement(
+  const rendererWrapper = await waitForElement(
     () =>
       mountNode.querySelector<HTMLDivElement>(
         ".ticket-workspace-diff-renderer",
       ),
     flushWork,
     `Expected ${layout} diff renderer host`,
+  );
+  const renderer = await waitForElement(
+    () => rendererWrapper.querySelector<HTMLElement>("diffs-container"),
+    flushWork,
+    `Expected ${layout} diff container host`,
   );
   const renderedDiff = await waitForElement(
     () => renderer.shadowRoot?.querySelector(diffSelector),
@@ -288,7 +293,7 @@ async function waitForRenderer(
 async function renderPanel(input: {
   colorScheme: "light" | "dark";
   layout: "split" | "stacked";
-}): Promise<{ cleanup: () => Promise<void>; renderer: HTMLDivElement }> {
+}): Promise<{ cleanup: () => Promise<void>; renderer: HTMLElement }> {
   const harness = installDom();
   const root = createRoot(harness.mountNode);
 
@@ -333,6 +338,10 @@ test("diff panel renders both layouts and injects shadow-root styling", async ()
     assert.ok(
       splitShadow.querySelector('[data-diff-type="split"]'),
       "Expected split diff container",
+    );
+    assert.ok(
+      splitShadow.querySelector("style[data-core-css]"),
+      "Expected fallback core diff stylesheet in the shadow root",
     );
     assert.match(splitShadow.textContent ?? "", /const beta = "old";/);
     assert.match(splitShadow.textContent ?? "", /const beta = "new";/);

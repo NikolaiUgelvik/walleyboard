@@ -9,9 +9,12 @@ import {
   useMantineColorScheme,
 } from "@mantine/core";
 import {
+  CORE_CSS_ATTRIBUTE,
+  DIFFS_TAG_NAME,
   FileDiff,
   type FileDiffMetadata,
   parsePatchFiles,
+  wrapCoreCSS,
 } from "@pierre/diffs";
 import { useEffect, useMemo, useRef } from "react";
 import type { TicketWorkspaceDiff } from "../../../../packages/contracts/src/index.js";
@@ -146,6 +149,30 @@ function summarizeFile(file: FileDiffMetadata): DiffFileSummary {
   }
 }
 
+function ensureDiffRendererCoreStyles(fileContainer: HTMLElement): void {
+  const shadowRoot = fileContainer.shadowRoot;
+  if (!shadowRoot) {
+    return;
+  }
+
+  if (shadowRoot.querySelector(`style[${CORE_CSS_ATTRIBUTE}]`)) {
+    return;
+  }
+
+  const adoptedStyleSheetCount =
+    "adoptedStyleSheets" in shadowRoot
+      ? shadowRoot.adoptedStyleSheets.length
+      : 0;
+  if (adoptedStyleSheetCount > 0) {
+    return;
+  }
+
+  const coreStyle = document.createElement("style");
+  coreStyle.setAttribute(CORE_CSS_ATTRIBUTE, "");
+  coreStyle.textContent = wrapCoreCSS("");
+  shadowRoot.prepend(coreStyle);
+}
+
 export function TicketWorkspaceDiffPanel({
   diff,
   error,
@@ -208,7 +235,9 @@ export function TicketWorkspaceDiffPanel({
         continue;
       }
 
-      container.innerHTML = "";
+      container.replaceChildren();
+      const fileContainer = document.createElement(DIFFS_TAG_NAME);
+      container.append(fileContainer);
 
       const instance = new FileDiff({
         diffStyle: layout === "split" ? "split" : "unified",
@@ -220,10 +249,11 @@ export function TicketWorkspaceDiffPanel({
         unsafeCSS: diffRendererUnsafeCss,
       });
       instance.render({
-        fileContainer: container,
+        fileContainer,
         fileDiff: file,
         forceRender: true,
       });
+      ensureDiffRendererCoreStyles(fileContainer);
       instances.push(instance);
     }
 
