@@ -454,12 +454,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
             input.repository,
             input.instruction,
           );
-    const args = [
-      "exec",
-      "--json",
-      "--output-last-message",
-      outputPath,
-    ];
+    const args = ["exec", "--json", "--output-last-message", outputPath];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);

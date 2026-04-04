@@ -200,7 +200,10 @@ test("CodexCliAdapter.buildDraftRun uses full-auto outside Docker", () => {
   });
 
   assert.ok(run.args.includes("--full-auto"));
-  assert.equal(run.args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
+  assert.equal(
+    run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
+    false,
+  );
   assert.equal(run.dockerSpec, null);
 });
 
