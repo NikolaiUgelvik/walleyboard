@@ -175,6 +175,7 @@ export function useWalleyBoardMutations({
       agentAdapter: AgentAdapter;
       projectId: string;
       executionBackend: ExecutionBackend;
+      disabledMcpServers: string[];
       automaticAgentReview: boolean;
       automaticAgentReviewRunLimit: number;
       defaultReviewAction: ReviewAction;
@@ -193,6 +194,7 @@ export function useWalleyBoardMutations({
       saveProjectOptionsRequest(input.projectId, {
         agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
+        disabled_mcp_servers: input.disabledMcpServers,
         automatic_agent_review: input.automaticAgentReview,
         automatic_agent_review_run_limit: input.automaticAgentReviewRunLimit,
         default_review_action: input.defaultReviewAction,

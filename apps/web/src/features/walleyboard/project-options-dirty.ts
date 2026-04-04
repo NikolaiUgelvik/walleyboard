@@ -9,6 +9,7 @@ type ProjectOptionsDirtyInput = {
   draftModelValue: string | null;
   draftReasoningEffortValue: string | null;
   executionBackend: ExecutionBackend;
+  disabledMcpServers: string[];
   postWorktreeCommandValue: string | null;
   preWorktreeCommandValue: string | null;
   previewStartCommandValue: string | null;
@@ -33,6 +34,12 @@ export function hasProjectOptionsDirty(
   return (
     input.selectedAgentAdapter !== project.agent_adapter ||
     input.executionBackend !== project.execution_backend ||
+    !(
+      input.disabledMcpServers.length === project.disabled_mcp_servers.length &&
+      input.disabledMcpServers.every(
+        (server, index) => server === project.disabled_mcp_servers[index],
+      )
+    ) ||
     input.projectOptionsAutomaticAgentReview !==
       project.automatic_agent_review ||
     input.projectOptionsAutomaticAgentReviewRunLimit !==

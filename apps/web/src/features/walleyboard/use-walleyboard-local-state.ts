@@ -28,6 +28,10 @@ export function useProjectOptionsState() {
   const [projectOptionsExecutionBackend, setProjectOptionsExecutionBackend] =
     useState<ExecutionBackend>("host");
   const [
+    projectOptionsDisabledMcpServers,
+    setProjectOptionsDisabledMcpServers,
+  ] = useState<string[]>([]);
+  const [
     projectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReview,
   ] = useState(false);
@@ -81,6 +85,7 @@ export function useProjectOptionsState() {
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsDefaultReviewAction,
+    projectOptionsDisabledMcpServers,
     projectOptionsDraftModelCustom,
     projectOptionsDraftModelPreset,
     projectOptionsDraftReasoningEffort,
@@ -99,6 +104,7 @@ export function useProjectOptionsState() {
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsDefaultReviewAction,
+    setProjectOptionsDisabledMcpServers,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,

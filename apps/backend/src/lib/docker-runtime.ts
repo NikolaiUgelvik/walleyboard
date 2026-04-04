@@ -41,6 +41,7 @@ export interface DockerRuntime {
   }): void;
   ensureSessionContainer(input: {
     dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
+    configTomlPath?: string | null;
     sessionId: string;
     projectId: string;
     ticketId: number;
@@ -223,6 +224,7 @@ export class DockerRuntimeManager implements DockerRuntime {
 
   ensureSessionContainer(input: {
     dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
+    configTomlPath?: string | null;
     sessionId: string;
     projectId: string;
     ticketId: number;
@@ -260,6 +262,12 @@ export class DockerRuntimeManager implements DockerRuntime {
       dockerWorkspacePath,
       "--mount",
       `type=bind,src=${configHomePath},dst=${input.dockerSpec.configMountPath}`,
+      ...(input.configTomlPath
+        ? [
+            "--mount",
+            `type=bind,src=${input.configTomlPath},dst=${input.dockerSpec.configMountPath}/config.toml`,
+          ]
+        : []),
       "--mount",
       `type=bind,src=${input.worktreePath},dst=${dockerWorkspacePath}`,
       "-e",

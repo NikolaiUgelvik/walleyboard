@@ -36,6 +36,7 @@ export const createProjectInputSchema = z.object({
 export const updateProjectInputSchema = z.object({
   agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),
+  disabled_mcp_servers: z.array(z.string().min(1)).optional(),
   automatic_agent_review: z.boolean().optional(),
   automatic_agent_review_run_limit: z.number().int().positive().optional(),
   default_review_action: reviewActionSchema.optional(),
@@ -144,6 +145,7 @@ export const healthResponseSchema = z.object({
   ok: z.literal(true),
   service: z.literal("backend"),
   timestamp: timestampSchema,
+  codex_mcp_servers: z.array(z.string().min(1)),
   docker: z.object({
     installed: z.boolean(),
     available: z.boolean(),

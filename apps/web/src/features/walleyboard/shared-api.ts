@@ -225,6 +225,7 @@ export async function saveProjectOptionsRequest(
   body: {
     agent_adapter: AgentAdapter;
     execution_backend: ExecutionBackend;
+    disabled_mcp_servers: string[];
     automatic_agent_review: boolean;
     automatic_agent_review_run_limit: number;
     default_review_action: ReviewAction;

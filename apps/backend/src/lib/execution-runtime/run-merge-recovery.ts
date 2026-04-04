@@ -7,6 +7,7 @@ import type {
   RepositoryConfig,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
+import { writeCodexConfigOverride } from "../agent-adapters/codex-config.js";
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
@@ -118,6 +119,10 @@ export async function runMergeRecovery(input: {
           );
         }
         input.dockerRuntime.ensureSessionContainer({
+          configTomlPath:
+            input.adapter.id === "codex"
+              ? writeCodexConfigOverride(input.project)
+              : null,
           dockerSpec: run.dockerSpec,
           sessionId: input.session.id,
           projectId: input.project.id,

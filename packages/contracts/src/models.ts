@@ -150,6 +150,7 @@ export const projectSchema = z.object({
   name: z.string().min(1),
   agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
+  disabled_mcp_servers: z.array(z.string().min(1)),
   automatic_agent_review: z.boolean(),
   automatic_agent_review_run_limit: z.number().int().positive(),
   default_review_action: reviewActionSchema,

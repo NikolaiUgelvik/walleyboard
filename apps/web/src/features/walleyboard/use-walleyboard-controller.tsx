@@ -93,6 +93,7 @@ export function useWalleyBoardController() {
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsDefaultReviewAction,
+    projectOptionsDisabledMcpServers,
     projectOptionsDraftModelCustom,
     projectOptionsDraftModelPreset,
     projectOptionsDraftReasoningEffort,
@@ -111,6 +112,7 @@ export function useWalleyBoardController() {
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsDefaultReviewAction,
+    setProjectOptionsDisabledMcpServers,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,
@@ -209,6 +211,7 @@ export function useWalleyBoardController() {
   });
   const dockerHealth = healthQuery.data?.docker ?? null;
   const claudeCodeHealth = healthQuery.data?.claude_code ?? null;
+  const codexMcpServers = healthQuery.data?.codex_mcp_servers ?? [];
   const projectRecords = projectsQuery.data?.projects ?? [];
   const projectsLoaded = projectsQuery.data !== undefined;
   const draftRecords = draftsQuery.data?.drafts ?? [];
@@ -529,6 +532,7 @@ export function useWalleyBoardController() {
   const projectOptionsDirty = hasProjectOptionsDirty({
     draftModelValue: projectOptionsDraftModelValue,
     draftReasoningEffortValue: projectOptionsDraftReasoningEffortValue,
+    disabledMcpServers: projectOptionsDisabledMcpServers,
     executionBackend: projectOptionsExecutionBackend,
     postWorktreeCommandValue: projectOptionsPostWorktreeCommandValue,
     preWorktreeCommandValue: projectOptionsPreWorktreeCommandValue,
@@ -891,6 +895,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(null);
     setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
+    setProjectOptionsDisabledMcpServers([]);
     setProjectOptionsAutomaticAgentReview(false);
     setProjectOptionsAutomaticAgentReviewRunLimit(1);
     setProjectOptionsDefaultReviewAction("direct_merge");
@@ -913,6 +918,11 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId(project.id);
     setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
+    setProjectOptionsDisabledMcpServers(
+      [...project.disabled_mcp_servers].sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    );
     setProjectOptionsAutomaticAgentReview(project.automatic_agent_review);
     setProjectOptionsAutomaticAgentReviewRunLimit(
       project.automatic_agent_review_run_limit,
@@ -1002,6 +1012,9 @@ export function useWalleyBoardController() {
         projectOptionsAgentAdapter === "claude-code"
           ? "host"
           : projectOptionsExecutionBackend,
+      disabledMcpServers: [...projectOptionsDisabledMcpServers].sort(
+        (left, right) => left.localeCompare(right),
+      ),
       automaticAgentReview: projectOptionsAutomaticAgentReview,
       automaticAgentReviewRunLimit: projectOptionsAutomaticAgentReviewRunLimit,
       defaultReviewAction: projectOptionsDefaultReviewAction,
@@ -1176,6 +1189,7 @@ export function useWalleyBoardController() {
     deleteTicket,
     editReadyTicket,
     claudeCodeHealth,
+    codexMcpServers,
     dockerHealth,
     doneColumnTickets,
     draftAnalysisActive,
@@ -1236,6 +1250,7 @@ export function useWalleyBoardController() {
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsDefaultReviewAction,
+    projectOptionsDisabledMcpServers,
     projectOptionsDirty,
     projectOptionsAgentAdapter,
     projectOptionsDraftModelCustom,
@@ -1330,6 +1345,7 @@ export function useWalleyBoardController() {
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsDefaultReviewAction,
+    setProjectOptionsDisabledMcpServers,
     setProjectOptionsDraftModelCustom,
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,

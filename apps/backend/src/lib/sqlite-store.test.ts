@@ -523,6 +523,41 @@ test("projects default to host execution and persist execution backend updates",
   }
 });
 
+test("projects persist disabled MCP server selections", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-mcps-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project MCP Options",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.deepEqual(store.getProject(project.id)?.disabled_mcp_servers, []);
+
+    store.updateProject(project.id, {
+      disabled_mcp_servers: ["sentry", "context7", "sentry"],
+    });
+
+    assert.deepEqual(store.getProject(project.id)?.disabled_mcp_servers, [
+      "context7",
+      "sentry",
+    ]);
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.deepEqual(
+      reloadedStore.getProject(project.id)?.disabled_mcp_servers,
+      ["context7", "sentry"],
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("projects default to direct merge and persist review action updates", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-review-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

@@ -228,6 +228,10 @@ export function mapProject(row: Record<string, unknown>): Project {
           ? "claude-code"
           : "codex",
     execution_backend: row.execution_backend === "docker" ? "docker" : "host",
+    disabled_mcp_servers: parseJson<unknown[]>(row.disabled_mcp_servers, [])
+      .filter((server): server is string => typeof server === "string")
+      .map((server) => server.trim())
+      .filter((server) => server.length > 0),
     automatic_agent_review: Number(row.automatic_agent_review) === 1,
     automatic_agent_review_run_limit: Math.max(
       1,
@@ -599,6 +603,7 @@ export class SqliteStoreContext {
         name TEXT NOT NULL,
         agent_adapter TEXT NOT NULL DEFAULT 'codex',
         execution_backend TEXT NOT NULL DEFAULT 'host',
+        disabled_mcp_servers TEXT NOT NULL DEFAULT '[]',
         automatic_agent_review INTEGER NOT NULL DEFAULT 0,
         automatic_agent_review_run_limit INTEGER NOT NULL DEFAULT 1,
         default_review_action TEXT NOT NULL DEFAULT 'direct_merge',
@@ -816,6 +821,11 @@ export class SqliteStoreContext {
     );
     this.#ensureColumn(
       "projects",
+      "disabled_mcp_servers",
+      "TEXT NOT NULL DEFAULT '[]'",
+    );
+    this.#ensureColumn(
+      "projects",
       "default_review_action",
       "TEXT NOT NULL DEFAULT 'direct_merge'",
     );
@@ -839,6 +849,7 @@ export class SqliteStoreContext {
     this.#backfillAgentAdapterDefaults();
     this.#backfillProjectConcurrencyDefaults();
     this.#backfillProjectExecutionBackendDefaults();
+    this.#backfillProjectDisabledMcpServersDefaults();
     this.#backfillProjectAutomaticAgentReviewDefaults();
     this.#backfillProjectAutomaticAgentReviewRunLimitDefaults();
     this.#backfillProjectReviewActionDefaults();
@@ -974,6 +985,18 @@ export class SqliteStoreContext {
           UPDATE projects
           SET execution_backend = 'host'
           WHERE execution_backend IS NULL OR execution_backend = ''
+        `,
+      )
+      .run();
+  }
+
+  #backfillProjectDisabledMcpServersDefaults(): void {
+    this.#db
+      .prepare(
+        `
+          UPDATE projects
+          SET disabled_mcp_servers = '[]'
+          WHERE disabled_mcp_servers IS NULL OR disabled_mcp_servers = ''
         `,
       )
       .run();

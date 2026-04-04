@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import type { FastifyPluginAsync } from "fastify";
 
 import { resolveClaudeCliPath } from "../lib/agent-adapters/claude-code-adapter.js";
+import { listConfiguredCodexMcpServers } from "../lib/agent-adapters/codex-config.js";
 import type { DockerRuntime } from "../lib/docker-runtime.js";
 import { nowIso } from "../lib/time.js";
 
@@ -62,6 +63,7 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
     ok: true,
     service: "backend" as const,
     timestamp: nowIso(),
+    codex_mcp_servers: listConfiguredCodexMcpServers(),
     docker: dockerRuntime.getHealth(),
     claude_code: getClaudeCodeHealth(),
   }));

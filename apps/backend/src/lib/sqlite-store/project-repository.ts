@@ -69,12 +69,12 @@ export class ProjectRepository {
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, agent_adapter, execution_backend, automatic_agent_review, default_target_branch, pre_worktree_command,
+            id, slug, name, agent_adapter, execution_backend, disabled_mcp_servers, automatic_agent_review, default_target_branch, pre_worktree_command,
             automatic_agent_review_run_limit, post_worktree_command, preview_start_command, default_review_action,
             draft_analysis_model, draft_analysis_reasoning_effort,
             ticket_work_model, ticket_work_reasoning_effort,
             max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -83,6 +83,7 @@ export class ProjectRepository {
         input.name.trim(),
         "codex",
         "host",
+        stringifyJson([]),
         0,
         defaultTargetBranch,
         null,
@@ -170,6 +171,16 @@ export class ProjectRepository {
       input.execution_backend === undefined
         ? project.execution_backend
         : input.execution_backend;
+    const disabledMcpServers =
+      input.disabled_mcp_servers === undefined
+        ? project.disabled_mcp_servers
+        : Array.from(
+            new Set(
+              input.disabled_mcp_servers
+                .map((server) => server.trim())
+                .filter((server) => server.length > 0),
+            ),
+          ).sort((left, right) => left.localeCompare(right));
     const automaticAgentReview =
       input.automatic_agent_review === undefined
         ? project.automatic_agent_review
@@ -225,6 +236,7 @@ export class ProjectRepository {
           UPDATE projects
           SET agent_adapter = ?,
               execution_backend = ?,
+              disabled_mcp_servers = ?,
               automatic_agent_review = ?,
               automatic_agent_review_run_limit = ?,
               default_review_action = ?,
@@ -242,6 +254,7 @@ export class ProjectRepository {
       .run(
         agentAdapter,
         executionBackend,
+        stringifyJson(disabledMcpServers),
         automaticAgentReview ? 1 : 0,
         automaticAgentReviewRunLimit,
         defaultReviewAction,

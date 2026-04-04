@@ -21,6 +21,7 @@ function createProject(): Project {
     name: "spacegame",
     agent_adapter: "codex",
     execution_backend: "docker",
+    disabled_mcp_servers: [],
     automatic_agent_review: false,
     automatic_agent_review_run_limit: 1,
     default_review_action: "direct_merge",

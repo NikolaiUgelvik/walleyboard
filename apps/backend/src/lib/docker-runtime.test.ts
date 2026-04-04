@@ -99,6 +99,73 @@ test("ensureSessionContainer uses the adapter docker spec for image and config m
   }
 });
 
+test("ensureSessionContainer mounts a config override when provided", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-docker-config-override-"),
+  );
+  const worktreePath = join(tempDir, "workspace");
+  const configHomePath = join(tempDir, ".test-agent");
+  const configTomlPath = join(tempDir, "config.toml");
+  const commands: Array<{ command: string; args: string[] }> = [];
+
+  try {
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => configHomePath,
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        commands.push({ command, args });
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "{}";
+        }
+
+        if (args[0] === "rm") {
+          return "";
+        }
+
+        if (args[0] === "run") {
+          return "container-id";
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      gid: 1001,
+      repoRoot: tempDir,
+      uid: 1000,
+    });
+
+    runtime.ensureSessionContainer({
+      configTomlPath,
+      dockerSpec: {
+        imageTag: "example/test-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/test-agent",
+        configMountPath: "/home/test-agent/.test-agent",
+      },
+      sessionId: "session-1",
+      projectId: "project-1",
+      ticketId: 42,
+      worktreePath,
+    });
+
+    const runCommand = commands.find((entry) => entry.args[0] === "run");
+    assert.ok(runCommand);
+    const mountArgs = runCommand.args.filter((arg) =>
+      arg.startsWith("type=bind,"),
+    );
+    assert.deepEqual(mountArgs, [
+      `type=bind,src=${configHomePath},dst=/home/test-agent/.test-agent`,
+      `type=bind,src=${configTomlPath},dst=/home/test-agent/.test-agent/config.toml`,
+      `type=bind,src=${worktreePath},dst=/workspace`,
+    ]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("spawnPtyInSession runs docker exec in the workspace", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-pty-"));
   const commands: Array<{ command: string; args: string[] }> = [];

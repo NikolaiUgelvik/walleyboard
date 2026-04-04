@@ -12,6 +12,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
+import { writeCodexConfigOverride } from "./agent-adapters/codex-config.js";
 import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
 import type { AgentCliAdapter } from "./agent-adapters/types.js";
 import type { DockerRuntime } from "./docker-runtime.js";
@@ -916,6 +917,8 @@ export class ExecutionRuntime {
           );
         }
         this.#dockerRuntime.ensureSessionContainer({
+          configTomlPath:
+            adapter.id === "codex" ? writeCodexConfigOverride(project) : null,
           dockerSpec: run.dockerSpec,
           sessionId: session.id,
           projectId: project.id,
