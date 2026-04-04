@@ -15,6 +15,10 @@ import {
 import { deriveInboxItems } from "../../lib/inbox-items.js";
 import { useAgentReviewHistoryModalState } from "./agent-review-history-modal-state.js";
 import {
+  resolveNextInspectorState,
+  shouldResetProjectOptionsSelection,
+} from "./controller-guards.js";
+import {
   useDraftRefinementActivity,
   useGlobalDrafts,
 } from "./draft-queries.js";
@@ -23,9 +27,9 @@ import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
   blobToBase64,
   buildMarkdownImageInsertion,
-  diffLayoutStorageKey,
   fetchJson,
   readLastOpenProjectId,
+  writeDiffLayoutPreference,
   writeLastOpenProjectId,
 } from "./shared-api.js";
 import type {
@@ -205,13 +209,17 @@ export function useWalleyBoardController() {
   });
   const dockerHealth = healthQuery.data?.docker ?? null;
   const claudeCodeHealth = healthQuery.data?.claude_code ?? null;
+  const projectRecords = projectsQuery.data?.projects ?? [];
+  const projectsLoaded = projectsQuery.data !== undefined;
+  const draftRecords = draftsQuery.data?.drafts ?? [];
+  const draftsLoaded = draftsQuery.data !== undefined;
+  const ticketRecords = ticketsQuery.data?.tickets ?? [];
+  const ticketsLoaded = ticketsQuery.data !== undefined;
 
   const globalTickets = globalTicketsQueries.flatMap(
     (query) => query.data?.tickets ?? [],
   );
-  const { globalDrafts, globalDraftsQueries } = useGlobalDrafts(
-    projectsQuery.data?.projects ?? [],
-  );
+  const { globalDrafts, globalDraftsQueries } = useGlobalDrafts(projectRecords);
 
   const globalSessionSummaries = useQueries({
     queries: globalTickets
@@ -231,17 +239,16 @@ export function useWalleyBoardController() {
   });
 
   useEffect(() => {
-    if (projectsQuery.data === undefined) {
+    if (!projectsLoaded) {
       return;
     }
 
-    const projects = projectsQuery.data.projects;
-    const firstProjectId = projects[0]?.id ?? null;
+    const firstProjectId = projectRecords[0]?.id ?? null;
     if (selectedProjectId === null) {
       const storedProjectId = readLastOpenProjectId();
       const initialProjectId =
         storedProjectId !== null &&
-        projects.some((project) => project.id === storedProjectId)
+        projectRecords.some((project) => project.id === storedProjectId)
           ? storedProjectId
           : firstProjectId;
 
@@ -255,7 +262,7 @@ export function useWalleyBoardController() {
       return;
     }
 
-    const stillExists = projects.some(
+    const stillExists = projectRecords.some(
       (project) => project.id === selectedProjectId,
     );
     if (!stillExists) {
@@ -265,7 +272,7 @@ export function useWalleyBoardController() {
     }
 
     setProjectSelectionHydrated(true);
-  }, [projectsQuery.data, selectedProjectId]);
+  }, [projectRecords, projectsLoaded, selectedProjectId]);
 
   useEffect(() => {
     if (!projectSelectionHydrated) {
@@ -276,23 +283,24 @@ export function useWalleyBoardController() {
   }, [projectSelectionHydrated, selectedProjectId]);
 
   useEffect(() => {
-    if (projectOptionsProjectId === null) {
+    if (
+      !shouldResetProjectOptionsSelection({
+        projectOptionsProjectId,
+        projects: projectRecords,
+        projectsLoaded,
+      })
+    ) {
       return;
     }
 
-    const stillExists =
-      projectsQuery.data?.projects.some(
-        (project) => project.id === projectOptionsProjectId,
-      ) ?? false;
-    if (!stillExists) {
-      setProjectOptionsProjectId(null);
-      setProjectOptionsRepositoryTargetBranches({});
-      setProjectOptionsFormError(null);
-      setProjectDeleteConfirmText("");
-    }
+    setProjectOptionsProjectId(null);
+    setProjectOptionsRepositoryTargetBranches({});
+    setProjectOptionsFormError(null);
+    setProjectDeleteConfirmText("");
   }, [
+    projectRecords,
     projectOptionsProjectId,
-    projectsQuery.data?.projects,
+    projectsLoaded,
     setProjectOptionsProjectId,
     setProjectOptionsFormError,
     setProjectOptionsRepositoryTargetBranches,
@@ -304,9 +312,8 @@ export function useWalleyBoardController() {
     }
 
     const defaultTargetBranch =
-      projectsQuery.data?.projects.find(
-        (project) => project.id === projectOptionsProjectId,
-      )?.default_target_branch ?? null;
+      projectRecords.find((project) => project.id === projectOptionsProjectId)
+        ?.default_target_branch ?? null;
 
     setProjectOptionsRepositoryTargetBranches((current) => {
       const next = mergeRepositoryTargetBranches(
@@ -317,55 +324,36 @@ export function useWalleyBoardController() {
       return repositoryTargetBranchesEqual(current, next) ? current : next;
     });
   }, [
+    projectRecords,
     projectOptionsProjectId,
     projectOptionsRepositoriesQuery.data,
-    projectsQuery.data,
     setProjectOptionsRepositoryTargetBranches,
   ]);
 
   useEffect(() => {
-    if (inspectorState.kind === "draft") {
-      const stillExists =
-        draftsQuery.data?.drafts.some(
-          (draft) => draft.id === inspectorState.draftId,
-        ) ?? false;
-      if (!stillExists) {
-        setInspectorState({ kind: "hidden" });
-      }
-      return;
-    }
-
-    if (inspectorState.kind === "session") {
-      const stillExists =
-        ticketsQuery.data?.tickets.some(
-          (ticket) => ticket.session_id === inspectorState.sessionId,
-        ) ?? false;
-      if (!stillExists) {
-        setInspectorState({ kind: "hidden" });
-      }
-      return;
-    }
-
-    if (inspectorState.kind === "new_draft" && selectedProjectId === null) {
-      setInspectorState({ kind: "hidden" });
+    const nextInspectorState = resolveNextInspectorState({
+      drafts: draftRecords,
+      draftsLoaded,
+      inspectorState,
+      selectedProjectId,
+      tickets: ticketRecords,
+      ticketsLoaded,
+    });
+    if (nextInspectorState !== null) {
+      setInspectorState(nextInspectorState);
     }
   }, [
-    draftsQuery.data?.drafts,
+    draftRecords,
+    draftsLoaded,
     inspectorState,
     selectedProjectId,
-    ticketsQuery.data?.tickets,
+    ticketRecords,
+    ticketsLoaded,
     setInspectorState,
   ]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(
-      diffLayoutStorageKey,
-      ticketWorkspaceDiffLayout,
-    );
+    writeDiffLayoutPreference(ticketWorkspaceDiffLayout);
   }, [ticketWorkspaceDiffLayout]);
 
   useProtocolEventSync({
@@ -393,7 +381,7 @@ export function useWalleyBoardController() {
     setWorkspaceModal,
   ]);
 
-  const tickets = ticketsQuery.data?.tickets ?? [];
+  const tickets = ticketRecords;
   const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(tickets);
   const {
     reviewRunQueriesSettled,
@@ -412,9 +400,8 @@ export function useWalleyBoardController() {
     workspaceTicketId: workspaceTicket?.id ?? null,
   });
   const projectOptionsProject =
-    projectsQuery.data?.projects.find(
-      (project) => project.id === projectOptionsProjectId,
-    ) ?? null;
+    projectRecords.find((project) => project.id === projectOptionsProjectId) ??
+    null;
   const {
     agentReviewHistoryModalOpen,
     closeAgentReviewHistoryModal,
@@ -444,7 +431,7 @@ export function useWalleyBoardController() {
   );
   const actionItems = deriveInboxItems({
     drafts: globalDrafts,
-    projects: projectsQuery.data?.projects ?? [],
+    projects: projectRecords,
     tickets: globalTickets,
     sessionsById: globalSessionById,
     ticketAiReviewActiveById,
@@ -452,7 +439,7 @@ export function useWalleyBoardController() {
   });
   const actionItemKeys = actionItems.map((item) => item.key);
   const inboxQueriesSettled =
-    projectsQuery.data !== undefined &&
+    projectsLoaded &&
     globalDraftsQueries.every((query) => !query.isPending) &&
     globalTicketsQueries.every((query) => !query.isPending) &&
     globalSessionSummaries.every((query) => !query.isPending) &&
@@ -498,13 +485,10 @@ export function useWalleyBoardController() {
   });
 
   const selectedProject =
-    projectsQuery.data?.projects.find(
-      (project) => project.id === selectedProjectId,
-    ) ?? null;
+    projectRecords.find((project) => project.id === selectedProjectId) ?? null;
   const draftEditorProject =
-    projectsQuery.data?.projects.find(
-      (project) => project.id === draftEditorProjectId,
-    ) ?? null;
+    projectRecords.find((project) => project.id === draftEditorProjectId) ??
+    null;
   const projectOptionsRepositories =
     projectOptionsRepositoriesQuery.data?.repositories ?? [];
   const projectOptionsBranchChoices =
@@ -584,7 +568,7 @@ export function useWalleyBoardController() {
       ? repositories
       : (draftEditorRepositoriesQuery.data?.repositories ?? []);
   const draftEditorRepository = draftEditorRepositories[0] ?? null;
-  const drafts = draftsQuery.data?.drafts ?? [];
+  const drafts = draftRecords;
   const { isDraftRefinementActive } = useDraftRefinementActivity(drafts);
   const selectedDraft =
     drafts.find((draft) => draft.id === selectedDraftId) ?? null;

@@ -23,7 +23,9 @@ import {
   fetchRepositoryBranches,
   mergeReviewedBranch,
   prepareWorktree,
+  removePreparedWorktree,
   resetPreparedWorktreeImmediately,
+  runPreWorktreeCommand,
 } from "./worktree-service.js";
 
 function setWalleyBoardHome(path: string): () => void {
@@ -120,6 +122,23 @@ function createTicket(targetBranch: string): TicketFrontmatter {
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
   };
+}
+
+async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const startedAt = Date.now();
+
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("Timed out waiting for asynchronous worktree command");
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
 }
 
 test("fetchRepositoryBranches returns local and remote branch names", () => {
@@ -301,6 +320,147 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
     const warning = result.warnings[0];
     assert.ok(warning);
     assert.match(warning, /Post-worktree command failed/);
+    assert.equal(readFileSync(cleanupLogPath, "utf8"), "cleanup ran\n");
+    assert.equal(existsSync(runtime.worktreePath), false);
+    assert.equal(
+      runGit(repoPath, ["branch", "--list", runtime.workingBranch]),
+      "",
+    );
+  } finally {
+    restoreWalleyBoardHome();
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runPreWorktreeCommand runs project hooks with bash", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-pre-worktree-bash-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const outputPath = join(tempDir, "pre-worktree.log");
+    assert.equal(
+      runPreWorktreeCommand(
+        repoPath,
+        `[[ "bash" == "bash" ]] && printf 'pre hook ran\\n' > "${outputPath}"`,
+      ),
+      true,
+    );
+
+    await waitForCondition(() => existsSync(outputPath));
+    assert.equal(readFileSync(outputPath, "utf8"), "pre hook ran\n");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("removePreparedWorktree runs post-worktree hooks with bash before cleanup", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-remove-worktree-bash-"),
+  );
+  const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
+
+  try {
+    process.chdir(tempDir);
+
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    const project = createProject("remove-worktree-project");
+    const runtime = prepareWorktree(
+      project,
+      createRepositoryConfig(repoPath, "main"),
+      createTicket("main"),
+    );
+
+    const cleanupLogPath = join(tempDir, "cleanup-log.txt");
+    assert.deepEqual(
+      removePreparedWorktree(
+        createRepositoryConfig(repoPath, "main"),
+        runtime.worktreePath,
+        `[[ "bash" == "bash" ]] && printf 'cleanup ran\\n' > "${cleanupLogPath}"`,
+        runtime.workingBranch,
+      ),
+      { status: "scheduled" },
+    );
+
+    await waitForCondition(() => {
+      if (!existsSync(cleanupLogPath)) {
+        return false;
+      }
+
+      if (existsSync(runtime.worktreePath)) {
+        return false;
+      }
+
+      return (
+        runGit(repoPath, ["branch", "--list", runtime.workingBranch]) === ""
+      );
+    });
+
+    assert.equal(readFileSync(cleanupLogPath, "utf8"), "cleanup ran\n");
+  } finally {
+    restoreWalleyBoardHome();
+    process.chdir(previousCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resetPreparedWorktreeImmediately runs post-worktree hooks with bash", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-reset-worktree-bash-"),
+  );
+  const previousCwd = process.cwd();
+  const restoreWalleyBoardHome = setWalleyBoardHome(
+    join(tempDir, ".walleyboard-home"),
+  );
+
+  try {
+    process.chdir(tempDir);
+
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    const project = createProject("reset-worktree-bash-project");
+    const runtime = prepareWorktree(
+      project,
+      createRepositoryConfig(repoPath, "main"),
+      createTicket("main"),
+    );
+
+    const cleanupLogPath = join(tempDir, "cleanup-log.txt");
+    const result = resetPreparedWorktreeImmediately(
+      createRepositoryConfig(repoPath, "main"),
+      runtime.worktreePath,
+      runtime.workingBranch,
+      `[[ "bash" == "bash" ]] && printf 'cleanup ran\\n' > "${cleanupLogPath}"`,
+    );
+
+    assert.deepEqual(result, { warnings: [] });
     assert.equal(readFileSync(cleanupLogPath, "utf8"), "cleanup ran\n");
     assert.equal(existsSync(runtime.worktreePath), false);
     assert.equal(

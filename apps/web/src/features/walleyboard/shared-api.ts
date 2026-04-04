@@ -50,8 +50,24 @@ export function readDiffLayoutPreference(): DiffLayout {
     return "split";
   }
 
-  const storedValue = window.localStorage.getItem(diffLayoutStorageKey);
-  return storedValue === "stacked" ? "stacked" : "split";
+  try {
+    const storedValue = window.localStorage.getItem(diffLayoutStorageKey);
+    return storedValue === "stacked" ? "stacked" : "split";
+  } catch {
+    return "split";
+  }
+}
+
+export function writeDiffLayoutPreference(value: DiffLayout): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(diffLayoutStorageKey, value);
+  } catch {
+    // Ignore storage failures and keep the in-memory layout preference working.
+  }
 }
 
 async function requestJson<T>(

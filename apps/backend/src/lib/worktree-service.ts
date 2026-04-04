@@ -20,6 +20,8 @@ import { resolveTargetBranch } from "./execution-runtime/helpers.js";
 import type { PreparedExecutionRuntime } from "./store.js";
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
 
+const worktreeCommandShell = "bash";
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -276,7 +278,7 @@ export function runPreWorktreeCommand(
     return false;
   }
 
-  const child = spawn("sh", ["-lc", normalizedCommand], {
+  const child = spawn(worktreeCommandShell, ["-lc", normalizedCommand], {
     cwd: worktreePath,
     env: process.env,
     detached: true,
@@ -505,13 +507,13 @@ export function removePreparedWorktree(
   const selfContainedWorkspace = isSelfContainedWorkspace(worktreePath);
   if (normalizedCommand) {
     const child = spawn(
-      "sh",
+      worktreeCommandShell,
       [
         "-lc",
         selfContainedWorkspace
-          ? 'cd "$1" && sh -lc "$2"; status=$?; rm -rf "$1"; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status'
-          : 'cd "$1" && sh -lc "$2"; status=$?; git -C "$3" worktree remove --force "$1"; removal_status=$?; if [ $removal_status -eq 0 ] && [ -n "$4" ]; then git -C "$3" branch -D "$4" >/dev/null 2>&1 || true; fi; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status',
-        "sh",
+          ? 'cd "$1" && bash -lc "$2"; status=$?; rm -rf "$1"; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status'
+          : 'cd "$1" && bash -lc "$2"; status=$?; git -C "$3" worktree remove --force "$1"; removal_status=$?; if [ $removal_status -eq 0 ] && [ -n "$4" ]; then git -C "$3" branch -D "$4" >/dev/null 2>&1 || true; fi; parent_dir=$(dirname "$1"); rmdir "$parent_dir" 2>/dev/null || true; exit $status',
+        worktreeCommandShell,
         worktreePath,
         normalizedCommand,
         repository.path,
@@ -554,7 +556,7 @@ export function resetPreparedWorktreeImmediately(
     existsSync(normalizedWorktreePath)
   ) {
     try {
-      execFileSync("sh", ["-lc", normalizedCommand], {
+      execFileSync(worktreeCommandShell, ["-lc", normalizedCommand], {
         cwd: normalizedWorktreePath,
         encoding: "utf8",
         env: process.env,
