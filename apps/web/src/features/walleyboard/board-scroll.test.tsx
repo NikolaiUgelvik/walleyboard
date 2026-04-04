@@ -814,12 +814,34 @@ test("board header keeps the selected project name without repository summary or
     </MantineProvider>,
   );
 
+  assert.match(markup, />Project board</);
   assert.match(markup, />Project One</);
   assert.doesNotMatch(markup, />walleyboard • 0 validation command\(s\)</);
   assert.doesNotMatch(markup, />backend</);
   assert.doesNotMatch(markup, />0 running</);
   assert.doesNotMatch(markup, />0 queued</);
   assert.doesNotMatch(markup, />0 in review</);
+});
+
+test("board header keeps the empty-state prompt when no project is selected", () => {
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    selectedProject: null,
+    selectedProjectId: null,
+    selectedRepository: null,
+  });
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, />Project board</);
+  assert.match(markup, />Select a project</);
+  assert.match(
+    markup,
+    />Choose a project from the left rail to bring its drafts,\s*tickets, and sessions into the board\.</,
+  );
 });
 
 test("ticket cards expose stable ids for ticket reference targets", () => {
