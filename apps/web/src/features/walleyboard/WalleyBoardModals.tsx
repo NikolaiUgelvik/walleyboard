@@ -5,33 +5,17 @@ import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspaceTerminal } from "../../components/TicketWorkspaceTerminal.js";
 import { ProjectConfigurationModals } from "./ProjectConfigurationModals.js";
-import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 import { WorkspaceTerminalContent } from "./WorkspaceTerminalContent.js";
+import type { WalleyBoardModalsController } from "./walleyboard-view-state.js";
 import {
   resolveWorkspaceDiffPanelState,
   resolveWorkspaceTerminalPanelState,
 } from "./workspace-modal-state.js";
 
-type WorkspaceModalContentController = Pick<
-  WalleyBoardController,
-  | "session"
-  | "sessionLogs"
-  | "sessionLogsQuery"
-  | "sessionQuery"
-  | "selectedSessionTicket"
-  | "selectedSessionTicketSession"
-  | "setTicketWorkspaceDiffLayout"
-  | "ticketWorkspaceDiff"
-  | "ticketWorkspaceDiffLayout"
-  | "ticketWorkspaceDiffQuery"
-  | "workspaceModal"
-  | "workspaceTerminalContext"
->;
-
 export function WorkspaceModalContent({
   controller,
 }: {
-  controller: WorkspaceModalContentController;
+  controller: WalleyBoardModalsController;
 }) {
   const workspaceDiffPanelState = resolveWorkspaceDiffPanelState({
     ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,
@@ -86,7 +70,7 @@ export function WorkspaceModalContent({
 export function WalleyBoardModals({
   controller,
 }: {
-  controller: WalleyBoardController;
+  controller: WalleyBoardModalsController;
 }) {
   const workspaceModalTitle =
     controller.workspaceModal === "diff"

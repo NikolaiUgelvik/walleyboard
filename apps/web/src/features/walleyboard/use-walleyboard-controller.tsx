@@ -1,10 +1,5 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import {
-  type ClipboardEvent,
-  type SetStateAction,
-  useEffect,
-  useState,
-} from "react";
+import { type SetStateAction, useEffect } from "react";
 import type {
   ExecutionSession,
   Project,
@@ -12,17 +7,14 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
-import {
-  buildPendingDraftEditorSync,
-  emptyDraftEditorFields,
-  resolveDraftEditorSync,
-} from "../../lib/draft-editor-sync.js";
+import { resolveDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import { deriveInboxState } from "../../lib/inbox-items.js";
 import { useAgentReviewHistoryModalState } from "./agent-review-history-modal-state.js";
 import {
   resolveNextInspectorState,
   shouldResetProjectOptionsSelection,
 } from "./controller-guards.js";
+import { createDraftEditorController } from "./draft-editor-controller.js";
 import {
   useDraftRefinementActivity,
   useGlobalDrafts,
@@ -37,8 +29,6 @@ import {
 import { hasProjectOptionsDirty } from "./project-options-dirty.js";
 import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
-  blobToBase64,
-  buildMarkdownImageInsertion,
   fetchJson,
   readInboxReadState,
   readLastOpenProjectId,
@@ -46,13 +36,7 @@ import {
   writeInboxReadState,
   writeLastOpenProjectId,
 } from "./shared-api.js";
-import type {
-  ArchiveActionFeedback,
-  DraftsResponse,
-  NewDraftAction,
-  RepositoriesResponse,
-  SessionResponse,
-} from "./shared-types.js";
+import type { RepositoriesResponse, SessionResponse } from "./shared-types.js";
 import {
   arraysEqual,
   collectRepositoryTargetBranchUpdates,
@@ -80,8 +64,13 @@ import { useTicketDiffLineSummary } from "./use-ticket-diff-line-summary.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
 import {
-  useDraftWorkspaceState,
+  useDraftEditorState,
+  useDraftInspectorState,
+  useProjectCreationState,
   useProjectOptionsState,
+  useProjectSelectionState,
+  useSessionActionState,
+  useWorkspaceState,
 } from "./use-walleyboard-local-state.js";
 import { useWalleyBoardMutationWiring } from "./use-walleyboard-mutation-wiring.js";
 import { useWalleyBoardServerState } from "./use-walleyboard-server-state.js";
@@ -93,23 +82,27 @@ import {
 
 export function useWalleyBoardController() {
   const queryClient = useQueryClient();
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null,
-  );
-  const [readInboxItemState, setReadInboxItemState] = useState<
-    Record<string, string>
-  >(() => readInboxReadState());
-  const [projectSelectionHydrated, setProjectSelectionHydrated] =
-    useState(false);
-  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
-  const [archiveActionFeedback, setArchiveActionFeedback] =
-    useState<ArchiveActionFeedback | null>(null);
+  const {
+    archiveActionFeedback,
+    archiveModalOpen,
+    projectSelectionHydrated,
+    readInboxItemState,
+    selectedProjectId,
+    setArchiveActionFeedback,
+    setArchiveModalOpen,
+    setProjectSelectionHydrated,
+    setReadInboxItemState,
+    setSelectedProjectId,
+  } = useProjectSelectionState({
+    readInboxItemState: readInboxReadState(),
+  });
   const {
     projectModalOpen,
-    projectOptionsColor,
     projectOptionsAgentAdapter,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
+    projectOptionsColor,
+    projectOptionsColorManuallySelected,
     projectOptionsDefaultReviewAction,
     projectOptionsDisabledMcpServers,
     projectOptionsDraftModelCustom,
@@ -125,10 +118,11 @@ export function useWalleyBoardController() {
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
     setProjectModalOpen,
-    setProjectOptionsColor,
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
+    setProjectOptionsColor,
+    setProjectOptionsColorManuallySelected,
     setProjectOptionsDefaultReviewAction,
     setProjectOptionsDisabledMcpServers,
     setProjectOptionsDraftModelCustom,
@@ -144,22 +138,25 @@ export function useWalleyBoardController() {
     setProjectOptionsTicketModelPreset,
     setProjectOptionsTicketReasoningEffort,
   } = useProjectOptionsState();
-  const [projectDeleteConfirmText, setProjectDeleteConfirmText] = useState("");
-  const [projectColor, setProjectColor] = useState(defaultProjectColor);
-  const [projectColorManuallySelected, setProjectColorManuallySelected] =
-    useState(false);
-  const [projectColorNeedsRefresh, setProjectColorNeedsRefresh] =
-    useState(false);
-  const [projectName, setProjectName] = useState("");
-  const [repositoryPath, setRepositoryPath] = useState("");
-  const [defaultBranch, setDefaultBranch] = useState("main");
-  const [validationCommandsText, setValidationCommandsText] = useState("");
-  const [
-    projectOptionsColorManuallySelected,
-    setProjectOptionsColorManuallySelected,
-  ] = useState(false);
   const {
-    boardSearch,
+    defaultBranch,
+    projectColor,
+    projectColorManuallySelected,
+    projectColorNeedsRefresh,
+    projectDeleteConfirmText,
+    projectName,
+    repositoryPath,
+    setDefaultBranch,
+    setProjectColor,
+    setProjectColorManuallySelected,
+    setProjectColorNeedsRefresh,
+    setProjectDeleteConfirmText,
+    setProjectName,
+    setRepositoryPath,
+    setValidationCommandsText,
+    validationCommandsText,
+  } = useProjectCreationState({ projectColor: defaultProjectColor });
+  const {
     draftEditorAcceptanceCriteria,
     draftEditorArtifactScopeId,
     draftEditorDescription,
@@ -168,13 +165,8 @@ export function useWalleyBoardController() {
     draftEditorTicketType,
     draftEditorTitle,
     draftEditorUploadError,
-    inspectorState,
     pendingDraftEditorSync,
     pendingNewDraftAction,
-    planFeedbackBody,
-    requestedChangesBody,
-    resumeReason,
-    setBoardSearch,
     setDraftEditorAcceptanceCriteria,
     setDraftEditorArtifactScopeId,
     setDraftEditorDescription,
@@ -183,23 +175,31 @@ export function useWalleyBoardController() {
     setDraftEditorTicketType,
     setDraftEditorTitle,
     setDraftEditorUploadError,
-    setInspectorState,
     setPendingDraftEditorSync,
     setPendingNewDraftAction,
+  } = useDraftEditorState();
+  const { boardSearch, inspectorState, setBoardSearch, setInspectorState } =
+    useDraftInspectorState();
+  const {
+    planFeedbackBody,
+    requestedChangesBody,
+    resumeReason,
     setPlanFeedbackBody,
     setRequestedChangesBody,
     setResumeReason,
     setTerminalCommand,
+    terminalCommand,
+  } = useSessionActionState();
+  const {
     setTicketWorkspaceDiffLayout,
     setWorkspaceModal,
     setWorkspaceTerminalContext,
     setWorkspaceTicket,
-    terminalCommand,
     ticketWorkspaceDiffLayout,
     workspaceModal,
     workspaceTerminalContext,
     workspaceTicket,
-  } = useDraftWorkspaceState();
+  } = useWorkspaceState();
   const selectedDraftId =
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
@@ -301,7 +301,15 @@ export function useWalleyBoardController() {
     }
 
     setProjectSelectionHydrated(true);
-  }, [projectRecords, projectsLoaded, selectedProjectId]);
+  }, [
+    projectRecords,
+    projectsLoaded,
+    selectedProjectId,
+    setArchiveActionFeedback,
+    setArchiveModalOpen,
+    setProjectSelectionHydrated,
+    setSelectedProjectId,
+  ]);
 
   useEffect(() => {
     if (!projectSelectionHydrated) {
@@ -332,7 +340,9 @@ export function useWalleyBoardController() {
     projectRecords,
     projectOptionsProjectId,
     projectsLoaded,
+    setProjectDeleteConfirmText,
     setProjectOptionsColor,
+    setProjectOptionsColorManuallySelected,
     setProjectOptionsProjectId,
     setProjectOptionsFormError,
     setProjectOptionsRepositoryTargetBranches,
@@ -358,6 +368,8 @@ export function useWalleyBoardController() {
     projectModalOpen,
     projectRecords,
     projectsLoaded,
+    setProjectColor,
+    setProjectColorNeedsRefresh,
   ]);
 
   useEffect(() => {
@@ -733,136 +745,32 @@ export function useWalleyBoardController() {
       ? ticketsQuery.error.message
       : null;
 
-  const initializeNewDraftEditor = (projectId: string | null): void => {
-    setDraftEditorProjectId(projectId);
-    setDraftEditorSourceId(emptyDraftEditorFields.sourceId);
-    setDraftEditorArtifactScopeId(null);
-    setDraftEditorTitle(emptyDraftEditorFields.title);
-    setDraftEditorDescription(emptyDraftEditorFields.description);
-    setDraftEditorTicketType(emptyDraftEditorFields.ticketType);
-    setDraftEditorAcceptanceCriteria(emptyDraftEditorFields.acceptanceCriteria);
-    setDraftEditorUploadError(null);
-    setPendingDraftEditorSync(null);
-    setPendingNewDraftAction(null);
-  };
-
-  const persistNewDraftFromEditor = async (
-    action: NewDraftAction,
-  ): Promise<string | null> => {
-    if (!draftEditorProjectId) {
-      return null;
-    }
-
-    setPendingNewDraftAction(action);
-
-    try {
-      const ack = await mutations.createDraftMutation.mutateAsync({
-        projectId: draftEditorProjectId,
-        artifactScopeId: draftEditorArtifactScopeId,
-        title: draftEditorTitle,
-        description: draftEditorDescription,
-        proposedTicketType: draftEditorTicketType,
-        proposedAcceptanceCriteria: draftEditorAcceptanceCriteriaLines,
-      });
-
-      const draftId =
-        (ack as { resource_refs?: { draft_id?: string | null } }).resource_refs
-          ?.draft_id ?? null;
-      if (action === "refine" && draftId) {
-        const createdDraft = queryClient
-          .getQueryData<DraftsResponse>([
-            "projects",
-            draftEditorProjectId,
-            "drafts",
-          ])
-          ?.drafts.find((draft) => draft.id === draftId);
-        setPendingDraftEditorSync(
-          buildPendingDraftEditorSync({
-            acceptanceCriteria: draftEditorAcceptanceCriteria,
-            description: draftEditorDescription,
-            draftId,
-            sourceUpdatedAt: createdDraft?.updated_at ?? null,
-            ticketType: draftEditorTicketType,
-            title: draftEditorTitle,
-          }),
-        );
-      }
-
-      return draftId;
-    } catch {
-      return null;
-    } finally {
-      setPendingNewDraftAction(null);
-    }
-  };
-
-  const handleDraftDescriptionPaste = async (
-    file: File,
-    selection: { start: number; end: number },
-  ): Promise<{ cursorOffset: number; value: string } | null> => {
-    if (!draftEditorProjectId) {
-      return null;
-    }
-    setDraftEditorUploadError(null);
-
-    try {
-      const response = await mutations.uploadDraftArtifactMutation.mutateAsync({
-        projectId: draftEditorProjectId,
-        artifactScopeId: draftEditorArtifactScopeId,
-        mimeType: file.type,
-        dataBase64: await blobToBase64(file),
-      });
-      const insertion = buildMarkdownImageInsertion(
-        draftEditorDescription,
-        response.markdown_image,
-        selection.start,
-        selection.end,
-      );
-
-      setDraftEditorArtifactScopeId(response.artifact_scope_id);
-      return insertion;
-    } catch (error) {
-      setDraftEditorUploadError(
-        error instanceof Error ? error.message : "Unable to paste screenshot",
-      );
-      return null;
-    }
-  };
-
-  const handleDraftDescriptionTextareaPaste = (
-    event: ClipboardEvent<HTMLTextAreaElement>,
-  ): void => {
-    const imageItem = Array.from(event.clipboardData.items).find((item) =>
-      item.type.startsWith("image/"),
-    );
-    if (!imageItem) {
-      return;
-    }
-
-    const file = imageItem.getAsFile();
-    if (!file) {
-      return;
-    }
-
-    event.preventDefault();
-    const target = event.currentTarget;
-    void (async () => {
-      const result = await handleDraftDescriptionPaste(file, {
-        start: target.selectionStart,
-        end: target.selectionEnd,
-      });
-      if (!result) {
-        return;
-      }
-
-      setDraftEditorDescription(result.value);
-      window.requestAnimationFrame(() => {
-        target.selectionStart = result.cursorOffset;
-        target.selectionEnd = result.cursorOffset;
-        target.focus();
-      });
-    })();
-  };
+  const {
+    handleDraftDescriptionTextareaPaste,
+    initializeNewDraftEditor,
+    persistNewDraftFromEditor,
+  } = createDraftEditorController({
+    createDraftMutation: mutations.createDraftMutation,
+    draftEditorAcceptanceCriteria,
+    draftEditorAcceptanceCriteriaLines,
+    draftEditorArtifactScopeId,
+    draftEditorDescription,
+    draftEditorProjectId,
+    draftEditorTicketType,
+    draftEditorTitle,
+    queryClient,
+    setDraftEditorAcceptanceCriteria,
+    setDraftEditorArtifactScopeId,
+    setDraftEditorDescription,
+    setDraftEditorProjectId,
+    setDraftEditorSourceId,
+    setDraftEditorTicketType,
+    setDraftEditorTitle,
+    setDraftEditorUploadError,
+    setPendingDraftEditorSync,
+    setPendingNewDraftAction,
+    uploadDraftArtifactMutation: mutations.uploadDraftArtifactMutation,
+  });
 
   useEffect(() => {
     if (inspectorState.kind === "new_draft") {

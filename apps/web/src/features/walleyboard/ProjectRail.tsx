@@ -16,7 +16,7 @@ import {
   deriveProjectInitials,
   normalizeProjectColor,
 } from "./shared-utils.js";
-import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import type { ProjectRailController } from "./walleyboard-view-state.js";
 
 function normalizeProjectTileSource(name: string): string {
   const source = name
@@ -119,7 +119,7 @@ function ProjectTile({
 export function ProjectRail({
   controller,
 }: {
-  controller: WalleyBoardController;
+  controller: ProjectRailController;
 }) {
   const [inboxOpen, setInboxOpen] = useState(false);
   const projects = controller.projectsQuery.data?.projects ?? [];

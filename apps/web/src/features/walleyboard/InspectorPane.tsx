@@ -38,7 +38,7 @@ import {
   sessionStatusColor,
   ticketStatusColor,
 } from "./shared-utils.js";
-import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import type { InspectorPaneController } from "./walleyboard-view-state.js";
 
 function projectAccentButtonClassName(
   variant: "default" | "filled" | "light" | "subtle",
@@ -96,7 +96,7 @@ export function TicketWorkspaceSummaryRow({
 function DraftEditorFields({
   controller,
 }: {
-  controller: WalleyBoardController;
+  controller: InspectorPaneController;
 }) {
   return (
     <>
@@ -175,7 +175,7 @@ function DraftEditorFields({
 export function InspectorPane({
   controller,
 }: {
-  controller: WalleyBoardController;
+  controller: InspectorPaneController;
 }) {
   if (!controller.inspectorVisible) {
     return null;

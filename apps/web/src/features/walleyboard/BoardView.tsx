@@ -46,7 +46,7 @@ import {
   resolveReviewCardActions,
   sessionStatusColor,
 } from "./shared-utils.js";
-import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import type { BoardViewController } from "./walleyboard-view-state.js";
 
 function projectAccentButtonClassName(
   variant: "default" | "filled" | "light" | "subtle",
@@ -55,7 +55,7 @@ function projectAccentButtonClassName(
 }
 
 function resolveTicketSession(
-  controller: WalleyBoardController,
+  controller: BoardViewController,
   ticket: TicketFrontmatter,
 ): ExecutionSession | null {
   return ticket.session_id
@@ -72,8 +72,8 @@ function TicketMenu({
   ticket,
   ticketSession,
 }: {
-  controller: WalleyBoardController;
-  project: WalleyBoardController["selectedProject"];
+  controller: BoardViewController;
+  project: BoardViewController["selectedProject"];
   ticket: TicketFrontmatter;
   ticketSession: ExecutionSession | null;
 }) {
@@ -264,7 +264,7 @@ export function TicketWorkspaceActions({
   controller,
   ticket,
 }: {
-  controller: WalleyBoardController;
+  controller: BoardViewController;
   ticket: TicketFrontmatter;
 }): React.JSX.Element {
   const ticketSession = resolveTicketSession(controller, ticket);
@@ -377,7 +377,7 @@ export function TicketWorkspaceActions({
 export function ProjectWorkspaceActions({
   controller,
 }: {
-  controller: WalleyBoardController;
+  controller: BoardViewController;
 }): React.JSX.Element | null {
   if (!controller.selectedProject || !controller.selectedRepository) {
     return null;
@@ -430,11 +430,7 @@ export function ProjectWorkspaceActions({
   );
 }
 
-export function BoardView({
-  controller,
-}: {
-  controller: WalleyBoardController;
-}) {
+export function BoardView({ controller }: { controller: BoardViewController }) {
   const boardLayoutKey = [
     controller.visibleDrafts.map((draft) => draft.id).join(","),
     ...boardColumns.map((column) =>

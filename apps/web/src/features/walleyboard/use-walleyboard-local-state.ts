@@ -9,6 +9,7 @@ import type {
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import { readDiffLayoutPreference } from "./shared-api.js";
 import type {
+  ArchiveActionFeedback,
   InspectorState,
   NewDraftAction,
   ProjectModelPreset,
@@ -17,9 +18,74 @@ import type {
   WorkspaceTerminalContext,
 } from "./shared-types.js";
 
+export function useProjectSelectionState(input: {
+  readInboxItemState: Record<string, string>;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  );
+  const [readInboxItemState, setReadInboxItemState] = useState<
+    Record<string, string>
+  >(input.readInboxItemState);
+  const [projectSelectionHydrated, setProjectSelectionHydrated] =
+    useState(false);
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [archiveActionFeedback, setArchiveActionFeedback] =
+    useState<ArchiveActionFeedback | null>(null);
+
+  return {
+    archiveActionFeedback,
+    archiveModalOpen,
+    projectSelectionHydrated,
+    readInboxItemState,
+    selectedProjectId,
+    setArchiveActionFeedback,
+    setArchiveModalOpen,
+    setProjectSelectionHydrated,
+    setReadInboxItemState,
+    setSelectedProjectId,
+  };
+}
+
+export function useProjectCreationState(input: { projectColor: string }) {
+  const [projectDeleteConfirmText, setProjectDeleteConfirmText] = useState("");
+  const [projectColor, setProjectColor] = useState(input.projectColor);
+  const [projectColorManuallySelected, setProjectColorManuallySelected] =
+    useState(false);
+  const [projectColorNeedsRefresh, setProjectColorNeedsRefresh] =
+    useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [repositoryPath, setRepositoryPath] = useState("");
+  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [validationCommandsText, setValidationCommandsText] = useState("");
+
+  return {
+    defaultBranch,
+    projectColor,
+    projectColorManuallySelected,
+    projectColorNeedsRefresh,
+    projectDeleteConfirmText,
+    projectName,
+    repositoryPath,
+    setDefaultBranch,
+    setProjectColor,
+    setProjectColorManuallySelected,
+    setProjectColorNeedsRefresh,
+    setProjectDeleteConfirmText,
+    setProjectName,
+    setRepositoryPath,
+    setValidationCommandsText,
+    validationCommandsText,
+  };
+}
+
 export function useProjectOptionsState() {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectOptionsColor, setProjectOptionsColor] = useState("");
+  const [
+    projectOptionsColorManuallySelected,
+    setProjectOptionsColorManuallySelected,
+  ] = useState(false);
   const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
     string | null
   >(null);
@@ -79,10 +145,11 @@ export function useProjectOptionsState() {
 
   return {
     projectModalOpen,
-    projectOptionsColor,
     projectOptionsAgentAdapter,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
+    projectOptionsColor,
+    projectOptionsColorManuallySelected,
     projectOptionsDefaultReviewAction,
     projectOptionsDisabledMcpServers,
     projectOptionsDraftModelCustom,
@@ -98,10 +165,11 @@ export function useProjectOptionsState() {
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
     setProjectModalOpen,
-    setProjectOptionsColor,
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
+    setProjectOptionsColor,
+    setProjectOptionsColorManuallySelected,
     setProjectOptionsDefaultReviewAction,
     setProjectOptionsDisabledMcpServers,
     setProjectOptionsDraftModelCustom,
@@ -119,10 +187,21 @@ export function useProjectOptionsState() {
   };
 }
 
-export function useDraftWorkspaceState() {
+export function useDraftInspectorState() {
   const [inspectorState, setInspectorState] = useState<InspectorState>({
     kind: "hidden",
   });
+  const [boardSearch, setBoardSearch] = useState("");
+
+  return {
+    boardSearch,
+    inspectorState,
+    setBoardSearch,
+    setInspectorState,
+  };
+}
+
+export function useDraftEditorState() {
   const [draftEditorProjectId, setDraftEditorProjectId] = useState<
     string | null
   >(null);
@@ -145,10 +224,50 @@ export function useDraftWorkspaceState() {
     useState<PendingDraftEditorSync | null>(null);
   const [pendingNewDraftAction, setPendingNewDraftAction] =
     useState<NewDraftAction | null>(null);
+
+  return {
+    draftEditorAcceptanceCriteria,
+    draftEditorArtifactScopeId,
+    draftEditorDescription,
+    draftEditorProjectId,
+    draftEditorSourceId,
+    draftEditorTicketType,
+    draftEditorTitle,
+    draftEditorUploadError,
+    pendingDraftEditorSync,
+    pendingNewDraftAction,
+    setDraftEditorAcceptanceCriteria,
+    setDraftEditorArtifactScopeId,
+    setDraftEditorDescription,
+    setDraftEditorProjectId,
+    setDraftEditorSourceId,
+    setDraftEditorTicketType,
+    setDraftEditorTitle,
+    setDraftEditorUploadError,
+    setPendingDraftEditorSync,
+    setPendingNewDraftAction,
+  };
+}
+
+export function useSessionActionState() {
   const [requestedChangesBody, setRequestedChangesBody] = useState("");
   const [planFeedbackBody, setPlanFeedbackBody] = useState("");
   const [resumeReason, setResumeReason] = useState("");
   const [terminalCommand, setTerminalCommand] = useState("");
+
+  return {
+    planFeedbackBody,
+    requestedChangesBody,
+    resumeReason,
+    setPlanFeedbackBody,
+    setRequestedChangesBody,
+    setResumeReason,
+    setTerminalCommand,
+    terminalCommand,
+  };
+}
+
+export function useWorkspaceState() {
   const [workspaceModal, setWorkspaceModal] =
     useState<WorkspaceModalKind | null>(null);
   const [workspaceTicket, setWorkspaceTicket] =
@@ -158,45 +277,12 @@ export function useDraftWorkspaceState() {
   const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] = useState<
     "split" | "stacked"
   >(() => readDiffLayoutPreference());
-  const [boardSearch, setBoardSearch] = useState("");
 
   return {
-    boardSearch,
-    draftEditorAcceptanceCriteria,
-    draftEditorArtifactScopeId,
-    draftEditorDescription,
-    draftEditorProjectId,
-    draftEditorSourceId,
-    draftEditorTicketType,
-    draftEditorTitle,
-    draftEditorUploadError,
-    inspectorState,
-    pendingDraftEditorSync,
-    pendingNewDraftAction,
-    planFeedbackBody,
-    requestedChangesBody,
-    resumeReason,
-    setBoardSearch,
-    setDraftEditorAcceptanceCriteria,
-    setDraftEditorArtifactScopeId,
-    setDraftEditorDescription,
-    setDraftEditorProjectId,
-    setDraftEditorSourceId,
-    setDraftEditorTicketType,
-    setDraftEditorTitle,
-    setDraftEditorUploadError,
-    setInspectorState,
-    setPendingDraftEditorSync,
-    setPendingNewDraftAction,
-    setPlanFeedbackBody,
-    setRequestedChangesBody,
-    setResumeReason,
-    setTerminalCommand,
     setTicketWorkspaceDiffLayout,
     setWorkspaceModal,
     setWorkspaceTerminalContext,
     setWorkspaceTicket,
-    terminalCommand,
     ticketWorkspaceDiffLayout,
     workspaceModal,
     workspaceTerminalContext,

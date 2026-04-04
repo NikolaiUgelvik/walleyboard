@@ -28,12 +28,12 @@ import {
   resolveRepositoryTargetBranch,
   slugify,
 } from "./shared-utils.js";
-import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+import type { WalleyBoardModalsController } from "./walleyboard-view-state.js";
 
 export function ProjectConfigurationModals({
   controller,
 }: {
-  controller: WalleyBoardController;
+  controller: WalleyBoardModalsController;
 }) {
   const projectOptionsProject = controller.projectOptionsProject;
 
