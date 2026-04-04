@@ -303,13 +303,15 @@ function seedWalleyBoardQueries(
   projects: Project[],
   repository: RepositoryConfig,
 ): void {
-  const project = projects[0];
-  assert.ok(project, "Expected at least one project");
-
   queryClient.setQueryData(["health"], createHealth());
   queryClient.setQueryData(["projects"], {
     projects,
   });
+  const project = projects[0];
+  if (!project) {
+    return;
+  }
+
   queryClient.setQueryData(["projects", project.id, "drafts"], {
     drafts: [],
   });
@@ -422,7 +424,7 @@ function ControllerModalHarness({
       onUpdateProject?.({
         agentAdapter: controller.projectOptionsAgentAdapter,
         projectId: project.id,
-        color: controller.projectOptionsColor,
+        color: controller.projectOptionsPersistedColor,
         executionBackend: controller.projectOptionsExecutionBackend,
         disabledMcpServers: controller.projectOptionsDisabledMcpServers,
         automaticAgentReview: controller.projectOptionsAutomaticAgentReview,
@@ -466,13 +468,19 @@ async function renderControllerModalHarness(input: {
   ) => void;
   projects?: Project[];
   project?: Project;
+  projectsFetchGate?: Promise<void>;
   repository?: RepositoryConfig;
+  seedProjectsQuery?: boolean;
 }) {
   const queryClient = createQueryClient();
   const project = input.project ?? createProject();
   const projects = input.projects ?? [project];
   const repository = input.repository ?? createRepository();
-  seedWalleyBoardQueries(queryClient, projects, repository);
+  if (input.seedProjectsQuery ?? true) {
+    seedWalleyBoardQueries(queryClient, projects, repository);
+  } else {
+    queryClient.setQueryData(["health"], createHealth());
+  }
   const root = createRoot(input.harness.mountNode);
   const originalFetch = globalThis.fetch;
   let latestController: WalleyBoardController | null = null;
@@ -490,6 +498,9 @@ async function renderControllerModalHarness(input: {
       case "/health":
         return Response.json(createHealth());
       case "/projects":
+        if (input.projectsFetchGate) {
+          await input.projectsFetchGate;
+        }
         return Response.json({
           projects,
         });
@@ -553,6 +564,7 @@ async function renderControllerModalHarness(input: {
       assert.ok(latestController, "Expected the controller to initialize");
       return latestController;
     },
+    queryClient,
     root,
     restoreFetch() {
       globalThis.fetch = originalFetch;
@@ -844,6 +856,56 @@ test("create project modal auto-selects a random unused swatch", async () => {
   }
 });
 
+test("create project modal refreshes its auto-selected swatch after the projects query resolves", async () => {
+  const harness = installDom();
+  const originalRandom = Math.random;
+  let releaseProjectsFetch: (() => void) | null = null;
+
+  try {
+    Math.random = () => 0;
+    const projectsFetchGate = new Promise<void>((resolve) => {
+      releaseProjectsFetch = resolve;
+    });
+    const { getController, restoreFetch, root } =
+      await renderControllerModalHarness({
+        harness,
+        mode: "create",
+        projects: [createProject({ color: projectColorPalette[0] })],
+        projectsFetchGate,
+        seedProjectsQuery: false,
+      });
+
+    try {
+      assert.equal(getController().projectColor, projectColorPalette[0]);
+
+      await act(async () => {
+        releaseProjectsFetch?.();
+        await Promise.resolve();
+      });
+      await harness.flushAsyncWork();
+
+      assert.equal(getController().projectsQuery.data?.projects.length, 1);
+      assert.equal(getController().projectColor, projectColorPalette[1]);
+      assert.equal(
+        harness.window.document
+          .querySelector(
+            `button[role="radio"][aria-label="Project color ${projectColorPalette[1]}"]`,
+          )
+          ?.getAttribute("aria-checked"),
+        "true",
+      );
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      restoreFetch();
+    }
+  } finally {
+    Math.random = originalRandom;
+    harness.cleanup();
+  }
+});
+
 test("edit project modal submits the updated color through the controller workflow", async () => {
   const harness = installDom();
   let updatePayload:
@@ -925,6 +987,77 @@ test("edit project modal submits the updated color through the controller workfl
         ticketWorkModel: null,
         ticketWorkReasoningEffort: null,
       });
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      restoreFetch();
+    }
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test("edit project modal preserves an existing non-palette color until the user picks a swatch", async () => {
+  const harness = installDom();
+  let updatePayload: {
+    automaticAgentReview: boolean;
+    color: string;
+  } | null = null;
+
+  try {
+    const project = createProject({
+      color: "#123456",
+    });
+    const repository = createRepository({
+      project_id: project.id,
+    });
+    const { getController, restoreFetch, root } =
+      await renderControllerModalHarness({
+        harness,
+        mode: "edit",
+        onUpdateProject: (payload) => {
+          updatePayload = payload;
+        },
+        project,
+        repository,
+      });
+
+    try {
+      const saveButton = Array.from(
+        harness.window.document.querySelectorAll<HTMLButtonElement>("button"),
+      ).find((button) => button.textContent?.trim() === "Save Options");
+      assert.ok(saveButton, "Expected the save options button");
+      assert.equal(saveButton.disabled, true);
+      assert.equal(
+        harness.window.document
+          .querySelector(
+            `button[role="radio"][aria-label="Project color ${projectColorPalette[0]}"]`,
+          )
+          ?.getAttribute("aria-checked"),
+        "true",
+      );
+
+      await act(async () => {
+        getController().setProjectOptionsAutomaticAgentReview(true);
+      });
+
+      assert.equal(saveButton.disabled, false);
+
+      await act(async () => {
+        saveButton.dispatchEvent(
+          new harness.window.MouseEvent("click", { bubbles: true }),
+        );
+        await Promise.resolve();
+      });
+
+      assert.ok(updatePayload, "Expected the project options save payload");
+      const savedPayload = updatePayload as {
+        automaticAgentReview: boolean;
+        color: string;
+      };
+      assert.equal(savedPayload.color, "#123456");
+      assert.equal(savedPayload.automaticAgentReview, true);
     } finally {
       await act(async () => {
         root.unmount();

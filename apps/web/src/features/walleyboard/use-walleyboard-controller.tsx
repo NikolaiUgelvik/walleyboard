@@ -1,5 +1,10 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { type ClipboardEvent, useEffect, useState } from "react";
+import {
+  type ClipboardEvent,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from "react";
 import type {
   ExecutionSession,
   Project,
@@ -22,6 +27,12 @@ import {
   useDraftRefinementActivity,
   useGlobalDrafts,
 } from "./draft-queries.js";
+import {
+  closeProjectCreationModal,
+  openProjectCreationModal,
+  populateProjectOptionsModal,
+  resetProjectOptionsModal,
+} from "./project-configuration-controls.js";
 import { hasProjectOptionsDirty } from "./project-options-dirty.js";
 import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
@@ -47,20 +58,17 @@ import {
   defaultProjectColor,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
-  mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
-  normalizeProjectColor,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
   pickProjectColor,
   repositoryTargetBranchesEqual,
   resolveOptionalProjectCommandValue,
-  resolveProjectCustomModelValue,
-  resolveProjectModelPreset,
   resolveProjectModelValue,
-  resolveProjectReasoningEffortSelection,
+  resolveProjectOptionsColors,
   resolveProjectReasoningEffortValue,
   resolveVisibleBoardItems,
+  shouldRefreshProjectColorSelection,
 } from "./shared-utils.js";
 import { navigateToTicketReference } from "./ticket-reference-navigation.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
@@ -139,10 +147,18 @@ export function useWalleyBoardController() {
   } = useProjectOptionsState();
   const [projectDeleteConfirmText, setProjectDeleteConfirmText] = useState("");
   const [projectColor, setProjectColor] = useState(defaultProjectColor);
+  const [projectColorManuallySelected, setProjectColorManuallySelected] =
+    useState(false);
+  const [projectColorNeedsRefresh, setProjectColorNeedsRefresh] =
+    useState(false);
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [validationCommandsText, setValidationCommandsText] = useState("");
+  const [
+    projectOptionsColorManuallySelected,
+    setProjectOptionsColorManuallySelected,
+  ] = useState(false);
   const {
     boardSearch,
     draftEditorAcceptanceCriteria,
@@ -309,6 +325,7 @@ export function useWalleyBoardController() {
 
     setProjectOptionsProjectId(null);
     setProjectOptionsColor(defaultProjectColor);
+    setProjectOptionsColorManuallySelected(false);
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
@@ -320,6 +337,28 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId,
     setProjectOptionsFormError,
     setProjectOptionsRepositoryTargetBranches,
+  ]);
+
+  useEffect(() => {
+    if (
+      !shouldRefreshProjectColorSelection({
+        projectColorManuallySelected,
+        projectColorNeedsRefresh,
+        projectModalOpen,
+        projectsLoaded,
+      })
+    ) {
+      return;
+    }
+
+    setProjectColor(pickProjectColor(projectRecords));
+    setProjectColorNeedsRefresh(false);
+  }, [
+    projectColorManuallySelected,
+    projectColorNeedsRefresh,
+    projectModalOpen,
+    projectRecords,
+    projectsLoaded,
   ]);
 
   useEffect(() => {
@@ -543,8 +582,14 @@ export function useWalleyBoardController() {
       repositories: projectOptionsRepositories,
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
+  const { persistedColor: projectOptionsPersistedColor, swatchColor } =
+    resolveProjectOptionsColors({
+      color: projectOptionsColor,
+      colorManuallySelected: projectOptionsColorManuallySelected,
+      project: projectOptionsProject,
+    });
   const projectOptionsDirty = hasProjectOptionsDirty({
-    color: normalizeProjectColor(projectOptionsColor),
+    color: projectOptionsPersistedColor,
     draftModelValue: projectOptionsDraftModelValue,
     draftReasoningEffortValue: projectOptionsDraftReasoningEffortValue,
     disabledMcpServers: projectOptionsDisabledMcpServers,
@@ -907,31 +952,45 @@ export function useWalleyBoardController() {
   ]);
 
   const closeProjectOptionsModal = (): void => {
-    setProjectOptionsProjectId(null);
-    setProjectOptionsColor(defaultProjectColor);
-    setProjectOptionsAgentAdapter("codex");
-    setProjectOptionsExecutionBackend("docker");
-    setProjectOptionsDisabledMcpServers([]);
-    setProjectOptionsAutomaticAgentReview(false);
-    setProjectOptionsAutomaticAgentReviewRunLimit(1);
-    setProjectOptionsDefaultReviewAction("direct_merge");
-    setProjectOptionsPreviewStartCommand("");
-    setProjectOptionsRepositoryTargetBranches({});
-    setProjectOptionsFormError(null);
-    setProjectDeleteConfirmText("");
-    mutations.updateProjectMutation.reset();
-    mutations.deleteProjectMutation.reset();
+    resetProjectOptionsModal({
+      resetDeleteProjectMutation: mutations.deleteProjectMutation.reset,
+      resetUpdateProjectMutation: mutations.updateProjectMutation.reset,
+      setProjectDeleteConfirmText,
+      setProjectOptionsAgentAdapter,
+      setProjectOptionsAutomaticAgentReview,
+      setProjectOptionsAutomaticAgentReviewRunLimit,
+      setProjectOptionsColor,
+      setProjectOptionsColorManuallySelected,
+      setProjectOptionsDefaultReviewAction,
+      setProjectOptionsDisabledMcpServers,
+      setProjectOptionsExecutionBackend,
+      setProjectOptionsFormError,
+      setProjectOptionsPreviewStartCommand,
+      setProjectOptionsProjectId,
+      setProjectOptionsRepositoryTargetBranches,
+    });
   };
 
   const openProjectModal = (): void => {
-    setProjectColor(pickProjectColor(projectRecords));
-    setProjectModalOpen(true);
-    mutations.createProjectMutation.reset();
+    openProjectCreationModal({
+      projectRecords,
+      projectsFetching: projectsQuery.isFetching,
+      projectsLoaded,
+      resetCreateProjectMutation: mutations.createProjectMutation.reset,
+      setProjectColor,
+      setProjectColorManuallySelected,
+      setProjectColorNeedsRefresh,
+      setProjectModalOpen,
+    });
   };
 
   const closeProjectModal = (): void => {
-    setProjectModalOpen(false);
-    mutations.createProjectMutation.reset();
+    closeProjectCreationModal({
+      resetCreateProjectMutation: mutations.createProjectMutation.reset,
+      setProjectColorManuallySelected,
+      setProjectColorNeedsRefresh,
+      setProjectModalOpen,
+    });
   };
 
   const openProjectOptions = (project: Project): void => {
@@ -942,55 +1001,33 @@ export function useWalleyBoardController() {
         "repositories",
       ])?.repositories ?? [];
 
-    setProjectOptionsProjectId(project.id);
-    setProjectOptionsColor(normalizeProjectColor(project.color));
-    setProjectOptionsAgentAdapter(project.agent_adapter);
-    setProjectOptionsExecutionBackend(project.execution_backend);
-    setProjectOptionsDisabledMcpServers(
-      [...project.disabled_mcp_servers].sort((left, right) =>
-        left.localeCompare(right),
-      ),
-    );
-    setProjectOptionsAutomaticAgentReview(project.automatic_agent_review);
-    setProjectOptionsAutomaticAgentReviewRunLimit(
-      project.automatic_agent_review_run_limit,
-    );
-    setProjectOptionsDefaultReviewAction(project.default_review_action);
-    setProjectOptionsDraftModelPreset(
-      resolveProjectModelPreset(project.draft_analysis_model),
-    );
-    setProjectOptionsDraftModelCustom(
-      resolveProjectCustomModelValue(project.draft_analysis_model),
-    );
-    setProjectOptionsDraftReasoningEffort(
-      resolveProjectReasoningEffortSelection(
-        project.draft_analysis_reasoning_effort,
-      ),
-    );
-    setProjectOptionsTicketModelPreset(
-      resolveProjectModelPreset(project.ticket_work_model),
-    );
-    setProjectOptionsTicketModelCustom(
-      resolveProjectCustomModelValue(project.ticket_work_model),
-    );
-    setProjectOptionsTicketReasoningEffort(
-      resolveProjectReasoningEffortSelection(
-        project.ticket_work_reasoning_effort,
-      ),
-    );
-    setProjectOptionsPreviewStartCommand(project.preview_start_command ?? "");
-    setProjectOptionsPreWorktreeCommand(project.pre_worktree_command ?? "");
-    setProjectOptionsPostWorktreeCommand(project.post_worktree_command ?? "");
-    setProjectOptionsRepositoryTargetBranches(
-      mapRepositoryTargetBranches(
-        cachedRepositories,
-        project.default_target_branch,
-      ),
-    );
-    setProjectOptionsFormError(null);
-    setProjectDeleteConfirmText("");
-    mutations.updateProjectMutation.reset();
-    mutations.deleteProjectMutation.reset();
+    populateProjectOptionsModal({
+      cachedRepositories,
+      project,
+      resetDeleteProjectMutation: mutations.deleteProjectMutation.reset,
+      resetUpdateProjectMutation: mutations.updateProjectMutation.reset,
+      setProjectDeleteConfirmText,
+      setProjectOptionsAgentAdapter,
+      setProjectOptionsAutomaticAgentReview,
+      setProjectOptionsAutomaticAgentReviewRunLimit,
+      setProjectOptionsColor,
+      setProjectOptionsColorManuallySelected,
+      setProjectOptionsDefaultReviewAction,
+      setProjectOptionsDisabledMcpServers,
+      setProjectOptionsDraftModelCustom,
+      setProjectOptionsDraftModelPreset,
+      setProjectOptionsDraftReasoningEffort,
+      setProjectOptionsExecutionBackend,
+      setProjectOptionsFormError,
+      setProjectOptionsPostWorktreeCommand,
+      setProjectOptionsPreWorktreeCommand,
+      setProjectOptionsPreviewStartCommand,
+      setProjectOptionsProjectId,
+      setProjectOptionsRepositoryTargetBranches,
+      setProjectOptionsTicketModelCustom,
+      setProjectOptionsTicketModelPreset,
+      setProjectOptionsTicketReasoningEffort,
+    });
   };
 
   const refreshProjectOptionsBranches = (): void => {
@@ -1036,7 +1073,7 @@ export function useWalleyBoardController() {
     mutations.updateProjectMutation.mutate({
       agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
-      color: normalizeProjectColor(projectOptionsColor),
+      color: projectOptionsPersistedColor,
       executionBackend: projectOptionsExecutionBackend,
       disabledMcpServers: [...projectOptionsDisabledMcpServers].sort(
         (left, right) => left.localeCompare(right),
@@ -1306,7 +1343,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchesQuery,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
-    projectOptionsColor,
+    projectOptionsColor: swatchColor,
     projectOptionsDefaultReviewAction,
     projectOptionsDisabledMcpServers,
     projectOptionsDirty,
@@ -1322,6 +1359,7 @@ export function useWalleyBoardController() {
     projectOptionsPostWorktreeCommandValue,
     projectOptionsPreWorktreeCommand,
     projectOptionsPreWorktreeCommandValue,
+    projectOptionsPersistedColor,
     projectOptionsPreviewStartCommand,
     projectOptionsPreviewStartCommandValue,
     projectOptionsProject,
@@ -1397,11 +1435,18 @@ export function useWalleyBoardController() {
     setInspectorState,
     setPendingDraftEditorSync,
     setPlanFeedbackBody,
-    setProjectColor,
+    setProjectColor: (value: SetStateAction<string>) => {
+      setProjectColorManuallySelected(true);
+      setProjectColorNeedsRefresh(false);
+      setProjectColor(value);
+    },
     setProjectDeleteConfirmText,
     setProjectModalOpen,
     setProjectName,
-    setProjectOptionsColor,
+    setProjectOptionsColor: (value: SetStateAction<string>) => {
+      setProjectOptionsColorManuallySelected(true);
+      setProjectOptionsColor(value);
+    },
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,

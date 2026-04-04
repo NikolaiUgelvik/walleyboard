@@ -97,6 +97,38 @@ export function pickProjectColor(
   return candidateColors[selectedIndex] ?? defaultProjectColor;
 }
 
+export function shouldRefreshProjectColorSelection(input: {
+  projectColorManuallySelected: boolean;
+  projectColorNeedsRefresh: boolean;
+  projectModalOpen: boolean;
+  projectsLoaded: boolean;
+}): boolean {
+  return (
+    input.projectModalOpen &&
+    !input.projectColorManuallySelected &&
+    input.projectColorNeedsRefresh &&
+    input.projectsLoaded
+  );
+}
+
+export function resolveProjectOptionsColors(input: {
+  color: string;
+  colorManuallySelected: boolean;
+  project: Pick<Project, "color"> | null;
+}): {
+  persistedColor: string;
+  swatchColor: string;
+} {
+  const swatchColor = normalizeProjectColor(input.color);
+  return {
+    persistedColor:
+      input.project === null || input.colorManuallySelected
+        ? swatchColor
+        : input.project.color,
+    swatchColor,
+  };
+}
+
 export function deriveProjectInitials(name: string): string {
   const words = name
     .trim()
