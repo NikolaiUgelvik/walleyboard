@@ -5,6 +5,7 @@ import {
   getProjectColorSwatchForegroundColor,
   pickProjectColor,
   projectColorPalette,
+  resolveProjectAccentVariables,
 } from "./shared-utils.js";
 
 function colorChannelToLinear(channel: number): number {
@@ -65,4 +66,14 @@ test("getProjectColorSwatchForegroundColor keeps every palette swatch legible", 
       `Expected ${swatch} to keep at least 3:1 contrast with ${foreground}`,
     );
   }
+});
+
+test("resolveProjectAccentVariables preserves the chosen swatch and its readable contrast color", () => {
+  const accent = resolveProjectAccentVariables("#F97316");
+
+  assert.deepEqual(accent, {
+    "--selected-project-color": "#F97316",
+    "--selected-project-contrast":
+      getProjectColorSwatchForegroundColor("#F97316"),
+  });
 });

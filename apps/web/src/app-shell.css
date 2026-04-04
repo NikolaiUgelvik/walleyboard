@@ -141,6 +141,8 @@ body {
 }
 
 .walleyboard-shell {
+  --selected-project-color: #64748b;
+  --selected-project-contrast: #ffffff;
   min-height: 100vh;
   height: 100dvh;
   overflow-x: hidden;
@@ -701,6 +703,144 @@ body {
 
 .ticket-workspace-action-group {
   align-self: flex-start;
+}
+
+.project-accent-button {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.project-accent-button--filled {
+  background: var(--selected-project-color);
+  border-color: var(--selected-project-color);
+  color: var(--selected-project-contrast);
+  box-shadow: 0 10px 24px
+    color-mix(in srgb, var(--selected-project-color) 26%, transparent);
+}
+
+.project-accent-button--filled:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--selected-project-color) 92%, black 8%);
+  border-color: color-mix(in srgb, var(--selected-project-color) 92%, black 8%);
+}
+
+.project-accent-button--light,
+.project-accent-button--default,
+.project-accent-button--subtle {
+  color: var(--selected-project-color);
+}
+
+.project-accent-button--light {
+  background: color-mix(
+    in srgb,
+    var(--selected-project-color) 14%,
+    var(--walleyboard-panel)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--selected-project-color) 32%,
+    var(--walleyboard-border)
+  );
+}
+
+.project-accent-button--light:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--selected-project-color) 22%,
+    var(--walleyboard-panel)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--selected-project-color) 44%,
+    var(--walleyboard-border)
+  );
+}
+
+.project-accent-button--default {
+  background: var(--walleyboard-panel);
+  border-color: color-mix(
+    in srgb,
+    var(--selected-project-color) 34%,
+    var(--walleyboard-border)
+  );
+}
+
+.project-accent-button--default:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--selected-project-color) 10%,
+    var(--walleyboard-panel)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--selected-project-color) 46%,
+    var(--walleyboard-border)
+  );
+}
+
+.project-accent-button--subtle:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--selected-project-color) 12%,
+    transparent
+  );
+}
+
+.project-accent-button:is(:disabled, [data-disabled="true"]) {
+  background: var(--walleyboard-panel-soft);
+  border-color: var(--walleyboard-border);
+  color: var(--walleyboard-muted);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.project-accent-action {
+  color: var(--selected-project-color);
+  background: color-mix(
+    in srgb,
+    var(--selected-project-color) 14%,
+    var(--walleyboard-panel)
+  );
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--selected-project-color) 32%,
+      var(--walleyboard-border)
+    );
+  box-shadow: var(--walleyboard-shadow);
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.project-accent-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: color-mix(
+    in srgb,
+    var(--selected-project-color) 20%,
+    var(--walleyboard-panel)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--selected-project-color) 44%,
+    var(--walleyboard-border)
+  );
+  box-shadow: 0 8px 18px
+    color-mix(in srgb, var(--selected-project-color) 16%, transparent);
+}
+
+.project-accent-action:is(:disabled, [data-disabled="true"]) {
+  background: var(--walleyboard-panel-soft);
+  border-color: var(--walleyboard-border);
+  color: var(--walleyboard-muted);
+  box-shadow: none;
+  opacity: 0.6;
+  transform: none;
 }
 
 .ticket-workspace-summary-row {

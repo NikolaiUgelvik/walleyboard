@@ -50,6 +50,12 @@ import {
 } from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
+function projectAccentButtonClassName(
+  variant: "default" | "filled" | "light" | "subtle",
+): string {
+  return `project-accent-button project-accent-button--${variant}`;
+}
+
 function resolveTicketSession(
   controller: WalleyBoardController,
   ticket: TicketFrontmatter,
@@ -314,6 +320,7 @@ export function TicketWorkspaceActions({
       <ActionIcon.Group className="ticket-workspace-action-group">
         <ActionIcon
           aria-label={previewLabel}
+          className="project-accent-action"
           disabled={previewDisabled}
           title={previewLabel}
           variant="light"
@@ -332,6 +339,7 @@ export function TicketWorkspaceActions({
         </ActionIcon>
         <ActionIcon
           aria-label="Open activity stream"
+          className="project-accent-action"
           disabled={activityDisabled}
           title="Activity"
           variant="light"
@@ -344,6 +352,7 @@ export function TicketWorkspaceActions({
         </ActionIcon>
         <ActionIcon
           aria-label="Open worktree diff"
+          className="project-accent-action"
           disabled={diffDisabled}
           title="Diff"
           variant="light"
@@ -356,6 +365,7 @@ export function TicketWorkspaceActions({
         </ActionIcon>
         <ActionIcon
           aria-label="Open worktree terminal"
+          className="project-accent-action"
           disabled={terminalDisabled}
           title={terminalTitle}
           variant="light"
@@ -396,6 +406,7 @@ export function ProjectWorkspaceActions({
       <Button.Group>
         <Button
           aria-label={previewLabel}
+          className={projectAccentButtonClassName("light")}
           disabled={previewBusy}
           leftSection={
             previewBusy ? <Loader size={14} /> : <IconBrowser size={16} />
@@ -408,6 +419,7 @@ export function ProjectWorkspaceActions({
         </Button>
         <Button
           aria-label="Open project terminal"
+          className={projectAccentButtonClassName("light")}
           disabled={controller.repositoryTerminalPending}
           leftSection={<IconTerminal2 size={16} />}
           size="compact-sm"
@@ -643,6 +655,9 @@ export function BoardView({
             />
             <Button
               disabled={!controller.selectedProject}
+              className={projectAccentButtonClassName(
+                controller.archiveModalOpen ? "filled" : "light",
+              )}
               variant={controller.archiveModalOpen ? "filled" : "light"}
               radius="xl"
               onClick={controller.openArchiveModal}
@@ -651,6 +666,11 @@ export function BoardView({
             </Button>
             <Button
               disabled={!controller.selectedProject}
+              className={projectAccentButtonClassName(
+                controller.inspectorState.kind === "new_draft"
+                  ? "filled"
+                  : "light",
+              )}
               variant={
                 controller.inspectorState.kind === "new_draft"
                   ? "filled"
@@ -1216,6 +1236,9 @@ export function BoardView({
                                       >
                                         <Group gap="xs">
                                           <Button
+                                            className={projectAccentButtonClassName(
+                                              "light",
+                                            )}
                                             variant="light"
                                             size="xs"
                                             loading={
@@ -1239,6 +1262,9 @@ export function BoardView({
                                             Start with Plan
                                           </Button>
                                           <Button
+                                            className={projectAccentButtonClassName(
+                                              "filled",
+                                            )}
                                             size="xs"
                                             loading={
                                               controller.startTicketMutation
@@ -1278,6 +1304,11 @@ export function BoardView({
                                         return (
                                           <Group justify="flex-end" gap="xs">
                                             <Button
+                                              className={projectAccentButtonClassName(
+                                                primaryAction.kind === "open_pr"
+                                                  ? "light"
+                                                  : "filled",
+                                              )}
                                               size="xs"
                                               variant={
                                                 primaryAction.kind === "open_pr"

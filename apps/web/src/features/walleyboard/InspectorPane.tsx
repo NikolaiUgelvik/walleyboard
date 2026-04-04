@@ -40,6 +40,12 @@ import {
 } from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
+function projectAccentButtonClassName(
+  variant: "default" | "filled" | "light" | "subtle",
+): string {
+  return `project-accent-button project-accent-button--${variant}`;
+}
+
 export function TicketWorkspaceSummaryRow({
   activitySummary,
   onOpenActivityStream,
@@ -268,6 +274,7 @@ export function InspectorPane({
                   <Group gap="xs" justify="flex-end">
                     <Button
                       type="submit"
+                      className={projectAccentButtonClassName("light")}
                       variant="light"
                       disabled={
                         !controller.draftEditorCanPersist ||
@@ -282,6 +289,7 @@ export function InspectorPane({
                     </Button>
                     <Button
                       type="button"
+                      className={projectAccentButtonClassName("light")}
                       variant="light"
                       disabled={
                         !controller.draftEditorCanPersist ||
@@ -296,11 +304,17 @@ export function InspectorPane({
                     >
                       Refine
                     </Button>
-                    <Button type="button" variant="light" disabled>
+                    <Button
+                      type="button"
+                      className={projectAccentButtonClassName("light")}
+                      variant="light"
+                      disabled
+                    >
                       Revert Refine
                     </Button>
                     <Button
                       type="button"
+                      className={projectAccentButtonClassName("light")}
                       variant="light"
                       disabled={
                         !controller.draftEditorCanPersist ||
@@ -317,6 +331,7 @@ export function InspectorPane({
                     </Button>
                     <Button
                       type="button"
+                      className={projectAccentButtonClassName("filled")}
                       disabled={
                         !controller.draftEditorCanPersist ||
                         !controller.draftEditorProject ||
@@ -483,6 +498,7 @@ export function InspectorPane({
                 </Button>
                 <Group gap="xs" justify="flex-end">
                   <Button
+                    className={projectAccentButtonClassName("light")}
                     variant="light"
                     disabled={
                       !controller.draftFormDirty ||
@@ -511,6 +527,7 @@ export function InspectorPane({
                     Save Changes
                   </Button>
                   <Button
+                    className={projectAccentButtonClassName("light")}
                     variant="light"
                     disabled={
                       controller.draftFormDirty ||
@@ -544,6 +561,7 @@ export function InspectorPane({
                     Refine
                   </Button>
                   <Button
+                    className={projectAccentButtonClassName("light")}
                     variant="light"
                     disabled={
                       controller.draftFormDirty ||
@@ -579,6 +597,7 @@ export function InspectorPane({
                     Revert Refine
                   </Button>
                   <Button
+                    className={projectAccentButtonClassName("light")}
                     variant="light"
                     disabled={
                       controller.draftFormDirty ||
@@ -601,6 +620,7 @@ export function InspectorPane({
                     Questions?
                   </Button>
                   <Button
+                    className={projectAccentButtonClassName("filled")}
                     disabled={
                       !controller.selectedDraftRepository ||
                       !controller.selectedProject ||
@@ -1097,6 +1117,7 @@ export function InspectorPane({
                         />
                         <Group justify="space-between">
                           <Button
+                            className={projectAccentButtonClassName("light")}
                             variant="light"
                             loading={
                               controller.requestChangesMutation.isPending &&
@@ -1141,6 +1162,9 @@ export function InspectorPane({
                                   return (
                                     <Button
                                       key={action.kind}
+                                      className={projectAccentButtonClassName(
+                                        "light",
+                                      )}
                                       variant="light"
                                       onClick={() => {
                                         if (
@@ -1168,6 +1192,12 @@ export function InspectorPane({
                                   return (
                                     <Button
                                       key={action.kind}
+                                      className={projectAccentButtonClassName(
+                                        reviewActions.primary?.kind ===
+                                          "create_pr"
+                                          ? "filled"
+                                          : "default",
+                                      )}
                                       variant={
                                         reviewActions.primary?.kind ===
                                         "create_pr"
@@ -1197,6 +1227,11 @@ export function InspectorPane({
                                 return (
                                   <Button
                                     key={action.kind}
+                                    className={projectAccentButtonClassName(
+                                      reviewActions.primary?.kind === "merge"
+                                        ? "filled"
+                                        : "default",
+                                    )}
                                     variant={
                                       reviewActions.primary?.kind === "merge"
                                         ? "filled"
@@ -1261,6 +1296,7 @@ export function InspectorPane({
                         />
                         <Group justify="space-between">
                           <Button
+                            className={projectAccentButtonClassName("light")}
                             variant="light"
                             type="button"
                             disabled={
@@ -1286,6 +1322,7 @@ export function InspectorPane({
                             Request Plan Changes
                           </Button>
                           <Button
+                            className={projectAccentButtonClassName("filled")}
                             type="submit"
                             loading={
                               controller.planFeedbackMutation.isPending &&
@@ -1346,6 +1383,7 @@ export function InspectorPane({
                         ) : null}
                         <Group justify="space-between">
                           <Button
+                            className={projectAccentButtonClassName("subtle")}
                             variant="subtle"
                             type="button"
                             onClick={() => {
@@ -1391,6 +1429,7 @@ export function InspectorPane({
                               </Button>
                             ) : null}
                             <Button
+                              className={projectAccentButtonClassName("filled")}
                               type="submit"
                               loading={
                                 controller.resumeTicketMutation.isPending

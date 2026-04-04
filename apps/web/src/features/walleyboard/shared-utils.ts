@@ -104,6 +104,18 @@ export function getProjectColorSwatchForegroundColor(color: string): string {
     : lightProjectColorSwatchForeground;
 }
 
+export function resolveProjectAccentVariables(
+  color: string,
+): Record<"--selected-project-color" | "--selected-project-contrast", string> {
+  const normalizedColor = normalizeProjectColor(color);
+
+  return {
+    "--selected-project-color": normalizedColor,
+    "--selected-project-contrast":
+      getProjectColorSwatchForegroundColor(normalizedColor),
+  };
+}
+
 export function pickProjectColor(
   projects: Pick<Project, "color">[],
   randomNumber = Math.random,
