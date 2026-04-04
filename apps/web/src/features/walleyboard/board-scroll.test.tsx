@@ -960,7 +960,164 @@ test("in-progress tickets expose stop from the overflow menu and reuse the stop 
   }
 });
 
-test("in-progress ticket stop states still render loading and error feedback", async () => {
+test("in-progress ticket stop keeps loading feedback visible after the menu action is clicked", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "Stop should retain its feedback states.",
+    session_id: "session-progress",
+    status: "in_progress",
+    title: "Move stop into overflow menu",
+  });
+  let rerenderBoard: (() => Promise<void>) | null = null;
+  const stopTicketMutation: {
+    error: Error | null;
+    isError: boolean;
+    isPending: boolean;
+    mutate: (variables: { ticketId: number }) => void;
+    variables: { ticketId: number } | null;
+  } = {
+    error: null,
+    isError: false,
+    isPending: false,
+    variables: null,
+    mutate: (variables: { ticketId: number }) => {
+      stopTicketMutation.isPending = true;
+      stopTicketMutation.variables = variables;
+      void rerenderBoard?.();
+    },
+  };
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionById: new Map([
+      [
+        ticket.session_id,
+        {
+          id: ticket.session_id,
+          status: "running",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation,
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    rerenderBoard = async () => {
+      await act(async () => {
+        root.render(
+          <MantineProvider>
+            <BoardView controller={controller} />
+          </MantineProvider>,
+        );
+        await Promise.resolve();
+      });
+    };
+
+    await rerenderBoard();
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the in-progress ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let stopAction: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      stopAction = [...harness.window.document.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Stop") ?? false,
+      ) as HTMLElement | null;
+      if (stopAction) {
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      stopAction,
+      "Expected the in-progress ticket menu to include Stop",
+    );
+
+    await act(async () => {
+      stopAction?.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    let hasStoppingLabel = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (
+        (harness.window.document.body.textContent ?? "").includes("Stopping...")
+      ) {
+        hasStoppingLabel = true;
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      hasStoppingLabel,
+      "Expected the in-progress ticket menu to show the pending stop label",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
+test("in-progress ticket stop errors still render on the card", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
   const ticket = createTicket({
@@ -973,7 +1130,6 @@ test("in-progress ticket stop states still render loading and error feedback", a
     ...createMutationStub(),
     error: new Error("Stop failed"),
     isError: true,
-    isPending: true,
     variables: { ticketId: ticket.id },
   };
 
@@ -1029,44 +1185,6 @@ test("in-progress ticket stop states still render loading and error feedback", a
     });
 
     assert.match(harness.mountNode.textContent ?? "", /Stop failed/);
-
-    const menuButton = harness.mountNode.querySelector(
-      `[aria-label="More actions for ticket ${ticket.id}"]`,
-    );
-    assert.ok(menuButton, "Expected the in-progress ticket overflow button");
-
-    await act(async () => {
-      menuButton.dispatchEvent(
-        new harness.window.MouseEvent("mousedown", {
-          bubbles: true,
-        }),
-      );
-      menuButton.dispatchEvent(
-        new harness.window.MouseEvent("click", {
-          bubbles: true,
-        }),
-      );
-      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
-    });
-
-    let hasStoppingLabel = false;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      if (
-        (harness.window.document.body.textContent ?? "").includes("Stopping...")
-      ) {
-        hasStoppingLabel = true;
-        break;
-      }
-
-      await act(async () => {
-        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
-      });
-    }
-
-    assert.ok(
-      hasStoppingLabel,
-      "Expected the in-progress ticket menu to show the pending stop label",
-    );
   } finally {
     await act(async () => {
       root.unmount();

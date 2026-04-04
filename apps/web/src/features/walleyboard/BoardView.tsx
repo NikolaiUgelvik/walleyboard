@@ -122,6 +122,7 @@ function TicketMenu({
         {canStop ? (
           <Menu.Item
             color="orange"
+            closeMenuOnClick={false}
             disabled={isStopping}
             onClick={(event) => {
               event.stopPropagation();
