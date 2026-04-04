@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { structuredEventsTable } from "@walleyboard/db";
+import { and, desc, eq } from "drizzle-orm";
 import type { StructuredEvent } from "../../../../../packages/contracts/src/index.js";
 
 import { mapStructuredEvent, type SqliteStoreContext } from "./shared.js";
@@ -7,12 +8,17 @@ export class EventRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
   getDraftEvents(draftId: string): StructuredEvent[] {
-    const rows = this.context.db.all<Record<string, unknown>>(sql`
-      SELECT *
-      FROM structured_events
-      WHERE entity_type = 'draft' AND entity_id = ${draftId}
-      ORDER BY occurred_at DESC
-    `);
+    const rows = this.context.db
+      .select()
+      .from(structuredEventsTable)
+      .where(
+        and(
+          eq(structuredEventsTable.entityType, "draft"),
+          eq(structuredEventsTable.entityId, draftId),
+        ),
+      )
+      .orderBy(desc(structuredEventsTable.occurredAt))
+      .all();
     return rows.map(mapStructuredEvent);
   }
 
@@ -30,12 +36,17 @@ export class EventRepository {
   }
 
   getTicketEvents(ticketId: number): StructuredEvent[] {
-    const rows = this.context.db.all<Record<string, unknown>>(sql`
-      SELECT *
-      FROM structured_events
-      WHERE entity_type = 'ticket' AND entity_id = ${String(ticketId)}
-      ORDER BY occurred_at DESC
-    `);
+    const rows = this.context.db
+      .select()
+      .from(structuredEventsTable)
+      .where(
+        and(
+          eq(structuredEventsTable.entityType, "ticket"),
+          eq(structuredEventsTable.entityId, String(ticketId)),
+        ),
+      )
+      .orderBy(desc(structuredEventsTable.occurredAt))
+      .all();
     return rows.map(mapStructuredEvent);
   }
 

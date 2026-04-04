@@ -1,4 +1,9 @@
-import { sql } from "drizzle-orm";
+import {
+  requestedChangeNotesTable,
+  reviewPackagesTable,
+  reviewRunsTable,
+} from "@walleyboard/db";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type {
@@ -19,20 +24,18 @@ import {
   mapReviewRun,
   requireValue,
   type SqliteStoreContext,
-  stringifyJson,
 } from "./shared.js";
 
 export class ReviewRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
   getReviewPackage(ticketId: number): ReviewPackage | undefined {
-    const row = this.context.db.get<Record<string, unknown>>(sql`
-      SELECT *
-      FROM review_packages
-      WHERE ticket_id = ${ticketId}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
+    const row = this.context.db
+      .select()
+      .from(reviewPackagesTable)
+      .where(eq(reviewPackagesTable.ticketId, ticketId))
+      .orderBy(desc(reviewPackagesTable.createdAt))
+      .get();
     return row ? mapReviewPackage(row) : undefined;
   }
 
@@ -40,22 +43,20 @@ export class ReviewRepository {
     const id = nanoid();
     const timestamp = nowIso();
 
-    this.context.db.run(sql`
-      INSERT INTO review_packages (
-        id, ticket_id, session_id, diff_ref, commit_refs, change_summary,
-        validation_results, remaining_risks, created_at
-      ) VALUES (
-        ${id},
-        ${input.ticket_id},
-        ${input.session_id},
-        ${input.diff_ref},
-        ${stringifyJson(input.commit_refs)},
-        ${input.change_summary},
-        ${stringifyJson(input.validation_results)},
-        ${stringifyJson(input.remaining_risks)},
-        ${timestamp}
-      )
-    `);
+    this.context.db
+      .insert(reviewPackagesTable)
+      .values({
+        id,
+        ticketId: input.ticket_id,
+        sessionId: input.session_id,
+        diffRef: input.diff_ref,
+        commitRefs: input.commit_refs,
+        changeSummary: input.change_summary,
+        validationResults: input.validation_results,
+        remainingRisks: input.remaining_risks,
+        createdAt: timestamp,
+      })
+      .run();
 
     this.context.recordStructuredEvent(
       "review_package",
@@ -76,34 +77,37 @@ export class ReviewRepository {
   }
 
   getLatestReviewRun(ticketId: number): ReviewRun | undefined {
-    const row = this.context.db.get<Record<string, unknown>>(sql`
-      SELECT *
-      FROM review_runs
-      WHERE ticket_id = ${ticketId}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
+    const row = this.context.db
+      .select()
+      .from(reviewRunsTable)
+      .where(eq(reviewRunsTable.ticketId, ticketId))
+      .orderBy(desc(reviewRunsTable.createdAt))
+      .get();
     return row ? mapReviewRun(row) : undefined;
   }
 
   listReviewRuns(ticketId: number): ReviewRun[] {
-    const rows = this.context.db.all<Record<string, unknown>>(sql`
-      SELECT *
-      FROM review_runs
-      WHERE ticket_id = ${ticketId}
-      ORDER BY created_at ASC, id ASC
-    `);
+    const rows = this.context.db
+      .select()
+      .from(reviewRunsTable)
+      .where(eq(reviewRunsTable.ticketId, ticketId))
+      .orderBy(asc(reviewRunsTable.createdAt), asc(reviewRunsTable.id))
+      .all();
     return rows.map(mapReviewRun);
   }
 
   countAutomaticReviewRuns(ticketId: number): number {
-    const row = this.context.db.get<{ count: number }>(sql`
-      SELECT COUNT(*) AS count
-      FROM review_runs
-      WHERE ticket_id = ${ticketId}
-        AND trigger_source = 'automatic'
-    `);
-    return Number(row.count);
+    const row = this.context.db
+      .select({ count: count() })
+      .from(reviewRunsTable)
+      .where(
+        and(
+          eq(reviewRunsTable.ticketId, ticketId),
+          eq(reviewRunsTable.triggerSource, "automatic"),
+        ),
+      )
+      .get();
+    return Number(row?.count ?? 0);
   }
 
   createReviewRun(
@@ -114,26 +118,24 @@ export class ReviewRepository {
     const id = nanoid();
     const timestamp = nowIso();
 
-    this.context.db.run(sql`
-      INSERT INTO review_runs (
-        id, ticket_id, review_package_id, implementation_session_id, trigger_source, status,
-        adapter_session_ref, prompt, report, failure_message, created_at, updated_at, completed_at
-      ) VALUES (
-        ${id},
-        ${input.ticket_id},
-        ${input.review_package_id},
-        ${input.implementation_session_id},
-        ${input.trigger_source ?? "manual"},
-        ${"running"},
-        ${null},
-        ${input.prompt ?? null},
-        ${null},
-        ${null},
-        ${timestamp},
-        ${timestamp},
-        ${null}
-      )
-    `);
+    this.context.db
+      .insert(reviewRunsTable)
+      .values({
+        id,
+        ticketId: input.ticket_id,
+        reviewPackageId: input.review_package_id,
+        implementationSessionId: input.implementation_session_id,
+        triggerSource: input.trigger_source ?? "manual",
+        status: "running",
+        adapterSessionRef: null,
+        prompt: input.prompt ?? null,
+        report: null,
+        failureMessage: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        completedAt: null,
+      })
+      .run();
 
     this.context.recordStructuredEvent("review_run", id, "review_run.started", {
       ticket_id: input.ticket_id,
@@ -163,33 +165,25 @@ export class ReviewRepository {
           ? nowIso()
           : existingRun.completed_at;
 
-    this.context.db.run(sql`
-      UPDATE review_runs
-      SET status = ${input.status ?? existingRun.status},
-          adapter_session_ref = ${
-            input.adapter_session_ref !== undefined
-              ? input.adapter_session_ref
-              : existingRun.adapter_session_ref
-          },
-          prompt = ${input.prompt !== undefined ? input.prompt : existingRun.prompt},
-          report = ${
-            input.report !== undefined
-              ? input.report === null
-                ? null
-                : stringifyJson(input.report)
-              : existingRun.report === null
-                ? null
-                : stringifyJson(existingRun.report)
-          },
-          failure_message = ${
-            input.failure_message !== undefined
-              ? input.failure_message
-              : existingRun.failure_message
-          },
-          updated_at = ${nowIso()},
-          completed_at = ${completedAt}
-      WHERE id = ${reviewRunId}
-    `);
+    this.context.db
+      .update(reviewRunsTable)
+      .set({
+        status: input.status ?? existingRun.status,
+        adapterSessionRef:
+          input.adapter_session_ref !== undefined
+            ? input.adapter_session_ref
+            : existingRun.adapter_session_ref,
+        prompt: input.prompt !== undefined ? input.prompt : existingRun.prompt,
+        report: input.report !== undefined ? input.report : existingRun.report,
+        failureMessage:
+          input.failure_message !== undefined
+            ? input.failure_message
+            : existingRun.failure_message,
+        updatedAt: nowIso(),
+        completedAt,
+      })
+      .where(eq(reviewRunsTable.id, reviewRunId))
+      .run();
 
     const updatedRun = this.getReviewRun(reviewRunId);
     if (!updatedRun) {
@@ -225,20 +219,20 @@ export class ReviewRepository {
   }
 
   getRequestedChangeNote(noteId: string): RequestedChangeNote | undefined {
-    const row = this.context.db.get<Record<string, unknown>>(sql`
-      SELECT *
-      FROM requested_change_notes
-      WHERE id = ${noteId}
-    `);
+    const row = this.context.db
+      .select()
+      .from(requestedChangeNotesTable)
+      .where(eq(requestedChangeNotesTable.id, noteId))
+      .get();
     return row ? mapRequestedChangeNote(row) : undefined;
   }
 
   getReviewRun(reviewRunId: string): ReviewRun | undefined {
-    const row = this.context.db.get<Record<string, unknown>>(sql`
-      SELECT *
-      FROM review_runs
-      WHERE id = ${reviewRunId}
-    `);
+    const row = this.context.db
+      .select()
+      .from(reviewRunsTable)
+      .where(eq(reviewRunsTable.id, reviewRunId))
+      .get();
     return row ? mapReviewRun(row) : undefined;
   }
 }

@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { draftTicketStatesTable, ticketsTable } from "@walleyboard/db";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
@@ -13,7 +14,6 @@ import {
   preserveMarkdownList,
   requireValue,
   type SqliteStoreContext,
-  stringifyJson,
 } from "./shared.js";
 import { validateTicketReferences } from "./ticket-references.js";
 import type { TicketRepository } from "./ticket-repository.js";
@@ -43,59 +43,32 @@ export class DraftWorkflowService {
     const timestamp = nowIso();
     const targetBranch = draft.target_branch ?? input.target_branch;
     const reopenedTicketId = draft.source_ticket_id ?? null;
-    const insertTicket =
-      reopenedTicketId === null
-        ? this.context.db.run(sql`
-            INSERT INTO tickets (
-              project_id, repo_id, artifact_scope_id, status, title, description, ticket_type,
-              acceptance_criteria, working_branch, target_branch, linked_pr,
-              session_id, created_at, updated_at
-            ) VALUES (
-              ${draft.project_id},
-              ${input.repo_id},
-              ${draft.artifact_scope_id},
-              ${"ready"},
-              ${normalizeTitle(input.title)},
-              ${preserveMarkdown(input.description)},
-              ${input.ticket_type},
-              ${stringifyJson(preserveMarkdownList(input.acceptance_criteria))},
-              ${null},
-              ${targetBranch},
-              ${null},
-              ${null},
-              ${timestamp},
-              ${timestamp}
-            )
-          `)
-        : this.context.db.run(sql`
-            INSERT INTO tickets (
-              id, project_id, repo_id, artifact_scope_id, status, title, description, ticket_type,
-              acceptance_criteria, working_branch, target_branch, linked_pr,
-              session_id, created_at, updated_at
-            ) VALUES (
-              ${reopenedTicketId},
-              ${draft.project_id},
-              ${input.repo_id},
-              ${draft.artifact_scope_id},
-              ${"ready"},
-              ${normalizeTitle(input.title)},
-              ${preserveMarkdown(input.description)},
-              ${input.ticket_type},
-              ${stringifyJson(preserveMarkdownList(input.acceptance_criteria))},
-              ${null},
-              ${targetBranch},
-              ${null},
-              ${null},
-              ${timestamp},
-              ${timestamp}
-            )
-          `);
+    const insertTicket = this.context.db
+      .insert(ticketsTable)
+      .values({
+        ...(reopenedTicketId === null ? {} : { id: reopenedTicketId }),
+        projectId: draft.project_id,
+        repoId: input.repo_id,
+        artifactScopeId: draft.artifact_scope_id,
+        status: "ready",
+        title: normalizeTitle(input.title),
+        description: preserveMarkdown(input.description),
+        ticketType: input.ticket_type,
+        acceptanceCriteria: preserveMarkdownList(input.acceptance_criteria),
+        workingBranch: null,
+        targetBranch,
+        linkedPr: null,
+        sessionId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
     const ticketId = reopenedTicketId ?? Number(insertTicket.lastInsertRowid);
 
-    this.context.db.run(sql`
-      DELETE FROM draft_ticket_states
-      WHERE id = ${draftId}
-    `);
+    this.context.db
+      .delete(draftTicketStatesTable)
+      .where(eq(draftTicketStatesTable.id, draftId))
+      .run();
 
     this.events.recordTicketEvent(ticketId, "ticket.created", {
       title: normalizeTitle(input.title),
@@ -122,29 +95,28 @@ export class DraftWorkflowService {
     const timestamp = nowIso();
     const draftId = nanoid();
 
-    this.context.db.run(sql`
-      INSERT INTO draft_ticket_states (
-        id, project_id, artifact_scope_id, title_draft, description_draft, proposed_repo_id, confirmed_repo_id,
-        proposed_ticket_type, proposed_acceptance_criteria, wizard_status, split_proposal_summary,
-        source_ticket_id, target_branch, created_at, updated_at
-      ) VALUES (
-        ${draftId},
-        ${ticket.project},
-        ${ticket.artifact_scope_id},
-        ${normalizeTitle(ticket.title)},
-        ${preserveMarkdown(ticket.description)},
-        ${ticket.repo},
-        ${ticket.repo},
-        ${ticket.ticket_type},
-        ${stringifyJson(preserveMarkdownList(ticket.acceptance_criteria))},
-        ${"editing"},
-        ${null},
-        ${ticket.id},
-        ${ticket.target_branch},
-        ${timestamp},
-        ${timestamp}
-      )
-    `);
+    this.context.db
+      .insert(draftTicketStatesTable)
+      .values({
+        id: draftId,
+        projectId: ticket.project,
+        artifactScopeId: ticket.artifact_scope_id,
+        titleDraft: normalizeTitle(ticket.title),
+        descriptionDraft: preserveMarkdown(ticket.description),
+        proposedRepoId: ticket.repo,
+        confirmedRepoId: ticket.repo,
+        proposedTicketType: ticket.ticket_type,
+        proposedAcceptanceCriteria: preserveMarkdownList(
+          ticket.acceptance_criteria,
+        ),
+        wizardStatus: "editing",
+        splitProposalSummary: null,
+        sourceTicketId: ticket.id,
+        targetBranch: ticket.target_branch,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
 
     this.tickets.deleteTicket(ticketId);
 

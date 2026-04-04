@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { collectTicketReferenceIds } from "../../../../packages/contracts/src/index.js";
@@ -552,7 +551,7 @@ test("editing a ready ticket preserves its id and target branch when re-promoted
   }
 });
 
-test("projects default to Docker execution and backfill legacy host backend records", () => {
+test("projects default to Docker execution and preserve it across reloads", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-backend-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");
 
@@ -568,18 +567,6 @@ test("projects default to Docker execution and backfill legacy host backend reco
 
     assert.equal(store.getProject(project.id)?.execution_backend, "docker");
     assert.equal(store.getProject(project.id)?.agent_adapter, "codex");
-
-    const rawDb = new DatabaseSync(databasePath);
-    rawDb
-      .prepare(
-        `
-          UPDATE projects
-          SET execution_backend = 'host'
-          WHERE id = ?
-        `,
-      )
-      .run(project.id);
-    rawDb.close();
 
     const reloadedStore = new SqliteStore(databasePath);
     assert.equal(
@@ -605,17 +592,9 @@ test("projects preserve persisted Claude adapter records", () => {
       },
     });
 
-    const rawDb = new DatabaseSync(databasePath);
-    rawDb
-      .prepare(
-        `
-          UPDATE projects
-          SET agent_adapter = 'claude-code'
-          WHERE id = ?
-        `,
-      )
-      .run(project.id);
-    rawDb.close();
+    store.updateProject(project.id, {
+      agent_adapter: "claude-code",
+    });
 
     const reloadedStore = new SqliteStore(databasePath);
     assert.equal(

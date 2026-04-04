@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { ticketsTable } from "@walleyboard/db";
+import { and, inArray, isNull } from "drizzle-orm";
 import {
   collectTicketReferenceIds,
   type TicketReference,
@@ -16,19 +17,20 @@ export function resolveTicketReferences(
   if (referenceIds.length === 0) {
     return [];
   }
-  const rows = context.db.all<{
-    id: number;
-    title: string;
-    status: TicketReference["status"];
-  }>(sql`
-    SELECT id, title, status
-    FROM tickets
-    WHERE id IN (${sql.join(
-      referenceIds.map((referenceId) => sql`${referenceId}`),
-      sql`, `,
-    )})
-      AND archived_at IS NULL
-  `);
+  const rows = context.db
+    .select({
+      id: ticketsTable.id,
+      title: ticketsTable.title,
+      status: ticketsTable.status,
+    })
+    .from(ticketsTable)
+    .where(
+      and(
+        inArray(ticketsTable.id, referenceIds),
+        isNull(ticketsTable.archivedAt),
+      ),
+    )
+    .all();
 
   const referenceById = new Map(
     rows.map((row) => [
@@ -36,7 +38,7 @@ export function resolveTicketReferences(
       {
         ticket_id: row.id,
         title: row.title,
-        status: row.status,
+        status: row.status as TicketReference["status"],
       } satisfies TicketReference,
     ]),
   );

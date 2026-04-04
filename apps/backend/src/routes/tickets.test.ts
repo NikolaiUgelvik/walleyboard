@@ -10,7 +10,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import Fastify from "fastify";
@@ -939,11 +938,9 @@ test("start route blocks Claude projects when Claude is unavailable", async () =
     });
     const ticket = createReadyTicket(store, project.id, repository.id);
 
-    const rawDb = new DatabaseSync(databasePath);
-    rawDb
-      .prepare("UPDATE projects SET agent_adapter = 'claude-code' WHERE id = ?")
-      .run(project.id);
-    rawDb.close();
+    store.updateProject(project.id, {
+      agent_adapter: "claude-code",
+    });
 
     let startExecutionCalls = 0;
     const app = Fastify();
@@ -1038,11 +1035,9 @@ test("resume route blocks Claude projects when Claude is unavailable", async () 
       end_reason: "claude_unavailable_test",
     });
 
-    const rawDb = new DatabaseSync(databasePath);
-    rawDb
-      .prepare("UPDATE projects SET agent_adapter = 'claude-code' WHERE id = ?")
-      .run(project.id);
-    rawDb.close();
+    store.updateProject(project.id, {
+      agent_adapter: "claude-code",
+    });
 
     let startExecutionCalls = 0;
     const app = Fastify();
@@ -1147,11 +1142,9 @@ test("request-changes blocks Claude relaunch when Claude is unavailable", async 
       latest_review_package_id: reviewPackage.id,
     });
 
-    const rawDb = new DatabaseSync(databasePath);
-    rawDb
-      .prepare("UPDATE projects SET agent_adapter = 'claude-code' WHERE id = ?")
-      .run(project.id);
-    rawDb.close();
+    store.updateProject(project.id, {
+      agent_adapter: "claude-code",
+    });
 
     let startExecutionCalls = 0;
     const app = Fastify();

@@ -1,4 +1,10 @@
-import { sql } from "drizzle-orm";
+import {
+  draftTicketStatesTable,
+  projectsTable,
+  repositoriesTable,
+  structuredEventsTable,
+} from "@walleyboard/db";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
   CreateDraftInput,
@@ -16,7 +22,6 @@ import {
   preserveMarkdownList,
   requireValue,
   type SqliteStoreContext,
-  stringifyJson,
 } from "./shared.js";
 import { resolveTicketReferences } from "./ticket-references.js";
 
@@ -24,41 +29,49 @@ export class DraftRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
   #mapDraftRow(row: Record<string, unknown>): DraftTicketState {
+    const title =
+      row.title_draft === undefined ? row.titleDraft : row.title_draft;
+    const description =
+      row.description_draft === undefined
+        ? row.descriptionDraft
+        : row.description_draft;
+
     return mapDraft(row, [
       ...resolveTicketReferences(this.context, [
-        String(row.title_draft ?? ""),
-        row.description_draft === null ? "" : String(row.description_draft),
+        String(title ?? ""),
+        description === null || description === undefined
+          ? ""
+          : String(description),
       ]),
     ]);
   }
 
   listProjectDrafts(projectId: string): DraftTicketState[] {
-    const rows = this.context.db.all<Record<string, unknown>>(sql`
-      SELECT *
-      FROM draft_ticket_states
-      WHERE project_id = ${projectId}
-      ORDER BY updated_at DESC
-    `);
+    const rows = this.context.db
+      .select()
+      .from(draftTicketStatesTable)
+      .where(eq(draftTicketStatesTable.projectId, projectId))
+      .orderBy(desc(draftTicketStatesTable.updatedAt))
+      .all();
     return rows.map((row) => this.#mapDraftRow(row));
   }
 
   createDraft(input: CreateDraftInput): DraftTicketState {
-    const projectExists = this.context.db.get<{ id: string }>(sql`
-      SELECT id
-      FROM projects
-      WHERE id = ${input.project_id}
-    `);
+    const projectExists = this.context.db
+      .select({ id: projectsTable.id })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, input.project_id))
+      .get();
     if (!projectExists) {
       throw new Error("Project not found");
     }
 
-    const firstRepository = this.context.db.get<Record<string, unknown>>(sql`
-      SELECT *
-      FROM repositories
-      WHERE project_id = ${input.project_id}
-      ORDER BY created_at ASC
-      LIMIT 1
-    `);
+    const firstRepository = this.context.db
+      .select()
+      .from(repositoriesTable)
+      .where(eq(repositoriesTable.projectId, input.project_id))
+      .orderBy(asc(repositoriesTable.createdAt))
+      .get();
     const proposedTicketType =
       input.proposed_ticket_type === undefined
         ? "feature"
@@ -70,29 +83,26 @@ export class DraftRepository {
     const draftId = nanoid();
     const artifactScopeId = input.artifact_scope_id ?? nanoid();
 
-    this.context.db.run(sql`
-      INSERT INTO draft_ticket_states (
-        id, project_id, artifact_scope_id, title_draft, description_draft, proposed_repo_id, confirmed_repo_id,
-        proposed_ticket_type, proposed_acceptance_criteria, wizard_status, split_proposal_summary,
-        source_ticket_id, target_branch, created_at, updated_at
-      ) VALUES (
-        ${draftId},
-        ${input.project_id},
-        ${artifactScopeId},
-        ${normalizeTitle(input.title)},
-        ${preserveMarkdown(input.description)},
-        ${firstRepository ? String(firstRepository.id) : null},
-        ${null},
-        ${proposedTicketType},
-        ${stringifyJson(proposedAcceptanceCriteria)},
-        ${"editing"},
-        ${null},
-        ${null},
-        ${null},
-        ${timestamp},
-        ${timestamp}
-      )
-    `);
+    this.context.db
+      .insert(draftTicketStatesTable)
+      .values({
+        id: draftId,
+        projectId: input.project_id,
+        artifactScopeId,
+        titleDraft: normalizeTitle(input.title),
+        descriptionDraft: preserveMarkdown(input.description),
+        proposedRepoId: firstRepository?.id ?? null,
+        confirmedRepoId: null,
+        proposedTicketType,
+        proposedAcceptanceCriteria,
+        wizardStatus: "editing",
+        splitProposalSummary: null,
+        sourceTicketId: null,
+        targetBranch: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
 
     return requireValue(
       this.getDraft(draftId),
@@ -101,11 +111,11 @@ export class DraftRepository {
   }
 
   getDraft(draftId: string): DraftTicketState | undefined {
-    const row = this.context.db.get<Record<string, unknown>>(sql`
-      SELECT *
-      FROM draft_ticket_states
-      WHERE id = ${draftId}
-    `);
+    const row = this.context.db
+      .select()
+      .from(draftTicketStatesTable)
+      .where(eq(draftTicketStatesTable.id, draftId))
+      .get();
     return row ? this.#mapDraftRow(row) : undefined;
   }
 
@@ -137,19 +147,19 @@ export class DraftRepository {
     const wizardStatus = input.wizard_status ?? draft.wizard_status;
     const timestamp = nowIso();
 
-    this.context.db.run(sql`
-      UPDATE draft_ticket_states
-      SET title_draft = ${title},
-          description_draft = ${description},
-          proposed_ticket_type = ${proposedTicketType},
-          proposed_acceptance_criteria = ${stringifyJson(
-            proposedAcceptanceCriteria,
-          )},
-          wizard_status = ${wizardStatus},
-          split_proposal_summary = ${splitProposalSummary},
-          updated_at = ${timestamp}
-      WHERE id = ${draftId}
-    `);
+    this.context.db
+      .update(draftTicketStatesTable)
+      .set({
+        titleDraft: title,
+        descriptionDraft: description,
+        proposedTicketType,
+        proposedAcceptanceCriteria,
+        wizardStatus,
+        splitProposalSummary,
+        updatedAt: timestamp,
+      })
+      .where(eq(draftTicketStatesTable.id, draftId))
+      .run();
 
     return requireValue(this.getDraft(draftId), "Draft not found after update");
   }
@@ -160,14 +170,19 @@ export class DraftRepository {
       return undefined;
     }
 
-    this.context.db.run(sql`
-      DELETE FROM structured_events
-      WHERE entity_type = 'draft' AND entity_id = ${draftId}
-    `);
-    this.context.db.run(sql`
-      DELETE FROM draft_ticket_states
-      WHERE id = ${draftId}
-    `);
+    this.context.db
+      .delete(structuredEventsTable)
+      .where(
+        and(
+          eq(structuredEventsTable.entityType, "draft"),
+          eq(structuredEventsTable.entityId, draftId),
+        ),
+      )
+      .run();
+    this.context.db
+      .delete(draftTicketStatesTable)
+      .where(eq(draftTicketStatesTable.id, draftId))
+      .run();
     return draft;
   }
 
@@ -186,15 +201,17 @@ export class DraftRepository {
     );
     const timestamp = nowIso();
 
-    this.context.db.run(sql`
-      UPDATE draft_ticket_states
-      SET title_draft = ${title},
-          description_draft = ${description},
-          proposed_acceptance_criteria = ${stringifyJson(acceptanceCriteria)},
-          wizard_status = ${"awaiting_confirmation"},
-          updated_at = ${timestamp}
-      WHERE id = ${draftId}
-    `);
+    this.context.db
+      .update(draftTicketStatesTable)
+      .set({
+        titleDraft: title,
+        descriptionDraft: description,
+        proposedAcceptanceCriteria: acceptanceCriteria,
+        wizardStatus: "awaiting_confirmation",
+        updatedAt: timestamp,
+      })
+      .where(eq(draftTicketStatesTable.id, draftId))
+      .run();
 
     return requireValue(
       this.getDraft(draftId),

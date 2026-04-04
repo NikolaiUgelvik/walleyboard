@@ -15,10 +15,11 @@ export type WalleyboardDatabase = BetterSQLite3Database<
 
 export type WalleyboardDatabaseHandle = {
   db: WalleyboardDatabase;
-  sqlite: Database.Database;
+  close(): void;
+  transaction<T>(operation: () => T): T;
 };
 
-export function openWalleyboardSqlite(databasePath: string): Database.Database {
+function openWalleyboardSqlite(databasePath: string): Database.Database {
   mkdirSync(dirname(databasePath), { recursive: true });
   const sqlite = new Database(databasePath);
   sqlite.pragma("foreign_keys = ON");
@@ -36,8 +37,14 @@ export function createWalleyboardDatabase(
   databasePath: string,
 ): WalleyboardDatabaseHandle {
   const sqlite = openWalleyboardSqlite(databasePath);
+  const db = createWalleyboardDb(sqlite);
   return {
-    db: createWalleyboardDb(sqlite),
-    sqlite,
+    db,
+    close() {
+      sqlite.close();
+    },
+    transaction<T>(operation: () => T): T {
+      return sqlite.transaction(operation)();
+    },
   };
 }

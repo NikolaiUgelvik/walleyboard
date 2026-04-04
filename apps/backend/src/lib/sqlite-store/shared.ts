@@ -1,9 +1,13 @@
 import {
   createMigratedWalleyboardDatabase,
+  executionAttemptsTable,
+  executionSessionsTable,
+  sessionLogsTable,
+  structuredEventsTable,
   type WalleyboardDatabase,
   type WalleyboardDatabaseHandle,
 } from "@walleyboard/db";
-import { sql } from "drizzle-orm";
+import { and, count, eq, inArray, max, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type {
@@ -179,8 +183,22 @@ export function normalizePullRequestRef(value: unknown): PullRequestRef | null {
   };
 }
 
+function readRowValue(row: SqliteRow, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (key in row) {
+      return row[key];
+    }
+  }
+
+  return undefined;
+}
+
 export function parseJson<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string" || value.length === 0) {
+  if (typeof value !== "string") {
+    return value === undefined ? fallback : (value as T);
+  }
+
+  if (value.length === 0) {
     return fallback;
   }
 
@@ -233,80 +251,173 @@ export function deriveWorkingBranch(
 }
 
 export function mapProject(row: SqliteRow): Project {
+  const color = readRowValue(row, "color");
+  const agentAdapter = readRowValue(row, "agent_adapter", "agentAdapter");
+  const disabledMcpServers = readRowValue(
+    row,
+    "disabled_mcp_servers",
+    "disabledMcpServers",
+  );
+  const automaticAgentReview = readRowValue(
+    row,
+    "automatic_agent_review",
+    "automaticAgentReview",
+  );
+  const automaticAgentReviewRunLimit = readRowValue(
+    row,
+    "automatic_agent_review_run_limit",
+    "automaticAgentReviewRunLimit",
+  );
+  const defaultReviewAction = readRowValue(
+    row,
+    "default_review_action",
+    "defaultReviewAction",
+  );
+  const defaultTargetBranch = readRowValue(
+    row,
+    "default_target_branch",
+    "defaultTargetBranch",
+  );
+  const previewStartCommand = readRowValue(
+    row,
+    "preview_start_command",
+    "previewStartCommand",
+  );
+  const preWorktreeCommand = readRowValue(
+    row,
+    "pre_worktree_command",
+    "preWorktreeCommand",
+  );
+  const postWorktreeCommand = readRowValue(
+    row,
+    "post_worktree_command",
+    "postWorktreeCommand",
+  );
+  const draftAnalysisModel = readRowValue(
+    row,
+    "draft_analysis_model",
+    "draftAnalysisModel",
+  );
+  const draftAnalysisReasoningEffort = readRowValue(
+    row,
+    "draft_analysis_reasoning_effort",
+    "draftAnalysisReasoningEffort",
+  );
+  const ticketWorkModel = readRowValue(
+    row,
+    "ticket_work_model",
+    "ticketWorkModel",
+  );
+  const ticketWorkReasoningEffort = readRowValue(
+    row,
+    "ticket_work_reasoning_effort",
+    "ticketWorkReasoningEffort",
+  );
+  const maxConcurrentSessions = readRowValue(
+    row,
+    "max_concurrent_sessions",
+    "maxConcurrentSessions",
+  );
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+  const updatedAt = readRowValue(row, "updated_at", "updatedAt");
+
   return {
-    id: String(row.id),
-    slug: String(row.slug),
-    name: String(row.name),
-    color: normalizeProjectColor(row.color as string | null | undefined),
-    agent_adapter:
-      row.agent_adapter === "claude-code" ? "claude-code" : "codex",
+    id: String(readRowValue(row, "id")),
+    slug: String(readRowValue(row, "slug")),
+    name: String(readRowValue(row, "name")),
+    color: normalizeProjectColor(color as string | null | undefined),
+    agent_adapter: agentAdapter === "claude-code" ? "claude-code" : "codex",
     execution_backend: "docker",
-    disabled_mcp_servers: parseJson<unknown[]>(row.disabled_mcp_servers, [])
+    disabled_mcp_servers: parseJson<unknown[]>(disabledMcpServers, [])
       .filter((server): server is string => typeof server === "string")
       .map((server) => server.trim())
       .filter((server) => server.length > 0),
-    automatic_agent_review: Number(row.automatic_agent_review) === 1,
+    automatic_agent_review:
+      automaticAgentReview === true || Number(automaticAgentReview) === 1,
     automatic_agent_review_run_limit: Math.max(
       1,
-      Number(row.automatic_agent_review_run_limit ?? 1),
+      Number(automaticAgentReviewRunLimit ?? 1),
     ),
     default_review_action: normalizeReviewAction(
-      row.default_review_action as ReviewAction | null | undefined,
+      defaultReviewAction as ReviewAction | null | undefined,
     ),
     default_target_branch:
-      row.default_target_branch === null
+      defaultTargetBranch === null || defaultTargetBranch === undefined
         ? null
-        : String(row.default_target_branch),
+        : String(defaultTargetBranch),
     preview_start_command:
-      row.preview_start_command === null
+      previewStartCommand === null || previewStartCommand === undefined
         ? null
-        : String(row.preview_start_command),
+        : String(previewStartCommand),
     pre_worktree_command:
-      row.pre_worktree_command === null
+      preWorktreeCommand === null || preWorktreeCommand === undefined
         ? null
-        : String(row.pre_worktree_command),
+        : String(preWorktreeCommand),
     post_worktree_command:
-      row.post_worktree_command === null
+      postWorktreeCommand === null || postWorktreeCommand === undefined
         ? null
-        : String(row.post_worktree_command),
+        : String(postWorktreeCommand),
     draft_analysis_model:
-      row.draft_analysis_model === null
+      draftAnalysisModel === null || draftAnalysisModel === undefined
         ? null
-        : String(row.draft_analysis_model),
+        : String(draftAnalysisModel),
     draft_analysis_reasoning_effort:
-      row.draft_analysis_reasoning_effort === null
+      draftAnalysisReasoningEffort === null ||
+      draftAnalysisReasoningEffort === undefined
         ? null
         : (String(
-            row.draft_analysis_reasoning_effort,
+            draftAnalysisReasoningEffort,
           ) as Project["draft_analysis_reasoning_effort"]),
     ticket_work_model:
-      row.ticket_work_model === null ? null : String(row.ticket_work_model),
+      ticketWorkModel === null || ticketWorkModel === undefined
+        ? null
+        : String(ticketWorkModel),
     ticket_work_reasoning_effort:
-      row.ticket_work_reasoning_effort === null
+      ticketWorkReasoningEffort === null ||
+      ticketWorkReasoningEffort === undefined
         ? null
         : (String(
-            row.ticket_work_reasoning_effort,
+            ticketWorkReasoningEffort,
           ) as Project["ticket_work_reasoning_effort"]),
-    max_concurrent_sessions: Number(row.max_concurrent_sessions),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
+    max_concurrent_sessions: Number(maxConcurrentSessions),
+    created_at: String(createdAt),
+    updated_at: String(updatedAt),
   };
 }
 
 export function mapRepository(row: SqliteRow): RepositoryConfig {
+  const projectId = readRowValue(row, "project_id", "projectId");
+  const targetBranch = readRowValue(row, "target_branch", "targetBranch");
+  const setupHook = readRowValue(row, "setup_hook", "setupHook");
+  const cleanupHook = readRowValue(row, "cleanup_hook", "cleanupHook");
+  const validationProfile = readRowValue(
+    row,
+    "validation_profile",
+    "validationProfile",
+  );
+  const extraEnvAllowlist = readRowValue(
+    row,
+    "extra_env_allowlist",
+    "extraEnvAllowlist",
+  );
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+  const updatedAt = readRowValue(row, "updated_at", "updatedAt");
+
   return {
-    id: String(row.id),
-    project_id: String(row.project_id),
-    name: String(row.name),
-    path: String(row.path),
+    id: String(readRowValue(row, "id")),
+    project_id: String(projectId),
+    name: String(readRowValue(row, "name")),
+    path: String(readRowValue(row, "path")),
     target_branch:
-      row.target_branch === null ? null : String(row.target_branch),
-    setup_hook: parseJson(row.setup_hook, null),
-    cleanup_hook: parseJson(row.cleanup_hook, null),
-    validation_profile: parseJson(row.validation_profile, []),
-    extra_env_allowlist: parseJson(row.extra_env_allowlist, []),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
+      targetBranch === null || targetBranch === undefined
+        ? null
+        : String(targetBranch),
+    setup_hook: parseJson(setupHook, null),
+    cleanup_hook: parseJson(cleanupHook, null),
+    validation_profile: parseJson(validationProfile, []),
+    extra_env_allowlist: parseJson(extraEnvAllowlist, []),
+    created_at: String(createdAt),
+    updated_at: String(updatedAt),
   };
 }
 
@@ -314,45 +425,88 @@ export function mapDraft(
   row: SqliteRow,
   ticketReferences: TicketReference[] = [],
 ): DraftTicketState {
+  const descriptionDraft = readRowValue(
+    row,
+    "description_draft",
+    "descriptionDraft",
+  );
+  const proposedRepoId = readRowValue(
+    row,
+    "proposed_repo_id",
+    "proposedRepoId",
+  );
+  const confirmedRepoId = readRowValue(
+    row,
+    "confirmed_repo_id",
+    "confirmedRepoId",
+  );
+  const proposedTicketType = readRowValue(
+    row,
+    "proposed_ticket_type",
+    "proposedTicketType",
+  );
+  const proposedAcceptanceCriteria = readRowValue(
+    row,
+    "proposed_acceptance_criteria",
+    "proposedAcceptanceCriteria",
+  );
+  const wizardStatus = readRowValue(row, "wizard_status", "wizardStatus");
+  const splitProposalSummary = readRowValue(
+    row,
+    "split_proposal_summary",
+    "splitProposalSummary",
+  );
+  const sourceTicketId = readRowValue(
+    row,
+    "source_ticket_id",
+    "sourceTicketId",
+  );
+  const targetBranch = readRowValue(row, "target_branch", "targetBranch");
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+  const updatedAt = readRowValue(row, "updated_at", "updatedAt");
+
   return {
-    id: String(row.id),
-    project_id: String(row.project_id),
-    artifact_scope_id: String(row.artifact_scope_id),
-    title_draft: String(row.title_draft),
+    id: String(readRowValue(row, "id")),
+    project_id: String(readRowValue(row, "project_id", "projectId")),
+    artifact_scope_id: String(
+      readRowValue(row, "artifact_scope_id", "artifactScopeId"),
+    ),
+    title_draft: String(readRowValue(row, "title_draft", "titleDraft")),
     description_draft:
-      row.description_draft === null ? "" : String(row.description_draft),
+      descriptionDraft === null || descriptionDraft === undefined
+        ? ""
+        : String(descriptionDraft),
     ticket_references: ticketReferences,
     proposed_repo_id:
-      row.proposed_repo_id === null ? null : String(row.proposed_repo_id),
+      proposedRepoId === null || proposedRepoId === undefined
+        ? null
+        : String(proposedRepoId),
     confirmed_repo_id:
-      row.confirmed_repo_id === null ? null : String(row.confirmed_repo_id),
+      confirmedRepoId === null || confirmedRepoId === undefined
+        ? null
+        : String(confirmedRepoId),
     proposed_ticket_type:
-      row.proposed_ticket_type === null
+      proposedTicketType === null || proposedTicketType === undefined
         ? null
         : (String(
-            row.proposed_ticket_type,
+            proposedTicketType,
           ) as DraftTicketState["proposed_ticket_type"]),
-    proposed_acceptance_criteria: parseJson(
-      row.proposed_acceptance_criteria,
-      [],
-    ),
-    wizard_status: String(
-      row.wizard_status,
-    ) as DraftTicketState["wizard_status"],
+    proposed_acceptance_criteria: parseJson(proposedAcceptanceCriteria, []),
+    wizard_status: String(wizardStatus) as DraftTicketState["wizard_status"],
     split_proposal_summary:
-      row.split_proposal_summary === null
+      splitProposalSummary === null || splitProposalSummary === undefined
         ? null
-        : String(row.split_proposal_summary),
+        : String(splitProposalSummary),
     source_ticket_id:
-      row.source_ticket_id === null || row.source_ticket_id === undefined
+      sourceTicketId === null || sourceTicketId === undefined
         ? null
-        : Number(row.source_ticket_id),
+        : Number(sourceTicketId),
     target_branch:
-      row.target_branch === null || row.target_branch === undefined
+      targetBranch === null || targetBranch === undefined
         ? null
-        : String(row.target_branch),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
+        : String(targetBranch),
+    created_at: String(createdAt),
+    updated_at: String(updatedAt),
   };
 }
 
@@ -360,140 +514,284 @@ export function mapTicket(
   row: SqliteRow,
   ticketReferences: TicketReference[] = [],
 ): TicketFrontmatter {
+  const description = readRowValue(row, "description");
+  const acceptanceCriteria = readRowValue(
+    row,
+    "acceptance_criteria",
+    "acceptanceCriteria",
+  );
+  const workingBranch = readRowValue(row, "working_branch", "workingBranch");
+  const targetBranch = readRowValue(row, "target_branch", "targetBranch");
+  const linkedPr = readRowValue(row, "linked_pr", "linkedPr");
+  const sessionId = readRowValue(row, "session_id", "sessionId");
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+  const updatedAt = readRowValue(row, "updated_at", "updatedAt");
+
   return {
-    id: Number(row.id),
-    project: String(row.project_id),
-    repo: String(row.repo_id),
-    artifact_scope_id: String(row.artifact_scope_id),
-    status: String(row.status) as TicketFrontmatter["status"],
-    title: String(row.title),
-    description: row.description === null ? "" : String(row.description),
+    id: Number(readRowValue(row, "id")),
+    project: String(readRowValue(row, "project_id", "projectId")),
+    repo: String(readRowValue(row, "repo_id", "repoId")),
+    artifact_scope_id: String(
+      readRowValue(row, "artifact_scope_id", "artifactScopeId"),
+    ),
+    status: String(readRowValue(row, "status")) as TicketFrontmatter["status"],
+    title: String(readRowValue(row, "title")),
+    description:
+      description === null || description === undefined
+        ? ""
+        : String(description),
     ticket_references: ticketReferences,
-    ticket_type: String(row.ticket_type) as TicketFrontmatter["ticket_type"],
-    acceptance_criteria: parseJson(row.acceptance_criteria, []),
+    ticket_type: String(
+      readRowValue(row, "ticket_type", "ticketType"),
+    ) as TicketFrontmatter["ticket_type"],
+    acceptance_criteria: parseJson(acceptanceCriteria, []),
     working_branch:
-      row.working_branch === null ? null : String(row.working_branch),
-    target_branch: String(row.target_branch),
-    linked_pr: normalizePullRequestRef(parseJson(row.linked_pr, null)),
-    session_id: row.session_id === null ? null : String(row.session_id),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
+      workingBranch === null || workingBranch === undefined
+        ? null
+        : String(workingBranch),
+    target_branch: String(targetBranch),
+    linked_pr: normalizePullRequestRef(parseJson(linkedPr, null)),
+    session_id:
+      sessionId === null || sessionId === undefined ? null : String(sessionId),
+    created_at: String(createdAt),
+    updated_at: String(updatedAt),
   };
 }
 
 export function mapStructuredEvent(row: SqliteRow): StructuredEvent {
+  const occurredAt = readRowValue(row, "occurred_at", "occurredAt");
+  const entityType = readRowValue(row, "entity_type", "entityType");
+  const entityId = readRowValue(row, "entity_id", "entityId");
+  const eventType = readRowValue(row, "event_type", "eventType");
+
   return {
-    id: String(row.id),
-    occurred_at: String(row.occurred_at),
-    entity_type: String(row.entity_type) as StructuredEvent["entity_type"],
-    entity_id: String(row.entity_id),
-    event_type: String(row.event_type),
-    payload: parseJson(row.payload, {}),
+    id: String(readRowValue(row, "id")),
+    occurred_at: String(occurredAt),
+    entity_type: String(entityType) as StructuredEvent["entity_type"],
+    entity_id: String(entityId),
+    event_type: String(eventType),
+    payload: parseJson(readRowValue(row, "payload"), {}),
   };
 }
 
 export function mapExecutionSession(row: SqliteRow): ExecutionSession {
+  const agentAdapter = readRowValue(row, "agent_adapter", "agentAdapter");
+  const worktreePath = readRowValue(row, "worktree_path", "worktreePath");
+  const adapterSessionRef = readRowValue(
+    row,
+    "adapter_session_ref",
+    "adapterSessionRef",
+  );
+  const planningEnabled = readRowValue(
+    row,
+    "planning_enabled",
+    "planningEnabled",
+  );
+  const planStatus = readRowValue(row, "plan_status", "planStatus");
+  const planSummary = readRowValue(row, "plan_summary", "planSummary");
+  const currentAttemptId = readRowValue(
+    row,
+    "current_attempt_id",
+    "currentAttemptId",
+  );
+  const latestRequestedChangeNoteId = readRowValue(
+    row,
+    "latest_requested_change_note_id",
+    "latestRequestedChangeNoteId",
+  );
+  const latestReviewPackageId = readRowValue(
+    row,
+    "latest_review_package_id",
+    "latestReviewPackageId",
+  );
+  const queueEnteredAt = readRowValue(
+    row,
+    "queue_entered_at",
+    "queueEnteredAt",
+  );
+  const startedAt = readRowValue(row, "started_at", "startedAt");
+  const completedAt = readRowValue(row, "completed_at", "completedAt");
+  const lastHeartbeatAt = readRowValue(
+    row,
+    "last_heartbeat_at",
+    "lastHeartbeatAt",
+  );
+  const lastSummary = readRowValue(row, "last_summary", "lastSummary");
+
   return {
-    id: String(row.id),
-    ticket_id: Number(row.ticket_id),
-    project_id: String(row.project_id),
-    repo_id: String(row.repo_id),
-    agent_adapter:
-      row.agent_adapter === "claude-code" ? "claude-code" : "codex",
+    id: String(readRowValue(row, "id")),
+    ticket_id: Number(readRowValue(row, "ticket_id", "ticketId")),
+    project_id: String(readRowValue(row, "project_id", "projectId")),
+    repo_id: String(readRowValue(row, "repo_id", "repoId")),
+    agent_adapter: agentAdapter === "claude-code" ? "claude-code" : "codex",
     worktree_path:
-      row.worktree_path === null ? null : String(row.worktree_path),
+      worktreePath === null || worktreePath === undefined
+        ? null
+        : String(worktreePath),
     adapter_session_ref:
-      row.adapter_session_ref === null ? null : String(row.adapter_session_ref),
-    status: String(row.status) as ExecutionSession["status"],
-    planning_enabled: Boolean(row.planning_enabled),
-    plan_status: String(row.plan_status) as ExecutionSession["plan_status"],
-    plan_summary: row.plan_summary === null ? null : String(row.plan_summary),
+      adapterSessionRef === null || adapterSessionRef === undefined
+        ? null
+        : String(adapterSessionRef),
+    status: String(readRowValue(row, "status")) as ExecutionSession["status"],
+    planning_enabled: planningEnabled === true || Number(planningEnabled) === 1,
+    plan_status: String(planStatus) as ExecutionSession["plan_status"],
+    plan_summary:
+      planSummary === null || planSummary === undefined
+        ? null
+        : String(planSummary),
     current_attempt_id:
-      row.current_attempt_id === null ? null : String(row.current_attempt_id),
+      currentAttemptId === null || currentAttemptId === undefined
+        ? null
+        : String(currentAttemptId),
     latest_requested_change_note_id:
-      row.latest_requested_change_note_id === null
+      latestRequestedChangeNoteId === null ||
+      latestRequestedChangeNoteId === undefined
         ? null
-        : String(row.latest_requested_change_note_id),
+        : String(latestRequestedChangeNoteId),
     latest_review_package_id:
-      row.latest_review_package_id === null
+      latestReviewPackageId === null || latestReviewPackageId === undefined
         ? null
-        : String(row.latest_review_package_id),
+        : String(latestReviewPackageId),
     queue_entered_at:
-      row.queue_entered_at === null ? null : String(row.queue_entered_at),
-    started_at: row.started_at === null ? null : String(row.started_at),
-    completed_at: row.completed_at === null ? null : String(row.completed_at),
+      queueEnteredAt === null || queueEnteredAt === undefined
+        ? null
+        : String(queueEnteredAt),
+    started_at:
+      startedAt === null || startedAt === undefined ? null : String(startedAt),
+    completed_at:
+      completedAt === null || completedAt === undefined
+        ? null
+        : String(completedAt),
     last_heartbeat_at:
-      row.last_heartbeat_at === null ? null : String(row.last_heartbeat_at),
-    last_summary: row.last_summary === null ? null : String(row.last_summary),
+      lastHeartbeatAt === null || lastHeartbeatAt === undefined
+        ? null
+        : String(lastHeartbeatAt),
+    last_summary:
+      lastSummary === null || lastSummary === undefined
+        ? null
+        : String(lastSummary),
   };
 }
 
 export function mapExecutionAttempt(row: SqliteRow): ExecutionAttempt {
+  const promptKind = readRowValue(row, "prompt_kind", "promptKind");
+  const prompt = readRowValue(row, "prompt");
+  const ptyPid = readRowValue(row, "pty_pid", "ptyPid");
+  const startedAt = readRowValue(row, "started_at", "startedAt");
+  const endedAt = readRowValue(row, "ended_at", "endedAt");
+  const endReason = readRowValue(row, "end_reason", "endReason");
+
   return {
-    id: String(row.id),
-    session_id: String(row.session_id),
-    attempt_number: Number(row.attempt_number),
-    status: String(row.status) as ExecutionAttempt["status"],
+    id: String(readRowValue(row, "id")),
+    session_id: String(readRowValue(row, "session_id", "sessionId")),
+    attempt_number: Number(
+      readRowValue(row, "attempt_number", "attemptNumber"),
+    ),
+    status: String(readRowValue(row, "status")) as ExecutionAttempt["status"],
     prompt_kind:
-      row.prompt_kind === null || row.prompt_kind === undefined
+      promptKind === null || promptKind === undefined
         ? null
-        : (String(row.prompt_kind) as ExecutionAttempt["prompt_kind"]),
-    prompt:
-      row.prompt === null || row.prompt === undefined
-        ? null
-        : String(row.prompt),
-    pty_pid: row.pty_pid === null ? null : Number(row.pty_pid),
-    started_at: String(row.started_at),
-    ended_at: row.ended_at === null ? null : String(row.ended_at),
-    end_reason: row.end_reason === null ? null : String(row.end_reason),
+        : (String(promptKind) as ExecutionAttempt["prompt_kind"]),
+    prompt: prompt === null || prompt === undefined ? null : String(prompt),
+    pty_pid: ptyPid === null || ptyPid === undefined ? null : Number(ptyPid),
+    started_at: String(startedAt),
+    ended_at:
+      endedAt === null || endedAt === undefined ? null : String(endedAt),
+    end_reason:
+      endReason === null || endReason === undefined ? null : String(endReason),
   };
 }
 
 export function mapReviewPackage(row: SqliteRow): ReviewPackage {
+  const commitRefs = readRowValue(row, "commit_refs", "commitRefs");
+  const changeSummary = readRowValue(row, "change_summary", "changeSummary");
+  const validationResults = readRowValue(
+    row,
+    "validation_results",
+    "validationResults",
+  );
+  const remainingRisks = readRowValue(row, "remaining_risks", "remainingRisks");
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+
   return {
-    id: String(row.id),
-    ticket_id: Number(row.ticket_id),
-    session_id: String(row.session_id),
-    diff_ref: String(row.diff_ref),
-    commit_refs: parseJson(row.commit_refs, []),
-    change_summary: String(row.change_summary),
-    validation_results: parseJson(row.validation_results, []),
-    remaining_risks: parseJson(row.remaining_risks, []),
-    created_at: String(row.created_at),
+    id: String(readRowValue(row, "id")),
+    ticket_id: Number(readRowValue(row, "ticket_id", "ticketId")),
+    session_id: String(readRowValue(row, "session_id", "sessionId")),
+    diff_ref: String(readRowValue(row, "diff_ref", "diffRef")),
+    commit_refs: parseJson(commitRefs, []),
+    change_summary: String(changeSummary),
+    validation_results: parseJson(validationResults, []),
+    remaining_risks: parseJson(remainingRisks, []),
+    created_at: String(createdAt),
   };
 }
 
 export function mapReviewRun(row: SqliteRow): ReviewRun {
+  const reviewPackageId = readRowValue(
+    row,
+    "review_package_id",
+    "reviewPackageId",
+  );
+  const implementationSessionId = readRowValue(
+    row,
+    "implementation_session_id",
+    "implementationSessionId",
+  );
+  const adapterSessionRef = readRowValue(
+    row,
+    "adapter_session_ref",
+    "adapterSessionRef",
+  );
+  const failureMessage = readRowValue(row, "failure_message", "failureMessage");
+  const prompt = readRowValue(row, "prompt");
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+  const updatedAt = readRowValue(row, "updated_at", "updatedAt");
+  const completedAt = readRowValue(row, "completed_at", "completedAt");
+
   return {
-    id: String(row.id),
-    ticket_id: Number(row.ticket_id),
-    review_package_id: String(row.review_package_id),
-    implementation_session_id: String(row.implementation_session_id),
-    status: String(row.status) as ReviewRun["status"],
+    id: String(readRowValue(row, "id")),
+    ticket_id: Number(readRowValue(row, "ticket_id", "ticketId")),
+    review_package_id: String(reviewPackageId),
+    implementation_session_id: String(implementationSessionId),
+    status: String(readRowValue(row, "status")) as ReviewRun["status"],
     adapter_session_ref:
-      row.adapter_session_ref === null ? null : String(row.adapter_session_ref),
-    prompt:
-      row.prompt === null || row.prompt === undefined
+      adapterSessionRef === null || adapterSessionRef === undefined
         ? null
-        : String(row.prompt),
-    report: parseJson<ReviewReport | null>(row.report, null),
+        : String(adapterSessionRef),
+    prompt: prompt === null || prompt === undefined ? null : String(prompt),
+    report: parseJson<ReviewReport | null>(readRowValue(row, "report"), null),
     failure_message:
-      row.failure_message === null ? null : String(row.failure_message),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
-    completed_at: row.completed_at === null ? null : String(row.completed_at),
+      failureMessage === null || failureMessage === undefined
+        ? null
+        : String(failureMessage),
+    created_at: String(createdAt),
+    updated_at: String(updatedAt),
+    completed_at:
+      completedAt === null || completedAt === undefined
+        ? null
+        : String(completedAt),
   };
 }
 
 export function mapRequestedChangeNote(row: SqliteRow): RequestedChangeNote {
+  const reviewPackageId = readRowValue(
+    row,
+    "review_package_id",
+    "reviewPackageId",
+  );
+  const authorType = readRowValue(row, "author_type", "authorType");
+  const createdAt = readRowValue(row, "created_at", "createdAt");
+
   return {
-    id: String(row.id),
-    ticket_id: Number(row.ticket_id),
+    id: String(readRowValue(row, "id")),
+    ticket_id: Number(readRowValue(row, "ticket_id", "ticketId")),
     review_package_id:
-      row.review_package_id === null ? null : String(row.review_package_id),
-    author_type: String(row.author_type) as RequestedChangeNote["author_type"],
-    body: String(row.body),
-    created_at: String(row.created_at),
+      reviewPackageId === null || reviewPackageId === undefined
+        ? null
+        : String(reviewPackageId),
+    author_type: String(authorType) as RequestedChangeNote["author_type"],
+    body: String(readRowValue(row, "body")),
+    created_at: String(createdAt),
   };
 }
 
@@ -520,18 +818,22 @@ export class SqliteStoreContext {
   }
 
   close(): void {
-    this.#databaseHandle.sqlite.close();
+    this.#databaseHandle.close();
   }
 
   transaction<T>(operation: () => T): T {
-    return this.#databaseHandle.sqlite.transaction(operation)();
+    return this.#databaseHandle.transaction(operation);
   }
 
   appendSessionLog(sessionId: string, line: string): void {
-    this.#db.run(sql`
-      INSERT INTO session_logs (session_id, line, created_at)
-      VALUES (${sessionId}, ${line}, ${nowIso()})
-    `);
+    this.#db
+      .insert(sessionLogsTable)
+      .values({
+        sessionId,
+        line,
+        createdAt: nowIso(),
+      })
+      .run();
   }
 
   recordStructuredEvent(
@@ -549,18 +851,17 @@ export class SqliteStoreContext {
       payload,
     };
 
-    this.#db.run(sql`
-      INSERT INTO structured_events (
-        id, occurred_at, entity_type, entity_id, event_type, payload
-      ) VALUES (
-        ${event.id},
-        ${event.occurred_at},
-        ${event.entity_type},
-        ${event.entity_id},
-        ${event.event_type},
-        ${stringifyJson(event.payload)}
-      )
-    `);
+    this.#db
+      .insert(structuredEventsTable)
+      .values({
+        id: event.id,
+        occurredAt: event.occurred_at,
+        entityType: event.entity_type,
+        entityId: event.entity_id,
+        eventType: event.event_type,
+        payload: event.payload,
+      })
+      .run();
 
     return event;
   }
@@ -569,32 +870,35 @@ export class SqliteStoreContext {
     projectId: string,
     excludedSessionId?: string,
   ): number {
-    const excludedClause =
-      excludedSessionId === undefined
-        ? sql.empty()
-        : sql`AND id != ${excludedSessionId}`;
-    const statusList = sql.join(
-      slotOccupyingExecutionSessionStatuses.map((status) => sql`${status}`),
-      sql`, `,
-    );
-    const row = this.#db.get<{ count: number }>(sql`
-      SELECT COUNT(*) AS count
-      FROM execution_sessions
-      WHERE project_id = ${projectId}
-        ${excludedClause}
-        AND status IN (${statusList})
-    `);
+    const row = this.#db
+      .select({ count: count() })
+      .from(executionSessionsTable)
+      .where(
+        and(
+          eq(executionSessionsTable.projectId, projectId),
+          inArray(
+            executionSessionsTable.status,
+            slotOccupyingExecutionSessionStatuses,
+          ),
+          excludedSessionId === undefined
+            ? undefined
+            : ne(executionSessionsTable.id, excludedSessionId),
+        ),
+      )
+      .get();
 
     return Number(row?.count ?? 0);
   }
 
   nextAttemptNumber(sessionId: string): number {
-    const row = this.#db.get<{ max_attempt_number: number | null }>(sql`
-      SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt_number
-      FROM execution_attempts
-      WHERE session_id = ${sessionId}
-    `);
+    const row = this.#db
+      .select({
+        maxAttemptNumber: max(executionAttemptsTable.attemptNumber),
+      })
+      .from(executionAttemptsTable)
+      .where(eq(executionAttemptsTable.sessionId, sessionId))
+      .get();
 
-    return Number(row?.max_attempt_number ?? 0) + 1;
+    return Number(row?.maxAttemptNumber ?? 0) + 1;
   }
 }

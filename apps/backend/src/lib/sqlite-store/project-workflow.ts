@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { projectsTable } from "@walleyboard/db";
+import { eq } from "drizzle-orm";
 import type { Project } from "../../../../../packages/contracts/src/index.js";
 
 import type { DraftRepository } from "./draft-repository.js";
@@ -30,14 +31,10 @@ export class ProjectWorkflowService {
       this.tickets.deleteTicket(ticket.id);
     }
 
-    this.context.db.run(sql`
-      DELETE FROM repositories
-      WHERE project_id = ${projectId}
-    `);
-    this.context.db.run(sql`
-      DELETE FROM projects
-      WHERE id = ${projectId}
-    `);
+    this.context.db
+      .delete(projectsTable)
+      .where(eq(projectsTable.id, projectId))
+      .run();
 
     return project;
   }
