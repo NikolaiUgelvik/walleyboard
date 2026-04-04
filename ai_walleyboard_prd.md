@@ -1,9 +1,9 @@
 # PRD: AI WalleyBoard Application
 
-Current-state implementation details live in `README.md` and `docs/implementation-starter-pack.md`. This PRD describes the intended product direction, with Section 11 capturing the stricter MVP slice.
+Current-state implementation details live in `README.md` and `docs/implementation-starter-pack.md`. This PRD describes the intended product direction, with Section 11 capturing the stricter MVP slice. Where the initial MVP cut and the current codebase differ, the current-state docs describe what ships today.
 
 ## 1. Overview
-Build a local-first single-page application for orchestrating AI-assisted software work across multiple repositories, Codex CLI instances, and git worktrees. The application should provide a Kanban-style workflow for drafting, refining, planning, executing, reviewing, and completing engineering tickets from one interface.
+Build a local-first single-page application for orchestrating AI-assisted software work across multiple repositories, agent CLI sessions, and git worktrees. The application should provide a Kanban-style workflow for drafting, refining, planning, executing, reviewing, and completing engineering tickets from one interface.
 
 The product is a power-user tool for engineers who want to manage multiple AI-assisted tasks in parallel without losing visibility into agent progress, git state, or pull request status.
 
@@ -11,9 +11,9 @@ The product is a power-user tool for engineers who want to manage multiple AI-as
 Engineering teams working across multiple repositories and worktrees need a centralized way to:
 - Track work items visually
 - Refine tickets with AI assistance before execution starts
-- Launch and monitor Codex CLI sessions tied to specific tickets
+- Launch and monitor agent CLI sessions tied to specific tickets
 - Control whether execution starts directly or begins in model planning mode
-- Understand what Codex is doing through interpreted progress updates and open a worktree terminal when direct CLI work is needed
+- Understand what the active agent is doing through interpreted progress updates and open a worktree terminal when direct CLI work is needed
 
 Today this workflow is fragmented across issue trackers, local notes, terminals, worktrees, and ad hoc scripts. That fragmentation makes it difficult to manage parallel AI-assisted execution safely and predictably.
 
@@ -38,7 +38,7 @@ Today this workflow is fragmented across issue trackers, local notes, terminals,
 ### Primary Users
 - Engineers managing multiple repositories and worktrees
 - Technical leads coordinating parallel AI-assisted implementation work
-- Power users running multiple Codex CLI sessions concurrently
+- Power users running multiple agent CLI sessions concurrently
 
 ## 6. Product Model
 
@@ -47,7 +47,7 @@ Today this workflow is fragmented across issue trackers, local notes, terminals,
 - Repository: a git repository attached to a project, with its own target branch configuration and optional lifecycle hooks
 - Ticket: a unit of work scoped to exactly one repository
 - Refinement session: a temporary AI-assisted drafting session used during ticket creation or refinement
-- Execution session: the single durable Codex CLI session that owns implementation for a ticket
+- Execution session: the single durable agent CLI session that owns implementation for a ticket
 - Worktree: the isolated filesystem workspace used by a ticket's execution session
 - Pull request: an optional GitHub review object linked to a ticket
 
@@ -55,7 +55,7 @@ Today this workflow is fragmented across issue trackers, local notes, terminals,
 The active board surface consists of the following columns:
 - Draft: persisted draft records that are still being authored or refined and are not executable yet
 - Ready: tickets that are refined enough to execute but are not currently active
-- In Progress: tickets that are active, queued, or currently being worked on by Codex
+- In Progress: tickets that are active, queued, or currently being worked on by the selected agent runtime
 - Review: tickets under human review or linked to an open pull request
 - Done: completed tickets
 
@@ -138,7 +138,7 @@ Storage constraints:
 
 ### 6.5 Session Model
 - Each ticket has exactly one primary execution session.
-- The execution session is the durable Codex CLI session associated with implementation for that ticket.
+- The execution session is the durable agent CLI session associated with implementation for that ticket.
 - The ticket creation drawer may use a separate temporary refinement session.
 - A refinement session is not the same object as the primary execution session.
 - Execution sessions must be resumable across application restarts.
@@ -257,7 +257,7 @@ A ticket must not start execution until all of the following are true:
 When a ticket is explicitly approved and moved to `In Progress`, the system should automatically:
 - Create or restore the worktree
 - Create or restore the working branch
-- Launch or resume the execution session through the Codex execution runtime
+- Launch or resume the execution session through the backend-managed execution runtime
 
 Execution start options:
 - Start immediately
@@ -1253,7 +1253,7 @@ The MVP should prove one reliable end-to-end workflow:
 2. Create a draft ticket with title and description
 3. Run AI-assisted refinement
 4. Save an execution-ready ticket
-5. Start Codex execution in a dedicated worktree
+5. Start ticket execution in a dedicated worktree
 6. Receive in-app notification when user input or approval is required
 7. Review the resulting diff, commits, validation results, and summary
 8. Request changes or merge directly

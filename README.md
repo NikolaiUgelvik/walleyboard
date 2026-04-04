@@ -34,20 +34,21 @@ Implemented now:
 
 - local Fastify + React app with shared contracts, SQLite persistence, and websocket-driven board/session updates
 - board workflow with `Draft`, `Ready`, `In progress`, `In review`, and `Done`
-- project options for Docker-only ticket execution, model overrides, and pre/post-worktree commands
+- compact project rail with per-project color tiles, neutral utility tiles, unread notification badges, and selected-project color accents across board actions
+- project options for project color, agent CLI selection, Codex MCP server toggles, automatic agent review defaults, review defaults, preview commands, model overrides, and pre/post-worktree commands
 - draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
-- execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, runs real `codex exec`, and keeps follow-up attempts on the same logical session and worktree
-- Codex-managed execution modes through `codex exec`, with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
-- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request changes and resume, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row, and merges directly from `review` into the target branch with cleanup
+- execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, launches the selected Codex or Claude Code CLI inside Docker-backed PTY sessions, and keeps follow-up attempts on the same logical session and worktree
+- adapter-managed execution modes with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
+- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request changes and resume, can launch automatic or manual agent review loops, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row, supports GitHub pull request creation and reconciliation, and merges directly from `review` into the target branch with cleanup
 - ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
-- conservative restart recovery that marks active sessions `interrupted` instead of auto-restoring live execution
+- conservative restart recovery that preserves active managed Docker containers for interrupted sessions and marks active sessions `interrupted` instead of auto-restoring live execution
 
 Not yet implemented:
 
 - automatic restoration of a live execution after an application restart
-- GitHub pull request creation or external review reconciliation from the `review` stage
-- richer validation configuration and review-time override handling beyond the current project setup defaults
+- richer validation configuration and review-time override handling beyond the current per-repository profiles
+- remote branch cleanup and broader GitHub workflow automation beyond the current create/track/reconcile flow
 
 ## Current Workflow Terms
 
@@ -55,9 +56,12 @@ Not yet implemented:
 - The draft-to-ready flow is `edit draft -> Refine or Questions -> optional Revert Refine -> Create Ready`
 - Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session and worktree
+- Review tickets default to either `Direct merge` or `Create pull request` from the project setting; once a PR is linked, the review card switches into PR tracking instead of offering duplicate paths
+- Projects can opt into automatic agent review reruns with a per-ticket run limit, and manual `Start agent review` remains available when review work needs another pass
 - The inbox only lists work that currently needs a human action:
   drafts waiting for confirmation, review tickets that are ready for human review and not still under active AI review, and sessions that are paused or failed for real operator input while the agent is not actively controlling the worktree
 - The inbox alert sound only plays when one of those human-actionable items becomes newly actionable after it was previously absent; initial load, refresh churn, and automatic relaunch transitions do not trigger the sound
+- The compact left rail keeps inbox and create-project utility tiles gray by default; project tiles stay color-coded and the inbox tile only shifts into its attention color when unread actionable work exists
 - Ticket cards expose a compact action group for `Diff`, `Terminal`, `Preview`, and `Activity`; the inspector keeps a single activity summary row that opens the same interpreted stream
 - `Diff`, `Terminal`, and `Preview` require a prepared worktree, while `Activity` stays available whenever the ticket still has a session, even after worktree cleanup
 - The `Terminal` action opens a plain xterm.js shell rooted at the ticket worktree without take-over or restore-agent controls on that surface, and it stays unavailable only while a live agent process still owns that worktree
@@ -129,8 +133,8 @@ Supported Docker-backed adapters:
 
 ## Next Milestones
 
-- Add GitHub pull request creation and reconciliation when direct merge is not the right review path
 - Add richer validation configuration and override handling
+- Broaden GitHub automation beyond the current gh-backed create/track/reconcile flow
 - Decide whether interrupted sessions should auto-resume or stay manual after restart
 
 ## License
