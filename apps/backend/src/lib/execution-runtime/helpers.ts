@@ -186,16 +186,6 @@ export function buildOutputSummaryPath(
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
 
-export function buildWorkspaceOutputPath(
-  worktreePath: string,
-  sessionId: string,
-  suffix = "summary",
-): string {
-  const outputDir = join(worktreePath, ".walleyboard");
-  ensureDirectory(outputDir);
-  return join(outputDir, `${sessionId}-${suffix}.txt`);
-}
-
 export function buildMergeConflictSummaryPath(
   project: Project,
   ticketId: number,
@@ -207,12 +197,12 @@ export function buildMergeConflictSummaryPath(
 }
 
 export function buildDraftAnalysisOutputPath(
-  repositoryPath: string,
+  project: Project,
   draftId: string,
   runId: string,
   mode: "refine" | "questions",
 ): string {
-  const analysisDir = join(repositoryPath, ".walleyboard", "draft-analyses");
+  const analysisDir = resolveWalleyBoardPath("draft-analyses", project.slug);
   ensureDirectory(analysisDir);
   return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
 }

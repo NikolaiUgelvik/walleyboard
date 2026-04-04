@@ -151,13 +151,16 @@ function createFakePty(): {
 test("runMergeRecovery streams Docker PTY output through the log callback", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-recovery-"));
   const worktreePath = join(tempDir, "workspace");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(worktreePath, { recursive: true });
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   const loggedLines: string[] = [];
   let cleanedSessionId: string | null = null;
   const { emitData, emitExit, pty } = createFakePty();
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     const recoveryPromise = runMergeRecovery({
       adapter: {
         id: "codex",
@@ -260,6 +263,11 @@ test("runMergeRecovery streams Docker PTY output through the log callback", asyn
       loggedLines.includes("[codex] Still waiting on one more tool check."),
     );
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

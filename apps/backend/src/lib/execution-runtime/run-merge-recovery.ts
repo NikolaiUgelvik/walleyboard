@@ -11,8 +11,8 @@ import { writeCodexConfigOverride } from "../agent-adapters/codex-config.js";
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
+  buildMergeConflictSummaryPath,
   buildProcessEnv,
-  buildWorkspaceOutputPath,
   hasMeaningfulContent,
   streamPtyLines,
   truncate,
@@ -47,10 +47,10 @@ export async function runMergeRecovery(input: {
     throw new Error("Execution session has no prepared worktree");
   }
 
-  const outputSummaryPath = buildWorkspaceOutputPath(
-    worktreePath,
+  const outputSummaryPath = buildMergeConflictSummaryPath(
+    input.project,
+    input.ticket.id,
     input.session.id,
-    "merge-conflict",
   );
   const run = input.adapter.buildMergeConflictRun({
     conflictedFiles: input.conflictedFiles,

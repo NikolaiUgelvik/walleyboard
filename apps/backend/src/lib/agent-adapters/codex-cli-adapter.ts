@@ -1,17 +1,16 @@
-import { join, relative } from "node:path";
 import type { z } from "zod";
 
 import type {
   Project,
   ReasoningEffort,
 } from "../../../../../packages/contracts/src/index.js";
-import { dockerWorkspacePath } from "../docker-runtime.js";
 import {
   hasMeaningfulContent,
   normalizeOptionalModel,
   normalizeOptionalReasoningEffort,
   truncate,
 } from "../execution-runtime/helpers.js";
+import { resolveDockerManagedOutputPath } from "./docker-paths.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -74,19 +73,11 @@ function resolveDockerOutputPath(
   outputPath: string,
   worktreePath: string,
 ): string {
-  const relativeOutputPath = relative(worktreePath, outputPath);
-  if (
-    relativeOutputPath.length === 0 ||
-    relativeOutputPath.startsWith("..") ||
-    relativeOutputPath === "." ||
-    relativeOutputPath.includes("../")
-  ) {
-    throw new Error(
-      "Docker-backed Codex runs must write output inside the mounted worktree.",
-    );
-  }
-
-  return join(dockerWorkspacePath, relativeOutputPath);
+  return resolveDockerManagedOutputPath({
+    agentLabel: "Codex",
+    outputPath,
+    worktreePath,
+  });
 }
 
 function resolveAgentOutputPath(input: {

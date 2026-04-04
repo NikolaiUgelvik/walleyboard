@@ -19,8 +19,9 @@ import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import {
   buildDraftAnalysisOutputPath,
+  buildMergeConflictSummaryPath,
+  buildOutputSummaryPath,
   buildProcessEnv,
-  buildWorkspaceOutputPath,
   extractPersistedAttemptGuidance,
   formatMarkdownLog,
   hasMeaningfulContent,
@@ -550,7 +551,7 @@ export class ExecutionRuntime {
     publishStructuredEvent(this.#eventHub, startedEvent);
 
     const outputPath = buildDraftAnalysisOutputPath(
-      repository.path,
+      project,
       draft.id,
       runId,
       mode,
@@ -837,12 +838,8 @@ export class ExecutionRuntime {
         ? inspectWorktreeRecoveryState(session.worktree_path)
         : null;
     const outputSummaryPath = recoveryState
-      ? buildWorkspaceOutputPath(
-          session.worktree_path,
-          session.id,
-          "merge-conflict",
-        )
-      : buildWorkspaceOutputPath(session.worktree_path, session.id);
+      ? buildMergeConflictSummaryPath(project, ticket.id, session.id)
+      : buildOutputSummaryPath(project, ticket.id, session.id);
     const run = recoveryState
       ? adapter.buildMergeConflictRun({
           conflictedFiles: recoveryState.conflictedFiles,

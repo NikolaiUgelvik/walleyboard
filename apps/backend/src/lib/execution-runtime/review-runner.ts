@@ -16,7 +16,7 @@ import type { AgentCliAdapter } from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildProcessEnv,
-  buildWorkspaceOutputPath,
+  buildReviewRunOutputPath,
   hasMeaningfulContent,
   streamPtyLines,
 } from "./helpers.js";
@@ -43,10 +43,10 @@ export async function runTicketReviewSession(input: {
     throw new Error("Execution session has no prepared worktree");
   }
 
-  const outputPath = buildWorkspaceOutputPath(
-    worktreePath,
+  const outputPath = buildReviewRunOutputPath(
+    input.project,
+    input.ticket.id,
     input.reviewRunId,
-    "review",
   );
   const run = input.adapter.buildReviewRun({
     outputPath,

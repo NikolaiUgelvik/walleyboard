@@ -121,7 +121,9 @@ function createReviewPackage(): ReviewPackage {
 test("runTicketReviewSession streams Docker reviews through a PTY", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runner-"));
   const worktreePath = join(tempDir, "workspace");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(worktreePath, { recursive: true });
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   let onDataHandler: ((chunk: string) => void) | null = null;
   let onExitHandler:
@@ -136,6 +138,7 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
   >();
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     const reviewPromise = runTicketReviewSession({
       activeReviewRuns,
       adapter: {
@@ -262,6 +265,11 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
       ),
     );
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { z } from "zod";
@@ -71,8 +73,17 @@ function createRepository(): RepositoryConfig {
   };
 }
 
+function resolveWalleyBoardHomeForTest(): string {
+  return process.env.WALLEYBOARD_HOME ?? join(homedir(), ".walleyboard");
+}
+
 function createWorkspaceOutputPath(name = "output.json"): string {
-  return `/tmp/test-repo/.walleyboard/${name}`;
+  return join(
+    resolveWalleyBoardHomeForTest(),
+    "agent-summaries",
+    "project-1",
+    name,
+  );
 }
 
 function createTicket(): TicketFrontmatter {
@@ -824,7 +835,10 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   assert.ok(shellCmd.includes("--permission-mode"));
   assert.ok(shellCmd.includes("plan"));
   assert.ok(!shellCmd.includes("dangerously-skip-permissions"));
-  assert.equal(run.outputPath, "/workspace/.walleyboard/output.json");
+  assert.equal(
+    run.outputPath,
+    "/walleyboard-home/agent-summaries/project-1/output.json",
+  );
   assertClaudeDockerSpec(run.dockerSpec);
 });
 

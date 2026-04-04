@@ -10,8 +10,10 @@ import { basename, join } from "node:path";
 
 import { type IPty, spawn as spawnPty } from "node-pty";
 import type { PreparedAgentRun } from "./agent-adapters/types.js";
+import { resolveWalleyBoardHome } from "./walleyboard-paths.js";
 
 export const dockerWorkspacePath = "/workspace";
+export const dockerWalleyBoardHomePath = "/walleyboard-home";
 
 const dockerManagedLabel = "com.walleyboard.managed";
 const dockerRepoRootHashLabel = "com.walleyboard.repo_root_hash";
@@ -272,7 +274,9 @@ export class DockerRuntimeManager implements DockerRuntime {
     const configHomePath = this.#resolveConfigHomePath(
       input.dockerSpec.configMountPath,
     );
+    const walleyBoardHomePath = resolveWalleyBoardHome();
     this.#ensureConfigHome(configHomePath);
+    this.#ensureWalleyBoardHome(walleyBoardHomePath);
     const configMountSpecs = buildConfigMountSpecs({
       configHomePath,
       configMountPath: input.dockerSpec.configMountPath,
@@ -305,6 +309,8 @@ export class DockerRuntimeManager implements DockerRuntime {
       ...configMountSpecs.flatMap((mountSpec) => ["--mount", mountSpec]),
       "--mount",
       `type=bind,src=${input.worktreePath},dst=${dockerWorkspacePath}`,
+      "--mount",
+      `type=bind,src=${walleyBoardHomePath},dst=${dockerWalleyBoardHomePath}`,
       "-e",
       `HOME=${input.dockerSpec.homePath}`,
       input.dockerSpec.imageTag,
@@ -434,6 +440,12 @@ export class DockerRuntimeManager implements DockerRuntime {
   #ensureConfigHome(configHomePath: string): void {
     if (!existsSync(configHomePath)) {
       mkdirSync(configHomePath, { recursive: true });
+    }
+  }
+
+  #ensureWalleyBoardHome(walleyBoardHomePath: string): void {
+    if (!existsSync(walleyBoardHomePath)) {
+      mkdirSync(walleyBoardHomePath, { recursive: true });
     }
   }
 

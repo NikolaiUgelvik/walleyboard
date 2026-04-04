@@ -143,7 +143,9 @@ function createSession(worktreePath: string): ExecutionSession {
 test("docker-backed execution launches the configured adapter command inside Docker", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
   const worktreePath = join(tempDir, "workspace");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(worktreePath, { recursive: true });
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   let spawnedArgs: string[] | null = null;
   const updateExecutionAttemptCalls: Array<{
@@ -197,6 +199,7 @@ test("docker-backed execution launches the configured adapter command inside Doc
   };
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     const adapterRegistry = new AgentAdapterRegistry([
       {
         id: "codex",
@@ -281,8 +284,8 @@ test("docker-backed execution launches the configured adapter command inside Doc
     assert.notEqual(outputFlagIndex, -1);
     const outputPath = dockerArgs[outputFlagIndex + 1];
     assert.ok(outputPath);
-    assert.equal(outputPath.startsWith(worktreePath), true);
-    assert.match(outputPath, /\.walleyboard\//);
+    assert.equal(outputPath.startsWith(walleyBoardHome), true);
+    assert.match(outputPath, /agent-summaries\/project-1\//);
     assert.equal(dockerArgs[0], "exec");
     assert.deepEqual(updateExecutionAttemptCalls[0], {
       attemptId: "attempt-1",
@@ -292,6 +295,11 @@ test("docker-backed execution launches the configured adapter command inside Doc
       },
     });
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -299,7 +307,9 @@ test("docker-backed execution launches the configured adapter command inside Doc
 test("draft refinement launches the configured adapter command inside Docker", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-draft-runtime-"));
   const repositoryPath = join(tempDir, "repository");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(repositoryPath, { recursive: true });
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   let ensureSessionContainerInput: {
     worktreePath: string;
@@ -353,14 +363,15 @@ test("draft refinement launches the configured adapter command inside Docker", (
   };
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     const adapterRegistry = new AgentAdapterRegistry([
       {
         id: "codex",
         label: "Fake Agent",
         buildDraftRun(input) {
           assert.equal(input.useDockerRuntime, true);
-          assert.equal(input.outputPath.startsWith(repositoryPath), true);
-          assert.match(input.outputPath, /\.walleyboard\/draft-analyses\//);
+          assert.equal(input.outputPath.startsWith(walleyBoardHome), true);
+          assert.match(input.outputPath, /draft-analyses\/project-1\//);
           return {
             command: "test-agent",
             args: ["exec", "--json", "--output-last-message", input.outputPath],
@@ -427,6 +438,11 @@ test("draft refinement launches the configured adapter command inside Docker", (
     assert.equal(capturedContainerInput.ticketId, 0);
     assert.equal(spawnedRun.command, "test-agent");
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -434,7 +450,9 @@ test("draft refinement launches the configured adapter command inside Docker", (
 test("docker-backed execution suppresses repeated raw Codex errors and reports one failure detail", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
   const worktreePath = join(tempDir, "workspace");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(worktreePath, { recursive: true });
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   const sessionLogs: string[] = [];
   let onDataHandler: ((chunk: string) => void) | null = null;
@@ -503,6 +521,7 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
   };
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     const adapterRegistry = new AgentAdapterRegistry([
       {
         id: "codex",
@@ -598,6 +617,11 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
       ],
     );
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -605,6 +629,8 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
 test("startExecution resumes into merge recovery when the preserved worktree is mid-merge", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
   const worktreePath = join(tempDir, "workspace");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   execFileSync("git", ["init", worktreePath], {
     stdio: ["ignore", "pipe", "pipe"],
@@ -710,6 +736,7 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
   };
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     const adapterRegistry = new AgentAdapterRegistry([
       {
         id: "codex",
@@ -799,6 +826,11 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
       ),
     );
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import type {
@@ -134,6 +136,10 @@ function createReviewPackage(): ReviewPackage {
   };
 }
 
+function resolveWalleyBoardHomeForTest(): string {
+  return process.env.WALLEYBOARD_HOME ?? join(homedir(), ".walleyboard");
+}
+
 test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspace", () => {
   const adapter = new CodexCliAdapter();
   const session = createSession();
@@ -141,7 +147,12 @@ test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspac
   const run = adapter.buildExecutionRun({
     executionMode: "implementation",
     extraInstructions: [],
-    outputPath: "/tmp/spacegame-worktree/.walleyboard/session-1-summary.txt",
+    outputPath: join(
+      resolveWalleyBoardHomeForTest(),
+      "agent-summaries",
+      "spacegame",
+      "ticket-5-session-1.txt",
+    ),
     planSummary: null,
     project: createProject(),
     repository: createRepository(),
@@ -154,9 +165,12 @@ test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspac
   assert.notEqual(outputFlagIndex, -1);
   assert.equal(
     run.args[outputFlagIndex + 1],
-    "/workspace/.walleyboard/session-1-summary.txt",
+    "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1.txt",
   );
-  assert.equal(run.outputPath, "/workspace/.walleyboard/session-1-summary.txt");
+  assert.equal(
+    run.outputPath,
+    "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1.txt",
+  );
 });
 
 test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", () => {
@@ -165,8 +179,12 @@ test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", (
   const run = adapter.buildDraftRun({
     draft: createDraft(),
     mode: "refine",
-    outputPath:
-      "/tmp/spacegame/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
+    outputPath: join(
+      resolveWalleyBoardHomeForTest(),
+      "draft-analyses",
+      "spacegame",
+      "draft-1-refine-run-1.json",
+    ),
     project: createProject(),
     repository: createRepository(),
     useDockerRuntime: true,
@@ -176,11 +194,11 @@ test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", (
   assert.notEqual(outputFlagIndex, -1);
   assert.equal(
     run.args[outputFlagIndex + 1],
-    "/workspace/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
+    "/walleyboard-home/draft-analyses/spacegame/draft-1-refine-run-1.json",
   );
   assert.equal(
     run.outputPath,
-    "/workspace/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
+    "/walleyboard-home/draft-analyses/spacegame/draft-1-refine-run-1.json",
   );
   assert.ok(run.args.includes("--dangerously-bypass-approvals-and-sandbox"));
   assert.equal(run.args.includes("--full-auto"), false);
@@ -207,7 +225,7 @@ test("CodexCliAdapter.buildDraftRun uses full-auto outside Docker", () => {
   assert.equal(run.dockerSpec, null);
 });
 
-test("CodexCliAdapter.buildExecutionRun rejects Docker output paths outside the worktree", () => {
+test("CodexCliAdapter.buildExecutionRun rejects Docker output paths outside the worktree and WalleyBoard home", () => {
   const adapter = new CodexCliAdapter();
 
   assert.throws(() =>
@@ -233,8 +251,12 @@ test("CodexCliAdapter.buildMergeConflictRun resumes an existing adapter session 
   const run = adapter.buildMergeConflictRun({
     conflictedFiles: ["src/story.txt"],
     failureMessage: "Unfinished merge detected.",
-    outputPath:
-      "/tmp/spacegame-worktree/.walleyboard/session-1-merge-conflict.txt",
+    outputPath: join(
+      resolveWalleyBoardHomeForTest(),
+      "agent-summaries",
+      "spacegame",
+      "ticket-5-session-1-merge-conflict.txt",
+    ),
     project: createProject(),
     recoveryKind: "conflicts",
     repository: createRepository(),
@@ -252,7 +274,7 @@ test("CodexCliAdapter.buildMergeConflictRun resumes an existing adapter session 
   assert.notEqual(outputFlagIndex, -1);
   assert.equal(
     run.args[outputFlagIndex + 1],
-    "/workspace/.walleyboard/session-1-merge-conflict.txt",
+    "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1-merge-conflict.txt",
   );
 });
 
@@ -284,7 +306,12 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
   const session = createSession();
 
   const run = adapter.buildReviewRun({
-    outputPath: "/tmp/spacegame-worktree/.walleyboard/review.json",
+    outputPath: join(
+      resolveWalleyBoardHomeForTest(),
+      "agent-reviews",
+      "spacegame",
+      "ticket-5-review-run-1.json",
+    ),
     project: createProject(),
     repository: createRepository(),
     reviewPackage: createReviewPackage(),
@@ -307,9 +334,12 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
   assert.notEqual(outputFlagIndex, -1);
   assert.equal(
     run.args[outputFlagIndex + 1],
-    "/workspace/.walleyboard/review.json",
+    "/walleyboard-home/agent-reviews/spacegame/ticket-5-review-run-1.json",
   );
-  assert.equal(run.outputPath, "/workspace/.walleyboard/review.json");
+  assert.equal(
+    run.outputPath,
+    "/walleyboard-home/agent-reviews/spacegame/ticket-5-review-run-1.json",
+  );
   assert.ok(run.dockerSpec);
 });
 

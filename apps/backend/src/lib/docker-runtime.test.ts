@@ -32,9 +32,12 @@ test("ensureSessionContainer uses the adapter docker spec for image and config m
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-runtime-"));
   const worktreePath = join(tempDir, "workspace");
   const configHomePath = join(tempDir, ".test-agent");
+  const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
   const commands: Array<{ command: string; args: string[] }> = [];
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHomePath;
     const runtime = new DockerRuntimeManager({
       configHomeResolver: () => configHomePath,
       execFileSyncImpl: ((command: string, args: string[]) => {
@@ -93,8 +96,14 @@ test("ensureSessionContainer uses the adapter docker spec for image and config m
     assert.deepEqual(mountArgs, [
       `type=bind,src=${configHomePath},dst=/home/test-agent/.test-agent`,
       `type=bind,src=${worktreePath},dst=/workspace`,
+      `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
     ]);
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -106,9 +115,12 @@ test("ensureSessionContainer mounts a config override when provided", () => {
   const worktreePath = join(tempDir, "workspace");
   const configHomePath = join(tempDir, ".test-agent");
   const configTomlPath = join(tempDir, "config.toml");
+  const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
   const commands: Array<{ command: string; args: string[] }> = [];
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHomePath;
     const runtime = new DockerRuntimeManager({
       configHomeResolver: () => configHomePath,
       execFileSyncImpl: ((command: string, args: string[]) => {
@@ -160,8 +172,14 @@ test("ensureSessionContainer mounts a config override when provided", () => {
       `type=bind,src=${configHomePath},dst=/home/test-agent/.test-agent`,
       `type=bind,src=${configTomlPath},dst=/home/test-agent/.test-agent/config.toml`,
       `type=bind,src=${worktreePath},dst=/workspace`,
+      `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
     ]);
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -173,9 +191,12 @@ test("ensureSessionContainer mounts host-home config paths at both container and
   const worktreePath = join(tempDir, "workspace");
   const hostConfigHomePath = join(homedir(), ".codex");
   const configTomlPath = join(tempDir, "config.toml");
+  const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
   const commands: Array<{ command: string; args: string[] }> = [];
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHomePath;
     const runtime = new DockerRuntimeManager({
       configHomeResolver: () => hostConfigHomePath,
       execFileSyncImpl: ((command: string, args: string[]) => {
@@ -229,8 +250,14 @@ test("ensureSessionContainer mounts host-home config paths at both container and
       `type=bind,src=${configTomlPath},dst=/home/test-agent/.test-agent/config.toml`,
       `type=bind,src=${configTomlPath},dst=${hostConfigHomePath}/config.toml`,
       `type=bind,src=${worktreePath},dst=/workspace`,
+      `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
     ]);
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -239,8 +266,10 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-pty-"));
   const commands: Array<{ command: string; args: string[] }> = [];
   let spawnedArgs: string[] | null = null;
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   try {
+    process.env.WALLEYBOARD_HOME = join(tempDir, ".walleyboard-home");
     const runtime = new DockerRuntimeManager({
       configHomeResolver: () => join(tempDir, ".test-agent"),
       execFileSyncImpl: ((command: string, args: string[]) => {
@@ -314,6 +343,11 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
       "exec",
     ]);
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -389,8 +423,10 @@ test("cleanupStaleContainers preserves containers for active session ids", () =>
 test("dispose only cleans up tracked session containers", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-dispose-"));
   const commands: Array<{ command: string; args: string[] }> = [];
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   try {
+    process.env.WALLEYBOARD_HOME = join(tempDir, ".walleyboard-home");
     const runtime = new DockerRuntimeManager({
       configHomeResolver: () => join(tempDir, ".test-agent"),
       execFileSyncImpl: ((command: string, args: string[]) => {
@@ -446,6 +482,11 @@ test("dispose only cleans up tracked session containers", () => {
       /^walleyboard-[a-f0-9]{12}-session-1$/,
     );
   } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
