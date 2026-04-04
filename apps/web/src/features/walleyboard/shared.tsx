@@ -22,6 +22,7 @@ import type {
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import type { DraftQuestionsResult } from "./shared-types.js";
 import {
+  getProjectColorSwatchForegroundColor,
   parseDraftQuestionsResult,
   parseDraftRefinementResult,
   projectColorPalette,
@@ -238,7 +239,7 @@ export function ProjectColorSwatchPicker({
                     ? "2px solid var(--mantine-color-text)"
                     : "1px solid var(--mantine-color-default-border)",
                   borderRadius: "999px",
-                  color: "#fff",
+                  color: getProjectColorSwatchForegroundColor(color),
                   display: "flex",
                   height: 32,
                   justifyContent: "center",

@@ -998,7 +998,7 @@ test("edit project modal submits the updated color through the controller workfl
   }
 });
 
-test("edit project modal preserves an existing non-palette color until the user picks a swatch", async () => {
+test("edit project modal clamps an existing non-palette color to the default swatch", async () => {
   const harness = installDom();
   let updatePayload: {
     automaticAgentReview: boolean;
@@ -1007,7 +1007,7 @@ test("edit project modal preserves an existing non-palette color until the user 
 
   try {
     const project = createProject({
-      color: "#123456",
+      color: "#123456" as Project["color"],
     });
     const repository = createRepository({
       project_id: project.id,
@@ -1056,7 +1056,7 @@ test("edit project modal preserves an existing non-palette color until the user 
         automaticAgentReview: boolean;
         color: string;
       };
-      assert.equal(savedPayload.color, "#123456");
+      assert.equal(savedPayload.color, projectColorPalette[0]);
       assert.equal(savedPayload.automaticAgentReview, true);
     } finally {
       await act(async () => {

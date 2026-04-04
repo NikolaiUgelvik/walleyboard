@@ -20,6 +20,10 @@ import type {
   TicketFrontmatter,
   TicketReference,
 } from "../../../../../packages/contracts/src/index.js";
+import {
+  normalizeProjectColor as normalizeSharedProjectColor,
+  defaultProjectColor as sharedDefaultProjectColor,
+} from "../../../../../packages/contracts/src/index.js";
 
 import { nowIso } from "../time.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
@@ -37,19 +41,12 @@ export const slotOccupyingExecutionSessionStatuses = [
   "running",
 ] as const;
 export const defaultMaxConcurrentSessions = 4;
-export const defaultProjectColor = "#2563EB";
+export const defaultProjectColor = sharedDefaultProjectColor;
 
 export function normalizeProjectColor(
   value: string | null | undefined,
-): string {
-  if (typeof value !== "string") {
-    return defaultProjectColor;
-  }
-
-  const trimmed = value.trim();
-  return /^#[0-9A-Fa-f]{6}$/.test(trimmed)
-    ? trimmed.toUpperCase()
-    : defaultProjectColor;
+): Project["color"] {
+  return normalizeSharedProjectColor(value);
 }
 
 export function slugify(value: string): string {

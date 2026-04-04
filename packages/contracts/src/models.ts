@@ -32,7 +32,35 @@ export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
 export const agentAdapterSchema = z.enum(["codex", "claude-code"]);
 export const executionBackendSchema = z.enum(["docker"]);
 export const reviewActionSchema = z.enum(["direct_merge", "pull_request"]);
-export const projectColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+export const projectColorPalette = [
+  "#2563EB",
+  "#0EA5E9",
+  "#14B8A6",
+  "#22C55E",
+  "#D97706",
+  "#F97316",
+  "#EC4899",
+  "#8B5CF6",
+  "#64748B",
+] as const;
+export const defaultProjectColor = projectColorPalette[0];
+export const projectColorSchema = z.enum(projectColorPalette);
+export type ProjectColor = z.infer<typeof projectColorSchema>;
+
+export function isProjectColor(value: string): value is ProjectColor {
+  return projectColorPalette.includes(value as ProjectColor);
+}
+
+export function normalizeProjectColor(
+  value: string | null | undefined,
+): ProjectColor {
+  if (typeof value !== "string") {
+    return defaultProjectColor;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return isProjectColor(normalized) ? normalized : defaultProjectColor;
+}
 
 export const executionSessionStatusSchema = z.enum([
   "queued",

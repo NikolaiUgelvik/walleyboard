@@ -288,6 +288,38 @@ test("projects persist rail color updates", () => {
   }
 });
 
+test("projects clamp non-palette colors to the default swatch on create and update", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-color-clamp-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Clamped Project Color",
+      color: "#123456" as never,
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(store.getProject(project.id)?.color, "#2563EB");
+
+    store.updateProject(project.id, {
+      color: "#654321" as never,
+    });
+
+    assert.equal(store.getProject(project.id)?.color, "#2563EB");
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(reloadedStore.getProject(project.id)?.color, "#2563EB");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("review run history persists across reloads in chronological order", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runs-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

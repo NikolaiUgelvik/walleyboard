@@ -13,6 +13,7 @@ import {
   getAgentAdapterIconPath,
   getProjectAgentAdapterOptions,
   ProjectAgentAdapterSelect,
+  ProjectColorSwatchPicker,
 } from "./shared.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
@@ -303,6 +304,57 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
       claudeOption.querySelector("img")?.getAttribute("src"),
       "/agent-icons/claude-code.svg",
     );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    await harness.flushAsyncWork();
+    harness.cleanup();
+  }
+});
+
+test("ProjectColorSwatchPicker uses a dark checkmark on lighter swatches and a light checkmark on darker swatches", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <ProjectColorSwatchPicker
+            description="Pick a project color"
+            label="Project color"
+            onChange={() => {}}
+            value="#22C55E"
+          />
+          <ProjectColorSwatchPicker
+            description="Pick a project color"
+            label="Backup project color"
+            onChange={() => {}}
+            value="#2563EB"
+          />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+    await harness.flushAsyncWork();
+
+    const lightSwatch = harness.mountNode
+      .querySelector<HTMLButtonElement>(
+        'button[role="radio"][aria-label="Project color #22C55E"]',
+      )
+      ?.querySelector<HTMLElement>("div");
+    const darkSwatch = harness.mountNode
+      .querySelector<HTMLButtonElement>(
+        'button[role="radio"][aria-label="Backup project color #2563EB"]',
+      )
+      ?.querySelector<HTMLElement>("div");
+
+    assert.ok(lightSwatch);
+    assert.ok(darkSwatch);
+    assert.equal(lightSwatch.style.color, "rgb(15, 23, 42)");
+    assert.equal(darkSwatch.style.color, "rgb(255, 255, 255)");
   } finally {
     await act(async () => {
       root.unmount();

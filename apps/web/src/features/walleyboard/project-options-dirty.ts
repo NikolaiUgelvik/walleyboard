@@ -5,6 +5,8 @@ import type {
   ReviewAction,
 } from "../../../../../packages/contracts/src/index.js";
 
+import { normalizeProjectColor } from "./shared-utils.js";
+
 type ProjectOptionsDirtyInput = {
   color: string;
   draftModelValue: string | null;
@@ -33,7 +35,7 @@ export function hasProjectOptionsDirty(
   }
 
   return (
-    input.color !== project.color ||
+    input.color !== normalizeProjectColor(project.color) ||
     input.selectedAgentAdapter !== project.agent_adapter ||
     input.executionBackend !== project.execution_backend ||
     !(

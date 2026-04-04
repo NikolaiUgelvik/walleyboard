@@ -8,6 +8,12 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
+import {
+  isProjectColor,
+  normalizeProjectColor as normalizeSharedProjectColor,
+  defaultProjectColor as sharedDefaultProjectColor,
+  projectColorPalette as sharedProjectColorPalette,
+} from "../../../../../packages/contracts/src/index.js";
 
 import {
   type DraftQuestionsResult,
@@ -24,18 +30,10 @@ const stoppableSessionStatuses = [
   "paused_user_control",
   "awaiting_input",
 ] satisfies ExecutionSession["status"][];
-export const projectColorPalette = [
-  "#2563EB",
-  "#0EA5E9",
-  "#14B8A6",
-  "#22C55E",
-  "#D97706",
-  "#F97316",
-  "#EC4899",
-  "#8B5CF6",
-  "#64748B",
-] as const;
-export const defaultProjectColor: string = projectColorPalette[0];
+export const projectColorPalette = sharedProjectColorPalette;
+export const defaultProjectColor: string = sharedDefaultProjectColor;
+const lightProjectColorSwatchForeground = "#FFFFFF";
+const darkProjectColorSwatchForeground = "#0F172A";
 
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
@@ -59,16 +57,51 @@ export function slugify(value: string): string {
 export function normalizeProjectColor(
   value: string | null | undefined,
 ): string {
-  if (typeof value !== "string") {
-    return defaultProjectColor;
-  }
+  return normalizeSharedProjectColor(value);
+}
 
-  const normalized = value.trim().toUpperCase();
-  return projectColorPalette.includes(
-    normalized as (typeof projectColorPalette)[number],
-  )
-    ? normalized
-    : defaultProjectColor;
+function colorChannelToLinear(channel: number): number {
+  const normalized = channel / 255;
+  return normalized <= 0.03928
+    ? normalized / 12.92
+    : ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(color: string): number {
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const green = Number.parseInt(color.slice(3, 5), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+
+  return (
+    colorChannelToLinear(red) * 0.2126 +
+    colorChannelToLinear(green) * 0.7152 +
+    colorChannelToLinear(blue) * 0.0722
+  );
+}
+
+function contrastRatio(left: string, right: string): number {
+  const leftLuminance = relativeLuminance(left);
+  const rightLuminance = relativeLuminance(right);
+  const lighter = Math.max(leftLuminance, rightLuminance);
+  const darker = Math.min(leftLuminance, rightLuminance);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+export function getProjectColorSwatchForegroundColor(color: string): string {
+  const normalizedColor = normalizeProjectColor(color);
+  const darkForegroundContrast = contrastRatio(
+    normalizedColor,
+    darkProjectColorSwatchForeground,
+  );
+  const lightForegroundContrast = contrastRatio(
+    normalizedColor,
+    lightProjectColorSwatchForeground,
+  );
+
+  return darkForegroundContrast >= lightForegroundContrast
+    ? darkProjectColorSwatchForeground
+    : lightProjectColorSwatchForeground;
 }
 
 export function pickProjectColor(
@@ -78,11 +111,7 @@ export function pickProjectColor(
   const usedColors = new Set(
     projects
       .map((project) => project.color.trim().toUpperCase())
-      .filter((color) =>
-        projectColorPalette.includes(
-          color as (typeof projectColorPalette)[number],
-        ),
-      ),
+      .filter((color) => isProjectColor(color)),
   );
   const unusedColors = projectColorPalette.filter(
     (color) => !usedColors.has(color),
@@ -120,11 +149,14 @@ export function resolveProjectOptionsColors(input: {
   swatchColor: string;
 } {
   const swatchColor = normalizeProjectColor(input.color);
+  const persistedProjectColor =
+    input.project === null ? null : normalizeProjectColor(input.project.color);
+
   return {
     persistedColor:
       input.project === null || input.colorManuallySelected
         ? swatchColor
-        : input.project.color,
+        : (persistedProjectColor ?? swatchColor),
     swatchColor,
   };
 }
