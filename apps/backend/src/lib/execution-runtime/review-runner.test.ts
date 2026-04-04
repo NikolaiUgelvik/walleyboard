@@ -168,8 +168,8 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
             dockerSpec: {
               imageTag: "example/codex:latest",
               dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
-              homePath: "/home/codex",
-              configMountPath: "/home/codex/.codex",
+              homePath: "/home/walley",
+              configMountPath: "/home/walley/.codex",
             },
           };
         },

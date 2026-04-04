@@ -649,8 +649,8 @@ test("workspace terminal stays available after execution starts in the same work
             dockerSpec: {
               imageTag: "walleyboard/test-runtime:latest",
               dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
-              homePath: "/home/codex",
-              configMountPath: "/home/codex/.codex",
+              homePath: "/home/walley",
+              configMountPath: "/home/walley/.codex",
             },
             outputPath: input.outputPath,
           };

@@ -34,8 +34,8 @@ import type {
 const codexDockerSpec = {
   imageTag: "walleyboard/codex-runtime:ubuntu-24.04-node-24",
   dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
-  homePath: "/home/codex",
-  configMountPath: "/home/codex/.codex",
+  homePath: "/home/walley",
+  configMountPath: "/home/walley/.codex",
 } as const;
 
 function appendCodexModelArgs(

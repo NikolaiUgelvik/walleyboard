@@ -20,7 +20,13 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends nodejs \
   && npm install --global @openai/codex \
   && npm install --global @anthropic-ai/claude-code \
-  && mkdir -p /home/codex/.codex /home/codex/.claude \
-  && chmod 0777 /home/codex \
+  && useradd --create-home --home-dir /home/walley --shell /bin/bash walley \
+  && mkdir -p /home/walley/.codex /home/walley/.claude \
+  && chown -R walley:walley /home/walley \
+  && chmod 0777 /home/walley /home/walley/.codex /home/walley/.claude \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
+
+ENV HOME=/home/walley
+
+USER walley

@@ -670,8 +670,8 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
             dockerSpec: {
               imageTag: "example/codex:latest",
               dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
-              homePath: "/home/codex",
-              configMountPath: "/home/codex/.codex",
+              homePath: "/home/walley",
+              configMountPath: "/home/walley/.codex",
             },
           };
         },

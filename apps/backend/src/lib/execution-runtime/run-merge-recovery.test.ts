@@ -186,8 +186,8 @@ test("runMergeRecovery streams Docker PTY output through the log callback", asyn
             dockerSpec: {
               imageTag: "example/codex:latest",
               dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
-              homePath: "/home/codex",
-              configMountPath: "/home/codex/.codex",
+              homePath: "/home/walley",
+              configMountPath: "/home/walley/.codex",
             },
           };
         },
