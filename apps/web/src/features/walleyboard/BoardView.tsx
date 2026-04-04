@@ -42,11 +42,9 @@ import {
   describePullRequestStatus,
   hasActiveLinkedPullRequest,
   humanizeSessionStatus,
-  humanizeTicketStatus,
   isStoppableSessionStatus,
   resolveReviewCardActions,
   sessionStatusColor,
-  ticketStatusColor,
 } from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
@@ -1010,6 +1008,29 @@ export function BoardView({
                                         <Text className="board-card-meta">
                                           {ticket.ticket_type} •{" "}
                                           {ticket.target_branch}
+                                          {diffLineSummary ? (
+                                            <>
+                                              {" • "}
+                                              <Box
+                                                component="span"
+                                                style={{
+                                                  color:
+                                                    "var(--mantine-color-green-6)",
+                                                }}
+                                              >
+                                                +{diffLineSummary.additions}
+                                              </Box>{" "}
+                                              <Box
+                                                component="span"
+                                                style={{
+                                                  color:
+                                                    "var(--mantine-color-red-6)",
+                                                }}
+                                              >
+                                                -{diffLineSummary.deletions}
+                                              </Box>
+                                            </>
+                                          ) : null}
                                         </Text>
                                         <TicketWorkspaceActions
                                           controller={controller}
@@ -1040,12 +1061,6 @@ export function BoardView({
                                       </Group>
                                     ) : null}
                                     <Group gap={6} wrap="wrap">
-                                      <Badge
-                                        variant="light"
-                                        color={ticketStatusColor(ticket.status)}
-                                      >
-                                        {humanizeTicketStatus(ticket.status)}
-                                      </Badge>
                                       {ticketSession ? (
                                         <Badge
                                           variant="outline"
@@ -1057,25 +1072,6 @@ export function BoardView({
                                             ticketSession.status,
                                           )}
                                         </Badge>
-                                      ) : null}
-                                      {diffLineSummary ? (
-                                        <>
-                                          <Badge variant="outline" color="gray">
-                                            {diffLineSummary.files}{" "}
-                                            {diffLineSummary.files === 1
-                                              ? "file changed"
-                                              : "files changed"}
-                                          </Badge>
-                                          <Badge
-                                            variant="outline"
-                                            color="green"
-                                          >
-                                            +{diffLineSummary.additions}
-                                          </Badge>
-                                          <Badge variant="outline" color="red">
-                                            -{diffLineSummary.deletions}
-                                          </Badge>
-                                        </>
                                       ) : null}
                                     </Group>
                                     <MarkdownContent

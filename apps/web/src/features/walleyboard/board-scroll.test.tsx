@@ -954,7 +954,7 @@ test("ticket cards expose stable ids for ticket reference targets", () => {
   assert.match(markup, /tabindex="-1"/);
 });
 
-test("ticket cards show diff line summaries only for in-progress and review tickets above the description preview", () => {
+test("ticket cards show inline diff summaries only for in-progress and review tickets above the description preview", () => {
   const controller = createWalleyBoardController();
   const readyTicket = createTicket({
     id: 11,
@@ -1027,18 +1027,19 @@ test("ticket cards show diff line summaries only for in-progress and review tick
     </MantineProvider>,
   );
 
-  assert.match(markup, />2 files changed</);
-  assert.match(markup, />1 file changed</);
-  assert.doesNotMatch(markup, />9 files changed</);
-  assert.doesNotMatch(markup, />4 files changed</);
+  assert.match(markup, /\+12<\/span> <span[^>]*>-4<\/span>/);
+  assert.match(markup, /\+7<\/span> <span[^>]*>-3<\/span>/);
+  assert.doesNotMatch(markup, /\+99<\/span> <span[^>]*>-1<\/span>/);
+  assert.doesNotMatch(markup, /\+20<\/span> <span[^>]*>-5<\/span>/);
+  assert.doesNotMatch(markup, /files changed/);
+  assert.doesNotMatch(markup, /file changed/);
 
   assert.ok(
-    markup.indexOf("2 files changed") <
+    markup.indexOf("+12") <
       markup.indexOf("In-progress ticket description preview"),
   );
   assert.ok(
-    markup.indexOf("1 file changed") <
-      markup.indexOf("Review ticket description preview"),
+    markup.indexOf("+7") < markup.indexOf("Review ticket description preview"),
   );
 });
 
@@ -1120,9 +1121,8 @@ test("ticket cards place workspace controls under metadata and move statuses int
   const metadataIndex = markup.indexOf("feature • main");
   const actionsIndex = markup.indexOf("ticket-workspace-action-group");
   const menuIndex = markup.indexOf("More actions for ticket 41");
-  const ticketStatusIndex = markup.indexOf("In Progress");
   const sessionStatusIndex = markup.indexOf("Running");
-  const diffSummaryIndex = markup.indexOf("2 files changed");
+  const diffSummaryIndex = markup.indexOf("+12");
   const descriptionIndex = markup.indexOf(
     "Reposition the card controls without changing behavior.",
   );
@@ -1130,17 +1130,15 @@ test("ticket cards place workspace controls under metadata and move statuses int
   assert.ok(metadataIndex !== -1);
   assert.ok(actionsIndex !== -1);
   assert.ok(menuIndex !== -1);
-  assert.ok(ticketStatusIndex !== -1);
   assert.ok(sessionStatusIndex !== -1);
   assert.ok(diffSummaryIndex !== -1);
   assert.ok(descriptionIndex !== -1);
 
   assert.ok(menuIndex < descriptionIndex);
   assert.ok(metadataIndex < actionsIndex);
-  assert.ok(actionsIndex < ticketStatusIndex);
+  assert.ok(metadataIndex < diffSummaryIndex);
+  assert.ok(diffSummaryIndex < actionsIndex);
   assert.ok(actionsIndex < sessionStatusIndex);
-  assert.ok(actionsIndex < diffSummaryIndex);
-  assert.ok(ticketStatusIndex < descriptionIndex);
   assert.ok(sessionStatusIndex < descriptionIndex);
   assert.ok(diffSummaryIndex < descriptionIndex);
 });
@@ -1218,7 +1216,7 @@ test("ticket cards keep the session status badge when only controller.session is
 
   const actionsIndex = markup.indexOf("ticket-workspace-action-group");
   const sessionStatusIndex = markup.indexOf("Running");
-  const diffSummaryIndex = markup.indexOf("1 file changed");
+  const diffSummaryIndex = markup.indexOf("+5");
   const descriptionIndex = markup.indexOf(
     "Show the running badge while the session map is still empty.",
   );
@@ -1227,6 +1225,7 @@ test("ticket cards keep the session status badge when only controller.session is
   assert.ok(sessionStatusIndex !== -1);
   assert.ok(diffSummaryIndex !== -1);
   assert.ok(descriptionIndex !== -1);
+  assert.ok(diffSummaryIndex < actionsIndex);
   assert.ok(actionsIndex < sessionStatusIndex);
   assert.ok(sessionStatusIndex < descriptionIndex);
   assert.ok(diffSummaryIndex < descriptionIndex);
