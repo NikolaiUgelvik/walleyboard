@@ -1899,7 +1899,7 @@ test("inspector-open layout keeps the shell fixed and leaves board scrolling to 
     assert.ok(boardScroller, "Expected the shared board scroller to render");
     assert.match(
       detail.textContent ?? "",
-      /Ticket session/,
+      /Session details are not available yet\./,
       "Expected the session inspector content to render",
     );
     assert.equal(
@@ -1933,6 +1933,86 @@ test("inspector-open layout keeps the shell fixed and leaves board scrolling to 
     cleanupStylesheet();
     harness.cleanup();
   }
+});
+
+test("session inspector removes the old ticket panel header copy", () => {
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    id: 43,
+    session_id: "session-43",
+    status: "in_progress",
+    title: "Ship inspector header cleanup",
+  });
+  const session = {
+    adapter_session_ref: null,
+    agent_adapter: "codex" as const,
+    completed_at: null,
+    current_attempt_id: null,
+    id: "session-43",
+    last_heartbeat_at: "2026-04-03T00:00:00.000Z",
+    last_summary: null,
+    latest_requested_change_note_id: null,
+    latest_review_package_id: null,
+    plan_status: "not_requested" as const,
+    plan_summary: null,
+    planning_enabled: false,
+    project_id: ticket.project,
+    queue_entered_at: null,
+    repo_id: ticket.repo,
+    started_at: "2026-04-03T00:00:00.000Z",
+    status: "running" as const,
+    ticket_id: ticket.id,
+    worktree_path: "/tmp/worktree-43",
+  };
+
+  Object.assign(controller as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicket: () => undefined,
+    deleteTicketMutation: createMutationStub(),
+    inspectorState: { kind: "session" },
+    inspectorVisible: true,
+    latestReviewRun: null,
+    latestReviewRunQuery: { isPending: false },
+    mergeTicketMutation: createMutationStub(),
+    openAgentReviewHistoryModal: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    planFeedbackBody: "",
+    planFeedbackMutation: createMutationStub(),
+    requestChangesMutation: createMutationStub(),
+    requestedChangesBody: "",
+    restartTicketFromScratch: () => undefined,
+    restartTicketMutation: createMutationStub(),
+    resumeReason: "",
+    resumeTicketMutation: createMutationStub(),
+    reviewPackage: null,
+    reviewPackageQuery: { isPending: false },
+    selectedProject: controller.selectedProject,
+    selectedSessionId: session.id,
+    selectedSessionTicket: ticket,
+    selectedSessionTicketSession: session,
+    sessionInputMutation: createMutationStub(),
+    session,
+    sessionById: new Map([[session.id, session]]),
+    setPlanFeedbackBody: () => undefined,
+    setRequestedChangesBody: () => undefined,
+    setResumeReason: () => undefined,
+    startAgentReviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <InspectorPane controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, /Ship inspector header cleanup/);
+  assert.doesNotMatch(markup, /Ticket session/);
+  assert.doesNotMatch(
+    markup,
+    /Diff, terminal, preview, and full activity moved to the ticket card actions\./,
+  );
+  assert.doesNotMatch(markup, />Execution</);
 });
 
 test("narrow inspector-open layout keeps board scrolling on the shared board pane", async () => {

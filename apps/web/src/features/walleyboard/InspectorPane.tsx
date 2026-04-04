@@ -748,37 +748,31 @@ export function InspectorPane({
             </SectionCard>
           ) : controller.session ? (
             <>
-              <SectionCard
-                title="Ticket session"
-                description="Diff, terminal, preview, and full activity moved to the ticket card actions."
-              >
+              <SectionCard>
                 <Stack gap="md">
                   <Group justify="space-between" align="flex-start">
-                    <Stack gap={4}>
-                      <Text className="rail-kicker">Execution</Text>
-                      <Box style={{ fontWeight: 700 }}>
-                        {controller.selectedSessionTicket ? (
-                          <>
-                            <Text component="span" inherit>
-                              #{controller.selectedSessionTicket.id}{" "}
-                            </Text>
-                            <MarkdownContent
-                              content={controller.selectedSessionTicket.title}
-                              inline
-                              onTicketReferenceNavigate={
-                                controller.navigateToTicketReference
-                              }
-                              ticketReferences={
-                                controller.selectedSessionTicket
-                                  .ticket_references ?? []
-                              }
-                            />
-                          </>
-                        ) : (
-                          `Ticket #${controller.session.ticket_id}`
-                        )}
-                      </Box>
-                    </Stack>
+                    <Box style={{ flex: 1, fontWeight: 700 }}>
+                      {controller.selectedSessionTicket ? (
+                        <>
+                          <Text component="span" inherit>
+                            #{controller.selectedSessionTicket.id}{" "}
+                          </Text>
+                          <MarkdownContent
+                            content={controller.selectedSessionTicket.title}
+                            inline
+                            onTicketReferenceNavigate={
+                              controller.navigateToTicketReference
+                            }
+                            ticketReferences={
+                              controller.selectedSessionTicket
+                                .ticket_references ?? []
+                            }
+                          />
+                        </>
+                      ) : (
+                        `Ticket #${controller.session.ticket_id}`
+                      )}
+                    </Box>
                     <Badge
                       variant="light"
                       color={sessionStatusColor(controller.session.status)}

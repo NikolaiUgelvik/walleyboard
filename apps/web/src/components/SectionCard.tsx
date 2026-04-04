@@ -2,7 +2,7 @@ import { Card, Stack, Text, Title } from "@mantine/core";
 import type { ReactNode } from "react";
 
 type SectionCardProps = {
-  title: string;
+  title?: string;
   description?: string;
   children: ReactNode;
 };
@@ -25,16 +25,20 @@ export function SectionCard({
       }}
     >
       <Stack gap="md">
-        <Stack gap={4}>
-          <Title order={4} style={{ letterSpacing: "-0.03em" }}>
-            {title}
-          </Title>
-          {description ? (
-            <Text c="dimmed" size="sm">
-              {description}
-            </Text>
-          ) : null}
-        </Stack>
+        {title || description ? (
+          <Stack gap={4}>
+            {title ? (
+              <Title order={4} style={{ letterSpacing: "-0.03em" }}>
+                {title}
+              </Title>
+            ) : null}
+            {description ? (
+              <Text c="dimmed" size="sm">
+                {description}
+              </Text>
+            ) : null}
+          </Stack>
+        ) : null}
         {children}
       </Stack>
     </Card>
