@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { MantineProvider } from "@mantine/core";
+import { FileDiff } from "@pierre/diffs";
 import { JSDOM } from "jsdom";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -419,5 +420,66 @@ test("diff panel switches host diff variables between light and dark modes", asy
     assert.match(darkThemeCss, /color-scheme:\s*dark/);
   } finally {
     await dark.cleanup();
+  }
+});
+
+test("diff panel retries when the embedded renderer mounts without diff lines", async () => {
+  const originalRender = FileDiff.prototype.render;
+  let renderCalls = 0;
+
+  FileDiff.prototype.render = function renderWithInitialEmptyState(props) {
+    renderCalls += 1;
+
+    if (renderCalls === 1) {
+      const fileContainer = props.fileContainer;
+      assert.ok(fileContainer, "Expected file container for retry test");
+      fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: "open" });
+      this.fileContainer = fileContainer;
+      this.options.onPostRender?.(fileContainer, this);
+      return true;
+    }
+
+    return originalRender.call(this, props);
+  };
+
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider env="test" forceColorScheme="light">
+          <TicketWorkspaceDiffPanel
+            diff={sampleDiff}
+            isLoading={false}
+            layout="split"
+            onLayoutChange={() => undefined}
+          />
+        </MantineProvider>,
+      );
+    });
+
+    const renderer = await waitForElement(
+      () => {
+        const rendered = harness.mountNode.querySelector<HTMLElement>(
+          ".ticket-workspace-diff-renderer diffs-container",
+        );
+        return rendered?.shadowRoot?.querySelector("[data-line]")
+          ? rendered
+          : null;
+      },
+      harness.flushAsyncWork,
+      "Expected diff content to recover after an empty initial render",
+    );
+
+    assert.ok(renderer.shadowRoot);
+    assert.match(renderer.shadowRoot.textContent ?? "", /const beta = "new";/);
+    assert.ok(renderCalls >= 2, "Expected the panel to retry rendering");
+  } finally {
+    FileDiff.prototype.render = originalRender;
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
   }
 });

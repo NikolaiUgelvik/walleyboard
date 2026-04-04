@@ -16,7 +16,7 @@ import {
   parsePatchFiles,
   wrapCoreCSS,
 } from "@pierre/diffs";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TicketWorkspaceDiff } from "../../../../packages/contracts/src/index.js";
 
 type DiffLayout = "split" | "stacked";
@@ -35,6 +35,9 @@ type DiffFileSummary = {
   tone: "blue" | "green" | "orange" | "red";
   label: string;
 };
+
+const EMPTY_RENDER_RETRY_DELAY_MS = 120;
+const MAX_EMPTY_RENDER_RETRIES = 2;
 
 const diffRendererUnsafeCss = `
   :host {
@@ -149,6 +152,30 @@ function summarizeFile(file: FileDiffMetadata): DiffFileSummary {
   }
 }
 
+function shouldRetryEmptyRenderer(file: FileDiffMetadata): boolean {
+  return file.hunks.length > 0;
+}
+
+function hasRenderedDiffContent(fileContainer: HTMLElement): boolean {
+  const shadowRoot = fileContainer.shadowRoot;
+  if (!shadowRoot) {
+    return false;
+  }
+
+  return (
+    shadowRoot.querySelector(
+      [
+        "code[data-unified] [data-line]",
+        "code[data-unified] [data-no-newline]",
+        "code[data-deletions] [data-line]",
+        "code[data-deletions] [data-no-newline]",
+        "code[data-additions] [data-line]",
+        "code[data-additions] [data-no-newline]",
+      ].join(", "),
+    ) !== null
+  );
+}
+
 function ensureDiffRendererCoreStyles(fileContainer: HTMLElement): void {
   const shadowRoot = fileContainer.shadowRoot;
   if (!shadowRoot) {
@@ -182,6 +209,8 @@ export function TicketWorkspaceDiffPanel({
 }: TicketWorkspaceDiffPanelProps) {
   const { colorScheme } = useMantineColorScheme();
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const retryCountsRef = useRef<Record<string, number>>({});
+  const [renderRetryNonce, setRenderRetryNonce] = useState(0);
   const parsedDiff = useMemo(() => {
     if (!diff) {
       return {
@@ -223,11 +252,61 @@ export function TicketWorkspaceDiffPanel({
   );
 
   useEffect(() => {
+    const activeKeys = new Set(
+      parsedDiff.files.map((file, index) => getFileKey(file, index)),
+    );
+
+    for (const key of Object.keys(retryCountsRef.current)) {
+      if (!activeKeys.has(key)) {
+        delete retryCountsRef.current[key];
+      }
+    }
+  }, [parsedDiff.files]);
+
+  useEffect(() => {
     if (parsedDiff.error) {
       return;
     }
 
+    const renderPass = renderRetryNonce;
     const instances: FileDiff[] = [];
+    const retryTimers = new Set<number>();
+    const pendingRetryKeys = new Set<string>();
+    let cancelled = false;
+
+    const queueRenderRetry = (
+      key: string,
+      file: FileDiffMetadata,
+      fileContainer: HTMLElement,
+    ): void => {
+      if (
+        cancelled ||
+        !shouldRetryEmptyRenderer(file) ||
+        pendingRetryKeys.has(key) ||
+        (retryCountsRef.current[key] ?? 0) >= MAX_EMPTY_RENDER_RETRIES
+      ) {
+        return;
+      }
+
+      pendingRetryKeys.add(key);
+      const timerId = window.setTimeout(() => {
+        retryTimers.delete(timerId);
+        pendingRetryKeys.delete(key);
+
+        if (
+          cancelled ||
+          !fileContainer.isConnected ||
+          hasRenderedDiffContent(fileContainer)
+        ) {
+          return;
+        }
+
+        retryCountsRef.current[key] = (retryCountsRef.current[key] ?? 0) + 1;
+        setRenderRetryNonce((value) => value + 1);
+      }, EMPTY_RENDER_RETRY_DELAY_MS);
+      retryTimers.add(timerId);
+    };
+
     for (const [index, file] of parsedDiff.files.entries()) {
       const key = getFileKey(file, index);
       const container = containerRefs.current[key];
@@ -244,6 +323,15 @@ export function TicketWorkspaceDiffPanel({
         disableFileHeader: true,
         hunkSeparators: "metadata",
         lineDiffType: "word",
+        onPostRender: (renderedFileContainer) => {
+          ensureDiffRendererCoreStyles(renderedFileContainer);
+          if (
+            renderPass >= 0 &&
+            !hasRenderedDiffContent(renderedFileContainer)
+          ) {
+            queueRenderRetry(key, file, renderedFileContainer);
+          }
+        },
         overflow: "scroll",
         themeType: colorScheme === "auto" ? "system" : colorScheme,
         unsafeCSS: diffRendererUnsafeCss,
@@ -258,11 +346,16 @@ export function TicketWorkspaceDiffPanel({
     }
 
     return () => {
+      cancelled = true;
+      for (const timerId of retryTimers) {
+        window.clearTimeout(timerId);
+      }
+
       for (const instance of instances) {
         instance.cleanUp();
       }
     };
-  }, [colorScheme, layout, parsedDiff]);
+  }, [colorScheme, layout, parsedDiff, renderRetryNonce]);
 
   const sourceLabel =
     diff === null
@@ -375,10 +468,6 @@ export function TicketWorkspaceDiffPanel({
                           : file.name}
                       </Text>
                     </Group>
-                    <Text size="xs" c="dimmed">
-                      {file.lang ? `${file.lang} syntax` : "Detected syntax"}{" "}
-                      with line numbers and inline highlights.
-                    </Text>
                   </Stack>
                   <Group gap={6}>
                     <Badge size="xs" variant="outline" color="green">
