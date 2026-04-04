@@ -124,7 +124,13 @@ export function ProjectRail({
   const [inboxOpen, setInboxOpen] = useState(false);
   const projects = controller.projectsQuery.data?.projects ?? [];
   const projectTileLabels = deriveProjectTileLabels(projects);
-  const hasInboxItems = controller.actionItems.length > 0;
+  const inboxItemCount = controller.actionItems.length;
+  const hasInboxItems = inboxItemCount > 0;
+  const inboxAriaLabel = hasInboxItems
+    ? `Open inbox, ${inboxItemCount} actionable inbox ${
+        inboxItemCount === 1 ? "item" : "items"
+      }`
+    : "Open inbox";
   const railAccentColor = hasInboxItems ? "#D97706" : "#64748B";
 
   return (
@@ -140,7 +146,7 @@ export function ProjectRail({
           <Popover.Target>
             <Box className="project-tile-shell">
               <ProjectTile
-                ariaLabel="Open inbox"
+                ariaLabel={inboxAriaLabel}
                 attention={hasInboxItems}
                 color={railAccentColor}
                 onClick={() => setInboxOpen((current) => !current)}
@@ -148,9 +154,7 @@ export function ProjectRail({
                 <IconBellRinging2 size={22} stroke={1.8} />
               </ProjectTile>
               {hasInboxItems ? (
-                <span className="project-tile-badge">
-                  {controller.actionItems.length}
-                </span>
+                <span className="project-tile-badge">{inboxItemCount}</span>
               ) : null}
             </Box>
           </Popover.Target>

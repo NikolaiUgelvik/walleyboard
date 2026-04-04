@@ -604,7 +604,7 @@ test("project rail renders compact tiles with initials, titles, and the create t
     </MantineProvider>,
   );
 
-  assert.match(markup, /aria-label="Open inbox"/);
+  assert.match(markup, /aria-label="Open inbox, 1 actionable inbox item"/);
   assert.match(markup, /data-attention="true"/);
   assert.match(markup, /aria-label="Open project Web App"/);
   assert.match(markup, /title="Web App"/);
@@ -657,6 +657,12 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
       harness.window.document.querySelector(".project-tile-badge")?.textContent,
       "12",
     );
+    assert.equal(
+      harness.window.document
+        .querySelector("button.project-tile")
+        ?.getAttribute("aria-label"),
+      "Open inbox, 12 actionable inbox items",
+    );
 
     Object.assign(controller as Record<string, unknown>, {
       actionItems: [],
@@ -674,6 +680,12 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
     assert.equal(
       harness.window.document.querySelector(".project-tile-badge"),
       null,
+    );
+    assert.equal(
+      harness.window.document
+        .querySelector("button.project-tile")
+        ?.getAttribute("aria-label"),
+      "Open inbox",
     );
   } finally {
     await act(async () => {
@@ -756,7 +768,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
     });
 
     const inboxButton = harness.window.document.querySelector<HTMLElement>(
-      'button[aria-label="Open inbox"]',
+      'button.project-tile[aria-label^="Open inbox"]',
     );
     assert.ok(inboxButton, "Expected the inbox tile to render");
 
