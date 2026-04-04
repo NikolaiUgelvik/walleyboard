@@ -386,6 +386,23 @@ export function useWalleyBoardController() {
   ]);
 
   useEffect(() => {
+    if (
+      projectOptionsProjectId === null ||
+      claudeCodeHealth?.available !== false ||
+      projectOptionsAgentAdapter !== "claude-code"
+    ) {
+      return;
+    }
+
+    setProjectOptionsAgentAdapter("codex");
+  }, [
+    claudeCodeHealth?.available,
+    projectOptionsAgentAdapter,
+    projectOptionsProjectId,
+    setProjectOptionsAgentAdapter,
+  ]);
+
+  useEffect(() => {
     const nextInspectorState = resolveNextInspectorState({
       drafts: draftRecords,
       draftsLoaded,
@@ -1068,10 +1085,15 @@ export function useWalleyBoardController() {
       repositories: projectOptionsRepositories,
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
+    const agentAdapter =
+      projectOptionsAgentAdapter === "claude-code" &&
+      claudeCodeHealth?.available === false
+        ? "codex"
+        : projectOptionsAgentAdapter;
 
     setProjectOptionsFormError(null);
     mutations.updateProjectMutation.mutate({
-      agentAdapter: projectOptionsAgentAdapter,
+      agentAdapter,
       projectId: projectOptionsProject.id,
       color: projectOptionsPersistedColor,
       executionBackend: projectOptionsExecutionBackend,

@@ -158,7 +158,7 @@ export const healthResponseSchema = z.object({
   }),
   claude_code: z.object({
     available: z.boolean(),
-    configured_path: z.string().min(1).nullable(),
+    detected_path: z.string().min(1).nullable(),
     error: z.string().min(1).nullable(),
   }),
 });

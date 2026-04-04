@@ -32,7 +32,7 @@ function createHealth(): HealthResponse {
     },
     claude_code: {
       available: false,
-      configured_path: null,
+      detected_path: null,
       error: null,
     },
   };

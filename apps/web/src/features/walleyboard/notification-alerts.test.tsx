@@ -907,7 +907,7 @@ test("opening an inbox item marks that notification instance as read", async () 
     },
     claude_code: {
       available: false,
-      configured_path: null,
+      detected_path: null,
       error: null,
     },
   });

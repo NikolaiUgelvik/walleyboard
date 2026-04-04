@@ -2,7 +2,10 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import fastifyRateLimit from "fastify-rate-limit";
 
-import { ClaudeCodeAdapter } from "./lib/agent-adapters/claude-code-adapter.js";
+import {
+  ClaudeCodeAdapter,
+  type ClaudeCodeAvailability,
+} from "./lib/agent-adapters/claude-code-adapter.js";
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { AgentReviewService } from "./lib/agent-review-service.js";
@@ -36,6 +39,7 @@ export type CreateAppOptions = {
   githubPullRequestService?: GitHubPullRequestService;
   host?: string;
   port?: number;
+  probeClaudeCodeAvailability?: () => ClaudeCodeAvailability;
   skipStartupDockerCleanup?: boolean;
   store?: Store;
   ticketWorkspaceService?: TicketWorkspaceService;
@@ -130,7 +134,14 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await app.register(websocket);
   await app.register(fastifyRateLimit, globalRateLimitOptions());
-  await app.register(healthRoutes, { dockerRuntime });
+  await app.register(healthRoutes, {
+    dockerRuntime,
+    ...(options.probeClaudeCodeAvailability
+      ? {
+          probeClaudeCodeAvailability: options.probeClaudeCodeAvailability,
+        }
+      : {}),
+  });
   await app.register(projectRoutes, {
     store,
     executionRuntime,

@@ -1,33 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 
-import {
-  createIsolatedApp,
-  createTestDockerRuntime,
-} from "../test-support/create-isolated-app.js";
+import { createIsolatedApp } from "../test-support/create-isolated-app.js";
 
-function setEnv(name: string, value: string): () => void {
-  const previous = process.env[name];
-  process.env[name] = value;
-  return () => {
-    if (previous === undefined) {
-      delete process.env[name];
-      return;
-    }
-
-    process.env[name] = previous;
-  };
-}
-
-test("GET /health reports Claude Code through Docker-mounted ~/.claude state", async () => {
-  const homeDir = join(tmpdir(), `walleyboard-health-home-${Date.now()}`);
-  mkdirSync(join(homeDir, ".claude"), { recursive: true });
-  const restoreHome = setEnv("HOME", homeDir);
+test("GET /health reports Claude Code availability when the CLI probe succeeds", async () => {
   const { app, close } = await createIsolatedApp({
-    dockerRuntime: createTestDockerRuntime(),
+    probeClaudeCodeAvailability: () => ({
+      available: true,
+      detected_path: "/usr/local/bin/claude",
+      error: null,
+    }),
   });
 
   try {
@@ -39,28 +21,20 @@ test("GET /health reports Claude Code through Docker-mounted ~/.claude state", a
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json().claude_code, {
       available: true,
-      configured_path: join(homeDir, ".claude"),
+      detected_path: "/usr/local/bin/claude",
       error: null,
     });
   } finally {
     await close();
-    restoreHome();
-    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
-test("GET /health marks Claude Code unavailable when Docker is unavailable", async () => {
-  const homeDir = join(
-    tmpdir(),
-    `walleyboard-health-home-docker-down-${Date.now()}`,
-  );
-  mkdirSync(join(homeDir, ".claude"), { recursive: true });
-  const restoreHome = setEnv("HOME", homeDir);
+test("GET /health reports a Claude Code availability error when the CLI probe fails", async () => {
   const { app, close } = await createIsolatedApp({
-    dockerRuntime: createTestDockerRuntime({
+    probeClaudeCodeAvailability: () => ({
       available: false,
-      error: "Docker daemon offline",
-      server_version: null,
+      detected_path: "/usr/local/bin/claude",
+      error: "Claude Code CLI is unavailable: permission denied",
     }),
   });
 
@@ -73,12 +47,10 @@ test("GET /health marks Claude Code unavailable when Docker is unavailable", asy
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json().claude_code, {
       available: false,
-      configured_path: join(homeDir, ".claude"),
-      error: "Docker must be available before Claude Code can run.",
+      detected_path: "/usr/local/bin/claude",
+      error: "Claude Code CLI is unavailable: permission denied",
     });
   } finally {
     await close();
-    restoreHome();
-    rmSync(homeDir, { recursive: true, force: true });
   }
 });

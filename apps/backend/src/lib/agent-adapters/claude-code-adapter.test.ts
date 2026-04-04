@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { homedir } from "node:os";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -21,6 +22,7 @@ import {
   formatClaudeCodeExitReason,
   interpretClaudeCodeStreamJsonLine,
   parseClaudeCodeJsonResult,
+  probeClaudeCodeAvailability,
   shellEscape,
   stripAnsi,
 } from "./claude-code-adapter.js";
@@ -242,6 +244,61 @@ test("stripAnsi: removes tilde-terminated CSI (Delete, PgUp, F5)", () => {
 
 test("stripAnsi: removes C1 CSI with ? prefix and ~ terminator", () => {
   assert.equal(stripAnsi("\x9b?25hvisible\x9b3~"), "visible");
+});
+
+test("probeClaudeCodeAvailability reports an available Claude CLI", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-path-"));
+  const executablePath = join(tempDir, "claude");
+  writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
+  chmodSync(executablePath, 0o755);
+
+  try {
+    const result = probeClaudeCodeAvailability({
+      env: { PATH: tempDir },
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        assert.equal(command, executablePath);
+        assert.deepEqual(args, ["--version"]);
+        return "1.0.0";
+      }) as typeof import("node:child_process").execFileSync,
+    });
+
+    assert.deepEqual(result, {
+      available: true,
+      detected_path: executablePath,
+      error: null,
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("probeClaudeCodeAvailability reports an unavailable Claude CLI with a useful error", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-path-"));
+  const executablePath = join(tempDir, "claude");
+  writeFileSync(executablePath, "#!/bin/sh\nexit 1\n");
+  chmodSync(executablePath, 0o755);
+
+  try {
+    const result = probeClaudeCodeAvailability({
+      env: { PATH: tempDir },
+      execFileSyncImpl: ((command: string) => {
+        assert.equal(command, executablePath);
+        const error = new Error("spawn failed") as Error & {
+          stderr?: string;
+        };
+        error.stderr = "permission denied";
+        throw error;
+      }) as typeof import("node:child_process").execFileSync,
+    });
+
+    assert.deepEqual(result, {
+      available: false,
+      detected_path: executablePath,
+      error: "Claude Code CLI is unavailable: permission denied",
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

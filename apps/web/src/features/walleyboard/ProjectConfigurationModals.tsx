@@ -112,9 +112,8 @@ export function ProjectConfigurationModals({
                 </Text>
                 <Text size="sm" c="dimmed">
                   Codex and Claude Code both run inside the Docker runtime.
-                  Claude Code additionally needs a host `~/.claude` directory so
-                  WalleyBoard can mount your existing Claude configuration into
-                  the container.
+                  Claude Code is only selectable when the backend can confirm
+                  the Claude CLI is installed and usable.
                 </Text>
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
@@ -147,9 +146,9 @@ export function ProjectConfigurationModals({
                 {controller.claudeCodeHealth ? (
                   controller.claudeCodeHealth.available ? (
                     <Text size="sm" c="dimmed">
-                      Claude Code Docker config is available
-                      {controller.claudeCodeHealth.configured_path
-                        ? ` (${controller.claudeCodeHealth.configured_path})`
+                      Claude Code CLI is available
+                      {controller.claudeCodeHealth.detected_path
+                        ? ` (${controller.claudeCodeHealth.detected_path})`
                         : ""}
                       .
                     </Text>
