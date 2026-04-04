@@ -13,6 +13,7 @@ import {
 } from "./lib/docker-runtime.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
+import { registerFrontendStaticRoutes } from "./lib/frontend-static.js";
 import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
@@ -40,6 +41,7 @@ export type CreateAppOptions = {
   port?: number;
   probeClaudeCodeAvailability?: () => ClaudeCodeAvailability;
   skipStartupDockerCleanup?: boolean;
+  staticAssetDir?: string;
   store?: WalleyboardPersistence;
   ticketWorkspaceService?: TicketWorkspaceService;
 };
@@ -47,6 +49,8 @@ export type CreateAppOptions = {
 export async function createApp(options: CreateAppOptions = {}) {
   const host = options.host ?? process.env.HOST ?? "127.0.0.1";
   const port = options.port ?? Number.parseInt(process.env.PORT ?? "4000", 10);
+  const staticAssetDir =
+    options.staticAssetDir ?? process.env.WALLEYBOARD_STATIC_DIR;
   const apiHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const app = Fastify({
     logger: true,
@@ -168,6 +172,9 @@ export async function createApp(options: CreateAppOptions = {}) {
     executionRuntime,
     getClaudeCodeAvailability,
   });
+  if (staticAssetDir) {
+    registerFrontendStaticRoutes(app, staticAssetDir);
+  }
 
   app.addHook("onClose", async () => {
     socketServer.close();

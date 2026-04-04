@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "preview": "vite preview",
+    "dev": "VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:4000} vite",
+    "preview": "VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:4000} vite preview",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check src vite.config.ts",

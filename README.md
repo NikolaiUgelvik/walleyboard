@@ -80,6 +80,27 @@ Install these before starting WalleyBoard:
 
 WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. Ticket execution is Docker-only: the backend prepares an isolated checkout, builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile) on first use, and launches both draft analysis and ticket execution inside that container. The runtime image installs the Codex and Claude Code CLIs itself; on the host, WalleyBoard only requires the matching auth/config directory for the adapter you choose so the container can reuse your existing login state.
 
+## Packaged CLI
+
+WalleyBoard now has a publishable CLI workspace at [`packages/cli`](./packages/cli).
+Once that workspace is published to npm as `walleyboard`, people can launch the
+packaged app with:
+
+```sh
+npx walleyboard
+```
+
+Optional launcher flags:
+
+- `npx walleyboard --host 0.0.0.0`
+- `npx walleyboard --port 4310`
+
+To build the publishable package locally from the monorepo:
+
+1. Run `npm install`.
+2. Run `npm run build:cli`.
+3. Publish the workspace with `npm publish --workspace walleyboard --access public`.
+
 ## Quick Start
 
 1. Install the required command line tools listed above.

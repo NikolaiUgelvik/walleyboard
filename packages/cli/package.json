@@ -1,0 +1,33 @@
+{
+  "name": "walleyboard",
+  "version": "0.0.0",
+  "description": "Local-first WalleyBoard workbench launcher",
+  "type": "module",
+  "bin": {
+    "walleyboard": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "prepack": "WALLEYBOARD_FORCE_WEB_BUILD=1 node ./scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check src",
+    "format": "biome format --write src"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.4",
+    "typescript": "^6.0.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

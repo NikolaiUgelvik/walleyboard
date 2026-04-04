@@ -1,5 +1,5 @@
 {
-  "name": "walleyboard",
+  "name": "@walleyboard/root",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "build:cli": "npm --workspace walleyboard run build",
     "sizecheck": "node scripts/check-production-file-sizes.mjs",
     "test": "WALLEYBOARD_SKIP_STARTUP_DOCKER_CLEANUP=1 node --import tsx --test apps/backend/src/lib/*.test.ts apps/backend/src/routes/*.test.ts apps/web/src/**/*.test.ts apps/web/src/**/*.test.tsx",
     "typecheck": "npm run typecheck --workspaces --if-present",
