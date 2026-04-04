@@ -423,6 +423,24 @@ test("review-runs route returns the full review history for a ticket", async () 
   }
 });
 
+test("review-run route returns null when the ticket has no review history yet", async () => {
+  const app = await createApp({});
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/tickets/9/review-run",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), {
+      review_run: null,
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 test("workspace preview stop waits for preview shutdown before returning idle", async () => {
   const callOrder: string[] = [];
   const preview = {

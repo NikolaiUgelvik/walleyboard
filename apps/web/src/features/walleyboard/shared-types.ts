@@ -87,7 +87,7 @@ export type ReviewPackageResponse = {
 };
 
 export type ReviewRunResponse = {
-  review_run: ReviewRun;
+  review_run: ReviewRun | null;
 };
 
 export type ReviewRunsResponse = {

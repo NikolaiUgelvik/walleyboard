@@ -96,27 +96,31 @@ export function setOptimisticRunningReviewRun(input: {
 
   input.queryClient.setQueryData<ReviewRunResponse | null>(
     ["tickets", input.ticketId, "review-run"],
-    (current) => ({
-      review_run: {
-        id: current?.review_run.id ?? `pending-review-run-${input.ticketId}`,
-        ticket_id: input.ticketId,
-        review_package_id:
-          current?.review_run.review_package_id ??
-          `pending-review-package-${input.ticketId}`,
-        implementation_session_id:
-          current?.review_run.implementation_session_id ??
-          input.implementationSessionId ??
-          `pending-implementation-session-${input.ticketId}`,
-        status: "running",
-        adapter_session_ref: current?.review_run.adapter_session_ref ?? null,
-        prompt: current?.review_run.prompt ?? null,
-        report: null,
-        failure_message: null,
-        created_at: current?.review_run.created_at ?? now,
-        updated_at: now,
-        completed_at: null,
-      },
-    }),
+    (current) => {
+      const currentReviewRun = current?.review_run ?? null;
+
+      return {
+        review_run: {
+          id: currentReviewRun?.id ?? `pending-review-run-${input.ticketId}`,
+          ticket_id: input.ticketId,
+          review_package_id:
+            currentReviewRun?.review_package_id ??
+            `pending-review-package-${input.ticketId}`,
+          implementation_session_id:
+            currentReviewRun?.implementation_session_id ??
+            input.implementationSessionId ??
+            `pending-implementation-session-${input.ticketId}`,
+          status: "running",
+          adapter_session_ref: currentReviewRun?.adapter_session_ref ?? null,
+          prompt: currentReviewRun?.prompt ?? null,
+          report: null,
+          failure_message: null,
+          created_at: currentReviewRun?.created_at ?? now,
+          updated_at: now,
+          completed_at: null,
+        },
+      };
+    },
   );
 }
 

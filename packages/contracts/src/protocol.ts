@@ -209,7 +209,7 @@ export const reviewPackageResponseSchema = z.object({
 });
 
 export const reviewRunResponseSchema = z.object({
-  review_run: reviewRunSchema,
+  review_run: reviewRunSchema.nullable(),
 });
 
 export const reviewRunsResponseSchema = z.object({

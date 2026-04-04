@@ -95,12 +95,7 @@ export function registerTicketReadWorkspaceRoutes(
       }
 
       const reviewRun = store.getLatestReviewRun(ticketId);
-      if (!reviewRun) {
-        reply.code(404).send({ error: "Review run not found" });
-        return;
-      }
-
-      return { review_run: reviewRun };
+      return { review_run: reviewRun ?? null };
     },
   );
 
