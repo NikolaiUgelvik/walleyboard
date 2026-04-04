@@ -1042,6 +1042,109 @@ test("ticket cards show diff line summaries only for in-progress and review tick
   );
 });
 
+test("ticket cards place workspace controls under metadata and move statuses into the summary row", () => {
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    id: 41,
+    description: "Reposition the card controls without changing behavior.",
+    session_id: "session-41",
+    status: "in_progress",
+    title: "Reposition ticket card controls",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionById: new Map([
+      [
+        ticket.session_id,
+        {
+          adapter_session_ref: null,
+          agent_adapter: "codex",
+          completed_at: null,
+          current_attempt_id: null,
+          id: ticket.session_id,
+          last_heartbeat_at: "2026-04-03T00:00:00.000Z",
+          last_summary: null,
+          latest_requested_change_note_id: null,
+          latest_review_package_id: null,
+          plan_status: "not_requested",
+          plan_summary: null,
+          planning_enabled: false,
+          project_id: ticket.project,
+          queue_entered_at: null,
+          repo_id: ticket.repo,
+          started_at: "2026-04-03T00:00:00.000Z",
+          status: "running",
+          ticket_id: ticket.id,
+          worktree_path: "/tmp/worktree-41",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketDiffLineSummaryByTicketId: new Map([
+      [ticket.id, { additions: 12, deletions: 4, files: 2 }],
+    ]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  const metadataIndex = markup.indexOf("feature • main");
+  const actionsIndex = markup.indexOf("ticket-workspace-action-group");
+  const menuIndex = markup.indexOf("More actions for ticket 41");
+  const ticketStatusIndex = markup.indexOf("In Progress");
+  const sessionStatusIndex = markup.indexOf("Running");
+  const diffSummaryIndex = markup.indexOf("2 files changed");
+  const descriptionIndex = markup.indexOf(
+    "Reposition the card controls without changing behavior.",
+  );
+
+  assert.ok(metadataIndex !== -1);
+  assert.ok(actionsIndex !== -1);
+  assert.ok(menuIndex !== -1);
+  assert.ok(ticketStatusIndex !== -1);
+  assert.ok(sessionStatusIndex !== -1);
+  assert.ok(diffSummaryIndex !== -1);
+  assert.ok(descriptionIndex !== -1);
+
+  assert.ok(menuIndex < descriptionIndex);
+  assert.ok(metadataIndex < actionsIndex);
+  assert.ok(actionsIndex < ticketStatusIndex);
+  assert.ok(actionsIndex < sessionStatusIndex);
+  assert.ok(actionsIndex < diffSummaryIndex);
+  assert.ok(ticketStatusIndex < descriptionIndex);
+  assert.ok(sessionStatusIndex < descriptionIndex);
+  assert.ok(diffSummaryIndex < descriptionIndex);
+});
+
 test("ready tickets expose an edit action in the overflow menu", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();

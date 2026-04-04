@@ -996,21 +996,17 @@ export function BoardView({
                                           {ticket.ticket_type} •{" "}
                                           {ticket.target_branch}
                                         </Text>
+                                        <TicketWorkspaceActions
+                                          controller={controller}
+                                          ticket={ticket}
+                                        />
                                       </Stack>
-                                      <Group gap={6} align="center">
+                                      <Group gap={6} align="flex-start">
                                         {aiReviewActive ? (
                                           <Badge variant="light" color="violet">
                                             AI review in progress
                                           </Badge>
                                         ) : null}
-                                        <Badge
-                                          variant="light"
-                                          color={ticketStatusColor(
-                                            ticket.status,
-                                          )}
-                                        >
-                                          {humanizeTicketStatus(ticket.status)}
-                                        </Badge>
                                         <TicketMenu
                                           controller={controller}
                                           project={controller.selectedProject}
@@ -1019,22 +1015,45 @@ export function BoardView({
                                         />
                                       </Group>
                                     </Group>
-                                    {diffLineSummary ? (
-                                      <Group gap={6} wrap="wrap">
-                                        <Badge variant="outline" color="gray">
-                                          {diffLineSummary.files}{" "}
-                                          {diffLineSummary.files === 1
-                                            ? "file changed"
-                                            : "files changed"}
+                                    <Group gap={6} wrap="wrap">
+                                      <Badge
+                                        variant="light"
+                                        color={ticketStatusColor(ticket.status)}
+                                      >
+                                        {humanizeTicketStatus(ticket.status)}
+                                      </Badge>
+                                      {ticketSession ? (
+                                        <Badge
+                                          variant="outline"
+                                          color={sessionStatusColor(
+                                            ticketSession.status,
+                                          )}
+                                        >
+                                          {humanizeSessionStatus(
+                                            ticketSession.status,
+                                          )}
                                         </Badge>
-                                        <Badge variant="outline" color="green">
-                                          +{diffLineSummary.additions}
-                                        </Badge>
-                                        <Badge variant="outline" color="red">
-                                          -{diffLineSummary.deletions}
-                                        </Badge>
-                                      </Group>
-                                    ) : null}
+                                      ) : null}
+                                      {diffLineSummary ? (
+                                        <>
+                                          <Badge variant="outline" color="gray">
+                                            {diffLineSummary.files}{" "}
+                                            {diffLineSummary.files === 1
+                                              ? "file changed"
+                                              : "files changed"}
+                                          </Badge>
+                                          <Badge
+                                            variant="outline"
+                                            color="green"
+                                          >
+                                            +{diffLineSummary.additions}
+                                          </Badge>
+                                          <Badge variant="outline" color="red">
+                                            -{diffLineSummary.deletions}
+                                          </Badge>
+                                        </>
+                                      ) : null}
+                                    </Group>
                                     <MarkdownContent
                                       className="markdown-muted markdown-small"
                                       content={getBoardTicketDescriptionPreview(
@@ -1087,29 +1106,11 @@ export function BoardView({
                                         </Text>
                                       </Group>
                                     ) : null}
-                                    {ticketSession ? (
-                                      <Group gap={8}>
-                                        <Badge
-                                          variant="outline"
-                                          color={sessionStatusColor(
-                                            ticketSession.status,
-                                          )}
-                                        >
-                                          {humanizeSessionStatus(
-                                            ticketSession.status,
-                                          )}
-                                        </Badge>
-                                        {ticketSession.status === "queued" ? (
-                                          <Text size="xs" c="dimmed">
-                                            Waiting for a running slot
-                                          </Text>
-                                        ) : null}
-                                      </Group>
+                                    {ticketSession?.status === "queued" ? (
+                                      <Text size="xs" c="dimmed">
+                                        Waiting for a running slot
+                                      </Text>
                                     ) : null}
-                                    <TicketWorkspaceActions
-                                      controller={controller}
-                                      ticket={ticket}
-                                    />
 
                                     {showDeleteError ? (
                                       <Text size="sm" c="red">
