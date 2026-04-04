@@ -425,6 +425,15 @@ export class ExecutionRuntime {
       cleanupExecutionEnvironment: (sessionId) => {
         this.cleanupExecutionEnvironment(sessionId);
       },
+      onLogLine: (line) => {
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          input.session.id,
+          input.session.current_attempt_id ?? input.session.id,
+          line,
+        );
+      },
       dockerRuntime: this.#dockerRuntime,
       onPreparedRun: ({ prompt }) => {
         this.#store.updateReviewRun(input.reviewRunId, {
@@ -464,6 +473,15 @@ export class ExecutionRuntime {
       conflictedFiles: input.conflictedFiles,
       dockerRuntime: this.#dockerRuntime,
       failureMessage: input.failureMessage,
+      onLogLine: (line) => {
+        publishSessionOutput(
+          this.#eventHub,
+          this.#store,
+          input.session.id,
+          input.session.current_attempt_id ?? input.session.id,
+          line,
+        );
+      },
       project: input.project,
       recoveryKind: input.recoveryKind,
       repository: input.repository,

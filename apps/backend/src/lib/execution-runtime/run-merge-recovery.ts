@@ -29,6 +29,7 @@ export async function runMergeRecovery(input: {
   conflictedFiles: string[];
   dockerRuntime: DockerRuntime;
   failureMessage: string;
+  onLogLine?: (line: string) => void;
   project: Project;
   recoveryKind: MergeRecoveryKind;
   repository: RepositoryConfig;
@@ -81,6 +82,9 @@ export async function runMergeRecovery(input: {
   }
   if (reasoningEffort) {
     logs.push(`Reasoning effort override: ${reasoningEffort}`);
+  }
+  for (const line of logs) {
+    input.onLogLine?.(line);
   }
 
   const ptyEnv = buildProcessEnv();
@@ -161,6 +165,7 @@ export async function runMergeRecovery(input: {
       if (hasMeaningfulContent(interpreted.outputContent)) {
         lastOutputContent = interpreted.outputContent;
       }
+      input.onLogLine?.(interpreted.logLine);
       if (logs.length < 16) {
         logs.push(interpreted.logLine);
       }
@@ -169,6 +174,7 @@ export async function runMergeRecovery(input: {
 
     streamLines(child.stdout, captureAdapterLine);
     streamLines(child.stderr, (line) => {
+      input.onLogLine?.(`[${input.adapter.id} stderr] ${line}`);
       if (logs.length < 16) {
         logs.push(`[${input.adapter.id} stderr] ${truncate(line)}`);
       }
@@ -203,7 +209,9 @@ export async function runMergeRecovery(input: {
         summary = lastOutputContent.trim();
       }
       if (summary.length > 0) {
-        logs.push(`Merge-conflict resolution summary: ${truncate(summary)}`);
+        const summaryLine = `Merge-conflict resolution summary: ${truncate(summary)}`;
+        logs.push(summaryLine);
+        input.onLogLine?.(summaryLine);
       }
 
       if (exitCode === 0) {

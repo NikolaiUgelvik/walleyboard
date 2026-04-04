@@ -27,6 +27,7 @@ export async function runTicketReviewSession(input: {
   adapter: AgentCliAdapter;
   cleanupExecutionEnvironment: (sessionId: string) => void;
   dockerRuntime: DockerRuntime;
+  onLogLine?: (line: string) => void;
   onPreparedRun?: (run: { prompt: string }) => void;
   project: Project;
   repository: RepositoryConfig;
@@ -62,6 +63,15 @@ export async function runTicketReviewSession(input: {
   });
   input.onPreparedRun?.({ prompt: run.prompt });
   const reviewSessionId = `review-${input.reviewRunId}`;
+  const launchLines = [
+    useDockerRuntime
+      ? `Launching ${input.adapter.label} review run in Docker for ${worktreePath}`
+      : `Launching ${input.adapter.label} review run in ${worktreePath}`,
+    `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
+  ];
+  for (const line of launchLines) {
+    input.onLogLine?.(line);
+  }
 
   return await new Promise((resolve, reject) => {
     let child: ChildProcessWithoutNullStreams | IPty;
@@ -139,6 +149,7 @@ export async function runTicketReviewSession(input: {
     const handleLine = (line: string) => {
       rawOutput += `${line}\n`;
       const interpreted = input.adapter.interpretOutputLine(line);
+      input.onLogLine?.(interpreted.logLine);
       if (
         hasMeaningfulContent(interpreted.sessionRef) &&
         interpreted.sessionRef !== adapterSessionRef
@@ -223,6 +234,7 @@ export async function runTicketReviewSession(input: {
     streamLines(processChild.stdout, handleLine);
     streamLines(processChild.stderr, (line) => {
       rawOutput += `${line}\n`;
+      input.onLogLine?.(`[${input.adapter.id} stderr] ${line}`);
     });
 
     processChild.once("error", (error: Error) => {

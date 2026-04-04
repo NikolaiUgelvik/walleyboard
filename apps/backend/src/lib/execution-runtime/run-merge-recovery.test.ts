@@ -1,18 +1,20 @@
 import assert from "node:assert/strict";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
   ExecutionSession,
   Project,
   RepositoryConfig,
-  ReviewPackage,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
-import { runTicketReviewSession } from "./review-runner.js";
+import { runMergeRecovery } from "./run-merge-recovery.js";
 
 function createProject(): Project {
   return {
@@ -102,40 +104,41 @@ function createSession(worktreePath: string): ExecutionSession {
   };
 }
 
-function createReviewPackage(): ReviewPackage {
+function createFakeChild(): {
+  child: ChildProcessWithoutNullStreams & EventEmitter;
+  stderr: PassThrough;
+  stdout: PassThrough;
+} {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const child = new EventEmitter() as ChildProcessWithoutNullStreams &
+    EventEmitter;
+  Object.assign(child, {
+    kill() {
+      return true;
+    },
+    stdin: new PassThrough(),
+    stdout,
+    stderr,
+  });
   return {
-    id: "review-package-1",
-    ticket_id: 5,
-    session_id: "session-1",
-    diff_ref: "/tmp/ticket-5.patch",
-    commit_refs: ["61a4523a0f4259c5c06404ce5f0cabed1dc65f1c"],
-    change_summary: "Adds cancel-to-main-menu behavior and tests.",
-    validation_results: [],
-    remaining_risks: [],
-    created_at: "2026-04-01T00:10:00.000Z",
+    child,
+    stderr,
+    stdout,
   };
 }
 
-test("runTicketReviewSession streams Docker reviews through a PTY", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runner-"));
+test("runMergeRecovery streams Docker stdout and stderr through the log callback", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-recovery-"));
   const worktreePath = join(tempDir, "workspace");
   mkdirSync(worktreePath, { recursive: true });
 
-  let onDataHandler: ((chunk: string) => void) | null = null;
-  let onExitHandler:
-    | ((event: { exitCode: number; signal?: number }) => void)
-    | null = null;
-  let spawnPtyCalls = 0;
-  let cleanedSessionId: string | null = null;
   const loggedLines: string[] = [];
-  const activeReviewRuns = new Map<
-    string,
-    { kill(signal?: NodeJS.Signals): unknown }
-  >();
+  let cleanedSessionId: string | null = null;
+  const { child, stderr, stdout } = createFakeChild();
 
   try {
-    const reviewPromise = runTicketReviewSession({
-      activeReviewRuns,
+    const recoveryPromise = runMergeRecovery({
       adapter: {
         id: "codex",
         label: "Codex",
@@ -145,10 +148,7 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
         buildExecutionRun() {
           throw new Error("execution runs are not used in this test");
         },
-        buildMergeConflictRun() {
-          throw new Error("merge-conflict runs are not used in this test");
-        },
-        buildReviewRun(input) {
+        buildMergeConflictRun(input) {
           return {
             command: "codex",
             args: [
@@ -156,9 +156,9 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
               "--json",
               "--output-last-message",
               input.outputPath,
-              "fake review prompt",
+              "fake merge recovery prompt",
             ],
-            prompt: "fake review prompt",
+            prompt: "fake merge recovery prompt",
             outputPath: input.outputPath,
             dockerSpec: {
               imageTag: "example/codex:latest",
@@ -168,95 +168,80 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
             },
           };
         },
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
+        },
         interpretOutputLine(line) {
           return {
-            logLine: line,
+            logLine: `[codex] ${line}`,
             outputContent: line,
           };
         },
-        parseDraftResult(rawOutput, schema) {
-          return schema.parse(JSON.parse(rawOutput));
+        parseDraftResult() {
+          throw new Error("draft parsing is not used in this test");
         },
         formatExitReason(exitCode, _signal, rawOutput) {
           return `Codex exited with code ${exitCode}. Final output: ${rawOutput}`;
         },
         resolveModelSelection() {
           return {
-            model: null,
-            reasoningEffort: null,
+            model: "gpt-5.4",
+            reasoningEffort: "high",
           };
         },
       },
       cleanupExecutionEnvironment(sessionId) {
         cleanedSessionId = sessionId;
       },
+      conflictedFiles: [
+        "apps/web/src/features/walleyboard/board-scroll.test.tsx",
+      ],
       dockerRuntime: {
         ensureSessionContainer() {},
-        spawnPtyInSession(_sessionId: string, command: string, args: string[]) {
-          spawnPtyCalls += 1;
-          assert.equal(command, "codex");
-          assert.deepEqual(args.slice(0, 3), [
-            "exec",
-            "--json",
-            "--output-last-message",
-          ]);
-          return {
-            kill() {},
-            onData(callback: (chunk: string) => void) {
-              onDataHandler = callback;
-            },
-            onExit(
-              callback: (event: { exitCode: number; signal?: number }) => void,
-            ) {
-              onExitHandler = callback;
-            },
-            pid: 321,
-            process: "docker",
-            resize() {},
-            write() {},
-          } as never;
+        spawnProcessInSession() {
+          return child;
         },
       } as never,
+      failureMessage: "Git rebase stopped on board-scroll.test.tsx.",
       onLogLine(line) {
         loggedLines.push(line);
       },
       project: createProject(),
+      recoveryKind: "conflicts",
       repository: createRepository(worktreePath),
-      reviewPackage: createReviewPackage(),
-      reviewRunId: "review-run-1",
       session: createSession(worktreePath),
+      stage: "rebase",
+      targetBranch: "origin/main",
       ticket: createTicket(),
     });
 
-    assert.equal(spawnPtyCalls, 1);
-    assert.equal(activeReviewRuns.size, 1);
-    if (!onDataHandler || !onExitHandler) {
-      throw new Error("Expected Docker PTY callbacks to be registered");
-    }
-    const emitData: (chunk: string) => void = onDataHandler;
-    const emitExit: (event: { exitCode: number; signal?: number }) => void =
-      onExitHandler;
-
-    emitData(
-      '{"summary":"Looks good","strengths":["Covers the scene transitions"],',
+    stdout.write(
+      '{"summary":"Resolved the conflict and continued the rebase."}\n',
     );
-    emitData('"actionable_findings":[]}\n');
-    emitExit({ exitCode: 0 });
+    stderr.write("Still waiting on one more tool check.\n");
+    stdout.end();
+    stderr.end();
+    child.emit("close", 0, null);
 
-    const result = await reviewPromise;
-    assert.equal(result.adapterSessionRef, null);
-    assert.equal(result.report.summary, "Looks good");
-    assert.deepEqual(result.report.actionable_findings, []);
-    assert.equal(cleanedSessionId, "review-review-run-1");
-    assert.equal(activeReviewRuns.size, 0);
-    assert.match(loggedLines[0] ?? "", /Launching Codex review run in Docker/);
+    const result = await recoveryPromise;
+    assert.equal(result.resolved, true);
+    assert.equal(cleanedSessionId, "session-1");
+    assert.match(
+      loggedLines[0] ?? "",
+      /Launching Codex merge-conflict resolution/,
+    );
     assert.match(
       loggedLines[1] ?? "",
       /Command: codex exec --json --output-last-message/,
     );
     assert.ok(
       loggedLines.includes(
-        '{"summary":"Looks good","strengths":["Covers the scene transitions"],"actionable_findings":[]}',
+        '[codex] {"summary":"Resolved the conflict and continued the rebase."}',
+      ),
+    );
+    assert.ok(
+      loggedLines.includes(
+        "[codex stderr] Still waiting on one more tool check.",
       ),
     );
   } finally {
