@@ -54,6 +54,10 @@ function TicketMenu({
 }) {
   const canResume = ticketSession?.status === "interrupted";
   const canRestart = ticketSession?.status === "interrupted";
+  const canStop =
+    ticket.status === "in_progress" &&
+    ticketSession !== null &&
+    isStoppableSessionStatus(ticketSession.status);
   const reviewActions = resolveReviewCardActions(project, ticket);
   const isResuming =
     controller.resumeTicketMutation.isPending &&
@@ -61,6 +65,9 @@ function TicketMenu({
   const isRestarting =
     controller.restartTicketMutation.isPending &&
     controller.restartTicketMutation.variables?.ticketId === ticket.id;
+  const isStopping =
+    controller.stopTicketMutation.isPending &&
+    controller.stopTicketMutation.variables?.ticketId === ticket.id;
   const isCreatingPullRequest =
     controller.createPullRequestMutation.isPending &&
     controller.createPullRequestMutation.variables === ticket.id;
@@ -110,6 +117,20 @@ function TicketMenu({
               : isMerging
                 ? "Merging..."
                 : reviewActions.secondary.label}
+          </Menu.Item>
+        ) : null}
+        {canStop ? (
+          <Menu.Item
+            color="orange"
+            disabled={isStopping}
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.stopTicketMutation.mutate({
+                ticketId: ticket.id,
+              });
+            }}
+          >
+            {isStopping ? "Stopping..." : "Stop"}
           </Menu.Item>
         ) : null}
         {canResume ? (
@@ -638,10 +659,6 @@ export function BoardView({
                                   ticket.session_id,
                                 ) ?? null)
                               : null;
-                          const canStop =
-                            ticket.status === "in_progress" &&
-                            ticketSession !== null &&
-                            isStoppableSessionStatus(ticketSession.status);
                           const isSelected =
                             ticket.session_id !== null &&
                             ticket.session_id === controller.selectedSessionId;
@@ -1060,30 +1077,6 @@ export function BoardView({
                                       </Group>
                                     );
                                   })()
-                                ) : ticket.session_id ? (
-                                  <Group justify="flex-end" gap="xs">
-                                    {canStop ? (
-                                      <Button
-                                        color="orange"
-                                        variant="light"
-                                        size="xs"
-                                        loading={
-                                          controller.stopTicketMutation
-                                            .isPending &&
-                                          controller.stopTicketMutation
-                                            .variables?.ticketId === ticket.id
-                                        }
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          controller.stopTicketMutation.mutate({
-                                            ticketId: ticket.id,
-                                          });
-                                        }}
-                                      >
-                                        Stop
-                                      </Button>
-                                    ) : null}
-                                  </Group>
                                 ) : null}
                               </Stack>
                             </Box>

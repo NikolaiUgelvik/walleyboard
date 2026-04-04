@@ -771,6 +771,311 @@ test("ready tickets expose an edit action in the overflow menu", async () => {
   }
 });
 
+test("in-progress tickets hide the standalone stop button until the overflow menu opens", () => {
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "Stop should only live in the menu now.",
+    session_id: "session-progress",
+    status: "in_progress",
+    title: "Move stop into overflow menu",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionById: new Map([
+      [
+        ticket.session_id,
+        {
+          id: ticket.session_id,
+          status: "running",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.doesNotMatch(markup, />Stop</);
+});
+
+test("in-progress tickets expose stop from the overflow menu and reuse the stop mutation", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "Stop should be triggered from the menu.",
+    session_id: "session-progress",
+    status: "in_progress",
+    title: "Move stop into overflow menu",
+  });
+  const stopCalls: Array<{ ticketId: number }> = [];
+  const stopTicketMutation = {
+    ...createMutationStub(),
+    mutate: (variables: { ticketId: number }) => {
+      stopCalls.push(variables);
+    },
+  };
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionById: new Map([
+      [
+        ticket.session_id,
+        {
+          id: ticket.session_id,
+          status: "running",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation,
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      [...harness.mountNode.querySelectorAll("button")].some(
+        (button) => button.textContent?.includes("Stop") ?? false,
+      ),
+      false,
+    );
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the in-progress ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let stopAction: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      stopAction = [...harness.window.document.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Stop") ?? false,
+      ) as HTMLElement | null;
+      if (stopAction) {
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      stopAction,
+      "Expected the in-progress ticket menu to include Stop",
+    );
+
+    await act(async () => {
+      stopAction?.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    assert.deepEqual(stopCalls, [{ ticketId: ticket.id }]);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
+test("in-progress ticket stop states still render loading and error feedback", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "Stop should retain its feedback states.",
+    session_id: "session-progress",
+    status: "in_progress",
+    title: "Move stop into overflow menu",
+  });
+  const stopTicketMutation = {
+    ...createMutationStub(),
+    error: new Error("Stop failed"),
+    isError: true,
+    isPending: true,
+    variables: { ticketId: ticket.id },
+  };
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionById: new Map([
+      [
+        ticket.session_id,
+        {
+          id: ticket.session_id,
+          status: "running",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation,
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.match(harness.mountNode.textContent ?? "", /Stop failed/);
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the in-progress ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let hasStoppingLabel = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (
+        (harness.window.document.body.textContent ?? "").includes("Stopping...")
+      ) {
+        hasStoppingLabel = true;
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      hasStoppingLabel,
+      "Expected the in-progress ticket menu to show the pending stop label",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
 test("inspector-open layout keeps the shell fixed and leaves board scrolling to the shared board pane", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
