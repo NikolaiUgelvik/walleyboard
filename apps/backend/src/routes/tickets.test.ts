@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import Fastify from "fastify";
@@ -920,5 +921,189 @@ test("start-agent-review route delegates to the agent review service", async () 
     assert.deepEqual(requestedTicketIds, [7]);
   } finally {
     await app.close();
+  }
+});
+
+test("start route blocks Claude projects when Claude is unavailable", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-start-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Claude start project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const ticket = createReadyTicket(store, project.id, repository.id);
+
+    const rawDb = new DatabaseSync(databasePath);
+    rawDb
+      .prepare("UPDATE projects SET agent_adapter = 'claude-code' WHERE id = ?")
+      .run(project.id);
+    rawDb.close();
+
+    let startExecutionCalls = 0;
+    const app = Fastify();
+
+    try {
+      await app.register(fastifyRateLimit, { global: false });
+      await app.register(ticketRoutes, {
+        agentReviewService: {
+          startReviewLoop() {
+            throw new Error("Not used in this test");
+          },
+        } as never,
+        eventHub: new EventHub(),
+        executionRuntime: {
+          assertProjectExecutionBackendAvailable() {},
+          hasActiveExecution() {
+            return false;
+          },
+          startExecution() {
+            startExecutionCalls += 1;
+          },
+        } as never,
+        getClaudeCodeAvailability: () => ({
+          available: false,
+          detected_path: "/usr/local/bin/claude",
+          error:
+            "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+        }),
+        githubPullRequestService: {
+          async createPullRequest() {
+            throw new Error("Not used in this test");
+          },
+          async reconcileTicket() {
+            throw new Error("Not used in this test");
+          },
+        } as never,
+        store,
+        ticketWorkspaceService: {
+          async disposeTicket() {},
+          async stopPreviewAndWait() {},
+        } as never,
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/tickets/${ticket.id}/start`,
+        payload: {},
+      });
+
+      assert.equal(response.statusCode, 409);
+      assert.deepEqual(response.json(), {
+        error:
+          "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+      });
+      assert.equal(startExecutionCalls, 0);
+      assert.equal(store.getTicket(ticket.id)?.status, "ready");
+      assert.equal(store.getTicket(ticket.id)?.session_id, null);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resume route blocks Claude projects when Claude is unavailable", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-resume-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Claude resume project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    const started = store.startTicket(ticket.id, false, {
+      logs: [],
+      workingBranch: "claude/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+    });
+    store.updateSessionStatus(
+      started.session.id,
+      "interrupted",
+      "Waiting to resume.",
+    );
+    store.updateExecutionAttempt(started.attempt.id, {
+      status: "interrupted",
+      end_reason: "claude_unavailable_test",
+    });
+
+    const rawDb = new DatabaseSync(databasePath);
+    rawDb
+      .prepare("UPDATE projects SET agent_adapter = 'claude-code' WHERE id = ?")
+      .run(project.id);
+    rawDb.close();
+
+    let startExecutionCalls = 0;
+    const app = Fastify();
+
+    try {
+      await app.register(fastifyRateLimit, { global: false });
+      await app.register(ticketRoutes, {
+        agentReviewService: {
+          startReviewLoop() {
+            throw new Error("Not used in this test");
+          },
+        } as never,
+        eventHub: new EventHub(),
+        executionRuntime: {
+          assertProjectExecutionBackendAvailable() {},
+          hasActiveExecution() {
+            return false;
+          },
+          startExecution() {
+            startExecutionCalls += 1;
+          },
+        } as never,
+        getClaudeCodeAvailability: () => ({
+          available: false,
+          detected_path: "/usr/local/bin/claude",
+          error:
+            "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+        }),
+        githubPullRequestService: {
+          async createPullRequest() {
+            throw new Error("Not used in this test");
+          },
+          async reconcileTicket() {
+            throw new Error("Not used in this test");
+          },
+        } as never,
+        store,
+        ticketWorkspaceService: {
+          async disposeTicket() {},
+          async stopPreviewAndWait() {},
+        } as never,
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/tickets/${ticket.id}/resume`,
+        payload: {},
+      });
+
+      assert.equal(response.statusCode, 409);
+      assert.deepEqual(response.json(), {
+        error:
+          "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+      });
+      assert.equal(startExecutionCalls, 0);
+      assert.equal(store.getSession(started.session.id)?.status, "interrupted");
+      assert.equal(store.listSessionAttempts(started.session.id).length, 1);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
   }
 });

@@ -7,6 +7,10 @@ import {
   stopTicketInputSchema,
 } from "../../../../../packages/contracts/src/index.js";
 
+import {
+  assertAgentAdapterAvailable,
+  createClaudeCodeAvailabilityGetter,
+} from "../../lib/claude-code-availability.js";
 import { makeCommandAck } from "../../lib/command-ack.js";
 import { makeProtocolEvent } from "../../lib/event-hub.js";
 import {
@@ -28,6 +32,7 @@ export function registerTicketExecutionRoutes(
     appendSessionOutput,
     eventHub,
     executionRuntime,
+    getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(),
     store,
     ticketWorkspaceService,
   }: TicketRouteDependencies,
@@ -66,6 +71,10 @@ export function registerTicketExecutionRoutes(
           return;
         }
 
+        assertAgentAdapterAvailable(
+          project.agent_adapter,
+          getClaudeCodeAvailability,
+        );
         executionRuntime.assertProjectExecutionBackendAvailable(project);
 
         const runtime = prepareWorktree(
@@ -243,6 +252,10 @@ export function registerTicketExecutionRoutes(
           return;
         }
 
+        assertAgentAdapterAvailable(
+          project.agent_adapter,
+          getClaudeCodeAvailability,
+        );
         executionRuntime.assertProjectExecutionBackendAvailable(project);
 
         const resumeResult = store.resumeTicket(ticketId, input.reason);
@@ -363,6 +376,10 @@ export function registerTicketExecutionRoutes(
         return;
       }
 
+      assertAgentAdapterAvailable(
+        project.agent_adapter,
+        getClaudeCodeAvailability,
+      );
       executionRuntime.assertProjectExecutionBackendAvailable(project);
 
       try {

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { z } from "zod";
@@ -49,6 +49,7 @@ export type ClaudeCodeAvailability = {
 };
 
 type ClaudeCodeAvailabilityDependencies = {
+  configHomePath?: string;
   env?: NodeJS.ProcessEnv;
   execFileSyncImpl?: typeof execFileSync;
 };
@@ -109,6 +110,24 @@ function formatClaudeCodeAvailabilityError(error: unknown): string {
   return `Claude Code CLI is unavailable: ${execError.message}`;
 }
 
+function validateClaudeConfigHome(configHomePath: string): string | null {
+  if (!existsSync(configHomePath)) {
+    return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} does not exist.`;
+  }
+
+  try {
+    if (readdirSync(configHomePath).length === 0) {
+      return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} is empty.`;
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "could not be read";
+    return `Claude Code CLI is unavailable: Claude config directory ${configHomePath} could not be read (${message}).`;
+  }
+
+  return null;
+}
+
 export function probeClaudeCodeAvailability(
   dependencies: ClaudeCodeAvailabilityDependencies = {},
 ): ClaudeCodeAvailability {
@@ -118,6 +137,17 @@ export function probeClaudeCodeAvailability(
       available: false,
       detected_path: null,
       error: "Claude Code CLI is not installed or not on PATH.",
+    };
+  }
+
+  const configHomePath =
+    dependencies.configHomePath ?? resolveClaudeConfigHome();
+  const configError = validateClaudeConfigHome(configHomePath);
+  if (configError) {
+    return {
+      available: false,
+      detected_path: executablePath,
+      error: configError,
     };
   }
 

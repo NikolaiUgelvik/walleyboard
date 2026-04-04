@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -249,11 +255,15 @@ test("stripAnsi: removes C1 CSI with ? prefix and ~ terminator", () => {
 test("probeClaudeCodeAvailability reports an available Claude CLI", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-path-"));
   const executablePath = join(tempDir, "claude");
+  const configHomePath = join(tempDir, ".claude");
   writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
   chmodSync(executablePath, 0o755);
+  mkdirSync(configHomePath, { recursive: true });
+  writeFileSync(join(configHomePath, "settings.json"), "{}\n", "utf8");
 
   try {
     const result = probeClaudeCodeAvailability({
+      configHomePath,
       env: { PATH: tempDir },
       execFileSyncImpl: ((command: string, args: string[]) => {
         assert.equal(command, executablePath);
@@ -275,11 +285,15 @@ test("probeClaudeCodeAvailability reports an available Claude CLI", () => {
 test("probeClaudeCodeAvailability reports an unavailable Claude CLI with a useful error", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-path-"));
   const executablePath = join(tempDir, "claude");
+  const configHomePath = join(tempDir, ".claude");
   writeFileSync(executablePath, "#!/bin/sh\nexit 1\n");
   chmodSync(executablePath, 0o755);
+  mkdirSync(configHomePath, { recursive: true });
+  writeFileSync(join(configHomePath, "settings.json"), "{}\n", "utf8");
 
   try {
     const result = probeClaudeCodeAvailability({
+      configHomePath,
       env: { PATH: tempDir },
       execFileSyncImpl: ((command: string) => {
         assert.equal(command, executablePath);
@@ -295,6 +309,29 @@ test("probeClaudeCodeAvailability reports an unavailable Claude CLI with a usefu
       available: false,
       detected_path: executablePath,
       error: "Claude Code CLI is unavailable: permission denied",
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("probeClaudeCodeAvailability reports Claude unavailable when config is missing", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-path-"));
+  const executablePath = join(tempDir, "claude");
+  const configHomePath = join(tempDir, ".claude");
+  writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
+  chmodSync(executablePath, 0o755);
+
+  try {
+    const result = probeClaudeCodeAvailability({
+      configHomePath,
+      env: { PATH: tempDir },
+    });
+
+    assert.deepEqual(result, {
+      available: false,
+      detected_path: executablePath,
+      error: `Claude Code CLI is unavailable: Claude config directory ${configHomePath} does not exist.`,
     });
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

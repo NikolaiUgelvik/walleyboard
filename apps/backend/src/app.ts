@@ -9,6 +9,7 @@ import {
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { AgentReviewService } from "./lib/agent-review-service.js";
+import { createClaudeCodeAvailabilityGetter } from "./lib/claude-code-availability.js";
 import {
   type DockerRuntime,
   DockerRuntimeManager,
@@ -56,6 +57,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   const eventHub = options.eventHub ?? new EventHub();
   const store = options.store ?? new SqliteStore();
   const dockerRuntime = options.dockerRuntime ?? new DockerRuntimeManager();
+  const getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(
+    options.probeClaudeCodeAvailability,
+  );
   const adapterRegistry = new AgentAdapterRegistry([
     new CodexCliAdapter(),
     new ClaudeCodeAdapter(),
@@ -136,16 +140,13 @@ export async function createApp(options: CreateAppOptions = {}) {
   await app.register(fastifyRateLimit, globalRateLimitOptions());
   await app.register(healthRoutes, {
     dockerRuntime,
-    ...(options.probeClaudeCodeAvailability
-      ? {
-          probeClaudeCodeAvailability: options.probeClaudeCodeAvailability,
-        }
-      : {}),
+    getClaudeCodeAvailability,
   });
   await app.register(projectRoutes, {
     store,
     executionRuntime,
     ticketWorkspaceService,
+    getClaudeCodeAvailability,
   });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, {
@@ -154,9 +155,15 @@ export async function createApp(options: CreateAppOptions = {}) {
     store,
     executionRuntime,
     githubPullRequestService,
+    getClaudeCodeAvailability,
     ticketWorkspaceService,
   });
-  await app.register(sessionRoutes, { eventHub, store, executionRuntime });
+  await app.register(sessionRoutes, {
+    eventHub,
+    store,
+    executionRuntime,
+    getClaudeCodeAvailability,
+  });
   await app.register(websocketRoutes, { eventHub });
 
   app.addHook("onClose", async () => {

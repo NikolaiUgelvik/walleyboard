@@ -1,43 +1,19 @@
 import type { FastifyPluginAsync } from "fastify";
 
-import {
-  type ClaudeCodeAvailability,
-  probeClaudeCodeAvailability as defaultProbeClaudeCodeAvailability,
-} from "../lib/agent-adapters/claude-code-adapter.js";
 import { listConfiguredCodexMcpServers } from "../lib/agent-adapters/codex-config.js";
+import type { GetClaudeCodeAvailability } from "../lib/claude-code-availability.js";
 import type { DockerRuntime } from "../lib/docker-runtime.js";
 import { nowIso } from "../lib/time.js";
 
 type HealthRouteOptions = {
   dockerRuntime: DockerRuntime;
-  probeClaudeCodeAvailability?: () => ClaudeCodeAvailability;
+  getClaudeCodeAvailability: GetClaudeCodeAvailability;
 };
-
-const claudeCodeCacheTtlMs = 60_000;
 
 export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
   app,
-  {
-    dockerRuntime,
-    probeClaudeCodeAvailability = defaultProbeClaudeCodeAvailability,
-  },
+  { dockerRuntime, getClaudeCodeAvailability },
 ) => {
-  let cachedClaudeCodeHealth: ClaudeCodeAvailability | null = null;
-  let cachedClaudeCodeHealthAt = 0;
-
-  const getClaudeCodeHealth = (): ClaudeCodeAvailability => {
-    const now = Date.now();
-    if (
-      cachedClaudeCodeHealth === null ||
-      now - cachedClaudeCodeHealthAt >= claudeCodeCacheTtlMs
-    ) {
-      cachedClaudeCodeHealth = probeClaudeCodeAvailability();
-      cachedClaudeCodeHealthAt = now;
-    }
-
-    return cachedClaudeCodeHealth;
-  };
-
   app.get("/health", async () => {
     const dockerHealth = dockerRuntime.getHealth();
 
@@ -47,7 +23,7 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (
       timestamp: nowIso(),
       codex_mcp_servers: listConfiguredCodexMcpServers(),
       docker: dockerHealth,
-      claude_code: getClaudeCodeHealth(),
+      claude_code: getClaudeCodeAvailability(),
     };
   });
 };

@@ -5,6 +5,11 @@ import {
   sessionInputSchema,
 } from "../../../../packages/contracts/src/index.js";
 
+import {
+  assertAgentAdapterAvailable,
+  createClaudeCodeAvailabilityGetter,
+  type GetClaudeCodeAvailability,
+} from "../lib/claude-code-availability.js";
 import { makeCommandAck } from "../lib/command-ack.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import {
@@ -20,12 +25,18 @@ import type { Store } from "../lib/store.js";
 type SessionRouteOptions = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
+  getClaudeCodeAvailability?: GetClaudeCodeAvailability;
   store: Store;
 };
 
 export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
   app,
-  { eventHub, executionRuntime, store },
+  {
+    eventHub,
+    executionRuntime,
+    getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(),
+    store,
+  },
 ) => {
   app.get<{ Params: { sessionId: string } }>(
     "/sessions/:sessionId",
@@ -207,6 +218,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         return;
       }
 
+      assertAgentAdapterAvailable(
+        project.agent_adapter,
+        getClaudeCodeAvailability,
+      );
       executionRuntime.assertProjectExecutionBackendAvailable(project);
 
       try {

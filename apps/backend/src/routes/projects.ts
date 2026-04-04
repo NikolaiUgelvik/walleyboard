@@ -5,6 +5,11 @@ import {
   updateProjectInputSchema,
 } from "../../../../packages/contracts/src/index.js";
 
+import {
+  assertAgentAdapterAvailable,
+  createClaudeCodeAvailabilityGetter,
+  type GetClaudeCodeAvailability,
+} from "../lib/claude-code-availability.js";
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
@@ -33,6 +38,7 @@ type ProjectRouteOptions = {
   store: Store;
   executionRuntime: ExecutionRuntime;
   ticketWorkspaceService: TicketWorkspaceService;
+  getClaudeCodeAvailability?: GetClaudeCodeAvailability;
 };
 
 const activeProjectSessionStatuses = new Set([
@@ -45,7 +51,12 @@ const activeProjectSessionStatuses = new Set([
 
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   app,
-  { store, executionRuntime, ticketWorkspaceService },
+  {
+    store,
+    executionRuntime,
+    ticketWorkspaceService,
+    getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(),
+  },
 ) => {
   const getProjectRepositoryPair = (
     projectId: string,
@@ -91,6 +102,16 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
     }
 
     try {
+      const existingProject = store.getProject(projectId);
+      if (!existingProject) {
+        throw new Error("Project not found");
+      }
+
+      assertAgentAdapterAvailable(
+        input.agent_adapter ?? existingProject.agent_adapter,
+        getClaudeCodeAvailability,
+      );
+
       const project = store.updateProject(projectId, input);
       reply.send(
         makeCommandAck(true, "Project options saved", {
