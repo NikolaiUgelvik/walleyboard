@@ -125,13 +125,16 @@ export function ProjectRail({
   const projects = controller.projectsQuery.data?.projects ?? [];
   const projectTileLabels = deriveProjectTileLabels(projects);
   const inboxItemCount = controller.actionItems.length;
+  const unreadInboxItemCount = controller.unreadActionItemCount;
   const hasInboxItems = inboxItemCount > 0;
+  const hasUnreadInboxItems = unreadInboxItemCount > 0;
   const inboxAriaLabel = hasInboxItems
     ? `Open notifications, ${inboxItemCount} actionable notification ${
         inboxItemCount === 1 ? "item" : "items"
       }`
     : "Open notifications";
-  const railAccentColor = hasInboxItems ? "#D97706" : "#64748B";
+  const notificationTileColor = hasUnreadInboxItems ? "#D97706" : "#64748B";
+  const createProjectTileColor = "#64748B";
 
   return (
     <Box className="walleyboard-rail">
@@ -147,14 +150,19 @@ export function ProjectRail({
             <Box className="project-tile-shell">
               <ProjectTile
                 ariaLabel={inboxAriaLabel}
-                attention={hasInboxItems}
-                color={railAccentColor}
+                attention={hasUnreadInboxItems}
+                color={notificationTileColor}
                 onClick={() => setInboxOpen((current) => !current)}
               >
                 <IconBellRinging2 size={22} stroke={1.8} />
               </ProjectTile>
               {hasInboxItems ? (
-                <span className="project-tile-badge">{inboxItemCount}</span>
+                <span
+                  className="project-tile-badge"
+                  data-unread={hasUnreadInboxItems ? "true" : "false"}
+                >
+                  {inboxItemCount}
+                </span>
               ) : null}
             </Box>
           </Popover.Target>
@@ -272,7 +280,7 @@ export function ProjectRail({
         <Box className="project-rail-create">
           <ProjectTile
             ariaLabel="Create project"
-            color={railAccentColor}
+            color={createProjectTileColor}
             onClick={() => controller.setProjectModalOpen(true)}
           >
             <IconPlus size={22} stroke={1.8} />

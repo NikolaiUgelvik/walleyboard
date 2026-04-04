@@ -377,6 +377,7 @@ function createWalleyBoardController(): WalleyBoardController {
 
   return {
     actionItems: [],
+    unreadActionItemCount: 0,
     archiveActionFeedback: null,
     archiveDoneTickets: () => undefined,
     archiveDoneTicketsMutation: createMutationStub(),
@@ -592,6 +593,7 @@ test("project rail renders compact tiles with initials, titles, and the create t
     actionItems: [
       {
         key: "session-17",
+        notificationKey: "session-17:attempt-1",
         title: "Needs review",
         message: "Agent work is waiting for a decision.",
         projectId: project.id,
@@ -603,6 +605,7 @@ test("project rail renders compact tiles with initials, titles, and the create t
         color: "yellow",
       },
     ],
+    unreadActionItemCount: 1,
     projectsQuery: {
       isPending: false,
       isError: false,
@@ -629,8 +632,10 @@ test("project rail renders compact tiles with initials, titles, and the create t
   assert.match(markup, /aria-label="Open project Platform Ops"/);
   assert.match(markup, />PO</);
   assert.match(markup, /aria-label="Create project"/);
+  assert.match(markup, /--project-tile-color:#D97706/i);
+  assert.match(markup, /--project-tile-color:#64748B/i);
   assert.match(markup, /--project-tile-color:#0EA5E9/i);
-  assert.match(markup, /class="project-tile-badge">1</);
+  assert.match(markup, /class="project-tile-badge" data-unread="true">1</);
 });
 
 test("inbox badge shows the exact actionable count and hides at zero", async () => {
@@ -643,6 +648,9 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
 
     return {
       key: isSession ? `session-${sequence}` : `draft-${sequence}`,
+      notificationKey: isSession
+        ? `session-${sequence}:attempt-1`
+        : `draft-${sequence}:version-1`,
       title: isSession ? `Session item ${sequence}` : `Draft item ${sequence}`,
       message: isSession
         ? "Agent work is waiting for a decision."
@@ -659,6 +667,7 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
 
   Object.assign(controller as Record<string, unknown>, {
     actionItems,
+    unreadActionItemCount: actionItems.length,
   });
 
   try {
@@ -684,6 +693,7 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
 
     Object.assign(controller as Record<string, unknown>, {
       actionItems: [],
+      unreadActionItemCount: 0,
     });
 
     await act(async () => {
@@ -711,6 +721,39 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
     });
     harness.cleanup();
   }
+});
+
+test("inbox badge cools off when only read notifications remain and create stays gray", () => {
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    actionItems: [
+      {
+        key: "draft-44",
+        notificationKey: "draft-44:version-1",
+        title: "Clarify acceptance criteria",
+        message: "This draft is waiting for a decision.",
+        projectId: "project-1",
+        projectColor: "#2563EB",
+        projectName: "Project One",
+        targetId: "draft-44",
+        targetKind: "draft",
+        actionLabel: "Open draft",
+        color: "blue",
+      },
+    ],
+    unreadActionItemCount: 0,
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <ProjectRail controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, /data-attention="false"/);
+  assert.match(markup, /class="project-tile-badge" data-unread="false">1</);
+  assert.match(markup, /--project-tile-color:#64748B/i);
+  assert.doesNotMatch(markup, /--project-tile-color:#D97706/i);
 });
 
 test("project rail disambiguates duplicate initials without relying on hover text", () => {
@@ -758,6 +801,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
   const controller = createWalleyBoardController();
   const inboxItem = {
     key: "draft-44",
+    notificationKey: "draft-44:version-1",
     title: "Clarify acceptance criteria",
     message: "This draft is waiting for a decision.",
     projectId: "project-1",
@@ -771,6 +815,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
 
   Object.assign(controller as Record<string, unknown>, {
     actionItems: [inboxItem],
+    unreadActionItemCount: 1,
     openInboxItem: (item: { key: string }) => {
       openedInboxItemKey = item.key;
     },

@@ -28,8 +28,11 @@ export type InboxItem = {
   projectName: string;
 };
 
-type DerivedInboxItem = InboxItem & {
+export type ActionableInboxItem = InboxItem & {
   notificationKey: string;
+};
+
+type DerivedInboxItem = ActionableInboxItem & {
   updatedAt: string;
 };
 
@@ -65,7 +68,9 @@ export function deriveInboxItems(input: {
   ticketAiReviewActiveById?: ReadonlyMap<number, boolean>;
   ticketAiReviewResolvedById?: ReadonlyMap<number, boolean>;
 }): InboxItem[] {
-  return deriveInboxState(input).items;
+  return deriveInboxState(input).items.map(
+    ({ notificationKey: _notificationKey, ...item }) => item,
+  );
 }
 
 export function deriveInboxState(input: {
@@ -76,7 +81,7 @@ export function deriveInboxState(input: {
   ticketAiReviewActiveById?: ReadonlyMap<number, boolean>;
   ticketAiReviewResolvedById?: ReadonlyMap<number, boolean>;
 }): {
-  items: InboxItem[];
+  items: ActionableInboxItem[];
   notificationKeys: string[];
 } {
   const projectNameById = new Map(
@@ -255,10 +260,7 @@ export function deriveInboxState(input: {
   notificationEntries.sort(sortByUpdatedAtThenKey);
 
   return {
-    items: items.map(
-      ({ notificationKey: _notificationKey, updatedAt: _updatedAt, ...item }) =>
-        item,
-    ),
+    items: items.map(({ updatedAt: _updatedAt, ...item }) => item),
     notificationKeys: notificationEntries.map((item) => item.notificationKey),
   };
 }

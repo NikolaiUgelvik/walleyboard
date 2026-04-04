@@ -14,6 +14,7 @@ export const websocketUrl = `${apiBaseUrl.replace(/^http/, "ws")}/ws`;
 
 const lastOpenProjectStorageKey = "walleyboard:last-open-project-id";
 export const diffLayoutStorageKey = "walleyboard.ticket-workspace.diff-layout";
+const inboxReadStateStorageKey = "walleyboard:inbox-read-state";
 
 export function readLastOpenProjectId(): string | null {
   if (typeof window === "undefined") {
@@ -67,6 +68,51 @@ export function writeDiffLayoutPreference(value: DiffLayout): void {
     window.localStorage.setItem(diffLayoutStorageKey, value);
   } catch {
     // Ignore storage failures and keep the in-memory layout preference working.
+  }
+}
+
+export function readInboxReadState(): Record<string, string> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(inboxReadStateStorageKey);
+    if (storedValue === null) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(storedValue) as unknown;
+    if (
+      parsedValue === null ||
+      typeof parsedValue !== "object" ||
+      Array.isArray(parsedValue)
+    ) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsedValue).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function writeInboxReadState(value: Record<string, string>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      inboxReadStateStorageKey,
+      JSON.stringify(value),
+    );
+  } catch {
+    // Ignore storage failures and keep the in-memory inbox state working.
   }
 }
 

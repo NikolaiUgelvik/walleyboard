@@ -334,6 +334,11 @@ body {
   box-shadow: 0 8px 18px rgba(220, 38, 38, 0.28);
 }
 
+.project-tile-badge[data-unread="false"] {
+  background: #64748b;
+  box-shadow: 0 8px 18px rgba(100, 116, 139, 0.2);
+}
+
 .project-inbox-popover {
   width: min(360px, calc(100vw - 40px));
   max-height: min(70vh, 520px);

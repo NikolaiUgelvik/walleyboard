@@ -28,8 +28,10 @@ import {
   blobToBase64,
   buildMarkdownImageInsertion,
   fetchJson,
+  readInboxReadState,
   readLastOpenProjectId,
   writeDiffLayoutPreference,
+  writeInboxReadState,
   writeLastOpenProjectId,
 } from "./shared-api.js";
 import type {
@@ -84,6 +86,9 @@ export function useWalleyBoardController() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   );
+  const [readInboxItemState, setReadInboxItemState] = useState<
+    Record<string, string>
+  >(() => readInboxReadState());
   const [projectSelectionHydrated, setProjectSelectionHydrated] =
     useState(false);
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
@@ -445,6 +450,9 @@ export function useWalleyBoardController() {
       ticketAiReviewActiveById,
       ticketAiReviewResolvedById,
     });
+  const unreadActionItemCount = actionItems.filter(
+    (item) => readInboxItemState[item.key] !== item.notificationKey,
+  ).length;
   const inboxQueriesSettled =
     projectsLoaded &&
     globalDraftsQueries.every((query) => !query.isPending) &&
@@ -1035,6 +1043,18 @@ export function useWalleyBoardController() {
   };
 
   const openInboxItem = (item: (typeof actionItems)[number]): void => {
+    setReadInboxItemState((currentState) => {
+      if (currentState[item.key] === item.notificationKey) {
+        return currentState;
+      }
+
+      const nextState = {
+        ...currentState,
+        [item.key]: item.notificationKey,
+      };
+      writeInboxReadState(nextState);
+      return nextState;
+    });
     selectProject(item.projectId);
     setInspectorState(
       item.targetKind === "draft"
@@ -1191,6 +1211,7 @@ export function useWalleyBoardController() {
   return {
     ...mutations,
     actionItems,
+    unreadActionItemCount,
     agentReviewHistoryModalOpen,
     archiveActionFeedback,
     archiveModalOpen,

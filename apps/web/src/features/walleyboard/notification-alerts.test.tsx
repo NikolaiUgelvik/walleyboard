@@ -16,6 +16,10 @@ import type {
 import { deriveInboxState } from "../../lib/inbox-items.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
+import {
+  useWalleyBoardController,
+  type WalleyBoardController,
+} from "./use-walleyboard-controller.js";
 import { useWalleyBoardMutations } from "./use-walleyboard-mutations.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
@@ -289,6 +293,16 @@ function createQueryClient(): QueryClient {
 
 function noopStateSetter<T>(): Dispatch<SetStateAction<T>> {
   return () => undefined;
+}
+
+function requireController(
+  controller: WalleyBoardController | null,
+): WalleyBoardController {
+  if (controller === null) {
+    throw new Error("Expected the controller to be available");
+  }
+
+  return controller;
 }
 
 test("an unresolved automatic AI review does not block alerts for unrelated actionable work", async () => {
@@ -719,6 +733,135 @@ test("start-ticket silencing suppresses the next notification instance for that 
       root.unmount();
       await Promise.resolve();
     });
+    globalThis.fetch = originalFetch;
+    queryClient.clear();
+    dom.cleanup();
+  }
+});
+
+test("opening an inbox item marks that notification instance as read", async () => {
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  const originalFetch = globalThis.fetch;
+  const storedProjects = [createProject()];
+  const pendingDraft = createDraft({
+    id: "draft-81",
+    title_draft: "Review this draft once",
+    wizard_status: "awaiting_confirmation",
+  });
+  let latestController: WalleyBoardController | null = null;
+
+  globalThis.fetch = (async () => {
+    throw new Error("Unexpected network request during notification test");
+  }) as typeof fetch;
+
+  queryClient.setQueryData(["health"], {
+    ok: true,
+    service: "backend",
+    timestamp: "2026-04-03T00:00:00.000Z",
+    codex_mcp_servers: ["context7"],
+    docker: {
+      installed: true,
+      available: true,
+      client_version: "1.0.0",
+      server_version: "1.0.0",
+      error: null,
+    },
+    claude_code: {
+      available: false,
+      configured_path: null,
+      error: null,
+    },
+  });
+  queryClient.setQueryData(["projects"], {
+    projects: storedProjects,
+  });
+  queryClient.setQueryData(["projects", "project-1", "drafts"], {
+    drafts: [pendingDraft],
+  });
+  queryClient.setQueryData(["projects", "project-1", "tickets"], {
+    tickets: [],
+  });
+  queryClient.setQueryData(["projects", "project-1", "repositories"], {
+    repositories: [],
+  });
+  queryClient.setQueryData(["drafts", pendingDraft.id, "events"], {
+    active_run: false,
+    events: [],
+  });
+
+  function InboxReadHarness() {
+    latestController = useWalleyBoardController();
+    return (
+      <pre>
+        {JSON.stringify({
+          inspectorKind: latestController.inspectorState.kind,
+          unreadCount: latestController.unreadActionItemCount,
+        })}
+      </pre>
+    );
+  }
+
+  async function renderHarness(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <InboxReadHarness />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  try {
+    await renderHarness();
+
+    const controllerAfterRender = requireController(latestController);
+    assert.equal(controllerAfterRender.actionItems.length, 1);
+    assert.equal(controllerAfterRender.unreadActionItemCount, 1);
+
+    const inboxItem = controllerAfterRender.actionItems[0];
+    assert.notEqual(inboxItem, undefined);
+
+    await act(async () => {
+      if (inboxItem) {
+        controllerAfterRender.openInboxItem(inboxItem);
+      }
+      await Promise.resolve();
+    });
+
+    const controllerAfterOpen = requireController(latestController);
+    assert.equal(controllerAfterOpen.unreadActionItemCount, 0);
+    assert.equal(controllerAfterOpen.inspectorState.kind, "draft");
+
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+
+    const remountedRoot = createRoot(dom.mountNode);
+    try {
+      await act(async () => {
+        remountedRoot.render(
+          <QueryClientProvider client={queryClient}>
+            <InboxReadHarness />
+          </QueryClientProvider>,
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const controllerAfterRemount = requireController(latestController);
+      assert.equal(controllerAfterRemount.unreadActionItemCount, 0);
+    } finally {
+      await act(async () => {
+        remountedRoot.unmount();
+        await Promise.resolve();
+      });
+    }
+  } finally {
     globalThis.fetch = originalFetch;
     queryClient.clear();
     dom.cleanup();
