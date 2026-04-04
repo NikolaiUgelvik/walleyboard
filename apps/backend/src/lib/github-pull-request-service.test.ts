@@ -136,7 +136,7 @@ function createTicketFixture(
 
 function createService(
   store: SqliteStore,
-  runGhCommand: (args: string[], cwd: string) => string,
+  runGhCommand: (args: string[], cwd: string) => Promise<string> | string,
   options?: {
     onAssertProjectExecutionBackendAvailable?: () => void;
     onStartExecution?: (input: {
@@ -217,8 +217,8 @@ function dequeueGhResponse(
     assertArgs?: (args: string[]) => void;
     output: string;
   }>,
-): (args: string[], cwd: string) => string {
-  return (args, _cwd) => {
+): (args: string[], cwd: string) => Promise<string> {
+  return async (args, _cwd) => {
     const next = responses.shift();
     assert.ok(next, `Unexpected gh call: ${args.join(" ")}`);
     next.assertArgs?.(args);
@@ -522,6 +522,109 @@ test("reconcileTicket marks merged pull requests done and cleans up local artifa
           "This workspace terminal closed because the ticket worktree was cleaned up after merge.",
       },
     ]);
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("background reconcile skips overlapping timer runs while a sync is still in flight", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-gh-overlap-"));
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 35,
+      url: "https://github.com/acme/repo/pull/35",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: runGit(fixture.runtime.worktreePath, ["rev-parse", "HEAD"]),
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    let ghCallCount = 0;
+    let releaseFirstRun!: () => void;
+    let backgroundTimerCallback: (() => void) | null = null;
+    let markFirstGhCallStarted!: () => void;
+    const firstGhCallStarted = new Promise<void>((resolve) => {
+      markFirstGhCallStarted = resolve;
+    });
+    const firstRunRelease = new Promise<void>((resolve) => {
+      releaseFirstRun = resolve;
+    });
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+
+    globalThis.setInterval = ((callback: Parameters<typeof setInterval>[0]) => {
+      backgroundTimerCallback =
+        typeof callback === "function" ? callback : null;
+      return {} as unknown as NodeJS.Timeout;
+    }) as typeof setInterval;
+    globalThis.clearInterval = (() => undefined) as typeof clearInterval;
+
+    const { service } = createService(fixture.store, async () => {
+      ghCallCount += 1;
+      if (ghCallCount === 1) {
+        markFirstGhCallStarted();
+        await firstRunRelease;
+      }
+
+      return JSON.stringify({
+        data: {
+          repository: {
+            pr_35: {
+              number: 35,
+              url: "https://github.com/acme/repo/pull/35",
+              state: "OPEN",
+              reviewDecision: "REVIEW_REQUIRED",
+              headRefName: fixture.ticket?.working_branch,
+              baseRefName: fixture.ticket?.target_branch,
+              headRefOid: runGit(fixture.runtime.worktreePath, [
+                "rev-parse",
+                "HEAD",
+              ]),
+              reviews: {
+                nodes: [],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    try {
+      service.start();
+      assert.ok(
+        backgroundTimerCallback,
+        "Expected the service to register a background timer",
+      );
+      const runBackgroundTimer = backgroundTimerCallback as () => void;
+
+      runBackgroundTimer();
+      await firstGhCallStarted;
+      assert.equal(ghCallCount, 1);
+
+      runBackgroundTimer();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(ghCallCount, 1);
+
+      releaseFirstRun();
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      service.stop();
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    }
   } finally {
     restoreWalleyBoardHome();
     rmSync(tempDir, { recursive: true, force: true });

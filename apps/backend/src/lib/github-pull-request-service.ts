@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 import type {
   ExecutionSession,
@@ -34,7 +34,7 @@ type PullRequestSyncInput = {
   ticket: TicketFrontmatter;
 };
 
-type RunGhCommand = (args: string[], cwd: string) => string;
+type RunGhCommand = (args: string[], cwd: string) => Promise<string> | string;
 
 type GitHubRepositoryIdentity = {
   owner: string;
@@ -100,14 +100,76 @@ type GraphQlReviewNode = {
 const basePollIntervalMs = 10 * 60 * 1_000;
 const maxPollIntervalMs = 60 * 60 * 1_000;
 const schedulerIntervalMs = 60 * 1_000;
+const ghCommandTimeoutMs = 30_000;
+const gitCommandTimeoutMs = 15_000;
+const commandMaxBufferBytes = 10 * 1024 * 1024;
 
-function defaultRunGhCommand(args: string[], cwd: string): string {
+type ExecFileError = Error & {
+  code?: number | string | null;
+  killed?: boolean;
+  signal?: string | null;
+  stderr?: string | Buffer;
+  stdout?: string | Buffer;
+};
+
+async function execFileText(
+  command: string,
+  args: string[],
+  options: {
+    cwd?: string;
+    timeoutMs: number;
+  },
+): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      {
+        cwd: options.cwd,
+        encoding: "utf8",
+        maxBuffer: commandMaxBufferBytes,
+        timeout: options.timeoutMs,
+      },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve(stdout.trim());
+          return;
+        }
+
+        const execError = error as ExecFileError;
+        const stdoutText =
+          typeof execError.stdout === "string"
+            ? execError.stdout.trim()
+            : (execError.stdout?.toString("utf8").trim() ?? stdout.trim());
+        const stderrText =
+          typeof execError.stderr === "string"
+            ? execError.stderr.trim()
+            : (execError.stderr?.toString("utf8").trim() ?? stderr.trim());
+        const detail =
+          stderrText || stdoutText || execError.message || "Command failed";
+        const timeoutDetail = execError.killed
+          ? ` timed out after ${options.timeoutMs}ms`
+          : "";
+
+        reject(
+          new Error(
+            `${command} ${args.join(" ")} failed${timeoutDetail}: ${detail}`,
+          ),
+        );
+      },
+    );
+  });
+}
+
+async function defaultRunGhCommand(
+  args: string[],
+  cwd: string,
+): Promise<string> {
   try {
-    return execFileSync("gh", args, {
+    return await execFileText("gh", args, {
       cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+      timeoutMs: ghCommandTimeoutMs,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "GitHub CLI command failed";
@@ -115,12 +177,11 @@ function defaultRunGhCommand(args: string[], cwd: string): string {
   }
 }
 
-function runGit(repoPath: string, args: string[]): string {
+async function runGit(repoPath: string, args: string[]): Promise<string> {
   try {
-    return execFileSync("git", ["-C", repoPath, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    return await execFileText("git", ["-C", repoPath, ...args], {
+      timeoutMs: gitCommandTimeoutMs,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "git command failed";
@@ -128,9 +189,12 @@ function runGit(repoPath: string, args: string[]): string {
   }
 }
 
-function gitRefExists(repoPath: string, refName: string): boolean {
+async function gitRefExists(
+  repoPath: string,
+  refName: string,
+): Promise<boolean> {
   try {
-    runGit(repoPath, ["show-ref", "--verify", "--quiet", refName]);
+    await runGit(repoPath, ["show-ref", "--verify", "--quiet", refName]);
     return true;
   } catch {
     return false;
@@ -165,11 +229,11 @@ function parseGitHubRemote(url: string): {
   return null;
 }
 
-function resolvePullRequestBaseBranch(
+async function resolvePullRequestBaseBranch(
   repoPath: string,
   targetBranch: string,
-): string {
-  if (gitRefExists(repoPath, `refs/remotes/${targetBranch}`)) {
+): Promise<string> {
+  if (await gitRefExists(repoPath, `refs/remotes/${targetBranch}`)) {
     const segments = targetBranch.split("/");
     const remoteName = segments[0] ?? "";
     const branchSegments = segments.slice(1);
@@ -181,8 +245,8 @@ function resolvePullRequestBaseBranch(
   return targetBranch;
 }
 
-function listGitRemoteNames(repoPath: string): string[] {
-  const output = runGit(repoPath, ["remote"]);
+async function listGitRemoteNames(repoPath: string): Promise<string[]> {
+  const output = await runGit(repoPath, ["remote"]);
   if (output.length === 0) {
     return [];
   }
@@ -193,17 +257,17 @@ function listGitRemoteNames(repoPath: string): string[] {
     .filter(Boolean);
 }
 
-function findGitHubRepositoryIdentity(
+async function findGitHubRepositoryIdentity(
   repoPath: string,
-): GitHubRepositoryIdentity | null {
-  const remoteNames = listGitRemoteNames(repoPath);
+): Promise<GitHubRepositoryIdentity | null> {
+  const remoteNames = await listGitRemoteNames(repoPath);
 
   for (const remoteName of [
     "origin",
     ...remoteNames.filter((remote) => remote !== "origin"),
   ]) {
-    const remoteUrl = runGit(repoPath, ["remote", "get-url", remoteName]);
-    const pushUrl = runGit(repoPath, [
+    const remoteUrl = await runGit(repoPath, ["remote", "get-url", remoteName]);
+    const pushUrl = await runGit(repoPath, [
       "remote",
       "get-url",
       "--push",
@@ -226,17 +290,18 @@ function findGitHubRepositoryIdentity(
   return null;
 }
 
-function resolveGitHubRepositoryIdentity(
+async function resolveGitHubRepositoryIdentity(
   repoPath: string,
   fallbackRepoPath?: string,
-): GitHubRepositoryIdentity {
-  const primaryIdentity = findGitHubRepositoryIdentity(repoPath);
+): Promise<GitHubRepositoryIdentity> {
+  const primaryIdentity = await findGitHubRepositoryIdentity(repoPath);
   if (primaryIdentity) {
     return primaryIdentity;
   }
 
   if (fallbackRepoPath && fallbackRepoPath !== repoPath) {
-    const fallbackIdentity = findGitHubRepositoryIdentity(fallbackRepoPath);
+    const fallbackIdentity =
+      await findGitHubRepositoryIdentity(fallbackRepoPath);
     if (fallbackIdentity) {
       return fallbackIdentity;
     }
@@ -247,11 +312,11 @@ function resolveGitHubRepositoryIdentity(
   );
 }
 
-function syncGitRemote(
+async function syncGitRemote(
   sourceRepoPath: string,
   targetRepoPath: string,
   remote: GitHubRepositoryIdentity,
-): void {
+): Promise<void> {
   if (sourceRepoPath === targetRepoPath) {
     return;
   }
@@ -261,16 +326,16 @@ function syncGitRemote(
     );
   }
 
-  const targetRemotes = new Set(listGitRemoteNames(targetRepoPath));
+  const targetRemotes = new Set(await listGitRemoteNames(targetRepoPath));
   if (targetRemotes.has(remote.remoteName)) {
-    runGit(targetRepoPath, [
+    await runGit(targetRepoPath, [
       "remote",
       "set-url",
       remote.remoteName,
       remote.remoteUrl,
     ]);
   } else {
-    runGit(targetRepoPath, [
+    await runGit(targetRepoPath, [
       "remote",
       "add",
       remote.remoteName,
@@ -278,7 +343,7 @@ function syncGitRemote(
     ]);
   }
 
-  runGit(targetRepoPath, [
+  await runGit(targetRepoPath, [
     "remote",
     "set-url",
     "--push",
@@ -527,6 +592,7 @@ export class GitHubPullRequestService {
   readonly #dependencies: ReviewRouteDependencies;
   readonly #runGhCommand: RunGhCommand;
   readonly #schedules = new Map<number, PullRequestSchedule>();
+  #backgroundReconcileInFlight = false;
   #timer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -545,7 +611,7 @@ export class GitHubPullRequestService {
     }
 
     this.#timer = setInterval(() => {
-      void this.reconcileDuePullRequests();
+      void this.#runBackgroundReconcile();
     }, schedulerIntervalMs);
   }
 
@@ -577,23 +643,27 @@ export class GitHubPullRequestService {
       throw new Error("Ticket already has an active linked pull request");
     }
 
-    const githubRepository = resolveGitHubRepositoryIdentity(
+    const githubRepository = await resolveGitHubRepositoryIdentity(
       session.worktree_path,
       repository.path,
     );
-    const baseBranch = resolvePullRequestBaseBranch(
+    const baseBranch = await resolvePullRequestBaseBranch(
       repository.path,
       resolveTargetBranch(repository, ticket.target_branch),
     );
-    syncGitRemote(repository.path, session.worktree_path, githubRepository);
-    runGit(session.worktree_path, [
+    await syncGitRemote(
+      repository.path,
+      session.worktree_path,
+      githubRepository,
+    );
+    await runGit(session.worktree_path, [
       "push",
       "--set-upstream",
       githubRepository.remoteName,
       ticket.working_branch,
     ]);
 
-    const prUrl = this.#runGhCommand(
+    const prUrl = await this.#runGhCommand(
       [
         "pr",
         "create",
@@ -611,7 +681,7 @@ export class GitHubPullRequestService {
       session.worktree_path,
     );
     const parsedUrl = parsePullRequestUrl(prUrl);
-    const snapshot = this.#fetchPullRequestSnapshot(
+    const snapshot = await this.#fetchPullRequestSnapshot(
       session.worktree_path,
       {
         owner: parsedUrl.owner,
@@ -681,7 +751,7 @@ export class GitHubPullRequestService {
       return;
     }
 
-    const currentHead = runGit(input.session.worktree_path, [
+    const currentHead = await runGit(input.session.worktree_path, [
       "rev-parse",
       "HEAD",
     ]);
@@ -694,11 +764,11 @@ export class GitHubPullRequestService {
       return;
     }
 
-    const githubRepository = resolveGitHubRepositoryIdentity(
+    const githubRepository = await resolveGitHubRepositoryIdentity(
       input.session.worktree_path,
       input.repository.path,
     );
-    syncGitRemote(
+    await syncGitRemote(
       input.repository.path,
       input.session.worktree_path,
       githubRepository,
@@ -706,7 +776,7 @@ export class GitHubPullRequestService {
 
     if (needsPush) {
       try {
-        runGit(input.session.worktree_path, [
+        await runGit(input.session.worktree_path, [
           "push",
           githubRepository.remoteName,
           linkedPr.head_branch,
@@ -733,7 +803,7 @@ export class GitHubPullRequestService {
     let reviewRequestSucceeded = false;
     if (needsReviewRequest) {
       try {
-        this.#runGhCommand(
+        await this.#runGhCommand(
           [
             "pr",
             "edit",
@@ -764,7 +834,7 @@ export class GitHubPullRequestService {
       }
     }
 
-    const snapshot = this.#fetchPullRequestSnapshot(
+    const snapshot = await this.#fetchPullRequestSnapshot(
       input.session.worktree_path,
       {
         owner: linkedPr.repo_owner,
@@ -835,13 +905,16 @@ export class GitHubPullRequestService {
       ? this.#dependencies.store.getSession(firstTicket.session_id)
       : null;
     const cwd = session?.worktree_path ?? repository.path;
-    const snapshots = this.#fetchPullRequestSnapshots(
+    const githubRepository = await resolveGitHubRepositoryIdentity(
+      cwd,
+      repository.path,
+    );
+    const snapshots = await this.#fetchPullRequestSnapshots(
       cwd,
       {
         owner: firstLinkedPr.repo_owner,
         name: firstLinkedPr.repo_name,
-        remoteName: resolveGitHubRepositoryIdentity(cwd, repository.path)
-          .remoteName,
+        remoteName: githubRepository.remoteName,
       },
       tickets.flatMap((ticket) =>
         ticket.linked_pr ? [ticket.linked_pr.number] : [],
@@ -1053,15 +1126,16 @@ export class GitHubPullRequestService {
     this.#dependencies.executionRuntime.assertProjectExecutionBackendAvailable(
       project,
     );
-    const detailedReview = this.#fetchDetailedRequestedChanges(
+    const githubRepository = await resolveGitHubRepositoryIdentity(
+      session.worktree_path ?? repository.path,
+      repository.path,
+    );
+    const detailedReview = await this.#fetchDetailedRequestedChanges(
       session.worktree_path ?? repository.path,
       {
         owner: snapshot.owner,
         name: snapshot.repo,
-        remoteName: resolveGitHubRepositoryIdentity(
-          session.worktree_path ?? repository.path,
-          repository.path,
-        ).remoteName,
+        remoteName: githubRepository.remoteName,
       },
       snapshot.number,
     );
@@ -1110,11 +1184,11 @@ export class GitHubPullRequestService {
     this.#clearSchedule(ticket.id);
   }
 
-  #fetchPullRequestSnapshots(
+  async #fetchPullRequestSnapshots(
     cwd: string,
     repository: GitHubRepositoryIdentity,
     numbers: number[],
-  ): Map<number, PullRequestSnapshot> {
+  ): Promise<Map<number, PullRequestSnapshot>> {
     const aliases = numbers
       .map(
         (number) => `
@@ -1146,7 +1220,7 @@ export class GitHubPullRequestService {
         }
       }
     `;
-    const response = this.#runGraphQl<{
+    const response = await this.#runGraphQl<{
       data?: {
         repository?: Record<string, unknown> | null;
       } | null;
@@ -1195,14 +1269,14 @@ export class GitHubPullRequestService {
     return snapshots;
   }
 
-  #fetchPullRequestSnapshot(
+  async #fetchPullRequestSnapshot(
     cwd: string,
     repository: GitHubRepositoryIdentity,
     number: number,
-  ): PullRequestSnapshot {
-    const snapshot = this.#fetchPullRequestSnapshots(cwd, repository, [
-      number,
-    ]).get(number);
+  ): Promise<PullRequestSnapshot> {
+    const snapshot = (
+      await this.#fetchPullRequestSnapshots(cwd, repository, [number])
+    ).get(number);
     if (!snapshot) {
       throw new Error(`Unable to load GitHub pull request #${number}`);
     }
@@ -1210,11 +1284,11 @@ export class GitHubPullRequestService {
     return snapshot;
   }
 
-  #fetchDetailedRequestedChanges(
+  async #fetchDetailedRequestedChanges(
     cwd: string,
     repository: GitHubRepositoryIdentity,
     number: number,
-  ): DetailedRequestedChanges {
+  ): Promise<DetailedRequestedChanges> {
     const query = `
       query {
         repository(owner: ${JSON.stringify(repository.owner)}, name: ${JSON.stringify(repository.name)}) {
@@ -1240,7 +1314,7 @@ export class GitHubPullRequestService {
         }
       }
     `;
-    const response = this.#runGraphQl<{
+    const response = await this.#runGraphQl<{
       data?: {
         repository?: {
           pullRequest?: {
@@ -1257,8 +1331,8 @@ export class GitHubPullRequestService {
     return extractLatestRequestedChangesReview(reviews);
   }
 
-  #runGraphQl<T>(cwd: string, query: string): T {
-    const raw = this.#runGhCommand(
+  async #runGraphQl<T>(cwd: string, query: string): Promise<T> {
+    const raw = await this.#runGhCommand(
       ["api", "graphql", "-f", `query=${query}`],
       cwd,
     );
@@ -1350,6 +1424,25 @@ export class GitHubPullRequestService {
 
   #clearSchedule(ticketId: number): void {
     this.#schedules.delete(ticketId);
+  }
+
+  async #runBackgroundReconcile(): Promise<void> {
+    if (this.#backgroundReconcileInFlight) {
+      return;
+    }
+
+    this.#backgroundReconcileInFlight = true;
+    try {
+      await this.reconcileDuePullRequests();
+    } catch (error) {
+      console.warn(
+        `[github-pr-sync] Background reconcile failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    } finally {
+      this.#backgroundReconcileInFlight = false;
+    }
   }
 
   #requireTicket(ticketId: number): TicketFrontmatter {
