@@ -575,25 +575,48 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
       <Stack className="workbench-shell" gap="md">
         <Box className="workbench-header">
           {controller.selectedProject ? (
-            <Group justify="space-between" align="center" wrap="wrap">
-              <Title order={1} style={{ letterSpacing: "-0.05em" }}>
-                {controller.selectedProject.name}
-              </Title>
-              <Group gap="xs" align="center" wrap="wrap">
+            <Group
+              justify="space-between"
+              align="center"
+              wrap="nowrap"
+              style={{ minWidth: 0 }}
+            >
+              <Box style={{ flex: 1, minWidth: 0 }}>
+                <Title
+                  order={1}
+                  style={{
+                    letterSpacing: "-0.05em",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {controller.selectedProject.name}
+                </Title>
+              </Box>
+              <Group gap="xs" align="center" wrap="nowrap">
                 <ColorSchemeControl />
                 <ProjectWorkspaceActions controller={controller} />
               </Group>
             </Group>
           ) : (
-            <Stack gap={6}>
-              <Title order={1} style={{ letterSpacing: "-0.05em" }}>
-                Select a project
-              </Title>
-              <Text size="sm" c="dimmed" maw={820}>
-                Choose a project from the left rail to bring its drafts,
-                tickets, and sessions into the board.
-              </Text>
-            </Stack>
+            <Group
+              justify="space-between"
+              align="flex-start"
+              wrap="nowrap"
+              style={{ minWidth: 0 }}
+            >
+              <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+                <Title order={1} style={{ letterSpacing: "-0.05em" }}>
+                  Select a project
+                </Title>
+                <Text size="sm" c="dimmed" maw={820}>
+                  Choose a project from the left rail to bring its drafts,
+                  tickets, and sessions into the board.
+                </Text>
+              </Stack>
+              <ColorSchemeControl />
+            </Group>
           )}
         </Box>
 

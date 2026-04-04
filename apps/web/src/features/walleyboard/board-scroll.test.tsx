@@ -145,6 +145,20 @@ function countClass(markup: string, className: string): number {
   ).length;
 }
 
+function extractWorkbenchHeaderMarkup(markup: string): string {
+  const headerStart = markup.indexOf('class="workbench-header"');
+  assert.notEqual(headerStart, -1, "Expected board markup to include a header");
+
+  const toolbarStart = markup.indexOf('class="workbench-toolbar"', headerStart);
+  assert.notEqual(
+    toolbarStart,
+    -1,
+    "Expected board markup to include the toolbar after the header",
+  );
+
+  return markup.slice(headerStart, toolbarStart);
+}
+
 function extractBlock(source: string, marker: string): string {
   const { blockEnd, blockStart } = findBlockRange(source, marker);
 
@@ -881,12 +895,19 @@ test("board header keeps the selected project name and inline controls without r
       <BoardView controller={controller} />
     </MantineProvider>,
   );
+  const headerMarkup = extractWorkbenchHeaderMarkup(markup);
 
   assert.doesNotMatch(markup, />Project board</);
   assert.match(markup, />Project One</);
   assert.match(markup, />System</);
   assert.match(markup, />Preview</);
   assert.match(markup, />Terminal</);
+  assert.equal((headerMarkup.match(/--group-wrap:nowrap/g) ?? []).length, 2);
+  assert.match(headerMarkup, /style="flex:1;min-width:0"/);
+  assert.match(
+    headerMarkup,
+    /overflow:hidden;text-overflow:ellipsis;white-space:nowrap/,
+  );
   assert.doesNotMatch(markup, />walleyboard • 0 validation command\(s\)</);
   assert.doesNotMatch(markup, />backend</);
   assert.doesNotMatch(markup, />0 running</);
@@ -906,9 +927,12 @@ test("board header keeps the empty-state prompt when no project is selected", ()
       <BoardView controller={controller} />
     </MantineProvider>,
   );
+  const headerMarkup = extractWorkbenchHeaderMarkup(markup);
 
   assert.doesNotMatch(markup, />Project board</);
   assert.match(markup, />Select a project</);
+  assert.match(markup, />System</);
+  assert.equal((headerMarkup.match(/--group-wrap:nowrap/g) ?? []).length, 1);
   assert.match(
     markup,
     />Choose a project from the left rail to bring its drafts,\s*tickets, and sessions into the board\.</,
