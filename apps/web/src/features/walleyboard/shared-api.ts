@@ -223,6 +223,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 export async function saveProjectOptionsRequest(
   projectId: string,
   body: {
+    color: string;
     agent_adapter: AgentAdapter;
     execution_backend: ExecutionBackend;
     disabled_mcp_servers: string[];

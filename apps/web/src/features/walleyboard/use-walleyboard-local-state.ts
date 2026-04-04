@@ -20,6 +20,7 @@ import type {
 
 export function useProjectOptionsState() {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projectOptionsColor, setProjectOptionsColor] = useState("");
   const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
     string | null
   >(null);
@@ -81,6 +82,7 @@ export function useProjectOptionsState() {
 
   return {
     projectModalOpen,
+    projectOptionsColor,
     projectOptionsAgentAdapter,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
@@ -100,6 +102,7 @@ export function useProjectOptionsState() {
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
     setProjectModalOpen,
+    setProjectOptionsColor,
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,

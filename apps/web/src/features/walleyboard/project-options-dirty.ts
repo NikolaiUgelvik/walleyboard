@@ -6,6 +6,7 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 type ProjectOptionsDirtyInput = {
+  color: string;
   draftModelValue: string | null;
   draftReasoningEffortValue: string | null;
   executionBackend: ExecutionBackend;
@@ -32,6 +33,7 @@ export function hasProjectOptionsDirty(
   }
 
   return (
+    input.color !== project.color ||
     input.selectedAgentAdapter !== project.agent_adapter ||
     input.executionBackend !== project.execution_backend ||
     !(

@@ -2,139 +2,194 @@ import {
   ActionIcon,
   Badge,
   Box,
-  Button,
-  Group,
   Loader,
+  Popover,
   Stack,
   Text,
+  UnstyledButton,
 } from "@mantine/core";
+import { IconBellRinging2, IconDots, IconPlus } from "@tabler/icons-react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
-import { SectionCard } from "../../components/SectionCard.js";
+import {
+  deriveProjectInitials,
+  normalizeProjectColor,
+} from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
+
+function ProjectTile({
+  active = false,
+  attention = false,
+  ariaLabel,
+  children,
+  color,
+  onClick,
+}: {
+  active?: boolean;
+  attention?: boolean;
+  ariaLabel: string;
+  children: ReactNode;
+  color: string;
+  onClick: () => void;
+}) {
+  return (
+    <UnstyledButton
+      aria-label={ariaLabel}
+      className="project-tile"
+      data-active={active ? "true" : "false"}
+      data-attention={attention ? "true" : "false"}
+      style={
+        {
+          "--project-tile-color": normalizeProjectColor(color),
+        } as CSSProperties
+      }
+      onClick={onClick}
+    >
+      {children}
+    </UnstyledButton>
+  );
+}
 
 export function ProjectRail({
   controller,
 }: {
   controller: WalleyBoardController;
 }) {
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const projects = controller.projectsQuery.data?.projects ?? [];
+  const hasInboxItems = controller.actionItems.length > 0;
+
   return (
     <Box className="walleyboard-rail">
-      <Stack gap="md">
-        <SectionCard title="Projects">
-          {controller.projectsQuery.isPending ? (
-            <Loader size="sm" />
-          ) : controller.projectsQuery.isError ? (
-            <Text c="red" size="sm">
-              {controller.projectsQuery.error.message}
-            </Text>
-          ) : controller.projectsQuery.data.projects.length === 0 ? (
-            <Stack gap="sm">
-              <Text size="sm" c="dimmed">
-                No projects yet. Create the first one below.
-              </Text>
-              <Button
-                variant="light"
-                onClick={() => controller.setProjectModalOpen(true)}
+      <Stack gap="sm" align="center">
+        <Popover
+          opened={inboxOpen}
+          onChange={setInboxOpen}
+          position="right-start"
+          shadow="md"
+          withinPortal
+        >
+          <Popover.Target>
+            <Box className="project-tile-shell">
+              <ProjectTile
+                ariaLabel="Open inbox"
+                attention={hasInboxItems}
+                color={hasInboxItems ? "#D97706" : "#64748B"}
+                onClick={() => setInboxOpen((current) => !current)}
               >
-                Create Project
-              </Button>
-            </Stack>
-          ) : (
+                <IconBellRinging2 size={22} stroke={1.8} />
+              </ProjectTile>
+              {hasInboxItems ? (
+                <span className="project-tile-badge">
+                  {Math.min(controller.actionItems.length, 9)}
+                </span>
+              ) : null}
+            </Box>
+          </Popover.Target>
+
+          <Popover.Dropdown className="project-inbox-popover">
             <Stack gap="xs">
-              {controller.projectsQuery.data.projects.map((project) => (
-                <Group key={project.id} gap="xs" wrap="nowrap">
-                  <Button
-                    className="project-nav-button"
-                    data-selected={
-                      controller.selectedProjectId === project.id
-                        ? "true"
-                        : "false"
-                    }
-                    variant={
-                      controller.selectedProjectId === project.id
-                        ? "filled"
-                        : "subtle"
-                    }
-                    justify="space-between"
-                    style={{ flex: 1 }}
+              <Text fw={700} size="sm">
+                Inbox
+              </Text>
+              {hasInboxItems ? (
+                controller.actionItems.map((item) => (
+                  <UnstyledButton
+                    key={item.key}
+                    className="project-inbox-item"
+                    data-tone={item.color}
+                    onClick={() => {
+                      setInboxOpen(false);
+                      controller.openInboxItem(item);
+                    }}
+                  >
+                    <Stack gap={6}>
+                      <Box>
+                        <Text fw={700} size="sm">
+                          {item.title}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {item.projectName}
+                        </Text>
+                      </Box>
+                      <MarkdownContent
+                        className="markdown-muted markdown-small"
+                        content={item.message}
+                      />
+                      <Badge
+                        variant="light"
+                        color={item.color === "yellow" ? "yellow" : "blue"}
+                        size="sm"
+                        style={{ alignSelf: "flex-start" }}
+                      >
+                        {item.actionLabel}
+                      </Badge>
+                    </Stack>
+                  </UnstyledButton>
+                ))
+              ) : (
+                <Text size="sm" c="dimmed">
+                  No actionable inbox items.
+                </Text>
+              )}
+            </Stack>
+          </Popover.Dropdown>
+        </Popover>
+
+        {controller.projectsQuery.isPending ? (
+          <Loader size="sm" />
+        ) : controller.projectsQuery.isError ? (
+          <Text c="red" size="xs" ta="center">
+            {controller.projectsQuery.error.message}
+          </Text>
+        ) : (
+          <>
+            {projects.length === 0 ? (
+              <Text size="xs" c="dimmed" ta="center">
+                No projects yet.
+              </Text>
+            ) : null}
+
+            <Stack gap="xs" className="project-tile-stack">
+              {projects.map((project) => (
+                <Box key={project.id} className="project-tile-shell">
+                  <ProjectTile
+                    active={controller.selectedProjectId === project.id}
+                    ariaLabel={`Open project ${project.name}`}
+                    color={project.color ?? "#2563EB"}
                     onClick={() => controller.selectProject(project.id)}
                   >
-                    <span>{project.name}</span>
-                  </Button>
+                    <span className="project-tile-label">
+                      {deriveProjectInitials(project.name)}
+                    </span>
+                  </ProjectTile>
                   <ActionIcon
                     aria-label={`Project options for ${project.name}`}
+                    className="project-tile-options"
                     color="gray"
+                    size="sm"
                     variant="subtle"
                     onClick={(event) => {
                       event.stopPropagation();
                       controller.openProjectOptions(project);
                     }}
                   >
-                    ...
+                    <IconDots size={14} stroke={1.8} />
                   </ActionIcon>
-                </Group>
-              ))}
-              <Button
-                variant="light"
-                onClick={() => controller.setProjectModalOpen(true)}
-              >
-                Create Project
-              </Button>
-            </Stack>
-          )}
-        </SectionCard>
-
-        {controller.actionItems.length > 0 ? (
-          <SectionCard title="Inbox">
-            <Stack gap="xs">
-              {controller.actionItems.map((item) => (
-                <Box
-                  key={item.key}
-                  className="inbox-item"
-                  data-tone={item.color}
-                >
-                  <Stack gap={6}>
-                    <Group justify="space-between" align="flex-start">
-                      <Text fw={700} size="sm" style={{ flex: 1 }}>
-                        {item.title}
-                      </Text>
-                      <Badge variant="light" color="gray" size="xs">
-                        {item.projectName}
-                      </Badge>
-                    </Group>
-                    <MarkdownContent
-                      className="markdown-muted markdown-small"
-                      content={item.message}
-                    />
-                    <Group justify="flex-end">
-                      <Button
-                        variant="light"
-                        size="xs"
-                        onClick={() => {
-                          controller.selectProject(item.projectId);
-                          controller.setInspectorState(
-                            item.targetKind === "draft"
-                              ? {
-                                  kind: "draft",
-                                  draftId: item.targetId,
-                                }
-                              : {
-                                  kind: "session",
-                                  sessionId: item.targetId,
-                                },
-                          );
-                        }}
-                      >
-                        {item.actionLabel}
-                      </Button>
-                    </Group>
-                  </Stack>
                 </Box>
               ))}
             </Stack>
-          </SectionCard>
-        ) : null}
+          </>
+        )}
+
+        <ProjectTile
+          ariaLabel="Create project"
+          color="#2563EB"
+          onClick={() => controller.setProjectModalOpen(true)}
+        >
+          <IconPlus size={22} stroke={1.8} />
+        </ProjectTile>
       </Stack>
     </Box>
   );

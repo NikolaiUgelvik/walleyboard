@@ -37,6 +37,20 @@ export const slotOccupyingExecutionSessionStatuses = [
   "running",
 ] as const;
 export const defaultMaxConcurrentSessions = 4;
+export const defaultProjectColor = "#2563EB";
+
+export function normalizeProjectColor(
+  value: string | null | undefined,
+): string {
+  if (typeof value !== "string") {
+    return defaultProjectColor;
+  }
+
+  const trimmed = value.trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(trimmed)
+    ? trimmed.toUpperCase()
+    : defaultProjectColor;
+}
 
 export function slugify(value: string): string {
   return value
@@ -221,6 +235,7 @@ export function mapProject(row: Record<string, unknown>): Project {
     id: String(row.id),
     slug: String(row.slug),
     name: String(row.name),
+    color: normalizeProjectColor(row.color as string | null | undefined),
     agent_adapter:
       row.agent_adapter === "codex"
         ? "codex"
@@ -601,6 +616,7 @@ export class SqliteStoreContext {
         id TEXT PRIMARY KEY,
         slug TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
+        color TEXT,
         agent_adapter TEXT NOT NULL DEFAULT 'codex',
         execution_backend TEXT NOT NULL DEFAULT 'host',
         disabled_mcp_servers TEXT NOT NULL DEFAULT '[]',
@@ -811,6 +827,7 @@ export class SqliteStoreContext {
     this.#ensureColumn("projects", "draft_analysis_reasoning_effort", "TEXT");
     this.#ensureColumn("projects", "ticket_work_model", "TEXT");
     this.#ensureColumn("projects", "ticket_work_reasoning_effort", "TEXT");
+    this.#ensureColumn("projects", "color", "TEXT");
     this.#ensureColumn("projects", "preview_start_command", "TEXT");
     this.#ensureColumn("projects", "pre_worktree_command", "TEXT");
     this.#ensureColumn("projects", "post_worktree_command", "TEXT");

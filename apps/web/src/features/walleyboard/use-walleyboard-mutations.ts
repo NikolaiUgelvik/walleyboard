@@ -44,6 +44,7 @@ type UseWalleyBoardMutationsInput = {
   setInspectorState: StateSetter<InspectorState>;
   setPendingDraftEditorSync: StateSetter<PendingDraftEditorSync | null>;
   setPlanFeedbackBody: StateSetter<string>;
+  setProjectColor: StateSetter<string>;
   setProjectDeleteConfirmText: StateSetter<string>;
   setProjectModalOpen: StateSetter<boolean>;
   setProjectName: StateSetter<string>;
@@ -127,6 +128,7 @@ export function useWalleyBoardMutations({
   setInspectorState,
   setPendingDraftEditorSync,
   setPlanFeedbackBody,
+  setProjectColor,
   setProjectDeleteConfirmText,
   setProjectModalOpen,
   setProjectName,
@@ -143,6 +145,7 @@ export function useWalleyBoardMutations({
 }: UseWalleyBoardMutationsInput) {
   const createProjectMutation = useMutation({
     mutationFn: (input: {
+      color: string;
       name: string;
       repositoryPath: string;
       defaultTargetBranch: string;
@@ -151,6 +154,7 @@ export function useWalleyBoardMutations({
       postJson<CommandAck>("/projects", {
         name: input.name,
         slug: slugify(input.name),
+        color: input.color,
         default_target_branch: input.defaultTargetBranch,
         repository: {
           name: deriveRepositoryName(input.repositoryPath, input.name),
@@ -163,6 +167,7 @@ export function useWalleyBoardMutations({
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       selectProject(ack.resource_refs.project_id ?? null);
       setProjectModalOpen(false);
+      setProjectColor("#2563EB");
       setProjectName("");
       setRepositoryPath("");
       setDefaultBranch("main");
@@ -174,6 +179,7 @@ export function useWalleyBoardMutations({
     mutationFn: (input: {
       agentAdapter: AgentAdapter;
       projectId: string;
+      color: string;
       executionBackend: ExecutionBackend;
       disabledMcpServers: string[];
       automaticAgentReview: boolean;
@@ -192,6 +198,7 @@ export function useWalleyBoardMutations({
       }>;
     }) =>
       saveProjectOptionsRequest(input.projectId, {
+        color: input.color,
         agent_adapter: input.agentAdapter,
         execution_backend: input.executionBackend,
         disabled_mcp_servers: input.disabledMcpServers,

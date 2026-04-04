@@ -4,6 +4,7 @@ export const projectsTable = sqliteTable("projects", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
+  color: text("color"),
   executionBackend: text("execution_backend").notNull().default("host"),
   defaultReviewAction: text("default_review_action")
     .notNull()

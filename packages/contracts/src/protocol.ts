@@ -8,6 +8,7 @@ import {
   executionBackendSchema,
   executionSessionSchema,
   opaqueIdSchema,
+  projectColorSchema,
   projectSchema,
   pullRequestRefSchema,
   reasoningEffortSchema,
@@ -24,6 +25,7 @@ import {
 export const createProjectInputSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).optional(),
+  color: projectColorSchema.optional(),
   default_target_branch: z.string().min(1).nullable().optional(),
   repository: z.object({
     name: z.string().min(1),
@@ -34,6 +36,7 @@ export const createProjectInputSchema = z.object({
 });
 
 export const updateProjectInputSchema = z.object({
+  color: projectColorSchema.optional(),
   agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),
   disabled_mcp_servers: z.array(z.string().min(1)).optional(),

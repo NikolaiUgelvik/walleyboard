@@ -207,6 +207,28 @@ function installNarrowStylesheet(document: Document): () => void {
   return installMediaStylesheet(document, "@media (max-width: 900px)");
 }
 
+async function waitForElement(
+  document: Document,
+  selector: string,
+  delayMs = 10,
+  timeoutMs = 500,
+): Promise<HTMLElement> {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element) {
+      return element;
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${selector}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+}
+
 function assertRuleIncludes(
   source: string,
   selector: string,
@@ -235,6 +257,7 @@ function createProject(): Project {
     id: "project-1",
     slug: "project-1",
     name: "Project One",
+    color: "#2563EB",
     agent_adapter: "codex",
     execution_backend: "host",
     disabled_mcp_servers: [],
@@ -387,6 +410,7 @@ function createWalleyBoardController(): WalleyBoardController {
     openArchiveModal: () => undefined,
     openArchivedTicketDiff: () => undefined,
     openDraft: () => undefined,
+    openInboxItem: () => undefined,
     openNewDraft: () => undefined,
     openProjectOptions: () => undefined,
     projectOptionsProject: null,
@@ -535,6 +559,122 @@ test("narrow layout keeps the board region constrained to the shared scroller", 
     stylesheet,
     /\.board-column-stack\s*\{[^}]*overflow-y:\s*auto\s*;/,
   );
+});
+
+test("project rail renders compact tiles with initials and the create tile", () => {
+  const controller = createWalleyBoardController();
+  const project = {
+    ...createProject(),
+    name: "WalleyBoard",
+    color: "#0EA5E9",
+  };
+  Object.assign(controller as Record<string, unknown>, {
+    actionItems: [
+      {
+        key: "session-17",
+        title: "Needs review",
+        message: "Agent work is waiting for a decision.",
+        projectId: project.id,
+        projectName: project.name,
+        targetId: "session-17",
+        targetKind: "session",
+        actionLabel: "Open session",
+        color: "yellow",
+      },
+    ],
+    projectsQuery: {
+      isPending: false,
+      isError: false,
+      data: { projects: [project] },
+      error: null,
+    },
+    selectedProject: project,
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <ProjectRail controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, /aria-label="Open inbox"/);
+  assert.match(markup, /data-attention="true"/);
+  assert.match(markup, /aria-label="Open project WalleyBoard"/);
+  assert.match(markup, />WB</);
+  assert.match(markup, /aria-label="Create project"/);
+  assert.match(markup, /--project-tile-color:#0EA5E9/i);
+});
+
+test("inbox tile opens a floating overlay and selects inbox items", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  let openedInboxItemKey: string | null = null;
+  const controller = createWalleyBoardController();
+  const inboxItem = {
+    key: "draft-44",
+    title: "Clarify acceptance criteria",
+    message: "This draft is waiting for a decision.",
+    projectId: "project-1",
+    projectName: "Project One",
+    targetId: "draft-44",
+    targetKind: "draft" as const,
+    actionLabel: "Open draft",
+    color: "blue" as const,
+  };
+
+  Object.assign(controller as Record<string, unknown>, {
+    actionItems: [inboxItem],
+    openInboxItem: (item: { key: string }) => {
+      openedInboxItemKey = item.key;
+    },
+  });
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <ProjectRail controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const inboxButton = harness.window.document.querySelector<HTMLElement>(
+      'button[aria-label="Open inbox"]',
+    );
+    assert.ok(inboxButton, "Expected the inbox tile to render");
+
+    await act(async () => {
+      inboxButton.dispatchEvent(
+        new harness.window.MouseEvent("click", { bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+
+    const overlayItem = await waitForElement(
+      harness.window.document,
+      "button.project-inbox-item",
+    );
+    assert.ok(overlayItem, "Expected the inbox overlay to open");
+    assert.match(
+      harness.window.document.body.textContent ?? "",
+      /Clarify acceptance criteria/,
+    );
+
+    await act(async () => {
+      overlayItem.dispatchEvent(
+        new harness.window.MouseEvent("click", { bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(openedInboxItemKey, "draft-44");
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
 });
 
 test("board header keeps the selected project and repository summary without status badges", () => {

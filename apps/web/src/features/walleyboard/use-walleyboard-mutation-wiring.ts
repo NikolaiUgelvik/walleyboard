@@ -20,6 +20,7 @@ export function useWalleyBoardMutationWiring(input: {
   setInspectorState: StateSetter<InspectorState>;
   setPendingDraftEditorSync: StateSetter<PendingDraftEditorSync | null>;
   setPlanFeedbackBody: StateSetter<string>;
+  setProjectColor: StateSetter<string>;
   setProjectDeleteConfirmText: StateSetter<string>;
   setProjectModalOpen: StateSetter<boolean>;
   setProjectName: StateSetter<string>;

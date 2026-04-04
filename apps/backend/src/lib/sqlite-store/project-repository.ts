@@ -15,6 +15,7 @@ import {
   normalizeOptionalCommand,
   normalizeOptionalModel,
   normalizeOptionalReasoningEffort,
+  normalizeProjectColor,
   normalizeReviewAction,
   requireValue,
   type SqliteStoreContext,
@@ -63,24 +64,26 @@ export class ProjectRepository {
     const projectId = nanoid();
     const repositoryId = nanoid();
     const slug = slugify(input.slug ?? input.name);
+    const color = normalizeProjectColor(input.color);
     const defaultTargetBranch = input.default_target_branch ?? "main";
 
     this.context.db
       .prepare(
         `
           INSERT INTO projects (
-            id, slug, name, agent_adapter, execution_backend, disabled_mcp_servers, automatic_agent_review, default_target_branch, pre_worktree_command,
+            id, slug, name, color, agent_adapter, execution_backend, disabled_mcp_servers, automatic_agent_review, default_target_branch, pre_worktree_command,
             automatic_agent_review_run_limit, post_worktree_command, preview_start_command, default_review_action,
             draft_analysis_model, draft_analysis_reasoning_effort,
             ticket_work_model, ticket_work_reasoning_effort,
             max_concurrent_sessions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
         projectId,
         slug,
         input.name.trim(),
+        color,
         "codex",
         "host",
         stringifyJson([]),
@@ -163,6 +166,10 @@ export class ProjectRepository {
       input.draft_analysis_model === undefined
         ? project.draft_analysis_model
         : normalizeOptionalModel(input.draft_analysis_model);
+    const color =
+      input.color === undefined
+        ? normalizeProjectColor(project.color)
+        : normalizeProjectColor(input.color);
     const agentAdapter =
       input.agent_adapter === undefined
         ? project.agent_adapter
@@ -234,7 +241,8 @@ export class ProjectRepository {
       .prepare(
         `
           UPDATE projects
-          SET agent_adapter = ?,
+          SET color = ?,
+              agent_adapter = ?,
               execution_backend = ?,
               disabled_mcp_servers = ?,
               automatic_agent_review = ?,
@@ -252,6 +260,7 @@ export class ProjectRepository {
         `,
       )
       .run(
+        color,
         agentAdapter,
         executionBackend,
         stringifyJson(disabledMcpServers),

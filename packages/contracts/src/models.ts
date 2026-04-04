@@ -32,6 +32,7 @@ export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
 export const agentAdapterSchema = z.enum(["codex", "claude-code"]);
 export const executionBackendSchema = z.enum(["host", "docker"]);
 export const reviewActionSchema = z.enum(["direct_merge", "pull_request"]);
+export const projectColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 
 export const executionSessionStatusSchema = z.enum([
   "queued",
@@ -148,6 +149,7 @@ export const projectSchema = z.object({
   id: opaqueIdSchema,
   slug: z.string().min(1),
   name: z.string().min(1),
+  color: projectColorSchema.optional(),
   agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
   disabled_mcp_servers: z.array(z.string().min(1)),

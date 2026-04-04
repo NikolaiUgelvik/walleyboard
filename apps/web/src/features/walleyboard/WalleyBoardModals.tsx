@@ -273,6 +273,19 @@ export function WalleyBoardModals({
               </Text>
 
               <Stack gap="xs">
+                <TextInput
+                  label="Project color"
+                  description="Used for the compact rail tile accent."
+                  type="color"
+                  value={controller.projectOptionsColor}
+                  onChange={(event) => {
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsColor(
+                      event.currentTarget.value.toUpperCase(),
+                    );
+                  }}
+                />
                 <ProjectAgentAdapterSelect
                   claudeCodeAvailable={Boolean(
                     controller.claudeCodeHealth?.available,
@@ -876,6 +889,7 @@ export function WalleyBoardModals({
           onSubmit={(event) => {
             event.preventDefault();
             controller.createProjectMutation.mutate({
+              color: controller.projectColor,
               name: controller.projectName,
               repositoryPath: controller.repositoryPath,
               defaultTargetBranch: controller.defaultBranch,
@@ -900,6 +914,19 @@ export function WalleyBoardModals({
                 controller.setProjectName(event.currentTarget.value)
               }
               required
+            />
+            <TextInput
+              id="project-color"
+              name="projectColor"
+              label="Project color"
+              description="Used for the compact rail tile accent."
+              type="color"
+              value={controller.projectColor}
+              onChange={(event) =>
+                controller.setProjectColor(
+                  event.currentTarget.value.toUpperCase(),
+                )
+              }
             />
             <TextInput
               id="repository-path"

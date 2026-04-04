@@ -24,6 +24,7 @@ const stoppableSessionStatuses = [
   "paused_user_control",
   "awaiting_input",
 ] satisfies ExecutionSession["status"][];
+export const defaultProjectColor = "#2563EB";
 
 type DraftEventOperation = "refine" | "questions";
 type DraftEventStatus = "started" | "completed" | "failed" | "reverted";
@@ -42,6 +43,40 @@ export function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
+}
+
+export function normalizeProjectColor(
+  value: string | null | undefined,
+): string {
+  if (typeof value !== "string") {
+    return defaultProjectColor;
+  }
+
+  const trimmed = value.trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(trimmed)
+    ? trimmed.toUpperCase()
+    : defaultProjectColor;
+}
+
+export function deriveProjectInitials(name: string): string {
+  const words = name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return "PR";
+  }
+
+  if (words.length === 1) {
+    return (words[0] ?? "PR").slice(0, 2).toUpperCase();
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 export function deriveRepositoryName(path: string, fallback: string): string {

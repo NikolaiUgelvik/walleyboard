@@ -42,10 +42,12 @@ import type {
 import {
   arraysEqual,
   collectRepositoryTargetBranchUpdates,
+  defaultProjectColor,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
   mapRepositoryTargetBranches,
   mergeRepositoryTargetBranches,
+  normalizeProjectColor,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
   repositoryTargetBranchesEqual,
@@ -89,6 +91,7 @@ export function useWalleyBoardController() {
     useState<ArchiveActionFeedback | null>(null);
   const {
     projectModalOpen,
+    projectOptionsColor,
     projectOptionsAgentAdapter,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
@@ -108,6 +111,7 @@ export function useWalleyBoardController() {
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
     setProjectModalOpen,
+    setProjectOptionsColor,
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
@@ -128,6 +132,7 @@ export function useWalleyBoardController() {
     setProjectOptionsTicketReasoningEffort,
   } = useProjectOptionsState();
   const [projectDeleteConfirmText, setProjectDeleteConfirmText] = useState("");
+  const [projectColor, setProjectColor] = useState(defaultProjectColor);
   const [projectName, setProjectName] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
@@ -297,6 +302,7 @@ export function useWalleyBoardController() {
     }
 
     setProjectOptionsProjectId(null);
+    setProjectOptionsColor(defaultProjectColor);
     setProjectOptionsRepositoryTargetBranches({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
@@ -304,6 +310,7 @@ export function useWalleyBoardController() {
     projectRecords,
     projectOptionsProjectId,
     projectsLoaded,
+    setProjectOptionsColor,
     setProjectOptionsProjectId,
     setProjectOptionsFormError,
     setProjectOptionsRepositoryTargetBranches,
@@ -463,6 +470,7 @@ export function useWalleyBoardController() {
     setInspectorState,
     setPendingDraftEditorSync,
     setPlanFeedbackBody,
+    setProjectColor,
     setProjectDeleteConfirmText,
     setProjectModalOpen,
     setProjectName,
@@ -530,6 +538,7 @@ export function useWalleyBoardController() {
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
   const projectOptionsDirty = hasProjectOptionsDirty({
+    color: normalizeProjectColor(projectOptionsColor),
     draftModelValue: projectOptionsDraftModelValue,
     draftReasoningEffortValue: projectOptionsDraftReasoningEffortValue,
     disabledMcpServers: projectOptionsDisabledMcpServers,
@@ -893,6 +902,7 @@ export function useWalleyBoardController() {
 
   const closeProjectOptionsModal = (): void => {
     setProjectOptionsProjectId(null);
+    setProjectOptionsColor(defaultProjectColor);
     setProjectOptionsAgentAdapter("codex");
     setProjectOptionsExecutionBackend("host");
     setProjectOptionsDisabledMcpServers([]);
@@ -916,6 +926,7 @@ export function useWalleyBoardController() {
       ])?.repositories ?? [];
 
     setProjectOptionsProjectId(project.id);
+    setProjectOptionsColor(normalizeProjectColor(project.color));
     setProjectOptionsAgentAdapter(project.agent_adapter);
     setProjectOptionsExecutionBackend(project.execution_backend);
     setProjectOptionsDisabledMcpServers(
@@ -1008,6 +1019,7 @@ export function useWalleyBoardController() {
     mutations.updateProjectMutation.mutate({
       agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
+      color: normalizeProjectColor(projectOptionsColor),
       executionBackend:
         projectOptionsAgentAdapter === "claude-code"
           ? "host"
@@ -1027,6 +1039,21 @@ export function useWalleyBoardController() {
       ticketWorkReasoningEffort: projectOptionsTicketReasoningEffortValue,
       repositoryTargetBranches,
     });
+  };
+
+  const openInboxItem = (item: (typeof actionItems)[number]): void => {
+    selectProject(item.projectId);
+    setInspectorState(
+      item.targetKind === "draft"
+        ? {
+            kind: "draft",
+            draftId: item.targetId,
+          }
+        : {
+            kind: "session",
+            sessionId: item.targetId,
+          },
+    );
   };
 
   const deleteTicket = (ticket: TicketFrontmatter): void => {
@@ -1231,6 +1258,7 @@ export function useWalleyBoardController() {
     openArchiveModal,
     openAgentReviewHistoryModal,
     openArchivedTicketDiff,
+    openInboxItem,
     openSelectedRepositoryWorkspaceTerminal,
     openTicketWorkspaceModal,
     openDraft,
@@ -1241,6 +1269,7 @@ export function useWalleyBoardController() {
     pendingNewDraftAction,
     planFeedbackBody,
     previewActionErrorByTicketId,
+    projectColor,
     projectDeleteConfirmText,
     projectModalOpen,
     projectName,
@@ -1249,6 +1278,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchesQuery,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
+    projectOptionsColor,
     projectOptionsDefaultReviewAction,
     projectOptionsDisabledMcpServers,
     projectOptionsDirty,
@@ -1338,9 +1368,11 @@ export function useWalleyBoardController() {
     setInspectorState,
     setPendingDraftEditorSync,
     setPlanFeedbackBody,
+    setProjectColor,
     setProjectDeleteConfirmText,
     setProjectModalOpen,
     setProjectName,
+    setProjectOptionsColor,
     setProjectOptionsAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,

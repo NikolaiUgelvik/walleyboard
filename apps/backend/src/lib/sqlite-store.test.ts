@@ -258,6 +258,36 @@ test("updateProject persists automatic agent review changes", () => {
   }
 });
 
+test("projects persist rail color updates", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-color-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Color",
+      color: "#14B8A6",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.equal(store.getProject(project.id)?.color, "#14B8A6");
+
+    store.updateProject(project.id, {
+      color: "#F97316",
+    });
+
+    assert.equal(store.getProject(project.id)?.color, "#F97316");
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(reloadedStore.getProject(project.id)?.color, "#F97316");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("review run history persists across reloads in chronological order", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runs-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");
