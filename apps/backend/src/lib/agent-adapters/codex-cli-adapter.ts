@@ -457,13 +457,14 @@ export class CodexCliAdapter implements AgentCliAdapter {
     const args = [
       "exec",
       "--json",
-      "--full-auto",
       "--output-last-message",
       outputPath,
     ];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
+    } else {
+      args.push("--full-auto");
     }
 
     appendCodexModelArgs(args, {

@@ -183,7 +183,25 @@ test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", (
     "/workspace/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
   );
   assert.ok(run.args.includes("--dangerously-bypass-approvals-and-sandbox"));
+  assert.equal(run.args.includes("--full-auto"), false);
   assert.ok(run.dockerSpec);
+});
+
+test("CodexCliAdapter.buildDraftRun uses full-auto outside Docker", () => {
+  const adapter = new CodexCliAdapter();
+
+  const run = adapter.buildDraftRun({
+    draft: createDraft(),
+    mode: "refine",
+    outputPath: "/tmp/draft-1-refine-run-1.json",
+    project: createProject(),
+    repository: createRepository(),
+    useDockerRuntime: false,
+  });
+
+  assert.ok(run.args.includes("--full-auto"));
+  assert.equal(run.args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
+  assert.equal(run.dockerSpec, null);
 });
 
 test("CodexCliAdapter.buildExecutionRun rejects Docker output paths outside the worktree", () => {
