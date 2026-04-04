@@ -106,7 +106,7 @@ function ProjectTile({
       title={title}
       style={
         {
-          "--project-tile-color": normalizeProjectColor(color),
+          "--project-tile-color": color,
         } as CSSProperties
       }
       onClick={onClick}
