@@ -170,6 +170,13 @@ export function ProjectRail({
                     key={item.key}
                     className="project-inbox-item"
                     data-tone={item.color}
+                    style={
+                      {
+                        "--project-inbox-accent": normalizeProjectColor(
+                          item.projectColor,
+                        ),
+                      } as CSSProperties
+                    }
                     onClick={() => {
                       setInboxOpen(false);
                       controller.openInboxItem(item);

@@ -346,17 +346,10 @@ body {
   text-align: left;
   background: var(--walleyboard-panel);
   border: 1px solid var(--walleyboard-border);
+  border-left: 3px solid var(--project-inbox-accent, var(--walleyboard-border));
   border-radius: 14px;
   box-shadow: var(--walleyboard-shadow);
   padding: 12px;
-}
-
-.project-inbox-item[data-tone="blue"] {
-  border-left: 3px solid #2563eb;
-}
-
-.project-inbox-item[data-tone="yellow"] {
-  border-left: 3px solid #d97706;
 }
 
 @keyframes project-tile-pulse {

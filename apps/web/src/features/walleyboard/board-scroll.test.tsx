@@ -595,6 +595,7 @@ test("project rail renders compact tiles with initials, titles, and the create t
         title: "Needs review",
         message: "Agent work is waiting for a decision.",
         projectId: project.id,
+        projectColor: project.color,
         projectName: project.name,
         targetId: "session-17",
         targetKind: "session",
@@ -647,6 +648,7 @@ test("inbox badge shows the exact actionable count and hides at zero", async () 
         ? "Agent work is waiting for a decision."
         : "This draft is waiting for a decision.",
       projectId: "project-1",
+      projectColor: isSession ? "#F97316" : "#2563EB",
       projectName: "Project One",
       targetId: isSession ? `session-${sequence}` : `draft-${sequence}`,
       targetKind: isSession ? "session" : "draft",
@@ -759,6 +761,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
     title: "Clarify acceptance criteria",
     message: "This draft is waiting for a decision.",
     projectId: "project-1",
+    projectColor: "#2563EB",
     projectName: "Project One",
     targetId: "draft-44",
     targetKind: "draft" as const,
@@ -801,6 +804,10 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
       "button.project-inbox-item",
     );
     assert.ok(overlayItem, "Expected the inbox overlay to open");
+    assert.match(
+      overlayItem.getAttribute("style") ?? "",
+      /--project-inbox-accent:\s*#2563EB/i,
+    );
     assert.match(
       harness.window.document.body.textContent ?? "",
       /Clarify acceptance criteria/,

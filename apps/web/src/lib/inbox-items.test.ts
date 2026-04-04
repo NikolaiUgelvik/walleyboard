@@ -271,6 +271,7 @@ test("prefers plan feedback summaries for awaiting-feedback sessions", () => {
     {
       key: "session-14",
       color: "yellow",
+      projectColor: "#2563EB",
       title: "Plan feedback needed for ticket #14",
       message: "Confirm the cross-project switch before continuing.",
       targetKind: "session",
@@ -397,6 +398,7 @@ test("keeps review tickets without an active linked pull request in the inbox", 
     {
       key: "review-23",
       color: "blue",
+      projectColor: "#2563EB",
       title: "Review ready for ticket #23",
       message:
         "Resume closed PR review is ready for review and can be merged or sent back for changes.",
@@ -429,6 +431,7 @@ test("surfaces refined drafts in the inbox with a stable draft key", () => {
     {
       key: "draft-draft-42",
       color: "blue",
+      projectColor: "#2563EB",
       title: "Draft ready to review",
       message:
         "Review the refined draft for **Notify when draft refinement completes**.",
@@ -608,6 +611,7 @@ test("shows tickets in the inbox again after AI review completes when inbox rule
     {
       key: "review-25",
       color: "blue",
+      projectColor: "#2563EB",
       title: "Review ready for ticket #25",
       message:
         "Show this after AI review completes is ready for review and can be merged or sent back for changes.",
@@ -653,6 +657,7 @@ test("shows review tickets when the AI review lookup errors after completion", (
     {
       key: "review-27",
       color: "blue",
+      projectColor: "#2563EB",
       title: "Review ready for ticket #27",
       message:
         "Do not hide this when the lookup errors is ready for review and can be merged or sent back for changes.",

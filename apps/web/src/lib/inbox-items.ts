@@ -5,6 +5,7 @@ import type {
   SessionResponse,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
+import { normalizeProjectColor } from "../features/walleyboard/shared-utils.js";
 
 const attentionNeededSessionStatuses = [
   "awaiting_input",
@@ -17,6 +18,7 @@ const attentionNeededSessionStatuses = [
 export type InboxItem = {
   key: string;
   color: "blue" | "yellow";
+  projectColor: string;
   title: string;
   message: string;
   targetKind: "draft" | "session";
@@ -80,6 +82,12 @@ export function deriveInboxState(input: {
   const projectNameById = new Map(
     input.projects.map((project) => [project.id, project.name]),
   );
+  const projectColorById = new Map(
+    input.projects.map((project) => [
+      project.id,
+      normalizeProjectColor(project.color),
+    ]),
+  );
   const ticketAiReviewActiveById = input.ticketAiReviewActiveById ?? new Map();
   const ticketAiReviewResolvedById =
     input.ticketAiReviewResolvedById ?? new Map();
@@ -93,11 +101,14 @@ export function deriveInboxState(input: {
 
     const projectName =
       projectNameById.get(draft.project_id) ?? "Unknown project";
+    const projectColor =
+      projectColorById.get(draft.project_id) ?? normalizeProjectColor(null);
     const notificationKey = `draft-${draft.id}`;
     items.push({
       key: `draft-${draft.id}`,
       notificationKey,
       color: "blue",
+      projectColor,
       title: "Draft ready to review",
       message: `Review the refined draft for **${draft.title_draft}**.`,
       targetKind: "draft",
@@ -117,6 +128,8 @@ export function deriveInboxState(input: {
   for (const ticket of input.tickets) {
     const projectName =
       projectNameById.get(ticket.project) ?? "Unknown project";
+    const projectColor =
+      projectColorById.get(ticket.project) ?? normalizeProjectColor(null);
     const sessionSummary =
       ticket.session_id === null
         ? null
@@ -150,6 +163,7 @@ export function deriveInboxState(input: {
         key: `review-${ticket.id}`,
         notificationKey: reviewNotificationKey,
         color: "blue",
+        projectColor,
         title: `Review ready for ticket #${ticket.id}`,
         message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
         targetKind: "session",
@@ -203,6 +217,7 @@ export function deriveInboxState(input: {
           `${session.plan_status}:` +
           `${session.latest_requested_change_note_id ?? "none"}`,
         color: "yellow",
+        projectColor,
         title,
         message,
         targetKind: "session",
