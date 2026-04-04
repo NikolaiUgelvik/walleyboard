@@ -437,6 +437,18 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "draft",
     );
+    const prompt =
+      input.mode === "refine"
+        ? buildDraftRefinementPrompt(
+            input.draft,
+            input.repository,
+            input.instruction,
+          )
+        : buildDraftQuestionsPrompt(
+            input.draft,
+            input.repository,
+            input.instruction,
+          );
     const args = [
       "exec",
       "--json",
@@ -449,23 +461,12 @@ export class CodexCliAdapter implements AgentCliAdapter {
       model,
       reasoningEffort,
     });
-    args.push(
-      input.mode === "refine"
-        ? buildDraftRefinementPrompt(
-            input.draft,
-            input.repository,
-            input.instruction,
-          )
-        : buildDraftQuestionsPrompt(
-            input.draft,
-            input.repository,
-            input.instruction,
-          ),
-    );
+    args.push(prompt);
 
     return {
       command: "codex",
       args,
+      prompt,
       outputPath: input.outputPath,
       dockerSpec: null,
     };
@@ -486,6 +487,19 @@ export class CodexCliAdapter implements AgentCliAdapter {
       useDockerRuntime: input.useDockerRuntime,
       worktreePath: input.session.worktree_path,
     });
+    const prompt =
+      input.executionMode === "plan"
+        ? buildPlanPrompt(
+            input.ticket,
+            input.repository,
+            input.extraInstructions,
+          )
+        : buildImplementationPrompt(
+            input.ticket,
+            input.repository,
+            input.extraInstructions,
+            input.planSummary,
+          );
     const args = resumeSessionRef
       ? ["exec", "resume", "--json"]
       : ["exec", "--json"];
@@ -506,24 +520,12 @@ export class CodexCliAdapter implements AgentCliAdapter {
       args.push(resumeSessionRef);
     }
 
-    args.push(
-      input.executionMode === "plan"
-        ? buildPlanPrompt(
-            input.ticket,
-            input.repository,
-            input.extraInstructions,
-          )
-        : buildImplementationPrompt(
-            input.ticket,
-            input.repository,
-            input.extraInstructions,
-            input.planSummary,
-          ),
-    );
+    args.push(prompt);
 
     return {
       command: "codex",
       args,
+      prompt,
       outputPath,
       dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };
@@ -534,6 +536,15 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
+    const prompt = buildMergeConflictPrompt({
+      ticket: input.ticket,
+      repository: input.repository,
+      recoveryKind: input.recoveryKind,
+      targetBranch: input.targetBranch,
+      stage: input.stage,
+      conflictedFiles: input.conflictedFiles,
+      failureMessage: input.failureMessage,
+    });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
@@ -562,21 +573,12 @@ export class CodexCliAdapter implements AgentCliAdapter {
     if (resumeSessionRef) {
       args.push(resumeSessionRef);
     }
-    args.push(
-      buildMergeConflictPrompt({
-        ticket: input.ticket,
-        repository: input.repository,
-        recoveryKind: input.recoveryKind,
-        targetBranch: input.targetBranch,
-        stage: input.stage,
-        conflictedFiles: input.conflictedFiles,
-        failureMessage: input.failureMessage,
-      }),
-    );
+    args.push(prompt);
 
     return {
       command: "codex",
       args,
+      prompt,
       outputPath,
       dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };
@@ -587,6 +589,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
+    const prompt = buildReviewPrompt({
+      repository: input.repository,
+      reviewPackage: input.reviewPackage,
+      ticket: input.ticket,
+    });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
@@ -604,17 +611,12 @@ export class CodexCliAdapter implements AgentCliAdapter {
       model,
       reasoningEffort,
     });
-    args.push(
-      buildReviewPrompt({
-        repository: input.repository,
-        reviewPackage: input.reviewPackage,
-        ticket: input.ticket,
-      }),
-    );
+    args.push(prompt);
 
     return {
       command: "codex",
       args,
+      prompt,
       outputPath,
       dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };

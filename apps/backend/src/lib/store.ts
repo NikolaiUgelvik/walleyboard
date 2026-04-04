@@ -85,11 +85,13 @@ export type CreateReviewRunInput = {
   review_package_id: string;
   implementation_session_id: string;
   trigger_source?: "automatic" | "manual";
+  prompt?: string | null;
 };
 
 export type UpdateReviewRunInput = {
   status?: ReviewRun["status"];
   adapter_session_ref?: string | null;
+  prompt?: string | null;
   report?: ReviewReport | null;
   failure_message?: string | null;
   completed_at?: string | null;
@@ -97,6 +99,8 @@ export type UpdateReviewRunInput = {
 
 export type UpdateExecutionAttemptInput = {
   status?: ExecutionAttempt["status"];
+  prompt_kind?: ExecutionAttempt["prompt_kind"];
+  prompt?: string | null;
   pty_pid?: number | null;
   end_reason?: string | null;
 };

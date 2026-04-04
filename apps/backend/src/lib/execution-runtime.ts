@@ -426,6 +426,11 @@ export class ExecutionRuntime {
         this.cleanupExecutionEnvironment(sessionId);
       },
       dockerRuntime: this.#dockerRuntime,
+      onPreparedRun: ({ prompt }) => {
+        this.#store.updateReviewRun(input.reviewRunId, {
+          prompt,
+        });
+      },
       project: input.project,
       repository: input.repository,
       reviewPackage: input.reviewPackage,
@@ -865,6 +870,14 @@ export class ExecutionRuntime {
           ticket,
           useDockerRuntime,
         });
+    this.#store.updateExecutionAttempt(attemptId, {
+      prompt_kind: recoveryState
+        ? "merge_conflict"
+        : executionMode === "plan"
+          ? "plan"
+          : "implementation",
+      prompt: run.prompt,
+    });
     const activeSessionRef = hasMeaningfulContent(session.adapter_session_ref)
       ? session.adapter_session_ref
       : null;

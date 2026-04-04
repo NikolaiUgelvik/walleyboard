@@ -457,8 +457,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildDraftRun(input: DraftRunInput): PreparedAgentRun {
     const { model } = this.resolveModelSelection(input.project, "draft");
-    const claudeArgs = [
-      "-p",
+    const prompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
             input.draft,
@@ -469,10 +468,8 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
             input.draft,
             input.repository,
             input.instruction,
-          ),
-      "--output-format",
-      "json",
-    ];
+          );
+    const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");
 
     appendClaudeCodeModelArgs(claudeArgs, model);
@@ -490,6 +487,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     return {
       command,
       args,
+      prompt,
       outputPath: input.outputPath,
       dockerSpec: null,
     };
@@ -540,6 +538,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     return {
       command: this.#resolveCliPath(),
       args,
+      prompt,
       outputPath: input.outputPath,
       // Claude Code does not support Docker runtime.
       dockerSpec: null,
@@ -581,6 +580,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     return {
       command: this.#resolveCliPath(),
       args,
+      prompt,
       outputPath: input.outputPath,
       // Claude Code does not support Docker runtime.
       dockerSpec: null,
@@ -589,16 +589,12 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildReviewRun(input: ReviewRunInput): PreparedAgentRun {
     const { model } = this.resolveModelSelection(input.project, "ticket");
-    const claudeArgs = [
-      "-p",
-      buildReviewPrompt({
-        repository: input.repository,
-        reviewPackage: input.reviewPackage,
-        ticket: input.ticket,
-      }),
-      "--output-format",
-      "json",
-    ];
+    const prompt = buildReviewPrompt({
+      repository: input.repository,
+      reviewPackage: input.reviewPackage,
+      ticket: input.ticket,
+    });
+    const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");
     appendClaudeCodeModelArgs(claudeArgs, model);
 
@@ -611,6 +607,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     return {
       command,
       args,
+      prompt,
       outputPath: input.outputPath,
       dockerSpec: null,
     };

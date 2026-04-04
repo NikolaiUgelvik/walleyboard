@@ -125,6 +125,10 @@ test("docker-backed execution launches the configured adapter command inside Doc
   mkdirSync(worktreePath, { recursive: true });
 
   let spawnedArgs: string[] | null = null;
+  const updateExecutionAttemptCalls: Array<{
+    attemptId: string;
+    input: Record<string, unknown>;
+  }> = [];
   const dockerRuntime = {
     assertAvailable() {
       return {
@@ -159,7 +163,8 @@ test("docker-backed execution launches the configured adapter command inside Doc
     getRequestedChangeNote() {
       return undefined;
     },
-    updateExecutionAttempt() {
+    updateExecutionAttempt(attemptId: string, input: Record<string, unknown>) {
+      updateExecutionAttemptCalls.push({ attemptId, input });
       return undefined;
     },
     updateSessionStatus(_sessionId: string, _status: string, _summary: string) {
@@ -189,6 +194,7 @@ test("docker-backed execution launches the configured adapter command inside Doc
               input.outputPath,
               "fake prompt",
             ],
+            prompt: "fake prompt",
             outputPath: input.outputPath,
             dockerSpec: {
               imageTag: "example/test-agent:latest",
@@ -257,6 +263,13 @@ test("docker-backed execution launches the configured adapter command inside Doc
     assert.equal(outputPath.startsWith(worktreePath), true);
     assert.match(outputPath, /\.walleyboard\//);
     assert.equal(dockerArgs[0], "exec");
+    assert.deepEqual(updateExecutionAttemptCalls[0], {
+      attemptId: "attempt-1",
+      input: {
+        prompt_kind: "implementation",
+        prompt: "fake prompt",
+      },
+    });
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -352,6 +365,7 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
               input.outputPath,
               "fake prompt",
             ],
+            prompt: "fake prompt",
             outputPath: input.outputPath,
             dockerSpec: {
               imageTag: "example/codex:latest",
@@ -563,6 +577,7 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
           return {
             command: "test-agent",
             args: ["merge-recovery", input.outputPath, "fake merge prompt"],
+            prompt: "fake merge prompt",
             outputPath: input.outputPath,
             dockerSpec: {
               imageTag: "example/test-agent:latest",

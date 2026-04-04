@@ -427,6 +427,14 @@ export function mapExecutionAttempt(
     session_id: String(row.session_id),
     attempt_number: Number(row.attempt_number),
     status: String(row.status) as ExecutionAttempt["status"],
+    prompt_kind:
+      row.prompt_kind === null || row.prompt_kind === undefined
+        ? null
+        : (String(row.prompt_kind) as ExecutionAttempt["prompt_kind"]),
+    prompt:
+      row.prompt === null || row.prompt === undefined
+        ? null
+        : String(row.prompt),
     pty_pid: row.pty_pid === null ? null : Number(row.pty_pid),
     started_at: String(row.started_at),
     ended_at: row.ended_at === null ? null : String(row.ended_at),
@@ -457,6 +465,10 @@ export function mapReviewRun(row: Record<string, unknown>): ReviewRun {
     status: String(row.status) as ReviewRun["status"],
     adapter_session_ref:
       row.adapter_session_ref === null ? null : String(row.adapter_session_ref),
+    prompt:
+      row.prompt === null || row.prompt === undefined
+        ? null
+        : String(row.prompt),
     report: parseJson<ReviewReport | null>(row.report, null),
     failure_message:
       row.failure_message === null ? null : String(row.failure_message),
@@ -685,6 +697,8 @@ export class SqliteStoreContext {
         session_id TEXT NOT NULL,
         attempt_number INTEGER NOT NULL,
         status TEXT NOT NULL,
+        prompt_kind TEXT,
+        prompt TEXT,
         pty_pid INTEGER,
         started_at TEXT NOT NULL,
         ended_at TEXT,
@@ -720,6 +734,7 @@ export class SqliteStoreContext {
         trigger_source TEXT NOT NULL DEFAULT 'manual',
         status TEXT NOT NULL,
         adapter_session_ref TEXT,
+        prompt TEXT,
         report TEXT,
         failure_message TEXT,
         created_at TEXT NOT NULL,
@@ -774,6 +789,8 @@ export class SqliteStoreContext {
       "TEXT NOT NULL DEFAULT 'not_requested'",
     );
     this.#ensureColumn("execution_sessions", "plan_summary", "TEXT");
+    this.#ensureColumn("execution_attempts", "prompt_kind", "TEXT");
+    this.#ensureColumn("execution_attempts", "prompt", "TEXT");
     this.#ensureColumn("tickets", "description", "TEXT NOT NULL DEFAULT ''");
     this.#ensureColumn(
       "tickets",
@@ -817,6 +834,7 @@ export class SqliteStoreContext {
       "trigger_source",
       "TEXT NOT NULL DEFAULT 'manual'",
     );
+    this.#ensureColumn("review_runs", "prompt", "TEXT");
     this.#backfillArtifactScopes();
     this.#backfillAgentAdapterDefaults();
     this.#backfillProjectConcurrencyDefaults();

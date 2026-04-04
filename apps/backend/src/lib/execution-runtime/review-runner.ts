@@ -27,6 +27,7 @@ export async function runTicketReviewSession(input: {
   adapter: AgentCliAdapter;
   cleanupExecutionEnvironment: (sessionId: string) => void;
   dockerRuntime: DockerRuntime;
+  onPreparedRun?: (run: { prompt: string }) => void;
   project: Project;
   repository: RepositoryConfig;
   reviewPackage: ReviewPackage;
@@ -59,6 +60,7 @@ export async function runTicketReviewSession(input: {
     ticket: input.ticket,
     useDockerRuntime,
   });
+  input.onPreparedRun?.({ prompt: run.prompt });
   const reviewSessionId = `review-${input.reviewRunId}`;
 
   return await new Promise((resolve, reject) => {

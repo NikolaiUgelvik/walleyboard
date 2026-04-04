@@ -104,6 +104,7 @@ export function setOptimisticRunningReviewRun(input: {
           `pending-implementation-session-${input.ticketId}`,
         status: "running",
         adapter_session_ref: current?.review_run.adapter_session_ref ?? null,
+        prompt: current?.review_run.prompt ?? null,
         report: null,
         failure_message: null,
         created_at: current?.review_run.created_at ?? now,

@@ -121,8 +121,8 @@ export class ReviewRepository {
         `
           INSERT INTO review_runs (
             id, ticket_id, review_package_id, implementation_session_id, trigger_source, status,
-            adapter_session_ref, report, failure_message, created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            adapter_session_ref, prompt, report, failure_message, created_at, updated_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -133,6 +133,7 @@ export class ReviewRepository {
         input.trigger_source ?? "manual",
         "running",
         null,
+        input.prompt ?? null,
         null,
         null,
         timestamp,
@@ -174,6 +175,7 @@ export class ReviewRepository {
           UPDATE review_runs
           SET status = ?,
               adapter_session_ref = ?,
+              prompt = ?,
               report = ?,
               failure_message = ?,
               updated_at = ?,
@@ -186,6 +188,7 @@ export class ReviewRepository {
         input.adapter_session_ref !== undefined
           ? input.adapter_session_ref
           : existingRun.adapter_session_ref,
+        input.prompt !== undefined ? input.prompt : existingRun.prompt,
         input.report !== undefined
           ? input.report === null
             ? null

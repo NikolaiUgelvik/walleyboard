@@ -21,6 +21,7 @@ export type AgentAdapterId = AgentAdapter;
 export type PreparedAgentRun = {
   command: string;
   args: string[];
+  prompt: string;
   outputPath: string | null;
   dockerSpec: null | {
     imageTag: string;

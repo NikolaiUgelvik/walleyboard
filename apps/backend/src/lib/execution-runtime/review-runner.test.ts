@@ -157,6 +157,7 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
               input.outputPath,
               "fake review prompt",
             ],
+            prompt: "fake review prompt",
             outputPath: input.outputPath,
             dockerSpec: {
               imageTag: "example/codex:latest",

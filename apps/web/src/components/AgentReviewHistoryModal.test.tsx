@@ -23,6 +23,7 @@ test("renders completed summaries and in-progress review states", () => {
             implementation_session_id: "session-7",
             status: "completed",
             adapter_session_ref: "adapter-session-1",
+            prompt: "Review ticket #7.",
             report: {
               summary: "The first stored summary remains visible.",
               strengths: [],
@@ -40,6 +41,7 @@ test("renders completed summaries and in-progress review states", () => {
             implementation_session_id: "session-7",
             status: "running",
             adapter_session_ref: null,
+            prompt: "Review ticket #7 again.",
             report: null,
             failure_message: null,
             created_at: "2026-04-03T00:02:00.000Z",

@@ -293,6 +293,7 @@ test("review run history persists across reloads in chronological order", () => 
       review_package_id: firstPackage.id,
       implementation_session_id: started.session.id,
       trigger_source: "automatic",
+      prompt: "Review the initial implementation.",
     });
     store.updateReviewRun(firstRun.id, {
       status: "completed",
@@ -316,6 +317,7 @@ test("review run history persists across reloads in chronological order", () => 
       ticket_id: ticket.id,
       review_package_id: secondPackage.id,
       implementation_session_id: started.session.id,
+      prompt: "Review the follow-up implementation.",
     });
     store.updateReviewRun(secondRun.id, {
       status: "completed",
@@ -338,11 +340,49 @@ test("review run history persists across reloads in chronological order", () => 
       reviewRuns[0]?.report?.summary,
       "The first review finished with one finding.",
     );
+    assert.equal(reviewRuns[0]?.prompt, "Review the initial implementation.");
     assert.equal(
       reviewRuns[1]?.report?.summary,
       "The second review finished cleanly.",
     );
+    assert.equal(reviewRuns[1]?.prompt, "Review the follow-up implementation.");
     assert.equal(reloadedStore.countAutomaticReviewRuns(ticket.id), 1);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("execution attempt prompts persist across reloads", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-attempt-prompts-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Attempt Prompts",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, true, {
+      workingBranch: "codex/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started prompt persistence session"],
+    });
+
+    store.updateExecutionAttempt(started.attempt.id, {
+      prompt_kind: "plan",
+      prompt: "Plan ticket #1 in the repository repo.",
+    });
+
+    const reloadedStore = new SqliteStore(databasePath);
+    const [attempt] = reloadedStore.listSessionAttempts(started.session.id);
+
+    assert.equal(attempt?.prompt_kind, "plan");
+    assert.equal(attempt?.prompt, "Plan ticket #1 in the repository repo.");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

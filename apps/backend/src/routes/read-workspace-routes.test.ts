@@ -627,6 +627,7 @@ test("workspace terminal stays available after execution starts in the same work
           return {
             command: "bash",
             args: ["-lc", "sleep 30"],
+            prompt: "sleep 30",
             dockerSpec: null,
             outputPath: input.outputPath,
           };

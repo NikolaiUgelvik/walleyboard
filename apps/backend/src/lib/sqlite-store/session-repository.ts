@@ -317,6 +317,8 @@ export class SessionRepository {
         `
           UPDATE execution_attempts
           SET status = ?,
+              prompt_kind = ?,
+              prompt = ?,
               pty_pid = ?,
               ended_at = ?,
               end_reason = ?
@@ -325,6 +327,10 @@ export class SessionRepository {
       )
       .run(
         nextStatus,
+        input.prompt_kind !== undefined
+          ? input.prompt_kind
+          : existingAttempt.prompt_kind,
+        input.prompt !== undefined ? input.prompt : existingAttempt.prompt,
         input.pty_pid !== undefined ? input.pty_pid : existingAttempt.pty_pid,
         shouldEnd ? nowIso() : existingAttempt.ended_at,
         input.end_reason ?? existingAttempt.end_reason,

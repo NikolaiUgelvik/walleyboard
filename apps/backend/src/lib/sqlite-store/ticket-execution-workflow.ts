@@ -120,11 +120,22 @@ export class TicketExecutionWorkflowService {
       .prepare(
         `
           INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
-      .run(attemptId, sessionId, 1, "queued", null, timestamp, null, null);
+      .run(
+        attemptId,
+        sessionId,
+        1,
+        "queued",
+        null,
+        null,
+        null,
+        timestamp,
+        null,
+        null,
+      );
 
     const logs = [
       `Session created for ticket #${ticket.id}: ${ticket.title}`,
@@ -373,8 +384,8 @@ export class TicketExecutionWorkflowService {
       .prepare(
         `
           INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -382,6 +393,8 @@ export class TicketExecutionWorkflowService {
         session.id,
         attemptNumber,
         "queued",
+        null,
+        null,
         null,
         timestamp,
         null,
@@ -649,8 +662,8 @@ export class TicketExecutionWorkflowService {
       .prepare(
         `
           INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -658,6 +671,8 @@ export class TicketExecutionWorkflowService {
         session.id,
         attemptNumber,
         "queued",
+        null,
+        null,
         null,
         timestamp,
         null,
@@ -794,8 +809,8 @@ export class TicketExecutionWorkflowService {
       .prepare(
         `
           INSERT INTO execution_attempts (
-            id, session_id, attempt_number, status, pty_pid, started_at, ended_at, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, session_id, attempt_number, status, prompt_kind, prompt, pty_pid, started_at, ended_at, end_reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -803,6 +818,8 @@ export class TicketExecutionWorkflowService {
         session.id,
         attemptNumber,
         "queued",
+        null,
+        null,
         null,
         timestamp,
         null,
