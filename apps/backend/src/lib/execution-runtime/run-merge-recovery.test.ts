@@ -18,6 +18,7 @@ function createProject(): Project {
     id: "project-1",
     slug: "spacegame",
     name: "spacegame",
+    color: "#2563EB",
     agent_adapter: "codex",
     execution_backend: "docker",
     disabled_mcp_servers: [],

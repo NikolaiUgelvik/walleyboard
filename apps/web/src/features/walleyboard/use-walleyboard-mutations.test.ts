@@ -148,6 +148,7 @@ test("saveProjectOptionsRequest sends disabled MCP server selections", async () 
 
   try {
     const response = await saveProjectOptionsRequest("project-1", {
+      color: "#2563EB",
       agent_adapter: "codex",
       execution_backend: "docker",
       disabled_mcp_servers: ["sentry"],
@@ -171,6 +172,7 @@ test("saveProjectOptionsRequest sends disabled MCP server selections", async () 
     );
     assert.equal(calls[0]?.init?.method, "POST");
     assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
+      color: "#2563EB",
       agent_adapter: "codex",
       execution_backend: "docker",
       disabled_mcp_servers: ["sentry"],

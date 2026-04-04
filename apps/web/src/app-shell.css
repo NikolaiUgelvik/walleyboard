@@ -153,11 +153,11 @@ body {
   height: 100%;
   min-height: 100%;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr);
 }
 
 .walleyboard-layout--with-detail {
-  grid-template-columns: 112px minmax(0, 1fr) 420px;
+  grid-template-columns: 84px minmax(0, 1fr) 420px;
 }
 
 .walleyboard-rail,
@@ -175,7 +175,7 @@ body {
 
 .walleyboard-rail {
   border-right: 1px solid var(--walleyboard-border);
-  padding-inline: 12px;
+  padding-inline: 8px;
 }
 
 .walleyboard-detail {
@@ -227,14 +227,22 @@ body {
   align-items: center;
 }
 
+.project-rail-projects {
+  margin-top: 12px;
+}
+
+.project-rail-create {
+  margin-top: 12px;
+}
+
 .project-tile-shell {
   position: relative;
 }
 
 .project-tile {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   border: 1px solid
     color-mix(in srgb, var(--project-tile-color) 28%, var(--walleyboard-border));
   background: linear-gradient(
@@ -283,25 +291,25 @@ body {
 }
 
 .project-tile-label {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.06em;
 }
 
 .project-tile-label[data-length="3"] {
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: 0.04em;
 }
 
 .project-tile-label[data-length="4"] {
-  font-size: 14px;
+  font-size: 12px;
   letter-spacing: 0.03em;
 }
 
 .project-tile-options {
   position: absolute;
-  right: -6px;
-  bottom: -6px;
+  right: -4px;
+  bottom: -4px;
   background: var(--walleyboard-panel);
   border: 1px solid var(--walleyboard-border);
   border-radius: 999px;
@@ -850,11 +858,11 @@ body {
 
 @media (max-width: 1400px) {
   .walleyboard-layout {
-    grid-template-columns: 108px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr);
   }
 
   .walleyboard-layout--with-detail {
-    grid-template-columns: 108px minmax(0, 1fr) 380px;
+    grid-template-columns: 84px minmax(0, 1fr) 380px;
   }
 }
 
@@ -910,7 +918,7 @@ body {
 
 @media (max-width: 1180px) {
   .walleyboard-layout {
-    grid-template-columns: 108px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr);
   }
 
   .walleyboard-detail {

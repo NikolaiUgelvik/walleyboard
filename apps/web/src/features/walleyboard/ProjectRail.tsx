@@ -8,7 +8,7 @@ import {
   Text,
   UnstyledButton,
 } from "@mantine/core";
-import { IconBellRinging2, IconDots, IconPlus } from "@tabler/icons-react";
+import { IconBellRinging2, IconPlus, IconSettings } from "@tabler/icons-react";
 import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";
@@ -125,10 +125,11 @@ export function ProjectRail({
   const projects = controller.projectsQuery.data?.projects ?? [];
   const projectTileLabels = deriveProjectTileLabels(projects);
   const hasInboxItems = controller.actionItems.length > 0;
+  const railAccentColor = hasInboxItems ? "#D97706" : "#64748B";
 
   return (
     <Box className="walleyboard-rail">
-      <Stack gap="sm" align="center">
+      <Stack gap={8} align="center">
         <Popover
           opened={inboxOpen}
           onChange={setInboxOpen}
@@ -141,7 +142,7 @@ export function ProjectRail({
               <ProjectTile
                 ariaLabel="Open inbox"
                 attention={hasInboxItems}
-                color={hasInboxItems ? "#D97706" : "#64748B"}
+                color={railAccentColor}
                 onClick={() => setInboxOpen((current) => !current)}
               >
                 <IconBellRinging2 size={22} stroke={1.8} />
@@ -203,65 +204,69 @@ export function ProjectRail({
           </Popover.Dropdown>
         </Popover>
 
-        {controller.projectsQuery.isPending ? (
-          <Loader size="sm" />
-        ) : controller.projectsQuery.isError ? (
-          <Text c="red" size="xs" ta="center">
-            {controller.projectsQuery.error.message}
-          </Text>
-        ) : (
-          <>
-            {projects.length === 0 ? (
-              <Text size="xs" c="dimmed" ta="center">
-                No projects yet.
-              </Text>
-            ) : null}
+        <Box className="project-rail-projects">
+          {controller.projectsQuery.isPending ? (
+            <Loader size="sm" />
+          ) : controller.projectsQuery.isError ? (
+            <Text c="red" size="xs" ta="center">
+              {controller.projectsQuery.error.message}
+            </Text>
+          ) : (
+            <>
+              {projects.length === 0 ? (
+                <Text size="xs" c="dimmed" ta="center">
+                  No projects yet.
+                </Text>
+              ) : null}
 
-            <Stack gap="xs" className="project-tile-stack">
-              {projects.map((project) => (
-                <Box key={project.id} className="project-tile-shell">
-                  <ProjectTile
-                    active={controller.selectedProjectId === project.id}
-                    ariaLabel={`Open project ${project.name}`}
-                    color={project.color}
-                    onClick={() => controller.selectProject(project.id)}
-                    title={project.name}
-                  >
-                    <span
-                      className="project-tile-label"
-                      data-length={String(
-                        (projectTileLabels.get(project.id) ?? "").length,
-                      )}
+              <Stack gap={6} className="project-tile-stack">
+                {projects.map((project) => (
+                  <Box key={project.id} className="project-tile-shell">
+                    <ProjectTile
+                      active={controller.selectedProjectId === project.id}
+                      ariaLabel={`Open project ${project.name}`}
+                      color={project.color}
+                      onClick={() => controller.selectProject(project.id)}
+                      title={project.name}
                     >
-                      {projectTileLabels.get(project.id)}
-                    </span>
-                  </ProjectTile>
-                  <ActionIcon
-                    aria-label={`Project options for ${project.name}`}
-                    className="project-tile-options"
-                    color="gray"
-                    size="sm"
-                    variant="subtle"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      controller.openProjectOptions(project);
-                    }}
-                  >
-                    <IconDots size={14} stroke={1.8} />
-                  </ActionIcon>
-                </Box>
-              ))}
-            </Stack>
-          </>
-        )}
+                      <span
+                        className="project-tile-label"
+                        data-length={String(
+                          (projectTileLabels.get(project.id) ?? "").length,
+                        )}
+                      >
+                        {projectTileLabels.get(project.id)}
+                      </span>
+                    </ProjectTile>
+                    <ActionIcon
+                      aria-label={`Project options for ${project.name}`}
+                      className="project-tile-options"
+                      color="gray"
+                      size="xs"
+                      variant="subtle"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        controller.openProjectOptions(project);
+                      }}
+                    >
+                      <IconSettings size={14} stroke={1.8} />
+                    </ActionIcon>
+                  </Box>
+                ))}
+              </Stack>
+            </>
+          )}
+        </Box>
 
-        <ProjectTile
-          ariaLabel="Create project"
-          color="#2563EB"
-          onClick={() => controller.setProjectModalOpen(true)}
-        >
-          <IconPlus size={22} stroke={1.8} />
-        </ProjectTile>
+        <Box className="project-rail-create">
+          <ProjectTile
+            ariaLabel="Create project"
+            color={railAccentColor}
+            onClick={() => controller.setProjectModalOpen(true)}
+          >
+            <IconPlus size={22} stroke={1.8} />
+          </ProjectTile>
+        </Box>
       </Stack>
     </Box>
   );

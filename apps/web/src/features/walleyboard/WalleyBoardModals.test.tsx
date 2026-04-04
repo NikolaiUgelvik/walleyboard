@@ -221,6 +221,7 @@ function createHealth(): HealthResponse {
     ok: true,
     service: "backend",
     timestamp: "2026-04-03T00:00:00.000Z",
+    codex_mcp_servers: ["context7", "sentry"],
     docker: {
       installed: true,
       available: true,
@@ -420,6 +421,7 @@ function ControllerModalHarness({
           controller.projectOptionsAgentAdapter === "claude-code"
             ? "host"
             : controller.projectOptionsExecutionBackend,
+        disabledMcpServers: controller.projectOptionsDisabledMcpServers,
         automaticAgentReview: controller.projectOptionsAutomaticAgentReview,
         automaticAgentReviewRunLimit:
           controller.projectOptionsAutomaticAgentReviewRunLimit,
