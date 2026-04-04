@@ -149,7 +149,7 @@ export function ProjectRail({
               </ProjectTile>
               {hasInboxItems ? (
                 <span className="project-tile-badge">
-                  {Math.min(controller.actionItems.length, 9)}
+                  {controller.actionItems.length}
                 </span>
               ) : null}
             </Box>

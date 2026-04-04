@@ -613,6 +613,74 @@ test("project rail renders compact tiles with initials, titles, and the create t
   assert.match(markup, />PO</);
   assert.match(markup, /aria-label="Create project"/);
   assert.match(markup, /--project-tile-color:#0EA5E9/i);
+  assert.match(markup, /class="project-tile-badge">1</);
+});
+
+test("inbox badge shows the exact actionable count and hides at zero", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const controller = createWalleyBoardController();
+  const actionItems = Array.from({ length: 12 }, (_, index) => {
+    const sequence = index + 1;
+    const isSession = index % 2 === 0;
+
+    return {
+      key: isSession ? `session-${sequence}` : `draft-${sequence}`,
+      title: isSession ? `Session item ${sequence}` : `Draft item ${sequence}`,
+      message: isSession
+        ? "Agent work is waiting for a decision."
+        : "This draft is waiting for a decision.",
+      projectId: "project-1",
+      projectName: "Project One",
+      targetId: isSession ? `session-${sequence}` : `draft-${sequence}`,
+      targetKind: isSession ? "session" : "draft",
+      actionLabel: isSession ? "Open session" : "Open draft",
+      color: isSession ? "yellow" : "blue",
+    };
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    actionItems,
+  });
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <ProjectRail controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      harness.window.document.querySelector(".project-tile-badge")?.textContent,
+      "12",
+    );
+
+    Object.assign(controller as Record<string, unknown>, {
+      actionItems: [],
+    });
+
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <ProjectRail controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      harness.window.document.querySelector(".project-tile-badge"),
+      null,
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
 });
 
 test("project rail disambiguates duplicate initials without relying on hover text", () => {
