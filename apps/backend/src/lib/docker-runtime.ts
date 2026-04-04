@@ -114,6 +114,43 @@ function buildContainerName(repoRootHash: string, sessionId: string): string {
   return `walleyboard-${repoRootHash.slice(0, 12)}-${sessionId}`;
 }
 
+function buildConfigMountSpecs(input: {
+  configHomePath: string;
+  configMountPath: string;
+  configTomlPath?: string | null | undefined;
+}): string[] {
+  const mounts = [
+    `type=bind,src=${input.configHomePath},dst=${input.configMountPath}`,
+  ];
+
+  const hostHomePath = homedir();
+  const hostPathAlias =
+    input.configHomePath !== input.configMountPath &&
+    input.configHomePath.startsWith(`${hostHomePath}/`)
+      ? input.configHomePath
+      : null;
+
+  // Codex can persist absolute paths inside its state DB. When we reuse the
+  // host ~/.codex directory inside Docker at a different HOME, those paths can
+  // look stale unless the original host path is also reachable in-container.
+  if (hostPathAlias) {
+    mounts.push(`type=bind,src=${input.configHomePath},dst=${hostPathAlias}`);
+  }
+
+  if (input.configTomlPath) {
+    mounts.push(
+      `type=bind,src=${input.configTomlPath},dst=${input.configMountPath}/config.toml`,
+    );
+    if (hostPathAlias) {
+      mounts.push(
+        `type=bind,src=${input.configTomlPath},dst=${hostPathAlias}/config.toml`,
+      );
+    }
+  }
+
+  return mounts;
+}
+
 export class DockerRuntimeManager implements DockerRuntime {
   readonly #execFileSyncImpl: typeof execFileSync;
   readonly #spawnImpl: typeof spawn;
@@ -236,6 +273,11 @@ export class DockerRuntimeManager implements DockerRuntime {
       input.dockerSpec.configMountPath,
     );
     this.#ensureConfigHome(configHomePath);
+    const configMountSpecs = buildConfigMountSpecs({
+      configHomePath,
+      configMountPath: input.dockerSpec.configMountPath,
+      configTomlPath: input.configTomlPath,
+    });
 
     const name = buildContainerName(this.#repoRootHash, input.sessionId);
     this.#removeContainerIfPresent(name);
@@ -260,14 +302,7 @@ export class DockerRuntimeManager implements DockerRuntime {
       `${this.#uid}:${this.#gid}`,
       "--workdir",
       dockerWorkspacePath,
-      "--mount",
-      `type=bind,src=${configHomePath},dst=${input.dockerSpec.configMountPath}`,
-      ...(input.configTomlPath
-        ? [
-            "--mount",
-            `type=bind,src=${input.configTomlPath},dst=${input.dockerSpec.configMountPath}/config.toml`,
-          ]
-        : []),
+      ...configMountSpecs.flatMap((mountSpec) => ["--mount", mountSpec]),
       "--mount",
       `type=bind,src=${input.worktreePath},dst=${dockerWorkspacePath}`,
       "-e",
