@@ -179,6 +179,13 @@ function installDom() {
       }
       dom.window.close();
     },
+    flushScheduledCallbacks() {
+      const callbacks = Array.from(pendingCallbacks.values());
+      pendingCallbacks.clear();
+      for (const callback of callbacks) {
+        callback();
+      }
+    },
     mountNode,
   };
 }
@@ -384,7 +391,7 @@ test("an unresolved automatic AI review does not block alerts for unrelated acti
       ticketAiReviewResolvedById,
       reviewRunQueriesSettled,
     } = useTicketAiReviewStatus(tickets, projects);
-    const { notificationKeys } = deriveInboxState({
+    const { items, notificationKeys } = deriveInboxState({
       drafts: currentDrafts,
       projects,
       tickets,
@@ -396,6 +403,7 @@ test("an unresolved automatic AI review does not block alerts for unrelated acti
     latestReviewRunQueriesSettled = reviewRunQueriesSettled;
     useInboxAlert({
       actionItemKeys: notificationKeys,
+      visibleActionItemKeys: items.map((item) => item.notificationKey),
       inboxQueriesSettled: true,
     });
 
@@ -422,6 +430,12 @@ test("an unresolved automatic AI review does not block alerts for unrelated acti
           <NotificationAiReviewHarness />
         </QueryClientProvider>,
       );
+      await Promise.resolve();
+    });
+
+    assert.equal(AudioStub.playCallCount, 0);
+    await act(async () => {
+      dom.flushScheduledCallbacks();
       await Promise.resolve();
     });
 
@@ -504,6 +518,7 @@ test("review-run hydration does not replay a notification for already-actionable
     latestVisibleItemKeys = items.map((item) => item.key);
     useInboxAlert({
       actionItemKeys: notificationKeys,
+      visibleActionItemKeys: items.map((item) => item.notificationKey),
       inboxQueriesSettled: true,
     });
 
@@ -571,7 +586,7 @@ test("saving an already-actionable draft does not replay the notification sound"
   });
 
   function DraftSaveHarness() {
-    const { notificationKeys } = deriveInboxState({
+    const { items, notificationKeys } = deriveInboxState({
       drafts: [currentDraft],
       projects: [createProject()],
       tickets: [],
@@ -580,6 +595,7 @@ test("saving an already-actionable draft does not replay the notification sound"
 
     useInboxAlert({
       actionItemKeys: notificationKeys,
+      visibleActionItemKeys: items.map((item) => item.notificationKey),
       inboxQueriesSettled: true,
     });
 
@@ -727,6 +743,12 @@ test("start-ticket silencing suppresses the next notification instance for that 
     ];
     await renderHarness();
 
+    assert.equal(AudioStub.playCallCount, 0);
+    await act(async () => {
+      dom.flushScheduledCallbacks();
+      await Promise.resolve();
+    });
+
     assert.equal(AudioStub.playCallCount, 1);
   } finally {
     await act(async () => {
@@ -734,6 +756,121 @@ test("start-ticket silencing suppresses the next notification instance for that 
       await Promise.resolve();
     });
     globalThis.fetch = originalFetch;
+    queryClient.clear();
+    dom.cleanup();
+  }
+});
+
+test("hidden review baselines do not play the notification sound", async () => {
+  AudioStub.playCallCount = 0;
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  let currentActionItemKeys: string[] = [];
+  let currentVisibleActionItemKeys: string[] = [];
+
+  function HiddenReviewBaselineHarness() {
+    useInboxAlert({
+      actionItemKeys: currentActionItemKeys,
+      visibleActionItemKeys: currentVisibleActionItemKeys,
+      inboxQueriesSettled: true,
+    });
+
+    return null;
+  }
+
+  async function renderHarness(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <HiddenReviewBaselineHarness />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+  }
+
+  try {
+    await renderHarness();
+    assert.equal(AudioStub.playCallCount, 0);
+
+    currentActionItemKeys = ["review-31:session-31:attempt-1"];
+    await renderHarness();
+
+    assert.equal(AudioStub.playCallCount, 0);
+    await act(async () => {
+      dom.flushScheduledCallbacks();
+      await Promise.resolve();
+    });
+    assert.equal(AudioStub.playCallCount, 0);
+
+    currentActionItemKeys = [];
+    await renderHarness();
+
+    assert.equal(AudioStub.playCallCount, 0);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    queryClient.clear();
+    dom.cleanup();
+  }
+});
+
+test("brief actionable notifications that clear before the grace period stay silent", async () => {
+  AudioStub.playCallCount = 0;
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  let currentActionItemKeys: string[] = [];
+  let currentVisibleActionItemKeys: string[] = [];
+
+  function GracePeriodHarness() {
+    useInboxAlert({
+      actionItemKeys: currentActionItemKeys,
+      visibleActionItemKeys: currentVisibleActionItemKeys,
+      inboxQueriesSettled: true,
+    });
+
+    return null;
+  }
+
+  async function renderHarness(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <GracePeriodHarness />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+  }
+
+  try {
+    await renderHarness();
+
+    currentActionItemKeys = ["draft-31"];
+    currentVisibleActionItemKeys = ["draft-31"];
+    await renderHarness();
+
+    assert.equal(AudioStub.playCallCount, 0);
+
+    currentActionItemKeys = [];
+    currentVisibleActionItemKeys = [];
+    await renderHarness();
+
+    await act(async () => {
+      dom.flushScheduledCallbacks();
+      await Promise.resolve();
+    });
+
+    assert.equal(AudioStub.playCallCount, 0);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
     queryClient.clear();
     dom.cleanup();
   }

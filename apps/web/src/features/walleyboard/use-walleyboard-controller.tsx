@@ -460,6 +460,7 @@ export function useWalleyBoardController() {
     globalSessionSummaries.every((query) => !query.isPending);
   const { silenceNextInboxItemKey } = useInboxAlert({
     actionItemKeys,
+    visibleActionItemKeys: actionItems.map((item) => item.notificationKey),
     inboxQueriesSettled,
   });
   const mutations = useWalleyBoardMutationWiring({
