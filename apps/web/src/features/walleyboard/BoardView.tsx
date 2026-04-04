@@ -574,26 +574,27 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
     <Box className="walleyboard-main">
       <Stack className="workbench-shell" gap="md">
         <Box className="workbench-header">
-          <Group justify="space-between" align="flex-start">
-            <Stack gap={6}>
-              <Text className="rail-kicker">Project board</Text>
+          {controller.selectedProject ? (
+            <Group justify="space-between" align="center" wrap="wrap">
               <Title order={1} style={{ letterSpacing: "-0.05em" }}>
-                {controller.selectedProject
-                  ? controller.selectedProject.name
-                  : "Select a project"}
+                {controller.selectedProject.name}
               </Title>
-              {controller.selectedProject ? null : (
-                <Text size="sm" c="dimmed" maw={820}>
-                  Choose a project from the left rail to bring its drafts,
-                  tickets, and sessions into the board.
-                </Text>
-              )}
+              <Group gap="xs" align="center" wrap="wrap">
+                <ColorSchemeControl />
+                <ProjectWorkspaceActions controller={controller} />
+              </Group>
+            </Group>
+          ) : (
+            <Stack gap={6}>
+              <Title order={1} style={{ letterSpacing: "-0.05em" }}>
+                Select a project
+              </Title>
+              <Text size="sm" c="dimmed" maw={820}>
+                Choose a project from the left rail to bring its drafts,
+                tickets, and sessions into the board.
+              </Text>
             </Stack>
-            <Stack gap="xs" align="flex-end">
-              <ProjectWorkspaceActions controller={controller} />
-              <ColorSchemeControl />
-            </Stack>
-          </Group>
+          )}
         </Box>
 
         <Box className="workbench-toolbar">

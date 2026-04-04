@@ -874,7 +874,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
   }
 });
 
-test("board header keeps the selected project name without repository summary or status badges", () => {
+test("board header keeps the selected project name and inline controls without repository summary or status badges", () => {
   const controller = createWalleyBoardController();
   const markup = renderToStaticMarkup(
     <MantineProvider>
@@ -882,8 +882,11 @@ test("board header keeps the selected project name without repository summary or
     </MantineProvider>,
   );
 
-  assert.match(markup, />Project board</);
+  assert.doesNotMatch(markup, />Project board</);
   assert.match(markup, />Project One</);
+  assert.match(markup, />System</);
+  assert.match(markup, />Preview</);
+  assert.match(markup, />Terminal</);
   assert.doesNotMatch(markup, />walleyboard • 0 validation command\(s\)</);
   assert.doesNotMatch(markup, />backend</);
   assert.doesNotMatch(markup, />0 running</);
@@ -904,12 +907,14 @@ test("board header keeps the empty-state prompt when no project is selected", ()
     </MantineProvider>,
   );
 
-  assert.match(markup, />Project board</);
+  assert.doesNotMatch(markup, />Project board</);
   assert.match(markup, />Select a project</);
   assert.match(
     markup,
     />Choose a project from the left rail to bring its drafts,\s*tickets, and sessions into the board\.</,
   );
+  assert.doesNotMatch(markup, />Preview</);
+  assert.doesNotMatch(markup, />Terminal</);
 });
 
 test("ticket cards expose stable ids for ticket reference targets", () => {
