@@ -954,7 +954,7 @@ test("ticket cards expose stable ids for ticket reference targets", () => {
   assert.match(markup, /tabindex="-1"/);
 });
 
-test("ticket cards show inline diff summaries only for in-progress and review tickets above the description preview", () => {
+test("ticket cards show inline diff summaries for in-progress, review, and done tickets above the description preview", () => {
   const controller = createWalleyBoardController();
   const readyTicket = createTicket({
     id: 11,
@@ -1029,8 +1029,8 @@ test("ticket cards show inline diff summaries only for in-progress and review ti
 
   assert.match(markup, /\+12<\/span> <span[^>]*>-4<\/span>/);
   assert.match(markup, /\+7<\/span> <span[^>]*>-3<\/span>/);
+  assert.match(markup, /\+20<\/span> <span[^>]*>-5<\/span>/);
   assert.doesNotMatch(markup, /\+99<\/span> <span[^>]*>-1<\/span>/);
-  assert.doesNotMatch(markup, /\+20<\/span> <span[^>]*>-5<\/span>/);
   assert.doesNotMatch(markup, /files changed/);
   assert.doesNotMatch(markup, /file changed/);
 
@@ -1041,6 +1041,59 @@ test("ticket cards show inline diff summaries only for in-progress and review ti
   assert.ok(
     markup.indexOf("+7") < markup.indexOf("Review ticket description preview"),
   );
+  assert.ok(
+    markup.indexOf("+20") < markup.indexOf("Done ticket description preview"),
+  );
+});
+
+test("done ticket cards omit inline diff summaries when no diff data is available", () => {
+  const controller = createWalleyBoardController();
+  const doneTicket = createTicket({
+    id: 52,
+    description: "Done ticket without persisted diff data",
+    status: "done",
+    title: "Done without diff totals",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [],
+      done: [doneTicket],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketDiffLineSummaryByTicketId: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.match(markup, /Done without diff totals/);
+  assert.doesNotMatch(markup, /\+\d+<\/span> <span[^>]*>-\d+<\/span>/);
 });
 
 test("ticket cards place workspace controls under metadata and move statuses into the summary row", () => {

@@ -950,7 +950,8 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                     .variables === ticket.id);
                               const diffLineSummary =
                                 ticket.status === "in_progress" ||
-                                ticket.status === "review"
+                                ticket.status === "review" ||
+                                ticket.status === "done"
                                   ? (controller.ticketDiffLineSummaryByTicketId?.get(
                                       ticket.id,
                                     ) ?? null)

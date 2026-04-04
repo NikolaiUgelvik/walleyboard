@@ -5,16 +5,20 @@ import { summarizeTicketWorkspaceDiff } from "../../lib/ticket-workspace-diff-su
 import { fetchJson } from "./shared-api.js";
 import type { TicketWorkspaceDiffResponse } from "./shared-types.js";
 
-export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
-  const ticketsWithVisibleDiffSummary = tickets.filter(
-    (
-      ticket,
-    ): ticket is TicketFrontmatter & {
-      session_id: string;
-    } =>
-      ticket.session_id !== null &&
-      (ticket.status === "in_progress" || ticket.status === "review"),
+export function getTicketsWithVisibleDiffSummary(
+  tickets: TicketFrontmatter[],
+): TicketFrontmatter[] {
+  return tickets.filter(
+    (ticket) =>
+      ticket.status === "done" ||
+      (ticket.session_id !== null &&
+        (ticket.status === "in_progress" || ticket.status === "review")),
   );
+}
+
+export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
+  const ticketsWithVisibleDiffSummary =
+    getTicketsWithVisibleDiffSummary(tickets);
   const ticketDiffSummaryQueries = useQueries({
     queries: ticketsWithVisibleDiffSummary.map((ticket) => ({
       queryKey: ["tickets", ticket.id, "workspace", "diff"],
