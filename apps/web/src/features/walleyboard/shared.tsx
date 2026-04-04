@@ -155,7 +155,7 @@ export function AgentAdapterOptionLabel({
 }
 
 export function ProjectAgentAdapterSelect({
-  claudeCodeAvailable,
+  claudeCodeAvailable: _claudeCodeAvailable,
   value,
   onChange,
 }: {
@@ -166,8 +166,8 @@ export function ProjectAgentAdapterSelect({
   return (
     <Select
       label="Agent CLI"
-      description="Choose which agent runtime this project uses for draft analysis and ticket work."
-      data={getProjectAgentAdapterOptions(claudeCodeAvailable)}
+      description="Codex is the only supported agent runtime for draft analysis and ticket work."
+      data={getProjectAgentAdapterOptions()}
       leftSection={<AgentAdapterIcon adapter={value} />}
       renderOption={({ option }) => (
         <AgentAdapterOptionLabel
@@ -187,18 +187,8 @@ export function ProjectAgentAdapterSelect({
   );
 }
 
-export function getProjectAgentAdapterOptions(
-  claudeCodeAvailable: boolean,
-): AgentAdapterSelectOption[] {
-  return agentAdapterOptions.map((option) =>
-    option.value === "claude-code" && !claudeCodeAvailable
-      ? {
-          ...option,
-          label: "Claude Code (not installed)",
-          disabled: true,
-        }
-      : option,
-  );
+export function getProjectAgentAdapterOptions(): AgentAdapterSelectOption[] {
+  return [{ label: "Codex", value: "codex" }];
 }
 
 export function agentLabel(adapter: AgentAdapter): string {

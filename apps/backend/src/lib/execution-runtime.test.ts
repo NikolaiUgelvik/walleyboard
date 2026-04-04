@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type {
+  DraftTicketState,
   ExecutionSession,
   Project,
   RepositoryConfig,
@@ -72,6 +73,24 @@ function createRepository(path: string): RepositoryConfig {
     cleanup_hook: null,
     validation_profile: [],
     extra_env_allowlist: [],
+    created_at: "2026-04-01T00:00:00.000Z",
+    updated_at: "2026-04-01T00:00:00.000Z",
+  };
+}
+
+function createDraft(): DraftTicketState {
+  return {
+    id: "draft-1",
+    project_id: "project-1",
+    artifact_scope_id: "artifact-scope-1",
+    title_draft: "Draft title",
+    description_draft: "Draft description",
+    proposed_repo_id: "repo-1",
+    confirmed_repo_id: "repo-1",
+    proposed_ticket_type: "feature",
+    proposed_acceptance_criteria: ["Refine this draft inside Docker."],
+    wizard_status: "editing",
+    split_proposal_summary: null,
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
   };
@@ -272,6 +291,141 @@ test("docker-backed execution launches the configured adapter command inside Doc
         prompt: "fake prompt",
       },
     });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("draft refinement launches the configured adapter command inside Docker", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-draft-runtime-"));
+  const repositoryPath = join(tempDir, "repository");
+  mkdirSync(repositoryPath, { recursive: true });
+
+  let ensureSessionContainerInput: {
+    worktreePath: string;
+    ticketId: number;
+  } | null = null;
+  let spawned: { command: string; args: string[] } | null = null;
+
+  const dockerRuntime = {
+    assertAvailable() {
+      return {
+        installed: true,
+        available: true,
+        client_version: "29.3.1",
+        server_version: "29.3.1",
+        error: null,
+      };
+    },
+    cleanupSessionContainer() {},
+    dispose() {},
+    ensureSessionContainer(input: { worktreePath: string; ticketId: number }) {
+      ensureSessionContainerInput = input;
+      return undefined;
+    },
+    spawnPtyInSession(_sessionId: string, command: string, args: string[]) {
+      spawned = { command, args };
+      return {
+        kill() {},
+        onData() {},
+        onExit() {},
+        pid: 1234,
+        process: "docker",
+        resize() {},
+        write() {},
+      } as never;
+    },
+  };
+  const store = {
+    recordDraftEvent() {
+      return {
+        id: "event-1",
+        occurred_at: "2026-04-01T00:00:00.000Z",
+        entity_type: "draft",
+        entity_id: "draft-1",
+        event_type: "draft.refine.started",
+        payload: {},
+      };
+    },
+  };
+  const eventHub = {
+    publish() {},
+  };
+
+  try {
+    const adapterRegistry = new AgentAdapterRegistry([
+      {
+        id: "codex",
+        label: "Fake Agent",
+        buildDraftRun(input) {
+          assert.equal(input.useDockerRuntime, true);
+          assert.equal(input.outputPath.startsWith(repositoryPath), true);
+          assert.match(input.outputPath, /\.walleyboard\/draft-analyses\//);
+          return {
+            command: "test-agent",
+            args: ["exec", "--json", "--output-last-message", input.outputPath],
+            prompt: "fake prompt",
+            outputPath: input.outputPath,
+            dockerSpec: {
+              imageTag: "example/test-agent:latest",
+              dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+              homePath: "/home/test-agent",
+              configMountPath: "/home/test-agent/.fake-agent",
+            },
+          };
+        },
+        buildExecutionRun() {
+          throw new Error("execution runs are not used in this test");
+        },
+        buildMergeConflictRun() {
+          throw new Error("merge-conflict runs are not used in this test");
+        },
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
+        },
+        interpretOutputLine(line) {
+          return {
+            logLine: line,
+          };
+        },
+        parseDraftResult() {
+          throw new Error("draft parsing is not used in this test");
+        },
+        formatExitReason() {
+          return "fake exit";
+        },
+        resolveModelSelection() {
+          return {
+            model: null,
+            reasoningEffort: null,
+          };
+        },
+      },
+    ]);
+    const runtime = new ExecutionRuntime({
+      adapterRegistry,
+      dockerRuntime: dockerRuntime as never,
+      eventHub: eventHub as never,
+      store: store as never,
+    });
+
+    runtime.runDraftRefinement({
+      draft: createDraft(),
+      project: createProject(),
+      repository: createRepository(repositoryPath),
+    });
+
+    if (!ensureSessionContainerInput || !spawned) {
+      throw new Error("Expected draft refinement to start in Docker");
+    }
+    const capturedContainerInput = ensureSessionContainerInput as {
+      worktreePath: string;
+      ticketId: number;
+    };
+    const spawnedRun = spawned as { command: string; args: string[] };
+    assert.equal(capturedContainerInput.worktreePath, repositoryPath);
+    assert.equal(capturedContainerInput.ticketId, 0);
+    assert.equal(spawnedRun.command, "test-agent");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

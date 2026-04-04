@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { type IPty } from "node-pty";
+import type { IPty } from "node-pty";
 
 import type {
   ExecutionSession,

@@ -800,6 +800,7 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
     outputPath: "/tmp/output.json",
     project: createProject(),
     repository: createRepository(),
+    useDockerRuntime: false,
   });
   assert.equal(run.command, "bash");
   assert.equal(run.args[0], "-c");
@@ -820,6 +821,7 @@ test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
     outputPath: "/tmp/output.json",
     project: createProject(),
     repository: createRepository(),
+    useDockerRuntime: false,
   });
   assert.equal(run.command, "bash");
   assert.ok((run.args[1] ?? "").includes("claude"));
@@ -1060,6 +1062,7 @@ test("ClaudeCodeAdapter: all run builders return dockerSpec null", () => {
     outputPath: "/tmp/o.json",
     project: createProject(),
     repository: createRepository(),
+    useDockerRuntime: false,
   });
   const execRun = adapter.buildExecutionRun({
     executionMode: "plan",
@@ -1220,6 +1223,7 @@ test("integration: Claude CLI accepts draft run flags", {
     outputPath: "/tmp/walleyboard-test-output.json",
     project: createProject(),
     repository: createRepository(),
+    useDockerRuntime: false,
   });
   // Draft runs use bash -c "claude ... > output". Extract the inner claude
   // command and replace the prompt with a trivial one.

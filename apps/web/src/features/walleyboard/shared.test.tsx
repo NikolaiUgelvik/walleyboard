@@ -10,7 +10,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   AgentAdapterIcon,
   AgentAdapterOptionLabel,
-  agentAdapterOptions,
   getAgentAdapterIconPath,
   getProjectAgentAdapterOptions,
   ProjectAgentAdapterSelect,
@@ -225,15 +224,9 @@ test("AgentAdapter option label renders the matching icon without changing text"
   assert.match(markup, /\/agent-icons\/claude-code\.svg/);
 });
 
-test("Project Agent CLI options keep the existing disabled Claude label behavior", () => {
-  assert.deepEqual(getProjectAgentAdapterOptions(true), agentAdapterOptions);
-  assert.deepEqual(getProjectAgentAdapterOptions(false), [
+test("Project Agent CLI options only expose Codex for Docker-only execution", () => {
+  assert.deepEqual(getProjectAgentAdapterOptions(), [
     { label: "Codex", value: "codex" },
-    {
-      label: "Claude Code (not installed)",
-      value: "claude-code",
-      disabled: true,
-    },
   ]);
 });
 
@@ -286,7 +279,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     const options = Array.from(
       harness.window.document.querySelectorAll<HTMLElement>('[role="option"]'),
     );
-    assert.equal(options.length, 2);
+    assert.equal(options.length, 1);
 
     const codexOption = options.find(
       (option) => option.textContent === "Codex",
@@ -295,46 +288,6 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     assert.equal(
       codexOption.querySelector("img")?.getAttribute("src"),
       "/agent-icons/codex.svg",
-    );
-
-    const claudeOption = options.find(
-      (option) => option.textContent === "Claude Code (not installed)",
-    );
-    assert.ok(claudeOption);
-    assert.equal(
-      claudeOption.querySelector("img")?.getAttribute("src"),
-      "/agent-icons/claude-code.svg",
-    );
-    assert.equal(claudeOption.getAttribute("data-combobox-disabled"), "true");
-
-    await act(async () => {
-      root.render(
-        <MantineProvider>
-          <ProjectAgentAdapterSelect
-            claudeCodeAvailable
-            value="claude-code"
-            onChange={() => {}}
-          />
-        </MantineProvider>,
-      );
-      await Promise.resolve();
-    });
-    await harness.flushAsyncWork();
-
-    const updatedInput = harness.mountNode.querySelector<HTMLInputElement>(
-      'input[role="combobox"]',
-    );
-    assert.ok(updatedInput);
-    assert.equal(updatedInput.getAttribute("value"), "Claude Code");
-
-    const updatedSelectedIcon =
-      harness.mountNode.querySelector<HTMLImageElement>(
-        '[data-position="left"] img',
-      );
-    assert.ok(updatedSelectedIcon);
-    assert.equal(
-      updatedSelectedIcon.getAttribute("src"),
-      "/agent-icons/claude-code.svg",
     );
   } finally {
     await act(async () => {

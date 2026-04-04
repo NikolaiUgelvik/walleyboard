@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  DraftTicketState,
   ExecutionSession,
   Project,
   RepositoryConfig,
@@ -48,6 +49,24 @@ function createRepository(): RepositoryConfig {
     cleanup_hook: null,
     validation_profile: [],
     extra_env_allowlist: [],
+    created_at: "2026-04-01T00:00:00.000Z",
+    updated_at: "2026-04-01T00:00:00.000Z",
+  };
+}
+
+function createDraft(): DraftTicketState {
+  return {
+    id: "draft-1",
+    project_id: "project-1",
+    artifact_scope_id: "artifact-scope-1",
+    title_draft: "Handle menu navigation",
+    description_draft: "Refine the draft inside Docker.",
+    proposed_repo_id: "repo-1",
+    confirmed_repo_id: "repo-1",
+    proposed_ticket_type: "feature",
+    proposed_acceptance_criteria: ["Keep draft analysis inside Docker."],
+    wizard_status: "editing",
+    split_proposal_summary: null,
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
   };
@@ -138,6 +157,33 @@ test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspac
     "/workspace/.walleyboard/session-1-summary.txt",
   );
   assert.equal(run.outputPath, "/workspace/.walleyboard/session-1-summary.txt");
+});
+
+test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", () => {
+  const adapter = new CodexCliAdapter();
+
+  const run = adapter.buildDraftRun({
+    draft: createDraft(),
+    mode: "refine",
+    outputPath:
+      "/tmp/spacegame/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
+    project: createProject(),
+    repository: createRepository(),
+    useDockerRuntime: true,
+  });
+
+  const outputFlagIndex = run.args.indexOf("--output-last-message");
+  assert.notEqual(outputFlagIndex, -1);
+  assert.equal(
+    run.args[outputFlagIndex + 1],
+    "/workspace/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
+  );
+  assert.equal(
+    run.outputPath,
+    "/workspace/.walleyboard/draft-analyses/draft-1-refine-run-1.json",
+  );
+  assert.ok(run.args.includes("--dangerously-bypass-approvals-and-sandbox"));
+  assert.ok(run.dockerSpec);
 });
 
 test("CodexCliAdapter.buildExecutionRun rejects Docker output paths outside the worktree", () => {

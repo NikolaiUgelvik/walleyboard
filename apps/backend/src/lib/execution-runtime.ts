@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { nanoid } from "nanoid";
-import { type IPty, spawn as spawnPty } from "node-pty";
+import type { IPty } from "node-pty";
 
 import type {
   ExecutionSession,
@@ -32,6 +32,7 @@ import {
   truncate,
   writeReviewDiff,
 } from "./execution-runtime/helpers.js";
+import { inspectWorktreeRecoveryState } from "./execution-runtime/inspect-worktree-recovery.js";
 import type { MergeRecoveryKind } from "./execution-runtime/merge-recovery.js";
 import {
   publishDraftUpdated,
@@ -80,72 +81,6 @@ type ReviewReadyInput = {
   ticket: TicketFrontmatter;
 };
 type ReviewReadyHandler = (input: ReviewReadyInput) => Promise<void>;
-
-type WorktreeRecoveryState = {
-  conflictedFiles: string[];
-  failureMessage: string;
-  stage: "rebase" | "merge";
-};
-
-function inspectWorktreeRecoveryState(
-  worktreePath: string,
-): WorktreeRecoveryState | null {
-  try {
-    const conflictedFiles = runGit(worktreePath, [
-      "diff",
-      "--name-only",
-      "--diff-filter=U",
-    ])
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    const mergeHeadPath = runGit(worktreePath, [
-      "rev-parse",
-      "--git-path",
-      "MERGE_HEAD",
-    ]);
-    const rebaseMergePath = runGit(worktreePath, [
-      "rev-parse",
-      "--git-path",
-      "rebase-merge",
-    ]);
-    const rebaseApplyPath = runGit(worktreePath, [
-      "rev-parse",
-      "--git-path",
-      "rebase-apply",
-    ]);
-    const currentBranch = runGit(worktreePath, [
-      "rev-parse",
-      "--abbrev-ref",
-      "HEAD",
-    ]);
-    const mergeInProgress = existsSync(mergeHeadPath);
-    const rebaseInProgress =
-      existsSync(rebaseMergePath) || existsSync(rebaseApplyPath);
-    const detachedHead = currentBranch === "HEAD";
-
-    if (!mergeInProgress && !rebaseInProgress && conflictedFiles.length === 0) {
-      return null;
-    }
-
-    const stage = rebaseInProgress ? "rebase" : "merge";
-    const failureMessage = rebaseInProgress
-      ? "Resume detected an unfinished git rebase in the preserved worktree."
-      : mergeInProgress
-        ? "Resume detected an unfinished git merge in the preserved worktree."
-        : detachedHead
-          ? "Resume detected unresolved git conflicts in a detached worktree."
-          : "Resume detected unresolved git conflicts in the preserved worktree.";
-
-    return {
-      conflictedFiles,
-      failureMessage,
-      stage,
-    };
-  } catch {
-    return null;
-  }
-}
 
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
@@ -615,7 +550,7 @@ export class ExecutionRuntime {
     publishStructuredEvent(this.#eventHub, startedEvent);
 
     const outputPath = buildDraftAnalysisOutputPath(
-      project,
+      repository.path,
       draft.id,
       runId,
       mode,
@@ -626,15 +561,62 @@ export class ExecutionRuntime {
       outputPath,
       project,
       repository,
+      useDockerRuntime: true,
       ...(hasMeaningfulContent(instruction) ? { instruction } : {}),
     });
-    const child = spawnPty(run.command, run.args, {
-      cwd: repository.path,
-      env: buildProcessEnv(),
-      cols: 120,
-      rows: 32,
-      name: "xterm-256color",
-    });
+    const ptyEnv = buildProcessEnv();
+    let child: IPty;
+
+    try {
+      if (!run.dockerSpec) {
+        throw new Error(
+          `${adapter.label} does not provide a Docker execution configuration.`,
+        );
+      }
+      this.#dockerRuntime.ensureSessionContainer({
+        configTomlPath:
+          adapter.id === "codex" ? writeCodexConfigOverride(project) : null,
+        dockerSpec: run.dockerSpec,
+        sessionId: runId,
+        projectId: project.id,
+        ticketId: 0,
+        worktreePath: repository.path,
+      });
+      child = this.#dockerRuntime.spawnPtyInSession(
+        runId,
+        run.command,
+        run.args,
+        {
+          cwd: repository.path,
+          env: ptyEnv,
+          cols: 120,
+          rows: 32,
+          name: "xterm-256color",
+        },
+      );
+    } catch (error) {
+      this.cleanupExecutionEnvironment(runId);
+      const message =
+        error instanceof Error
+          ? error.message
+          : `${adapter.label} failed to start`;
+      const failedEvent = this.#store.recordDraftEvent(
+        draft.id,
+        `draft.${mode}.failed`,
+        {
+          run_id: runId,
+          operation: mode,
+          status: "failed",
+          repository_id: repository.id,
+          repository_name: repository.name,
+          summary: message,
+          error: message,
+          captured_output: [],
+        },
+      );
+      publishStructuredEvent(this.#eventHub, failedEvent);
+      return;
+    }
 
     this.#activeDraftRuns.set(draft.id, child);
 
@@ -659,6 +641,7 @@ export class ExecutionRuntime {
 
       finalized = true;
       this.#activeDraftRuns.delete(draft.id);
+      this.cleanupExecutionEnvironment(runId);
       const failedEvent = this.#store.recordDraftEvent(
         draft.id,
         `draft.${mode}.failed`,
@@ -734,6 +717,7 @@ export class ExecutionRuntime {
 
           finalized = true;
           this.#activeDraftRuns.delete(draft.id);
+          this.cleanupExecutionEnvironment(runId);
           const completedEvent = this.#store.recordDraftEvent(
             draft.id,
             "draft.refine.completed",
@@ -760,6 +744,7 @@ export class ExecutionRuntime {
         );
         finalized = true;
         this.#activeDraftRuns.delete(draft.id);
+        this.cleanupExecutionEnvironment(runId);
         const completedEvent = this.#store.recordDraftEvent(
           draft.id,
           "draft.questions.completed",

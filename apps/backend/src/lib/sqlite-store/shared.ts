@@ -1064,7 +1064,9 @@ export class SqliteStoreContext {
         `
           UPDATE projects
           SET agent_adapter = 'codex'
-          WHERE agent_adapter IS NULL OR agent_adapter = ''
+          WHERE agent_adapter IS NULL
+             OR agent_adapter = ''
+             OR agent_adapter != 'codex'
         `,
       )
       .run();
@@ -1074,7 +1076,9 @@ export class SqliteStoreContext {
         `
           UPDATE execution_sessions
           SET agent_adapter = 'codex'
-          WHERE agent_adapter IS NULL OR agent_adapter = ''
+          WHERE agent_adapter IS NULL
+             OR agent_adapter = ''
+             OR agent_adapter != 'codex'
         `,
       )
       .run();

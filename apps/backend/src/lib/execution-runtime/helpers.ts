@@ -207,12 +207,12 @@ export function buildMergeConflictSummaryPath(
 }
 
 export function buildDraftAnalysisOutputPath(
-  project: Project,
+  repositoryPath: string,
   draftId: string,
   runId: string,
   mode: "refine" | "questions",
 ): string {
-  const analysisDir = resolveWalleyBoardPath("draft-analyses", project.slug);
+  const analysisDir = join(repositoryPath, ".walleyboard", "draft-analyses");
   ensureDirectory(analysisDir);
   return join(analysisDir, `${draftId}-${mode}-${runId}.json`);
 }

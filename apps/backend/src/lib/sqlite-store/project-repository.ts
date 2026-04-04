@@ -26,6 +26,21 @@ import {
 export class ProjectRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
+  #assertSupportedExecutionConfiguration(input: {
+    agentAdapter: Project["agent_adapter"];
+    executionBackend: Project["execution_backend"];
+  }): void {
+    if (input.executionBackend !== "docker") {
+      throw new Error("Docker is the only supported execution backend.");
+    }
+
+    if (input.agentAdapter !== "codex") {
+      throw new Error(
+        "Codex is the only supported agent adapter for Docker-backed ticket execution.",
+      );
+    }
+  }
+
   listProjects(): Project[] {
     const rows = this.context.db
       .prepare("SELECT * FROM projects ORDER BY updated_at DESC, name ASC")
@@ -150,10 +165,6 @@ export class ProjectRepository {
     };
   }
 
-  // NOTE: We intentionally do NOT validate agent_adapter / execution_backend
-  // combinations here. Docker is the only supported backend, and unsupported
-  // agent adapters still produce a clear runtime error if reached via direct
-  // API calls.
   updateProject(projectId: string, input: UpdateProjectInput): Project {
     const project = this.getProject(projectId);
     if (!project) {
@@ -227,6 +238,11 @@ export class ProjectRepository {
     const repositoryTargetBranchUpdates =
       input.repository_target_branches ?? [];
     const timestamp = nowIso();
+
+    this.#assertSupportedExecutionConfiguration({
+      agentAdapter,
+      executionBackend,
+    });
 
     for (const repositoryUpdate of repositoryTargetBranchUpdates) {
       const repository = this.getRepository(repositoryUpdate.repository_id);

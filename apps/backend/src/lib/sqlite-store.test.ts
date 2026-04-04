@@ -559,6 +559,65 @@ test("projects default to Docker execution and backfill legacy host backend reco
   }
 });
 
+test("projects backfill legacy Claude adapter records to Codex", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-adapter-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Adapter",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const rawDb = new DatabaseSync(databasePath);
+    rawDb
+      .prepare(
+        `
+          UPDATE projects
+          SET agent_adapter = 'claude-code'
+          WHERE id = ?
+        `,
+      )
+      .run(project.id);
+    rawDb.close();
+
+    const reloadedStore = new SqliteStore(databasePath);
+    assert.equal(reloadedStore.getProject(project.id)?.agent_adapter, "codex");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("updateProject rejects unsupported Docker adapter combinations", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-update-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project Update",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    assert.throws(
+      () =>
+        store.updateProject(project.id, {
+          agent_adapter: "claude-code",
+        }),
+      /Codex is the only supported agent adapter/,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("projects persist disabled MCP server selections", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-mcps-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

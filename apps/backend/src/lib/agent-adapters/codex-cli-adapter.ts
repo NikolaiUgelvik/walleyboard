@@ -437,6 +437,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "draft",
     );
+    const outputPath = resolveAgentOutputPath({
+      outputPath: input.outputPath,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath: input.repository.path,
+    });
     const prompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
@@ -454,8 +459,12 @@ export class CodexCliAdapter implements AgentCliAdapter {
       "--json",
       "--full-auto",
       "--output-last-message",
-      input.outputPath,
+      outputPath,
     ];
+
+    if (input.useDockerRuntime) {
+      appendDangerousDockerArgs(args);
+    }
 
     appendCodexModelArgs(args, {
       model,
@@ -467,8 +476,8 @@ export class CodexCliAdapter implements AgentCliAdapter {
       command: "codex",
       args,
       prompt,
-      outputPath: input.outputPath,
-      dockerSpec: null,
+      outputPath,
+      dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
     };
   }
 

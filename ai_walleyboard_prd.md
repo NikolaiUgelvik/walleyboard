@@ -1277,7 +1277,7 @@ The MVP should prove one reliable end-to-end workflow:
   - repository confirmation
 - One logical execution session per ticket
 - Per-project concurrency limits with queued follow-on starts once the active-session limit is reached
-- Host or Docker-backed ticket execution selected per project
+- Docker-backed ticket execution only, with Codex as the supported agent runtime
 - Interpreted session activity view with summaries and required-action prompts
 - In-app waiting-state notifications when the session needs user input or approval
 - Inbox items and alert sounds only for newly actionable human work:

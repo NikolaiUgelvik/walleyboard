@@ -109,16 +109,13 @@ export function ProjectConfigurationModals({
                 />
                 <Text size="sm" c="dimmed">
                   Docker is required for ticket execution. WalleyBoard prepares
-                  an isolated checkout and runs the ticket session inside the
-                  managed runtime container.
+                  an isolated checkout and runs draft analysis plus ticket
+                  sessions inside the managed runtime container.
                 </Text>
-                {controller.projectOptionsAgentAdapter === "claude-code" ? (
-                  <Text size="sm" c="dimmed">
-                    Claude Code does not currently provide a Docker execution
-                    configuration in WalleyBoard, so Codex is the supported
-                    adapter for ticket execution.
-                  </Text>
-                ) : null}
+                <Text size="sm" c="dimmed">
+                  Codex is the only supported agent adapter for this Docker-only
+                  runtime.
+                </Text>
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
                     <Text size="sm" c="dimmed">

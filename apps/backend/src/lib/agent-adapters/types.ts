@@ -48,6 +48,7 @@ export type DraftRunInput = {
   outputPath: string;
   project: Project;
   repository: RepositoryConfig;
+  useDockerRuntime: boolean;
 };
 
 export type ExecutionRunInput = {
