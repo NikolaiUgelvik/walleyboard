@@ -67,7 +67,9 @@ export async function createApp() {
   const recovery = store.recoverInterruptedSessions();
 
   try {
-    dockerRuntime.cleanupStaleContainers();
+    dockerRuntime.cleanupStaleContainers({
+      preserveSessionIds: recovery.activeSessionIds,
+    });
   } catch (error) {
     app.log.warn(
       {

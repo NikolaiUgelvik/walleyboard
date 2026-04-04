@@ -350,6 +350,7 @@ export class SessionRepository {
       .all() as Record<string, unknown>[];
 
     const interruptedSessions: ExecutionSession[] = [];
+    const activeSessionIds: string[] = [];
 
     for (const row of rows) {
       const session = mapExecutionSession(row);
@@ -362,6 +363,7 @@ export class SessionRepository {
         : undefined;
 
       if (isTrackedProcessAlive(activeAttemptRow?.pty_pid)) {
+        activeSessionIds.push(session.id);
         continue;
       }
 
@@ -422,6 +424,7 @@ export class SessionRepository {
     }
 
     return {
+      activeSessionIds,
       sessions: interruptedSessions,
     };
   }

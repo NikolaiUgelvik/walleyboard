@@ -92,6 +92,16 @@ If you want Claude Code support, create `~/.walleyboard/claude-cli-path` and put
 5. Open the Vite URL shown in the frontend terminal, usually `http://127.0.0.1:5173`.
 6. Generate database artifacts later with `npm run db:generate`.
 
+## Dev Startup Script
+
+If you want one command to restart both local servers, use `./restart.sh`.
+
+- `./restart.sh`: starts the backend and frontend in the default local dev mode
+- `./restart.sh --no-hot-reload`: starts the backend normally, then builds the frontend and serves it with `vite preview` instead of Vite HMR
+- `./restart.sh --help`: shows the available startup flags
+
+Logs and pid files for this helper live under `~/.walleyboard/dev/`.
+
 ## Optional Docker Support
 
 Docker is optional. The app itself runs directly on your host machine; Docker only affects ticket execution for projects configured with the `Docker` execution backend.

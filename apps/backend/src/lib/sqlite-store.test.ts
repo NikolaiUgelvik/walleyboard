@@ -162,6 +162,7 @@ test("startup recovery leaves sessions alone when the tracked PTY is still alive
     const reopenedStore = new SqliteStore(databasePath);
     const recovery = reopenedStore.recoverInterruptedSessions();
 
+    assert.deepEqual(recovery.activeSessionIds, [started.session.id]);
     assert.deepEqual(recovery.sessions, []);
     assert.equal(
       reopenedStore.getSession(started.session.id)?.status,

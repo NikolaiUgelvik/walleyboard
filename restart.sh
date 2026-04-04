@@ -11,6 +11,21 @@ BACKEND_LOG="$RUN_DIR/backend.log"
 FRONTEND_LOG="$RUN_DIR/frontend.log"
 BACKEND_PORT=4000
 FRONTEND_PORT=5173
+BACKEND_COMMAND="node --import tsx apps/backend/src/index.ts"
+FRONTEND_COMMAND="npm run dev:web"
+MODE_LABEL="hot-reload frontend"
+
+print_usage() {
+  cat <<EOF
+Usage: ./restart.sh [--no-hot-reload] [--help]
+
+Options:
+  --no-hot-reload  Start the frontend without Vite HMR by building it first
+                   and serving the built assets with vite preview.
+                   The backend already runs without watch mode.
+  --help           Show this help text.
+EOF
+}
 
 start_service() {
   local name="$1"
@@ -23,7 +38,7 @@ start_service() {
   : >"$log_file"
 
   WALLEYBOARD_ROOT="$ROOT_DIR" \
-    nohup setsid bash -lc "cd \"\$WALLEYBOARD_ROOT\" && exec $command" \
+    nohup setsid bash -lc "cd \"\$WALLEYBOARD_ROOT\" && $command" \
       >>"$log_file" 2>&1 &
   local pid=$!
   echo "$pid" >"$pid_file"
@@ -48,13 +63,33 @@ start_service() {
   return 1
 }
 
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-hot-reload)
+      FRONTEND_COMMAND="npm --workspace @walleyboard/web run build && npm --workspace @walleyboard/web run preview -- --host 127.0.0.1 --port $FRONTEND_PORT"
+      MODE_LABEL="non-hot-reload frontend"
+      shift
+      ;;
+    --help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      echo >&2
+      print_usage >&2
+      exit 1
+      ;;
+  esac
+done
+
 mkdir -p "$RUN_DIR"
 
 "$ROOT_DIR/stop.sh"
 
 if ! start_service \
   "backend" \
-  "node --import tsx apps/backend/src/index.ts" \
+  "$BACKEND_COMMAND" \
   "$BACKEND_PID_FILE" \
   "$BACKEND_LOG" \
   "$BACKEND_PORT"; then
@@ -64,7 +99,7 @@ fi
 
 if ! start_service \
   "frontend" \
-  "npm run dev:web" \
+  "$FRONTEND_COMMAND" \
   "$FRONTEND_PID_FILE" \
   "$FRONTEND_LOG" \
   "$FRONTEND_PORT"; then
@@ -72,6 +107,7 @@ if ! start_service \
   exit 1
 fi
 
+echo "Mode: $MODE_LABEL"
 echo "Backend log: $BACKEND_LOG"
 echo "Frontend log: $FRONTEND_LOG"
 echo "Backend URL: http://127.0.0.1:$BACKEND_PORT"

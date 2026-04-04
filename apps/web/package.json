@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "preview": "vite preview",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check src vite.config.ts",

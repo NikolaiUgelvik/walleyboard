@@ -115,6 +115,7 @@ export type CompleteSessionInput = {
 };
 
 export type StartupRecoveryResult = {
+  activeSessionIds: string[];
   sessions: ExecutionSession[];
 };
 

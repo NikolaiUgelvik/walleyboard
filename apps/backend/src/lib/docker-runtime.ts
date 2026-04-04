@@ -42,6 +42,11 @@ type SessionContainer = {
   worktreePath: string;
 };
 
+type ManagedContainer = {
+  id: string;
+  sessionId: string | null;
+};
+
 type DockerRuntimeDependencies = {
   configHomeResolver?: (configMountPath: string) => string;
   execFileSyncImpl?: typeof execFileSync;
@@ -150,13 +155,21 @@ export class DockerRuntimeManager {
     return health;
   }
 
-  cleanupStaleContainers(): void {
+  cleanupStaleContainers(input?: {
+    preserveSessionIds?: Iterable<string>;
+  }): void {
     const health = this.getHealth();
     if (!health.available) {
       return;
     }
 
-    const staleContainers = this.#listManagedContainers();
+    const preserveSessionIds = new Set(input?.preserveSessionIds ?? []);
+    const staleContainers = this.#listManagedContainers()
+      .filter(
+        (container) =>
+          !(container.sessionId && preserveSessionIds.has(container.sessionId)),
+      )
+      .map((container) => container.id);
     if (staleContainers.length === 0) {
       return;
     }
@@ -343,7 +356,7 @@ export class DockerRuntimeManager {
     return this.#configHomeResolver(configMountPath);
   }
 
-  #listManagedContainers(): string[] {
+  #listManagedContainers(): ManagedContainer[] {
     const output = this.#runDocker([
       "ps",
       "-aq",
@@ -351,6 +364,8 @@ export class DockerRuntimeManager {
       `label=${dockerManagedLabel}=true`,
       "--filter",
       `label=${dockerRepoRootHashLabel}=${this.#repoRootHash}`,
+      "--format",
+      "{{.ID}}|{{.Labels}}",
     ]);
 
     if (output.length === 0) {
@@ -360,7 +375,21 @@ export class DockerRuntimeManager {
     return output
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const [rawId = "", labelList = ""] = line.split("|");
+        const sessionLabel = labelList
+          .split(",")
+          .map((entry) => entry.trim())
+          .find((entry) => entry.startsWith(`${dockerSessionIdLabel}=`));
+
+        return {
+          id: rawId,
+          sessionId: sessionLabel
+            ? sessionLabel.slice(`${dockerSessionIdLabel}=`.length)
+            : null,
+        };
+      });
   }
 
   #removeContainerIfPresent(name: string): void {

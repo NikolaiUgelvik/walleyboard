@@ -193,7 +193,10 @@ test("cleanupStaleContainers removes matching walleyboard containers", () => {
       }
 
       if (args[0] === "ps") {
-        return "container-1\ncontainer-2";
+        return [
+          "container-1|com.walleyboard.session_id=session-1,com.walleyboard.managed=true",
+          "container-2|com.walleyboard.session_id=session-2,com.walleyboard.managed=true",
+        ].join("\n");
       }
 
       if (args[0] === "rm") {
@@ -210,4 +213,39 @@ test("cleanupStaleContainers removes matching walleyboard containers", () => {
   const rmCommand = commands.find((entry) => entry.args[0] === "rm");
   assert.ok(rmCommand);
   assert.deepEqual(rmCommand.args, ["rm", "-f", "container-1", "container-2"]);
+});
+
+test("cleanupStaleContainers preserves containers for active session ids", () => {
+  const commands: Array<{ command: string; args: string[] }> = [];
+  const runtime = new DockerRuntimeManager({
+    execFileSyncImpl: ((command: string, args: string[]) => {
+      commands.push({ command, args });
+
+      if (args[0] === "version") {
+        return "29.3.1|29.3.1";
+      }
+
+      if (args[0] === "ps") {
+        return [
+          "container-1|com.walleyboard.session_id=session-1,com.walleyboard.managed=true",
+          "container-2|com.walleyboard.session_id=session-2,com.walleyboard.managed=true",
+        ].join("\n");
+      }
+
+      if (args[0] === "rm") {
+        return "";
+      }
+
+      throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+    }) as never,
+    repoRoot: "/tmp/walleyboard",
+  });
+
+  runtime.cleanupStaleContainers({
+    preserveSessionIds: ["session-2"],
+  });
+
+  const rmCommand = commands.find((entry) => entry.args[0] === "rm");
+  assert.ok(rmCommand);
+  assert.deepEqual(rmCommand.args, ["rm", "-f", "container-1"]);
 });
