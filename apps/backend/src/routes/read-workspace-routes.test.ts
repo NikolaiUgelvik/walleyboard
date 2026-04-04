@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +13,7 @@ import type {
   ExecutionSession,
   Project,
   RepositoryConfig,
+  ReviewPackage,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -436,6 +437,82 @@ test("review-run route returns null when the ticket has no review history yet", 
     });
   } finally {
     await app.close();
+  }
+});
+
+test("workspace diff prefers the persisted review artifact for done tickets even when a worktree remains", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-done-diff-"));
+  const diffDir = join(tempDir, "review-packages");
+  const diffPath = join(diffDir, "ticket-9.patch");
+  const patch = [
+    "diff --git a/src/example.ts b/src/example.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/example.ts",
+    "+++ b/src/example.ts",
+    "@@ -1,2 +1,2 @@",
+    '-console.log("before");',
+    '+console.log("after");',
+  ].join("\n");
+  const reviewPackage: ReviewPackage = {
+    change_summary: "Merged and archived.",
+    commit_refs: ["abc123"],
+    created_at: "2026-04-02T00:05:00.000Z",
+    diff_ref: diffPath,
+    id: "review-package-9",
+    remaining_risks: [],
+    session_id: "session-9",
+    ticket_id: 9,
+    validation_results: [],
+  };
+
+  mkdirSync(diffDir, { recursive: true });
+  writeFileSync(diffPath, patch, "utf8");
+
+  const app = await createApp({
+    store: {
+      getReviewPackage(ticketId: number) {
+        return ticketId === 9 ? reviewPackage : null;
+      },
+      getSession(sessionId: string) {
+        return sessionId === "session-9"
+          ? createSession(join(tempDir, "ticket-worktree"))
+          : null;
+      },
+      getTicket(ticketId: number) {
+        return ticketId === 9 ? createTicket({ status: "done" }) : null;
+      },
+    } as never,
+    ticketWorkspaceService: {
+      getDiff() {
+        throw new Error(
+          "Live worktree diff should not be used for done tickets",
+        );
+      },
+    } as never,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/tickets/9/workspace/diff",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), {
+      workspace_diff: {
+        artifact_path: diffPath,
+        generated_at: reviewPackage.created_at,
+        patch,
+        source: "review_artifact",
+        target_branch: "main",
+        ticket_id: 9,
+        working_branch: "ticket-9",
+        worktree_path: null,
+      },
+    });
+  } finally {
+    await app.close();
+    rmSync(tempDir, { recursive: true, force: true });
   }
 });
 

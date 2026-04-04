@@ -145,6 +145,31 @@ export function registerTicketReadWorkspaceRoutes(
         return;
       }
 
+      const sendPersistedWorkspaceDiff = () => {
+        const reviewPackage = store.getReviewPackage(ticketId);
+        if (!reviewPackage) {
+          reply.code(409).send({ error: "Ticket has no diff available yet" });
+          return;
+        }
+
+        try {
+          return {
+            workspace_diff: readPersistedWorkspaceDiff(ticket, reviewPackage),
+          };
+        } catch (error) {
+          reply.code(409).send({
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unable to load the stored review diff",
+          });
+        }
+      };
+
+      if (ticket.status === "done") {
+        return sendPersistedWorkspaceDiff();
+      }
+
       if (ticket.session_id && ticket.working_branch) {
         const session = store.getSession(ticket.session_id);
         if (session?.worktree_path) {
@@ -163,24 +188,7 @@ export function registerTicketReadWorkspaceRoutes(
         }
       }
 
-      const reviewPackage = store.getReviewPackage(ticketId);
-      if (!reviewPackage) {
-        reply.code(409).send({ error: "Ticket has no diff available yet" });
-        return;
-      }
-
-      try {
-        return {
-          workspace_diff: readPersistedWorkspaceDiff(ticket, reviewPackage),
-        };
-      } catch (error) {
-        reply.code(409).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to load the stored review diff",
-        });
-      }
+      return sendPersistedWorkspaceDiff();
     },
   );
 
