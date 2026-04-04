@@ -249,6 +249,59 @@ test("TicketWorkspaceService starts and stops previews for ticket worktrees", as
   }
 });
 
+test("TicketWorkspaceService forwards nested npm args for dev:web previews", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-preview-dev-web-only-"),
+  );
+  const worktreePath = join(tempDir, "preview-app");
+  const eventHub = new EventHub();
+  const previewHarness = createPreviewRuntimeHarness();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+    previewRuntimeDependencies: previewHarness.previewRuntimeDependencies,
+  });
+
+  mkdirSync(worktreePath, { recursive: true });
+  writeFileSync(
+    join(worktreePath, "package.json"),
+    JSON.stringify(
+      {
+        name: "preview-app",
+        private: true,
+        type: "module",
+        scripts: {
+          "dev:web": "npm --workspace @walleyboard/web run dev",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  try {
+    const preview = await workspaceService.ensurePreview({
+      ticketId: 43,
+      worktreePath,
+    });
+
+    assert.equal(preview.state, "ready");
+    assert.equal(preview.preview_url, "http://127.0.0.1:4100");
+    assert.equal(
+      previewHarness.spawned[0]?.command,
+      "npm run dev:web -- -- --host 127.0.0.1 --port 4100",
+    );
+    assert.equal(
+      previewHarness.spawned[0]?.env.VITE_API_URL,
+      "http://127.0.0.1:4000",
+    );
+  } finally {
+    await workspaceService.disposeTicket(43);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("TicketWorkspaceService starts repository previews with a configured command", async () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-repository-preview-"),

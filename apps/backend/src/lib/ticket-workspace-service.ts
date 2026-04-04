@@ -684,7 +684,7 @@ export class TicketWorkspaceService {
         runtime.backendUrl = backendUrl;
 
         const frontend = this.#spawnPreviewProcess(runtime, {
-          command: `npm run dev:web -- --host 127.0.0.1 --port ${frontendPort}`,
+          command: `npm run dev:web -- -- --host 127.0.0.1 --port ${frontendPort}`,
           env: {
             HOST: "127.0.0.1",
             PORT: String(frontendPort),
@@ -727,7 +727,7 @@ export class TicketWorkspaceService {
         const previewUrl = `http://127.0.0.1:${frontendPort}`;
 
         const frontend = this.#spawnPreviewProcess(runtime, {
-          command: `npm run dev:web -- --host 127.0.0.1 --port ${frontendPort}`,
+          command: `npm run dev:web -- -- --host 127.0.0.1 --port ${frontendPort}`,
           env: {
             HOST: "127.0.0.1",
             PORT: String(frontendPort),

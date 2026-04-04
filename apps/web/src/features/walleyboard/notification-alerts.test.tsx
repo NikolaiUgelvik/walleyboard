@@ -767,7 +767,7 @@ test("hidden review baselines do not play the notification sound", async () => {
   const queryClient = createQueryClient();
   const root = createRoot(dom.mountNode);
   let currentActionItemKeys: string[] = [];
-  let currentVisibleActionItemKeys: string[] = [];
+  const currentVisibleActionItemKeys: string[] = [];
 
   function HiddenReviewBaselineHarness() {
     useInboxAlert({

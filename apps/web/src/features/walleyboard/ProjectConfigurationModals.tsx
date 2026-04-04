@@ -287,7 +287,7 @@ export function ProjectConfigurationModals({
               <Stack gap="sm">
                 <Textarea
                   label="Project preview start command"
-                  description="Runs from the board header preview action. The command receives HOST, PORT, and VITE_API_URL environment variables."
+                  description="Runs from the board header preview action. The command receives HOST, PORT, and VITE_API_URL environment variables. Nested npm scripts need their own -- before forwarded args."
                   placeholder="npm run dev -- --host $HOST --port $PORT"
                   value={controller.projectOptionsPreviewStartCommand}
                   onChange={(event) => {
