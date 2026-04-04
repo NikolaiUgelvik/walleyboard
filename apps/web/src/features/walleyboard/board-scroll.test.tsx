@@ -424,7 +424,7 @@ function createWalleyBoardController(): WalleyBoardController {
   } as unknown as WalleyBoardController;
 }
 
-test("board columns own vertical scrolling while the shell stays fixed", () => {
+test("board uses a shared vertical scroller while the shell stays fixed", () => {
   const controller = createWalleyBoardController();
   const markup = renderToStaticMarkup(
     <MantineProvider>
@@ -464,19 +464,16 @@ test("board columns own vertical scrolling while the shell stays fixed", () => {
   ]);
   assertRuleIncludes(desktopRules, ".board-scroller", [
     "overflow-x: auto",
-    "overflow-y: hidden",
+    "overflow-y: auto",
   ]);
   assertRuleIncludes(desktopRules, ".board-grid", [
-    "height: 100%",
     "min-height: 0",
     "align-items: stretch",
   ]);
-  assertRuleIncludes(desktopRules, ".board-column", [
-    "height: 100%",
-    "min-height: 0",
-    "overflow: hidden",
-  ]);
-  assertRuleIncludes(desktopRules, ".board-column-stack", ["overflow-y: auto"]);
+  assert.doesNotMatch(
+    desktopRules,
+    /\.board-column-stack\s*\{[^}]*overflow-y:\s*auto\s*;/,
+  );
   assert.match(
     desktopRules,
     /\.walleyboard-rail,\s*\.walleyboard-main,\s*\.walleyboard-detail\s*\{[^}]*min-height:\s*0\s*;/,
@@ -723,7 +720,7 @@ test("ready tickets expose an edit action in the overflow menu", async () => {
   }
 });
 
-test("inspector-open layout keeps the shell fixed and leaves vertical scrolling to interior panes", async () => {
+test("inspector-open layout keeps the shell fixed and leaves board scrolling to the shared board pane", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
   Object.assign(controller as Record<string, unknown>, {
@@ -754,10 +751,12 @@ test("inspector-open layout keeps the shell fixed and leaves vertical scrolling 
       ".walleyboard-layout--with-detail",
     );
     const detail = harness.mountNode.querySelector(".walleyboard-detail");
+    const boardScroller = harness.mountNode.querySelector(".board-scroller");
 
     assert.ok(shell, "Expected the board shell to render");
     assert.ok(layout, "Expected the inspector-open layout class to render");
     assert.ok(detail, "Expected the inspector detail pane to render");
+    assert.ok(boardScroller, "Expected the shared board scroller to render");
     assert.match(
       detail.textContent ?? "",
       /Ticket session/,
@@ -773,13 +772,18 @@ test("inspector-open layout keeps the shell fixed and leaves vertical scrolling 
       "auto",
       "Expected the detail pane to own its own vertical scrolling",
     );
+    assert.equal(
+      harness.window.getComputedStyle(boardScroller).overflowY,
+      "auto",
+      "Expected the board scroller to own the shared vertical scrolling",
+    );
 
     const columnStack = harness.mountNode.querySelector(".board-column-stack");
     assert.ok(columnStack, "Expected a board column stack to render");
-    assert.equal(
+    assert.notEqual(
       harness.window.getComputedStyle(columnStack).overflowY,
       "auto",
-      "Expected each board column stack to own its own vertical scrolling",
+      "Expected board column stacks to avoid independent vertical scrolling",
     );
   } finally {
     await act(async () => {
