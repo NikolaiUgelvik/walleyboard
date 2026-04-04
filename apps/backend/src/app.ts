@@ -21,6 +21,10 @@ import { sessionRoutes } from "./routes/sessions.js";
 import { ticketRoutes } from "./routes/tickets.js";
 import { websocketRoutes } from "./routes/ws.js";
 
+function shouldSkipStartupDockerCleanup(): boolean {
+  return process.env.WALLEYBOARD_SKIP_STARTUP_DOCKER_CLEANUP === "1";
+}
+
 export async function createApp() {
   const host = process.env.HOST ?? "127.0.0.1";
   const port = Number.parseInt(process.env.PORT ?? "4000", 10);
@@ -66,17 +70,19 @@ export async function createApp() {
   githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();
 
-  try {
-    dockerRuntime.cleanupStaleContainers({
-      preserveSessionIds: recovery.activeSessionIds,
-    });
-  } catch (error) {
-    app.log.warn(
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      "Unable to clean up stale Docker containers during backend startup",
-    );
+  if (!shouldSkipStartupDockerCleanup()) {
+    try {
+      dockerRuntime.cleanupStaleContainers({
+        preserveSessionIds: recovery.activeSessionIds,
+      });
+    } catch (error) {
+      app.log.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Unable to clean up stale Docker containers during backend startup",
+      );
+    }
   }
 
   if (recovery.sessions.length > 0) {
