@@ -380,11 +380,12 @@ export function BoardView({
                   ? controller.selectedProject.name
                   : "Select a project"}
               </Title>
-              <Text size="sm" c="dimmed" maw={820}>
-                {controller.selectedProject
-                  ? `${controller.selectedRepository?.name ?? "Repository pending"} • ${controller.selectedRepository?.validation_profile.length ?? 0} validation command(s)`
-                  : "Choose a project from the left rail to bring its drafts, tickets, and sessions into the board."}
-              </Text>
+              {controller.selectedProject ? null : (
+                <Text size="sm" c="dimmed" maw={820}>
+                  Choose a project from the left rail to bring its drafts,
+                  tickets, and sessions into the board.
+                </Text>
+              )}
             </Stack>
             <Stack gap="xs" align="flex-end">
               <ProjectWorkspaceActions controller={controller} />

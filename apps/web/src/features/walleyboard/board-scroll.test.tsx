@@ -806,7 +806,7 @@ test("inbox tile opens a floating overlay and selects inbox items", async () => 
   }
 });
 
-test("board header keeps the selected project and repository summary without status badges", () => {
+test("board header keeps the selected project name without repository summary or status badges", () => {
   const controller = createWalleyBoardController();
   const markup = renderToStaticMarkup(
     <MantineProvider>
@@ -815,7 +815,7 @@ test("board header keeps the selected project and repository summary without sta
   );
 
   assert.match(markup, />Project One</);
-  assert.match(markup, />walleyboard • 0 validation command\(s\)</);
+  assert.doesNotMatch(markup, />walleyboard • 0 validation command\(s\)</);
   assert.doesNotMatch(markup, />backend</);
   assert.doesNotMatch(markup, />0 running</);
   assert.doesNotMatch(markup, />0 queued</);
