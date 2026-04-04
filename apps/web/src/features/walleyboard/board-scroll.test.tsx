@@ -185,16 +185,26 @@ function findBlockRange(
   throw new Error(`Missing closing brace for ${marker}`);
 }
 
-function installDesktopStylesheet(document: Document): () => void {
-  const desktopMarker = "@media (min-width: 901px)";
-  const { blockEnd, markerIndex } = findBlockRange(stylesheet, desktopMarker);
-  const desktopBlock = extractBlock(stylesheet, desktopMarker);
-  const desktopStylesheet =
+function installMediaStylesheet(
+  document: Document,
+  marker: string,
+): () => void {
+  const { blockEnd, markerIndex } = findBlockRange(stylesheet, marker);
+  const mediaBlock = extractBlock(stylesheet, marker);
+  const mediaStylesheet =
     stylesheet.slice(0, markerIndex) +
-    desktopBlock +
+    mediaBlock +
     stylesheet.slice(blockEnd + 1);
 
-  return installStylesheet(document, desktopStylesheet);
+  return installStylesheet(document, mediaStylesheet);
+}
+
+function installDesktopStylesheet(document: Document): () => void {
+  return installMediaStylesheet(document, "@media (min-width: 901px)");
+}
+
+function installNarrowStylesheet(document: Document): () => void {
+  return installMediaStylesheet(document, "@media (max-width: 900px)");
 }
 
 function assertRuleIncludes(
@@ -481,6 +491,47 @@ test("board uses a shared vertical scroller while the shell stays fixed", () => 
   assert.match(
     desktopRules,
     /\.walleyboard-rail,\s*\.walleyboard-detail\s*\{[^}]*overflow-y:\s*auto\s*;/,
+  );
+});
+
+test("narrow layout keeps the board region constrained to the shared scroller", () => {
+  const narrowRules = extractBlock(stylesheet, "@media (max-width: 900px)");
+
+  assertRuleIncludes(stylesheet, ".walleyboard-shell", [
+    "height: 100dvh",
+    "overflow-x: hidden",
+    "overflow-y: hidden",
+  ]);
+  assertRuleIncludes(stylesheet, ".walleyboard-layout", [
+    "height: 100%",
+    "min-height: 100%",
+  ]);
+  assertRuleIncludes(stylesheet, ".walleyboard-main", [
+    "display: flex",
+    "flex-direction: column",
+  ]);
+  assertRuleIncludes(stylesheet, ".workbench-shell", [
+    "flex: 1",
+    "min-height: 0",
+  ]);
+  assertRuleIncludes(stylesheet, ".board-scroller", [
+    "flex: 1",
+    "min-height: 0",
+    "overflow-x: auto",
+    "overflow-y: auto",
+  ]);
+  assertRuleIncludes(stylesheet, ".board-grid", [
+    "min-height: 0",
+    "align-items: stretch",
+  ]);
+  assertRuleIncludes(narrowRules, ".walleyboard-layout", [
+    "grid-template-columns: 1fr",
+    "grid-template-rows: auto minmax(0, 1fr) auto",
+  ]);
+  assertRuleIncludes(narrowRules, ".board-column", ["min-height: auto"]);
+  assert.doesNotMatch(
+    stylesheet,
+    /\.board-column-stack\s*\{[^}]*overflow-y:\s*auto\s*;/,
   );
 });
 
@@ -780,6 +831,71 @@ test("inspector-open layout keeps the shell fixed and leaves board scrolling to 
 
     const columnStack = harness.mountNode.querySelector(".board-column-stack");
     assert.ok(columnStack, "Expected a board column stack to render");
+    assert.notEqual(
+      harness.window.getComputedStyle(columnStack).overflowY,
+      "auto",
+      "Expected board column stacks to avoid independent vertical scrolling",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    cleanupStylesheet();
+    harness.cleanup();
+  }
+});
+
+test("narrow inspector-open layout keeps board scrolling on the shared board pane", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    inspectorState: { kind: "session" },
+    inspectorVisible: true,
+  });
+  const cleanupStylesheet = installNarrowStylesheet(harness.window.document);
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout walleyboard-layout--with-detail">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const shell = harness.mountNode.querySelector(".walleyboard-shell");
+    const boardScroller = harness.mountNode.querySelector(".board-scroller");
+    const detail = harness.mountNode.querySelector(".walleyboard-detail");
+    const columnStack = harness.mountNode.querySelector(".board-column-stack");
+
+    assert.ok(shell, "Expected the board shell to render");
+    assert.ok(boardScroller, "Expected the shared board scroller to render");
+    assert.ok(detail, "Expected the inspector detail pane to render");
+    assert.ok(columnStack, "Expected a board column stack to render");
+    assert.equal(
+      harness.window.getComputedStyle(shell).overflowY,
+      "hidden",
+      "Expected the board shell to stay fixed on narrow layouts",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(detail).overflowY,
+      "auto",
+      "Expected the detail pane to keep internal vertical scrolling",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(boardScroller).overflowY,
+      "auto",
+      "Expected the board scroller to own the shared vertical scrolling",
+    );
     assert.notEqual(
       harness.window.getComputedStyle(columnStack).overflowY,
       "auto",
