@@ -424,6 +424,187 @@ test("an unresolved automatic AI review does not block alerts for unrelated acti
   }
 });
 
+test("review-run hydration does not replay a notification for already-actionable human review", async () => {
+  AudioStub.playCallCount = 0;
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  const originalFetch = globalThis.fetch;
+  let latestVisibleItemKeys: string[] = [];
+
+  globalThis.fetch = (async () => {
+    throw new Error("Unexpected network request during notification test");
+  }) as typeof fetch;
+
+  const autoReviewProject = createProject({
+    id: "project-auto",
+    slug: "project-auto",
+    name: "Automatic Review Project",
+    automatic_agent_review: true,
+  });
+  const autoReviewTicket = createTicket({
+    id: 61,
+    project: autoReviewProject.id,
+    repo: "repo-auto",
+    session_id: "session-61",
+    title: "Do not replay when review-run hydration finishes",
+  });
+  if (autoReviewTicket.session_id === null) {
+    throw new Error("Expected auto-review fixture to include a session id");
+  }
+  const autoReviewSessionId = autoReviewTicket.session_id;
+  const sessionsById = new Map([
+    [
+      autoReviewSessionId,
+      {
+        agent_controls_worktree: false,
+        session: createSession({
+          id: autoReviewSessionId,
+          project_id: autoReviewProject.id,
+          repo_id: autoReviewTicket.repo,
+          ticket_id: autoReviewTicket.id,
+          last_summary:
+            "Implementation finished and is waiting for human review.",
+        }),
+      },
+    ],
+  ]);
+
+  queryClient.setQueryData(
+    ["tickets", autoReviewTicket.id, "review-run"],
+    null,
+  );
+
+  function NotificationHydrationHarness() {
+    const { ticketAiReviewActiveById, ticketAiReviewResolvedById } =
+      useTicketAiReviewStatus([autoReviewTicket], [autoReviewProject]);
+    const { items, notificationKeys } = deriveInboxState({
+      drafts: [],
+      projects: [autoReviewProject],
+      tickets: [autoReviewTicket],
+      sessionsById,
+      ticketAiReviewActiveById,
+      ticketAiReviewResolvedById,
+    });
+
+    latestVisibleItemKeys = items.map((item) => item.key);
+    useInboxAlert({
+      actionItemKeys: notificationKeys,
+      inboxQueriesSettled: true,
+    });
+
+    return null;
+  }
+
+  async function renderHarness(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <NotificationHydrationHarness />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+  }
+
+  try {
+    await renderHarness();
+
+    assert.deepEqual(latestVisibleItemKeys, []);
+    assert.equal(AudioStub.playCallCount, 0);
+
+    queryClient.setQueryData(["tickets", autoReviewTicket.id, "review-run"], {
+      review_run: {
+        id: "review-run-61",
+        ticket_id: autoReviewTicket.id,
+        review_package_id: "review-package-61",
+        implementation_session_id: autoReviewSessionId,
+        status: "completed",
+        adapter_session_ref: null,
+        prompt: "Review ticket #61.",
+        report: null,
+        failure_message: null,
+        created_at: "2026-04-03T00:00:00.000Z",
+        updated_at: "2026-04-03T00:02:00.000Z",
+        completed_at: "2026-04-03T00:02:00.000Z",
+      },
+    });
+    await renderHarness();
+
+    assert.deepEqual(latestVisibleItemKeys, ["review-61"]);
+    assert.equal(AudioStub.playCallCount, 0);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    globalThis.fetch = originalFetch;
+    queryClient.clear();
+    dom.cleanup();
+  }
+});
+
+test("saving an already-actionable draft does not replay the notification sound", async () => {
+  AudioStub.playCallCount = 0;
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  let currentDraft = createDraft({
+    id: "draft-71",
+    title_draft: "Keep the existing notification instance",
+    wizard_status: "awaiting_confirmation",
+    updated_at: "2026-04-03T00:06:00.000Z",
+  });
+
+  function DraftSaveHarness() {
+    const { notificationKeys } = deriveInboxState({
+      drafts: [currentDraft],
+      projects: [createProject()],
+      tickets: [],
+      sessionsById: new Map(),
+    });
+
+    useInboxAlert({
+      actionItemKeys: notificationKeys,
+      inboxQueriesSettled: true,
+    });
+
+    return null;
+  }
+
+  async function renderHarness(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <DraftSaveHarness />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+  }
+
+  try {
+    await renderHarness();
+    assert.equal(AudioStub.playCallCount, 0);
+
+    currentDraft = {
+      ...currentDraft,
+      description_draft: "Edited while still awaiting confirmation.",
+      updated_at: "2026-04-03T00:10:00.000Z",
+    };
+    await renderHarness();
+
+    assert.equal(AudioStub.playCallCount, 0);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    queryClient.clear();
+    dom.cleanup();
+  }
+});
+
 test("start-ticket silencing suppresses the next notification instance for that ticket", async () => {
   AudioStub.playCallCount = 0;
   const dom = installDom();

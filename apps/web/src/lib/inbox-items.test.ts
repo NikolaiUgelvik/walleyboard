@@ -9,7 +9,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
-import { deriveInboxItems } from "./inbox-items.js";
+import { deriveInboxItems, deriveInboxState } from "./inbox-items.js";
 
 function createProject(overrides: Partial<Project> = {}): Project {
   const project: Project = {
@@ -441,6 +441,40 @@ test("surfaces refined drafts in the inbox with a stable draft key", () => {
   ]);
 });
 
+test("keeps actionable draft notification identity stable across ordinary saves", () => {
+  const firstState = deriveInboxState({
+    drafts: [
+      createDraft({
+        id: "draft-42",
+        title_draft: "Keep notification identity stable",
+        wizard_status: "awaiting_confirmation",
+        updated_at: "2026-04-01T12:00:00.000Z",
+      }),
+    ],
+    projects: [createProject()],
+    tickets: [],
+    sessionsById: new Map(),
+    ticketAiReviewActiveById: new Map(),
+  });
+  const secondState = deriveInboxState({
+    drafts: [
+      createDraft({
+        id: "draft-42",
+        title_draft: "Keep notification identity stable",
+        wizard_status: "awaiting_confirmation",
+        updated_at: "2026-04-01T12:05:00.000Z",
+      }),
+    ],
+    projects: [createProject()],
+    tickets: [],
+    sessionsById: new Map(),
+    ticketAiReviewActiveById: new Map(),
+  });
+
+  assert.deepEqual(firstState.notificationKeys, ["draft-draft-42"]);
+  assert.deepEqual(secondState.notificationKeys, ["draft-draft-42"]);
+});
+
 test("hides review tickets while an AI review session is still running", () => {
   const items = deriveInboxItems({
     drafts: [],
@@ -503,6 +537,42 @@ test("keeps review tickets out of the inbox until AI review status resolves", ()
   });
 
   assert.deepEqual(items, []);
+});
+
+test("seeds the notification baseline for unresolved review tickets that are already waiting on a human", () => {
+  const state = deriveInboxState({
+    drafts: [],
+    projects: [createProject()],
+    tickets: [
+      createTicket({
+        id: 26,
+        status: "review",
+        session_id: "session-review-pending",
+        title: "Wait for AI review status before showing this",
+      }),
+    ],
+    sessionsById: new Map([
+      [
+        "session-review-pending",
+        createSessionSummary({
+          session: createSession({
+            id: "session-review-pending",
+            ticket_id: 26,
+            status: "completed",
+            last_summary:
+              "Implementation completed and AI review lookup is pending.",
+          }),
+        }),
+      ],
+    ]),
+    ticketAiReviewActiveById: new Map([[26, false]]),
+    ticketAiReviewResolvedById: new Map([[26, false]]),
+  });
+
+  assert.deepEqual(state.items, []);
+  assert.deepEqual(state.notificationKeys, [
+    "review-26:session-review-pending:attempt-1",
+  ]);
 });
 
 test("shows tickets in the inbox again after AI review completes when inbox rules still match", () => {

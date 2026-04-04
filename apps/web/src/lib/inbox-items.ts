@@ -31,6 +31,12 @@ type DerivedInboxItem = InboxItem & {
   updatedAt: string;
 };
 
+type DerivedNotificationEntry = {
+  key: string;
+  notificationKey: string;
+  updatedAt: string;
+};
+
 function hasActiveLinkedPullRequest(
   linkedPr: TicketFrontmatter["linked_pr"],
 ): boolean {
@@ -78,6 +84,7 @@ export function deriveInboxState(input: {
   const ticketAiReviewResolvedById =
     input.ticketAiReviewResolvedById ?? new Map();
   const items = [] as DerivedInboxItem[];
+  const notificationEntries = [] as DerivedNotificationEntry[];
 
   for (const draft of input.drafts) {
     if (draft.wizard_status !== "awaiting_confirmation") {
@@ -86,9 +93,10 @@ export function deriveInboxState(input: {
 
     const projectName =
       projectNameById.get(draft.project_id) ?? "Unknown project";
+    const notificationKey = `draft-${draft.id}`;
     items.push({
       key: `draft-${draft.id}`,
-      notificationKey: `draft-${draft.id}:${draft.updated_at}`,
+      notificationKey,
       color: "blue",
       title: "Draft ready to review",
       message: `Review the refined draft for **${draft.title_draft}**.`,
@@ -99,13 +107,14 @@ export function deriveInboxState(input: {
       projectName,
       updatedAt: draft.updated_at,
     });
+    notificationEntries.push({
+      key: `draft-${draft.id}`,
+      notificationKey,
+      updatedAt: draft.updated_at,
+    });
   }
 
   for (const ticket of input.tickets) {
-    if (ticketAiReviewActiveById.get(ticket.id) === true) {
-      continue;
-    }
-
     const projectName =
       projectNameById.get(ticket.project) ?? "Unknown project";
     const sessionSummary =
@@ -115,27 +124,50 @@ export function deriveInboxState(input: {
     const ticketAiReviewResolved =
       ticketAiReviewResolvedById.get(ticket.id) === true;
     const session = sessionSummary?.session ?? null;
-
-    if (
+    const reviewNotificationKey =
       ticket.status === "review" &&
       session &&
       ticket.session_id &&
-      ticketAiReviewResolved &&
       !hasActiveLinkedPullRequest(ticket.linked_pr)
-    ) {
+        ? `review-${ticket.id}:${session.id}:${session.current_attempt_id ?? "none"}`
+        : null;
+
+    if (reviewNotificationKey !== null && session !== null) {
+      if (ticketAiReviewActiveById.get(ticket.id) === true) {
+        continue;
+      }
+
+      if (!ticketAiReviewResolved) {
+        notificationEntries.push({
+          key: `review-${ticket.id}`,
+          notificationKey: reviewNotificationKey,
+          updatedAt: ticket.updated_at,
+        });
+        continue;
+      }
+
       items.push({
         key: `review-${ticket.id}`,
-        notificationKey: `review-${ticket.id}:${session.id}:${session.current_attempt_id ?? "none"}`,
+        notificationKey: reviewNotificationKey,
         color: "blue",
         title: `Review ready for ticket #${ticket.id}`,
         message: `${ticket.title} is ready for review and can be merged or sent back for changes.`,
         targetKind: "session",
-        targetId: ticket.session_id,
+        targetId: session.id,
         actionLabel: "Open Review",
         projectId: ticket.project,
         projectName,
         updatedAt: ticket.updated_at,
       });
+      notificationEntries.push({
+        key: `review-${ticket.id}`,
+        notificationKey: reviewNotificationKey,
+        updatedAt: ticket.updated_at,
+      });
+      continue;
+    }
+
+    if (ticketAiReviewActiveById.get(ticket.id) === true) {
       continue;
     }
 
@@ -180,21 +212,38 @@ export function deriveInboxState(input: {
         projectName,
         updatedAt: ticket.updated_at,
       });
+      notificationEntries.push({
+        key: `session-${ticket.id}`,
+        notificationKey:
+          `session-${ticket.id}:` +
+          `${session.id}:` +
+          `${session.current_attempt_id ?? "none"}:` +
+          `${session.status}:` +
+          `${session.plan_status}:` +
+          `${session.latest_requested_change_note_id ?? "none"}`,
+        updatedAt: ticket.updated_at,
+      });
     }
   }
 
-  items.sort((left, right) => {
+  const sortByUpdatedAtThenKey = (
+    left: { key: string; updatedAt: string },
+    right: { key: string; updatedAt: string },
+  ): number => {
     const updatedAtComparison = right.updatedAt.localeCompare(left.updatedAt);
     return updatedAtComparison !== 0
       ? updatedAtComparison
       : right.key.localeCompare(left.key);
-  });
+  };
+
+  items.sort(sortByUpdatedAtThenKey);
+  notificationEntries.sort(sortByUpdatedAtThenKey);
 
   return {
     items: items.map(
       ({ notificationKey: _notificationKey, updatedAt: _updatedAt, ...item }) =>
         item,
     ),
-    notificationKeys: items.map((item) => item.notificationKey),
+    notificationKeys: notificationEntries.map((item) => item.notificationKey),
   };
 }
