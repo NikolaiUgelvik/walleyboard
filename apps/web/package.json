@@ -12,6 +12,8 @@
     "format": "biome format --write src vite.config.ts"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@mantine/core": "^9.0.0",
     "@mantine/hooks": "^9.0.0",
     "@pierre/diffs": "^1.1.10",
