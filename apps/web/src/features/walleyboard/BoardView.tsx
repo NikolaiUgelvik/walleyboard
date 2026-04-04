@@ -49,6 +49,18 @@ import {
 } from "./shared-utils.js";
 import type { WalleyBoardController } from "./use-walleyboard-controller.js";
 
+function resolveTicketSession(
+  controller: WalleyBoardController,
+  ticket: TicketFrontmatter,
+): ExecutionSession | null {
+  return ticket.session_id
+    ? (controller.sessionById.get(ticket.session_id) ??
+        (controller.session?.id === ticket.session_id
+          ? controller.session
+          : null))
+    : null;
+}
+
 function TicketMenu({
   controller,
   project,
@@ -260,12 +272,7 @@ export function TicketWorkspaceActions({
   controller: WalleyBoardController;
   ticket: TicketFrontmatter;
 }): React.JSX.Element {
-  const ticketSession = ticket.session_id
-    ? (controller.sessionById.get(ticket.session_id) ??
-      (controller.session?.id === ticket.session_id
-        ? controller.session
-        : null))
-    : null;
+  const ticketSession = resolveTicketSession(controller, ticket);
   const ticketSessionSummaryState = ticket.session_id
     ? (controller.sessionSummaryStateById.get(ticket.session_id) ?? null)
     : null;
@@ -885,12 +892,10 @@ export function BoardView({
                             <Box className="board-empty">{meta.empty}</Box>
                           ) : (
                             controller.groupedTickets[column].map((ticket) => {
-                              const ticketSession =
-                                ticket.session_id !== null
-                                  ? (controller.sessionById.get(
-                                      ticket.session_id,
-                                    ) ?? null)
-                                  : null;
+                              const ticketSession = resolveTicketSession(
+                                controller,
+                                ticket,
+                              );
                               const isSelected =
                                 ticket.session_id !== null &&
                                 ticket.session_id ===

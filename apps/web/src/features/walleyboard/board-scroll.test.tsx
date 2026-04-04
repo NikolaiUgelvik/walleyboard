@@ -1145,6 +1145,93 @@ test("ticket cards place workspace controls under metadata and move statuses int
   assert.ok(diffSummaryIndex < descriptionIndex);
 });
 
+test("ticket cards keep the session status badge when only controller.session is populated", () => {
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    id: 43,
+    description: "Show the running badge while the session map is still empty.",
+    session_id: "session-43",
+    status: "in_progress",
+    title: "Keep the session status badge visible",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [ticket],
+      review: [],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    session: {
+      adapter_session_ref: null,
+      agent_adapter: "codex",
+      completed_at: null,
+      current_attempt_id: null,
+      id: ticket.session_id,
+      last_heartbeat_at: "2026-04-03T00:00:00.000Z",
+      last_summary: null,
+      latest_requested_change_note_id: null,
+      latest_review_package_id: null,
+      plan_status: "not_requested",
+      plan_summary: null,
+      planning_enabled: false,
+      project_id: ticket.project,
+      queue_entered_at: null,
+      repo_id: ticket.repo,
+      started_at: "2026-04-03T00:00:00.000Z",
+      status: "running",
+      ticket_id: ticket.id,
+      worktree_path: "/tmp/worktree-43",
+    },
+    sessionById: new Map(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketDiffLineSummaryByTicketId: new Map([
+      [ticket.id, { additions: 5, deletions: 2, files: 1 }],
+    ]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  const actionsIndex = markup.indexOf("ticket-workspace-action-group");
+  const sessionStatusIndex = markup.indexOf("Running");
+  const diffSummaryIndex = markup.indexOf("1 file changed");
+  const descriptionIndex = markup.indexOf(
+    "Show the running badge while the session map is still empty.",
+  );
+
+  assert.ok(actionsIndex !== -1);
+  assert.ok(sessionStatusIndex !== -1);
+  assert.ok(diffSummaryIndex !== -1);
+  assert.ok(descriptionIndex !== -1);
+  assert.ok(actionsIndex < sessionStatusIndex);
+  assert.ok(sessionStatusIndex < descriptionIndex);
+  assert.ok(diffSummaryIndex < descriptionIndex);
+});
+
 test("ticket cards pin the overflow trigger in a dedicated header slot during AI review", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
