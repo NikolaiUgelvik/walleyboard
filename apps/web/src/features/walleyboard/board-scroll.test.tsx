@@ -2133,3 +2133,141 @@ test("board scroller preserves its scroll position across rerenders with uneven 
     harness.cleanup();
   }
 });
+
+test("board columns do not pin content with inline min-height", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const cleanupStylesheet = installDesktopStylesheet(harness.window.document);
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const columnContents = [
+      ...harness.mountNode.querySelectorAll<HTMLElement>(
+        ".board-column-content",
+      ),
+    ];
+
+    assert.ok(columnContents.length > 0, "Expected board columns to render");
+    assert.ok(
+      columnContents.every(
+        (columnContent) => columnContent.style.minHeight === "",
+      ),
+      "Expected board columns to rely on natural content height instead of inline min-height pinning",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    cleanupStylesheet();
+    harness.cleanup();
+  }
+});
+
+test("board scroller ignores tiny column overflow deltas", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const cleanupStylesheet = installDesktopStylesheet(harness.window.document);
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const boardScroller =
+      harness.mountNode.querySelector<HTMLElement>(".board-scroller");
+    const boardScrollInner = harness.mountNode.querySelector<HTMLElement>(
+      ".board-scroll-inner",
+    );
+    const columnViewports = [
+      ...harness.mountNode.querySelectorAll<HTMLElement>(
+        ".mantine-ScrollArea-viewport",
+      ),
+    ];
+
+    assert.ok(boardScroller, "Expected the board scroller to render");
+    assert.ok(boardScrollInner, "Expected the board scroll inner to render");
+    assert.equal(
+      columnViewports.length,
+      boardColumns.length,
+      "Expected a viewport for each board column",
+    );
+
+    Object.defineProperty(boardScroller, "clientHeight", {
+      configurable: true,
+      value: 316,
+    });
+    for (const [index, viewport] of columnViewports.entries()) {
+      Object.defineProperty(viewport, "clientHeight", {
+        configurable: true,
+        value: 300,
+      });
+      Object.defineProperty(viewport, "scrollHeight", {
+        configurable: true,
+        value: index === 0 || index === columnViewports.length - 1 ? 303 : 300,
+      });
+    }
+
+    Object.assign(controller as Record<string, unknown>, {
+      visibleDrafts: [
+        ...controller.visibleDrafts,
+        createDraft("draft-4", "Trigger a board metric refresh"),
+      ],
+    });
+
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <div className="walleyboard-shell">
+            <div className="walleyboard-layout">
+              <ProjectRail controller={controller} />
+              <BoardView controller={controller} />
+              <InspectorPane controller={controller} />
+            </div>
+          </div>
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      boardScrollInner.style.height,
+      "300px",
+      "Expected tiny layout rounding deltas to avoid creating shared-scroll overflow",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    cleanupStylesheet();
+    harness.cleanup();
+  }
+});

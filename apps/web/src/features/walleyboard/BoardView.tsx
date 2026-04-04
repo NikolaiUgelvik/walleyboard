@@ -224,13 +224,11 @@ function TicketMenu({
 function BoardColumnScrollArea({
   children,
   columnIndex,
-  contentMinHeight,
   onClick,
   registerViewport,
 }: {
   children: React.ReactNode;
   columnIndex: number;
-  contentMinHeight?: number;
   onClick?: React.MouseEventHandler<HTMLDivElement>;
   registerViewport: (
     columnIndex: number,
@@ -257,15 +255,7 @@ function BoardColumnScrollArea({
       }}
       viewportRef={handleViewportRef}
     >
-      <Stack
-        className="board-column-content"
-        gap="xs"
-        style={
-          contentMinHeight && contentMinHeight > 0
-            ? { minHeight: contentMinHeight }
-            : undefined
-        }
-      >
+      <Stack className="board-column-content" gap="xs">
         {children}
       </Stack>
     </ScrollArea>
@@ -459,7 +449,6 @@ export function BoardView({
   ].join("|");
   const columnViewportRefs = useRef<Array<HTMLDivElement | null>>([]);
   const boardScrollerRef = useRef<HTMLDivElement | null>(null);
-  const [columnContentMinHeight, setColumnContentMinHeight] = useState(0);
   const [boardScrollContentHeight, setBoardScrollContentHeight] = useState(0);
   const [boardViewportHeight, setBoardViewportHeight] = useState(0);
 
@@ -486,15 +475,13 @@ export function BoardView({
     const viewports = columnViewportRefs.current.filter(
       (viewport): viewport is HTMLDivElement => viewport !== null,
     );
-    const tallestColumnContentHeight = viewports.reduce(
-      (currentMax, viewport) => Math.max(currentMax, viewport.scrollHeight),
-      0,
-    );
-    const maxColumnScrollTop = viewports.reduce(
-      (currentMax, viewport) =>
-        Math.max(currentMax, viewport.scrollHeight - viewport.clientHeight),
-      0,
-    );
+    const maxColumnScrollTop = viewports.reduce((currentMax, viewport) => {
+      const viewportOverflow = viewport.scrollHeight - viewport.clientHeight;
+      const normalizedViewportOverflow =
+        viewportOverflow > 4 ? viewportOverflow : 0;
+
+      return Math.max(currentMax, normalizedViewportOverflow);
+    }, 0);
     const scrollerStyles = window.getComputedStyle(boardScroller);
     const scrollerPaddingTop = Number.parseFloat(scrollerStyles.paddingTop);
     const scrollerPaddingBottom = Number.parseFloat(
@@ -519,11 +506,6 @@ export function BoardView({
       scrollerViewportHeight + maxColumnScrollTop,
     );
 
-    setColumnContentMinHeight((currentHeight) =>
-      currentHeight === tallestColumnContentHeight
-        ? currentHeight
-        : tallestColumnContentHeight,
-    );
     setBoardScrollContentHeight((currentHeight) =>
       currentHeight === nextBoardScrollContentHeight
         ? currentHeight
@@ -824,7 +806,6 @@ export function BoardView({
 
                         <BoardColumnScrollArea
                           columnIndex={columnIndex}
-                          contentMinHeight={columnContentMinHeight}
                           onClick={controller.hideInspector}
                           registerViewport={registerColumnViewport}
                         >
