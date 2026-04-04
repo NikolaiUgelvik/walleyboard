@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconPlayerPlay,
+  IconPlayerStop,
+} from "@tabler/icons-react";
 import React, {
   isValidElement,
   type ReactElement,
@@ -545,7 +549,7 @@ test("ticket workspace activity action opens the activity modal from the card", 
   assert.deepEqual(openCalls, [{ kind: "activity", ticketId: ticket.id }]);
 });
 
-test("project workspace actions surface repository preview errors and switch labels", () => {
+test("project workspace actions surface repository preview errors inline and switch labels", () => {
   const { controller } = createController({
     repositoryPreview: {
       repository_id: "repo-1",
@@ -569,7 +573,18 @@ test("project workspace actions surface repository preview errors and switch lab
   );
 
   assert.ok(previewAction);
-  assert.match(
+  assert.equal(
+    (previewAction.props as { title?: string }).title,
+    "Preview is running, but the browser blocked opening a new tab.",
+  );
+  assert.equal(
+    isValidElement(
+      (previewAction.props as { leftSection?: ReactNode }).leftSection,
+    ) &&
+      (previewAction.props as { leftSection: ReactElement }).leftSection.type,
+    IconAlertCircle,
+  );
+  assert.doesNotMatch(
     collectText(tree),
     /Preview is running, but the browser blocked opening a new tab\./,
   );

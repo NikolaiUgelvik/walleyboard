@@ -388,6 +388,31 @@ body {
   padding: 18px 20px;
 }
 
+.workbench-header-row,
+.workbench-header-title,
+.workbench-header-controls,
+.project-workspace-actions,
+.project-workspace-action-group {
+  min-width: 0;
+}
+
+.workbench-header-row--selected {
+  gap: 12px;
+}
+
+.workbench-header-title {
+  flex: 1;
+}
+
+.workbench-header-controls {
+  flex-shrink: 0;
+}
+
+.project-workspace-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+
 .workbench-toolbar {
   border-radius: 16px;
   padding: 12px 14px;
@@ -1105,6 +1130,36 @@ body {
   .workbench-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .workbench-header {
+    padding: 16px;
+  }
+
+  .workbench-header-row--selected {
+    gap: 8px;
+  }
+
+  .workbench-header-controls {
+    gap: 6px;
+  }
+
+  .project-workspace-action-button {
+    width: 36px;
+    min-width: 36px;
+    padding-inline: 0;
+  }
+
+  .project-workspace-action-button .mantine-Button-inner {
+    justify-content: center;
+  }
+
+  .project-workspace-action-button .mantine-Button-section {
+    margin-inline: 0;
+  }
+
+  .project-workspace-action-label {
+    display: none;
   }
 
   .toolbar-group {

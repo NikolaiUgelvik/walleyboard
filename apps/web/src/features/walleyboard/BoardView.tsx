@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import {
   IconActivityHeartbeat,
+  IconAlertCircle,
   IconBrowser,
   IconFileDiff,
   IconPlayerPlay,
@@ -387,46 +388,48 @@ export function ProjectWorkspaceActions({
   const previewRunning = preview?.state === "ready";
   const previewBusy =
     preview?.state === "starting" || controller.repositoryPreviewActionPending;
+  const previewError =
+    controller.repositoryPreviewActionError ?? preview?.error ?? null;
   const previewLabel = previewRunning ? "Turn off dev server" : "Preview";
 
   return (
-    <Stack gap={6} align="flex-end">
-      <Button.Group>
+    <Box className="project-workspace-actions">
+      <Button.Group className="project-workspace-action-group">
         <Button
           aria-label={previewLabel}
-          className={projectAccentButtonClassName("light")}
+          className={`${projectAccentButtonClassName("light")} project-workspace-action-button`}
           disabled={previewBusy}
           leftSection={
-            previewBusy ? <Loader size={14} /> : <IconBrowser size={16} />
+            previewBusy ? (
+              <Loader size={14} />
+            ) : previewError ? (
+              <IconAlertCircle size={16} />
+            ) : (
+              <IconBrowser size={16} />
+            )
           }
           size="compact-sm"
+          title={previewError ?? undefined}
           variant="light"
           onClick={controller.handleSelectedRepositoryPreviewAction}
         >
-          {previewRunning ? "Stop Preview" : "Preview"}
+          <span className="project-workspace-action-label">
+            {previewRunning ? "Stop Preview" : "Preview"}
+          </span>
         </Button>
         <Button
           aria-label="Open project terminal"
-          className={projectAccentButtonClassName("light")}
+          className={`${projectAccentButtonClassName("light")} project-workspace-action-button`}
           disabled={controller.repositoryTerminalPending}
           leftSection={<IconTerminal2 size={16} />}
           size="compact-sm"
           variant="light"
           onClick={controller.openSelectedRepositoryWorkspaceTerminal}
         >
-          Terminal
+          <span className="project-workspace-action-label">Terminal</span>
         </Button>
       </Button.Group>
-      {controller.repositoryPreviewActionError ? (
-        <Text size="sm" c="red">
-          {controller.repositoryPreviewActionError}
-        </Text>
-      ) : preview?.error ? (
-        <Text size="sm" c="red">
-          {preview.error}
-        </Text>
-      ) : null}
-    </Stack>
+    </Box>
   );
 }
 
@@ -576,12 +579,12 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
         <Box className="workbench-header">
           {controller.selectedProject ? (
             <Group
+              className="workbench-header-row workbench-header-row--selected"
               justify="space-between"
               align="center"
               wrap="nowrap"
-              style={{ minWidth: 0 }}
             >
-              <Box style={{ flex: 1, minWidth: 0 }}>
+              <Box className="workbench-header-title">
                 <Title
                   order={1}
                   style={{
@@ -594,17 +597,22 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                   {controller.selectedProject.name}
                 </Title>
               </Box>
-              <Group gap="xs" align="center" wrap="nowrap">
+              <Group
+                className="workbench-header-controls"
+                gap="xs"
+                align="center"
+                wrap="nowrap"
+              >
                 <ColorSchemeControl />
                 <ProjectWorkspaceActions controller={controller} />
               </Group>
             </Group>
           ) : (
             <Group
+              className="workbench-header-row"
               justify="space-between"
               align="flex-start"
               wrap="nowrap"
-              style={{ minWidth: 0 }}
             >
               <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
                 <Title order={1} style={{ letterSpacing: "-0.05em" }}>

@@ -903,7 +903,7 @@ test("board header keeps the selected project name and inline controls without r
   assert.match(markup, />Preview</);
   assert.match(markup, />Terminal</);
   assert.equal((headerMarkup.match(/--group-wrap:nowrap/g) ?? []).length, 2);
-  assert.match(headerMarkup, /style="flex:1;min-width:0"/);
+  assert.match(headerMarkup, /class="workbench-header-title"/);
   assert.match(
     headerMarkup,
     /overflow:hidden;text-overflow:ellipsis;white-space:nowrap/,
@@ -913,6 +913,38 @@ test("board header keeps the selected project name and inline controls without r
   assert.doesNotMatch(markup, />0 running</);
   assert.doesNotMatch(markup, />0 queued</);
   assert.doesNotMatch(markup, />0 in review</);
+});
+
+test("board header keeps repository preview errors inline with the selected-project controls", () => {
+  const controller = createWalleyBoardController();
+  Object.assign(controller as Record<string, unknown>, {
+    repositoryPreviewActionError:
+      "Preview is running, but the browser blocked opening a new tab.",
+    repositoryWorkspacePreview: {
+      repository_id: "repo-1",
+      state: "ready",
+      preview_url: "http://127.0.0.1:4173",
+      backend_url: null,
+      started_at: "2026-04-03T00:00:00.000Z",
+      error: null,
+    },
+  });
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+  const headerMarkup = extractWorkbenchHeaderMarkup(markup);
+
+  assert.equal((headerMarkup.match(/--group-wrap:nowrap/g) ?? []).length, 2);
+  assert.match(
+    headerMarkup,
+    /title="Preview is running, but the browser blocked opening a new tab\."/,
+  );
+  assert.doesNotMatch(
+    headerMarkup,
+    />Preview is running, but the browser blocked opening a new tab\.</,
+  );
 });
 
 test("board header keeps the empty-state prompt when no project is selected", () => {
@@ -2294,6 +2326,72 @@ test("narrow inspector-open layout keeps board scrolling on the shared board pan
       harness.window.getComputedStyle(columnStack).overflowY,
       "auto",
       "Expected board column stacks to avoid independent vertical scrolling",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    cleanupStylesheet();
+    harness.cleanup();
+  }
+});
+
+test("narrow selected-project header compacts workspace actions instead of overflowing labels", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const cleanupStylesheet = installNarrowStylesheet(harness.window.document);
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const headerRow = harness.mountNode.querySelector(
+      ".workbench-header-row--selected",
+    );
+    const headerControls = harness.mountNode.querySelector(
+      ".workbench-header-controls",
+    );
+    const actionButton = harness.mountNode.querySelector(
+      ".project-workspace-action-button",
+    );
+    const actionLabel = harness.mountNode.querySelector(
+      ".project-workspace-action-label",
+    );
+
+    assert.ok(headerRow, "Expected the selected-project header row to render");
+    assert.ok(
+      headerControls,
+      "Expected the selected-project control cluster to render",
+    );
+    assert.ok(actionButton, "Expected a compact workspace action button");
+    assert.ok(actionLabel, "Expected a workspace action label span");
+    assert.equal(
+      harness.window.getComputedStyle(headerRow).gap,
+      "8px",
+      "Expected the selected-project header to tighten its gaps on narrow screens",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(headerControls).gap,
+      "6px",
+      "Expected the control cluster to tighten its gaps on narrow screens",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(actionButton).minWidth,
+      "36px",
+      "Expected narrow-screen workspace actions to collapse to icon-width buttons",
+    );
+    assert.equal(
+      harness.window.getComputedStyle(actionLabel).display,
+      "none",
+      "Expected narrow-screen workspace actions to hide text labels",
     );
   } finally {
     await act(async () => {
