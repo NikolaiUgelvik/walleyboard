@@ -1231,6 +1231,149 @@ test("ticket cards keep the session status badge when only controller.session is
   assert.ok(diffSummaryIndex < descriptionIndex);
 });
 
+test("ticket cards hide completed session badges and keep waiting and failed badges", () => {
+  const controller = createWalleyBoardController();
+  const completedTicket = createTicket({
+    id: 50,
+    description:
+      "Finished implementation stays visible without a session badge.",
+    session_id: "session-50",
+    status: "done",
+    title: "Hide the finished session badge",
+  });
+  const queuedTicket = createTicket({
+    id: 51,
+    description: "Queued execution still needs a visible waiting state.",
+    session_id: "session-51",
+    status: "in_progress",
+    title: "Keep the waiting badge visible",
+  });
+  const failedTicket = createTicket({
+    id: 52,
+    description: "Failed execution still needs a visible error state.",
+    session_id: "session-52",
+    status: "in_progress",
+    title: "Keep the failed badge visible",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [queuedTicket, failedTicket],
+      review: [],
+      done: [completedTicket],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    session: null,
+    sessionById: new Map([
+      [
+        completedTicket.session_id,
+        {
+          adapter_session_ref: null,
+          agent_adapter: "codex",
+          completed_at: "2026-04-03T00:10:00.000Z",
+          current_attempt_id: null,
+          id: completedTicket.session_id,
+          last_heartbeat_at: "2026-04-03T00:10:00.000Z",
+          last_summary: null,
+          latest_requested_change_note_id: null,
+          latest_review_package_id: null,
+          plan_status: "not_requested",
+          plan_summary: null,
+          planning_enabled: false,
+          project_id: completedTicket.project,
+          queue_entered_at: null,
+          repo_id: completedTicket.repo,
+          started_at: "2026-04-03T00:00:00.000Z",
+          status: "completed",
+          ticket_id: completedTicket.id,
+          worktree_path: "/tmp/worktree-50",
+        },
+      ],
+      [
+        queuedTicket.session_id,
+        {
+          adapter_session_ref: null,
+          agent_adapter: "codex",
+          completed_at: null,
+          current_attempt_id: null,
+          id: queuedTicket.session_id,
+          last_heartbeat_at: "2026-04-03T00:01:00.000Z",
+          last_summary: null,
+          latest_requested_change_note_id: null,
+          latest_review_package_id: null,
+          plan_status: "not_requested",
+          plan_summary: null,
+          planning_enabled: false,
+          project_id: queuedTicket.project,
+          queue_entered_at: "2026-04-03T00:01:00.000Z",
+          repo_id: queuedTicket.repo,
+          started_at: null,
+          status: "queued",
+          ticket_id: queuedTicket.id,
+          worktree_path: "/tmp/worktree-51",
+        },
+      ],
+      [
+        failedTicket.session_id,
+        {
+          adapter_session_ref: null,
+          agent_adapter: "codex",
+          completed_at: "2026-04-03T00:02:00.000Z",
+          current_attempt_id: null,
+          id: failedTicket.session_id,
+          last_heartbeat_at: "2026-04-03T00:02:00.000Z",
+          last_summary: null,
+          latest_requested_change_note_id: null,
+          latest_review_package_id: null,
+          plan_status: "not_requested",
+          plan_summary: null,
+          planning_enabled: false,
+          project_id: failedTicket.project,
+          queue_entered_at: null,
+          repo_id: failedTicket.repo,
+          started_at: "2026-04-03T00:01:30.000Z",
+          status: "failed",
+          ticket_id: failedTicket.id,
+          worktree_path: "/tmp/worktree-52",
+        },
+      ],
+    ]),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketDiffLineSummaryByTicketId: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const markup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={controller} />
+    </MantineProvider>,
+  );
+
+  assert.equal(markup.includes(">Completed<"), false);
+  assert.equal(markup.includes(">Queued<"), true);
+  assert.equal(markup.includes(">Failed<"), true);
+  assert.equal(markup.includes("Waiting for a running slot"), true);
+});
+
 test("ticket cards pin the overflow trigger in a dedicated header slot during AI review", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();

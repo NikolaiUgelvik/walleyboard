@@ -1057,7 +1057,8 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                       </Group>
                                     ) : null}
                                     <Group gap={6} wrap="wrap">
-                                      {ticketSession ? (
+                                      {ticketSession &&
+                                      ticketSession.status !== "completed" ? (
                                         <Badge
                                           variant="outline"
                                           color={sessionStatusColor(
