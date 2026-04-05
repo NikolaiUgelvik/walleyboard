@@ -45,7 +45,7 @@ function createActionableReport(summary: string): ReviewReport {
   };
 }
 
-test("AgentReviewService reruns review until no actionable findings remain", async () => {
+test("AgentReviewService reruns automatic review until no actionable findings remain", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-agent-review-"));
 
   try {
@@ -56,6 +56,9 @@ test("AgentReviewService reruns review until no actionable findings remain", asy
         name: "repo",
         path: join(tempDir, "repo"),
       },
+    });
+    store.updateProject(project.id, {
+      automatic_agent_review_run_limit: 2,
     });
 
     const draft = store.createDraft({
@@ -152,13 +155,16 @@ test("AgentReviewService reruns review until no actionable findings remain", asy
       store,
     });
 
-    const reviewRun = service.startReviewLoop(ticket.id);
+    const reviewRun = service.startReviewLoop(ticket.id, {
+      trigger: "automatic",
+    });
 
     await waitFor(() => !service.hasActiveReviewLoop(ticket.id));
 
     assert.equal(reviewRun.status, "running");
     assert.equal(reviewInvocationCount, 2);
     assert.equal(resumedReviewPackageCount, 1);
+    assert.equal(store.countAutomaticReviewRuns(ticket.id), 2);
 
     const latestReviewRun = store.getLatestReviewRun(ticket.id);
     assert.ok(latestReviewRun);
@@ -178,6 +184,127 @@ test("AgentReviewService reruns review until no actionable findings remain", asy
       store.getSessionLogs(started.session.id).join("\n"),
       /Agent review returned no actionable findings\./,
     );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("AgentReviewService runs manual review only once even when it finds issues", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-agent-review-manual-once-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Manual Review Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Run manual review once",
+      description: "Avoid rerunning review when started manually.",
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Manual review should not loop."],
+      target_branch: "main",
+    });
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-manual-review-once",
+      worktreePath: join(tempDir, "worktrees", "ticket-manual-review-once"),
+      logs: ["Started ticket session"],
+    });
+    const initialReviewPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Implements the requested ticket.",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.completeSession(started.session.id, {
+      status: "completed",
+      last_summary: "Initial implementation finished.",
+      latest_review_package_id: initialReviewPackage.id,
+    });
+
+    let reviewInvocationCount = 0;
+    let resumedReviewPackageCount = 0;
+    const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
+      hasActiveExecution() {
+        return false;
+      },
+      async runTicketReview() {
+        reviewInvocationCount += 1;
+        return {
+          adapterSessionRef: "review-session-1",
+          report: createActionableReport(
+            "The manual review found a service-boundary problem.",
+          ),
+        };
+      },
+      startExecution(input: {
+        session: { id: string };
+        ticket: { id: number };
+      }) {
+        resumedReviewPackageCount += 1;
+        queueMicrotask(() => {
+          const nextReviewPackage = store.createReviewPackage({
+            ticket_id: input.ticket.id,
+            session_id: input.session.id,
+            diff_ref: `ticket-${resumedReviewPackageCount}.patch`,
+            commit_refs: [`fix-${resumedReviewPackageCount}`],
+            change_summary: "Addresses the manual agent review report.",
+            validation_results: [],
+            remaining_risks: [],
+          });
+          store.updateTicketStatus(input.ticket.id, "review");
+          store.completeSession(input.session.id, {
+            status: "completed",
+            last_summary: "Manual review feedback implemented.",
+            latest_review_package_id: nextReviewPackage.id,
+          });
+        });
+      },
+    };
+
+    const service = new AgentReviewService({
+      eventHub: new EventHub(),
+      executionRuntime: executionRuntime as never,
+      store,
+    });
+
+    service.startReviewLoop(ticket.id);
+
+    await waitFor(() => !service.hasActiveReviewLoop(ticket.id));
+    await waitFor(() => store.getTicket(ticket.id)?.status === "review");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
+
+    assert.equal(reviewInvocationCount, 1);
+    assert.equal(resumedReviewPackageCount, 1);
+    assert.equal(store.countAutomaticReviewRuns(ticket.id), 0);
+
+    const reviewRuns = store.listReviewRuns(ticket.id);
+    assert.equal(reviewRuns.length, 1);
+    assert.equal(reviewRuns[0]?.status, "completed");
+    assert.equal(reviewRuns[0]?.report?.actionable_findings.length, 1);
+
+    const latestSession = store.getSession(started.session.id);
+    assert.ok(latestSession?.latest_requested_change_note_id);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

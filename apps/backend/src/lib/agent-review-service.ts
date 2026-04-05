@@ -223,6 +223,10 @@ export class AgentReviewService {
           session: restartResult.session,
         });
 
+        if (trigger === "manual") {
+          return;
+        }
+
         const nextContext = await this.#waitForNextReviewLoopContext(
           ticketId,
           context.reviewPackage.id,
