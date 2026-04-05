@@ -165,6 +165,7 @@ export class SqliteStore implements WalleyboardPersistence {
       getRequestedChangeNote: (noteId) => this.getRequestedChangeNote(noteId),
       getReviewPackage: (ticketId) => this.getReviewPackage(ticketId),
       listReviewRuns: (ticketId) => this.listReviewRuns(ticketId),
+      recoverInterruptedReviewRuns: () => this.recoverInterruptedReviewRuns(),
       updateReviewRun: (reviewRunId, input) =>
         this.updateReviewRun(reviewRunId, input),
     };
@@ -319,6 +320,10 @@ export class SqliteStore implements WalleyboardPersistence {
 
   listReviewRuns(ticketId: number): ReviewRun[] {
     return this.#reviews.listReviewRuns(ticketId);
+  }
+
+  recoverInterruptedReviewRuns(): ReviewRun[] {
+    return this.#reviews.recoverInterruptedReviewRuns();
   }
 
   countAutomaticReviewRuns(ticketId: number): number {

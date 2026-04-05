@@ -29,6 +29,30 @@ import {
 export class ReviewRepository {
   constructor(private readonly context: SqliteStoreContext) {}
 
+  recoverInterruptedReviewRuns(): ReviewRun[] {
+    const rows = this.context.db
+      .select()
+      .from(reviewRunsTable)
+      .where(eq(reviewRunsTable.status, "running"))
+      .orderBy(asc(reviewRunsTable.createdAt), asc(reviewRunsTable.id))
+      .all();
+
+    const recoveredRuns: ReviewRun[] = [];
+
+    for (const row of rows) {
+      const recoveredRun = this.updateReviewRun(row.id, {
+        failure_message:
+          "The backend restarted while this agent review was active. The review run was marked failed and can be started again.",
+        status: "failed",
+      });
+      if (recoveredRun) {
+        recoveredRuns.push(recoveredRun);
+      }
+    }
+
+    return recoveredRuns;
+  }
+
   getReviewPackage(ticketId: number): ReviewPackage | undefined {
     const row = this.context.db
       .select()

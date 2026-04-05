@@ -116,11 +116,38 @@ export class AgentReviewService {
 
   async stopReviewLoop(ticketId: number): Promise<ReviewRun> {
     const activeReviewLoop = this.#activeReviewLoops.get(ticketId);
+    const latestReviewRun = this.#store.getLatestReviewRun(ticketId);
+
     if (!activeReviewLoop) {
+      if (latestReviewRun?.status === "running") {
+        const stoppedReviewRun = this.#store.updateReviewRun(
+          latestReviewRun.id,
+          {
+            failure_message: userStoppedReviewMessage,
+            status: "failed",
+          },
+        );
+        if (!stoppedReviewRun) {
+          throw new Error("Failed to stop the persisted agent review run");
+        }
+        publishReviewRunUpdated(this.#eventHub, stoppedReviewRun);
+
+        const session = this.#store.getSession(
+          stoppedReviewRun.implementation_session_id,
+        );
+        if (session) {
+          this.#appendSessionOutput(
+            session.id,
+            session.current_attempt_id,
+            userStoppedReviewMessage,
+          );
+        }
+
+        return stoppedReviewRun;
+      }
+
       throw new Error("Agent review is not running for this ticket");
     }
-
-    const latestReviewRun = this.#store.getLatestReviewRun(ticketId);
     if (
       !latestReviewRun ||
       latestReviewRun.id !== activeReviewLoop.reviewRunId ||

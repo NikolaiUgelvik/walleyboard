@@ -126,6 +126,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   );
   githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();
+  const recoveredReviewRuns = store.recoverInterruptedReviewRuns();
   const skipStartupDockerCleanup =
     options.skipStartupDockerCleanup ?? shouldSkipStartupDockerCleanup();
 
@@ -198,6 +199,15 @@ export async function createApp(options: CreateAppOptions = {}) {
         sessionIds: recovery.sessions.map((session) => session.id),
       },
       "Recovered active sessions as interrupted during backend startup",
+    );
+  }
+  if (recoveredReviewRuns.length > 0) {
+    app.log.warn(
+      {
+        reviewRunIds: recoveredReviewRuns.map((reviewRun) => reviewRun.id),
+        ticketIds: recoveredReviewRuns.map((reviewRun) => reviewRun.ticket_id),
+      },
+      "Recovered stale agent review runs as failed during backend startup",
     );
   }
 

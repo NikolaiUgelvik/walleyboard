@@ -215,6 +215,7 @@ export interface ReviewPersistence {
   getReviewPackage(ticketId: number): ReviewPackage | undefined;
   getLatestReviewRun(ticketId: number): ReviewRun | undefined;
   listReviewRuns(ticketId: number): ReviewRun[];
+  recoverInterruptedReviewRuns(): ReviewRun[];
   countAutomaticReviewRuns(ticketId: number): number;
   createReviewPackage(input: CreateReviewPackageInput): ReviewPackage;
   createReviewRun(input: CreateReviewRunInput): ReviewRun;

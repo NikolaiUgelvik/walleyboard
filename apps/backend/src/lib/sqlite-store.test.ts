@@ -223,6 +223,65 @@ test("updateProject persists repository target branch changes", () => {
   }
 });
 
+test("recoverInterruptedReviewRuns marks stale running review runs as failed", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-recovery-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Review Recovery",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-review-recovery",
+      worktreePath: join(tempDir, "worktrees", "ticket-review-recovery"),
+      logs: ["Started implementation session"],
+    });
+    const reviewPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Implements the requested ticket.",
+      validation_results: [],
+      remaining_risks: [],
+    });
+
+    store.updateTicketStatus(ticket.id, "review");
+    store.completeSession(started.session.id, {
+      status: "completed",
+      last_summary: "Implementation finished.",
+      latest_review_package_id: reviewPackage.id,
+    });
+    const reviewRun = store.createReviewRun({
+      ticket_id: ticket.id,
+      review_package_id: reviewPackage.id,
+      implementation_session_id: started.session.id,
+      trigger_source: "manual",
+    });
+
+    const reopenedStore = new SqliteStore(databasePath);
+    const recoveredReviewRuns = reopenedStore.recoverInterruptedReviewRuns();
+
+    assert.deepEqual(
+      recoveredReviewRuns.map((run) => run.id),
+      [reviewRun.id],
+    );
+    assert.equal(reopenedStore.getLatestReviewRun(ticket.id)?.status, "failed");
+    assert.equal(
+      reopenedStore.getLatestReviewRun(ticket.id)?.failure_message,
+      "The backend restarted while this agent review was active. The review run was marked failed and can be started again.",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("searchProjectTicketReferences filters, ranks, and excludes archived tickets", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-search-"));
 

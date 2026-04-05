@@ -674,3 +674,113 @@ test("AgentReviewService does not restart implementation when Claude becomes una
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("AgentReviewService stops a stale persisted running review without an active loop", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-agent-review-stop-stale-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Stale Review Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Stop stale review",
+      description: "Allow clearing a stuck persisted review run.",
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["A stale running review can be cleared."],
+      target_branch: "main",
+    });
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-review-stale",
+      worktreePath: join(tempDir, "worktrees", "ticket-review-stale"),
+      logs: ["Started ticket session"],
+    });
+    const reviewPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Implements the requested ticket.",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.completeSession(started.session.id, {
+      status: "completed",
+      last_summary: "Initial implementation finished.",
+      latest_review_package_id: reviewPackage.id,
+    });
+
+    const reviewRun = store.createReviewRun({
+      ticket_id: ticket.id,
+      review_package_id: reviewPackage.id,
+      implementation_session_id: started.session.id,
+      trigger_source: "manual",
+    });
+
+    const stopReviewRunCalls: string[] = [];
+    const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
+      hasActiveExecution() {
+        return false;
+      },
+      async runTicketReview() {
+        throw new Error("runTicketReview should not be called");
+      },
+      async stopReviewRun(reviewRunId: string) {
+        stopReviewRunCalls.push(reviewRunId);
+        return true;
+      },
+      startExecution() {
+        throw new Error("startExecution should not be called");
+      },
+    };
+
+    const service = new AgentReviewService({
+      eventHub: new EventHub(),
+      executionRuntime: executionRuntime as never,
+      store,
+    });
+
+    const stoppedReviewRun = await service.stopReviewLoop(ticket.id);
+
+    assert.equal(stoppedReviewRun.id, reviewRun.id);
+    assert.equal(stoppedReviewRun.status, "failed");
+    assert.equal(
+      stoppedReviewRun.failure_message,
+      "Agent review stopped by user.",
+    );
+    assert.deepEqual(stopReviewRunCalls, []);
+
+    const latestReviewRun = store.getLatestReviewRun(ticket.id);
+    assert.ok(latestReviewRun);
+    assert.equal(latestReviewRun.status, "failed");
+    assert.equal(
+      latestReviewRun.failure_message,
+      "Agent review stopped by user.",
+    );
+    assert.equal(
+      store
+        .getSessionLogs(started.session.id)
+        .join("\n")
+        .includes("Agent review stopped by user."),
+      true,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
