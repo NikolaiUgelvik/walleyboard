@@ -478,6 +478,118 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
   }
 });
 
+test("spawnProcessInSession wraps unattended commands in script for live flushing", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-process-"));
+  let spawnedArgs: string[] | null = null;
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+
+  try {
+    process.env.WALLEYBOARD_HOME = join(tempDir, ".walleyboard-home");
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => join(tempDir, ".test-agent"),
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        assert.equal(command, "docker");
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "{}";
+        }
+
+        if (args[0] === "rm") {
+          return "";
+        }
+
+        if (args[0] === "run") {
+          return "container-id";
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      repoRoot: tempDir,
+      spawnImpl: ((command: string, args: string[]) => {
+        assert.equal(command, "docker");
+        spawnedArgs = args;
+        return {
+          kill() {
+            return true;
+          },
+          on() {
+            return this;
+          },
+          once() {
+            return this;
+          },
+          pid: 321,
+          stderr: null,
+          stdin: null,
+          stdout: null,
+        } as never;
+      }) as never,
+    });
+
+    runtime.ensureSessionContainer({
+      dockerSpec: {
+        imageTag: "example/test-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/test-agent",
+        configMountPath: "/home/test-agent/.test-agent",
+      },
+      sessionId: "session-1",
+      projectId: "project-1",
+      ticketId: 42,
+      worktreePath: join(tempDir, "workspace"),
+    });
+
+    runtime.spawnProcessInSession(
+      "session-1",
+      "codex",
+      [
+        "exec",
+        "--json",
+        "--output-last-message",
+        "/walleyboard-home/out.txt",
+        "prompt text",
+      ],
+      {
+        cwd: tempDir,
+        env: {},
+      },
+    );
+
+    assert.ok(spawnedArgs);
+    const dockerExecArgs = spawnedArgs as string[];
+    assert.deepEqual(dockerExecArgs.slice(0, 9), [
+      "exec",
+      "-i",
+      "-w",
+      "/workspace",
+      "-e",
+      "HOME=/home/test-agent",
+      "container-id",
+      "bash",
+      "-lc",
+    ]);
+    const wrappedCommand = dockerExecArgs[9] ?? "";
+    assert.match(wrappedCommand, /^exec script -qefc /);
+    assert.match(wrappedCommand, /codex/);
+    assert.match(wrappedCommand, /--json/);
+    assert.match(wrappedCommand, /--output-last-message/);
+    assert.match(wrappedCommand, /\/walleyboard-home\/out\.txt/);
+    assert.match(wrappedCommand, /prompt text/);
+    assert.match(wrappedCommand, / \/dev\/null$/);
+  } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("cleanupStaleContainers removes matching walleyboard containers", () => {
   const commands: Array<{ command: string; args: string[] }> = [];
   const runtime = new DockerRuntimeManager({

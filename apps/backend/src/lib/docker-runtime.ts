@@ -164,6 +164,22 @@ function buildContainerName(repoRootHash: string, sessionId: string): string {
   return `walleyboard-${repoRootHash.slice(0, 12)}-${sessionId}`;
 }
 
+function shellEscapeArg(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function buildUnattendedDockerCommand(
+  command: string,
+  args: string[],
+): string[] {
+  const wrappedCommand = [command, ...args].map(shellEscapeArg).join(" ");
+  return [
+    "bash",
+    "-lc",
+    `exec script -qefc ${shellEscapeArg(wrappedCommand)} /dev/null`,
+  ];
+}
+
 function buildConfigMountSpecs(input: {
   configHomePath: string;
   configMountPath: string;
@@ -518,8 +534,7 @@ export class DockerRuntimeManager implements DockerRuntime {
         "-e",
         `HOME=${container.dockerSpec.homePath}`,
         container.id,
-        command,
-        ...args,
+        ...buildUnattendedDockerCommand(command, args),
       ],
       options,
     );
