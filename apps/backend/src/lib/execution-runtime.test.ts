@@ -63,7 +63,10 @@ function createProject(overrides: Partial<Project> = {}): Project {
   };
 }
 
-function createRepository(path: string): RepositoryConfig {
+function createRepository(
+  path: string,
+  overrides: Partial<RepositoryConfig> = {},
+): RepositoryConfig {
   return {
     id: "repo-1",
     project_id: "project-1",
@@ -76,6 +79,7 @@ function createRepository(path: string): RepositoryConfig {
     extra_env_allowlist: [],
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -97,7 +101,9 @@ function createDraft(): DraftTicketState {
   };
 }
 
-function createTicket(): TicketFrontmatter {
+function createTicket(
+  overrides: Partial<TicketFrontmatter> = {},
+): TicketFrontmatter {
   return {
     id: 14,
     project: "project-1",
@@ -114,6 +120,7 @@ function createTicket(): TicketFrontmatter {
     session_id: "session-1",
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
+    ...overrides,
   };
 }
 

@@ -25,27 +25,37 @@ function resolveMountedPath(
   return join(dockerRoot, relativePath);
 }
 
+export function resolveDockerMountedPath(input: {
+  hostPath: string;
+  worktreePath: string;
+}): string | null {
+  const worktreePath = resolveMountedPath(
+    input.hostPath,
+    input.worktreePath,
+    dockerWorkspacePath,
+  );
+  if (worktreePath) {
+    return worktreePath;
+  }
+
+  return resolveMountedPath(
+    input.hostPath,
+    resolveWalleyBoardHome(),
+    dockerWalleyBoardHomePath,
+  );
+}
+
 export function resolveDockerManagedOutputPath(input: {
   agentLabel: string;
   outputPath: string;
   worktreePath: string;
 }): string {
-  const worktreeOutputPath = resolveMountedPath(
-    input.outputPath,
-    input.worktreePath,
-    dockerWorkspacePath,
-  );
-  if (worktreeOutputPath) {
-    return worktreeOutputPath;
-  }
-
-  const walleyBoardOutputPath = resolveMountedPath(
-    input.outputPath,
-    resolveWalleyBoardHome(),
-    dockerWalleyBoardHomePath,
-  );
-  if (walleyBoardOutputPath) {
-    return walleyBoardOutputPath;
+  const mountedPath = resolveDockerMountedPath({
+    hostPath: input.outputPath,
+    worktreePath: input.worktreePath,
+  });
+  if (mountedPath) {
+    return mountedPath;
   }
 
   throw new Error(

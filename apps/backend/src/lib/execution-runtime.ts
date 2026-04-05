@@ -43,6 +43,7 @@ import {
   publishStructuredEvent,
   publishTicketUpdated,
 } from "./execution-runtime/publishers.js";
+import { buildReferencedTicketContextSections } from "./execution-runtime/referenced-ticket-context.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
 import { runMergeRecovery } from "./execution-runtime/run-merge-recovery.js";
 import {
@@ -811,7 +812,12 @@ export class ExecutionRuntime {
     }
 
     const adapter = this.#getSessionAdapter(session);
-    const extraInstructions: PromptContextSection[] = [];
+    const extraInstructions: PromptContextSection[] =
+      buildReferencedTicketContextSections({
+        store: this.#store,
+        ticket,
+        worktreePath: session.worktree_path,
+      });
     const persistedResumeGuidance = hasMeaningfulContent(additionalInstruction)
       ? null
       : extractPersistedAttemptGuidance(session.last_summary);
