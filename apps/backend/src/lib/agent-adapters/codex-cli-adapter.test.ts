@@ -294,6 +294,8 @@ test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is 
   assert.ok(run.args.includes("--full-auto"));
   assert.ok(run.args.includes('approval_policy="on-request"'));
   assert.ok(run.args.includes('sandbox_mode="read-only"'));
+  assert.match(run.prompt, /## Review Goal/);
+  assert.match(run.prompt, /## Output JSON/);
   assert.equal(
     run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
     false,

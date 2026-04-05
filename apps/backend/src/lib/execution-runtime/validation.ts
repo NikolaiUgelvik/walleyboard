@@ -35,9 +35,7 @@ export async function runValidationProfile(input: {
     return {
       results: [],
       blockingFailure: false,
-      remainingRisks: [
-        "No validation commands are configured for this repository.",
-      ],
+      remainingRisks: [],
     };
   }
 

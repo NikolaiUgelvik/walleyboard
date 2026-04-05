@@ -10,6 +10,7 @@ import type {
   ExecutionSession,
   Project,
   RepositoryConfig,
+  ReviewPackage,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -151,6 +152,33 @@ function createDraft(): DraftTicketState {
     split_proposal_summary: null,
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
+  };
+}
+
+function createReviewPackage(): ReviewPackage {
+  return {
+    id: "review-package-1",
+    ticket_id: 42,
+    session_id: "session-1",
+    diff_ref: "/tmp/ticket-42.patch",
+    commit_refs: ["61a4523a0f4259c5c06404ce5f0cabed1dc65f1c"],
+    change_summary: "Adds ANSI stripping and related tests.",
+    validation_results: [
+      {
+        command_id: "validation-1",
+        label:
+          "npm test -- --run apps/backend/src/lib/agent-adapters/claude-code-adapter.test.ts",
+        status: "passed",
+        started_at: "2026-04-01T00:00:00.000Z",
+        ended_at: "2026-04-01T00:00:01.000Z",
+        exit_code: 0,
+        failure_overridden: false,
+        summary: "Passed.",
+        log_ref: null,
+      },
+    ],
+    remaining_risks: [],
+    created_at: "2026-04-01T00:10:00.000Z",
   };
 }
 
@@ -1199,6 +1227,25 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --verbose with stream-js
     run.args.includes("--verbose"),
     "stream-json in print mode requires --verbose",
   );
+});
+
+test("ClaudeCodeAdapter.buildReviewRun uses read-only permissions and the shared review prompt", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildReviewRun({
+    outputPath: createWorkspaceOutputPath("review.json"),
+    project: createProject(),
+    repository: createRepository(),
+    reviewPackage: createReviewPackage(),
+    session: createSession(),
+    ticket: createTicket(),
+    useDockerRuntime: true,
+  });
+
+  assert.equal(run.command, "bash");
+  assert.match(run.args[1] ?? "", /'--permission-mode' 'plan'/);
+  assert.match(run.prompt, /## Review Goal/);
+  assert.match(run.prompt, /## Evidence/);
+  assert.match(run.prompt, /## Output JSON/);
 });
 
 // ---------------------------------------------------------------------------

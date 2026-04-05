@@ -953,33 +953,64 @@ export function fallbackSessionSummary(session: ExecutionSession): string {
   }
 }
 
+function nextSectionStart(
+  sectionStarts: number[],
+  currentIndex: number,
+  fallback: number,
+): number {
+  const laterStarts = sectionStarts.filter((value) => value > currentIndex);
+  return laterStarts.length > 0 ? Math.min(...laterStarts) : fallback;
+}
+
+function parseRisksSection(risksText: string): string[] {
+  const trimmed = risksText.trim().replace(/\.$/, "");
+  if (trimmed.length === 0 || /^none$/i.test(trimmed)) {
+    return [];
+  }
+
+  const bulletMatches = Array.from(
+    trimmed.matchAll(/(?:^|\n)-\s+([\s\S]*?)(?=\n-\s+|$)/g),
+    (match) => match[1]?.trim() ?? "",
+  ).filter(Boolean);
+  if (bulletMatches.length > 0) {
+    return bulletMatches;
+  }
+
+  return trimmed
+    .split(
+      /,\s+(?=(?:the|`|backend|integration|Codex|MCP|extra_env_allowlist)\b)/,
+    )
+    .map((risk) => risk.trim())
+    .filter(Boolean);
+}
+
 export function parseExecutionSummary(summary: string): ParsedExecutionSummary {
   const normalized = summary.trim();
+  const changedFilesMarker = "Changed files:";
   const commitMarker = "The change is committed as ";
   const validationMarker = "Validation run:";
   const risksMarker = "Remaining risks:";
+  const changedFilesIndex = normalized.indexOf(changedFilesMarker);
   const commitIndex = normalized.indexOf(commitMarker);
   const validationIndex = normalized.indexOf(validationMarker);
   const risksIndex = normalized.indexOf(risksMarker);
-  const sectionStarts = [commitIndex, validationIndex, risksIndex].filter(
-    (value) => value >= 0,
-  );
+  const sectionStarts = [
+    changedFilesIndex,
+    commitIndex,
+    validationIndex,
+    risksIndex,
+  ].filter((value) => value >= 0);
   const firstSectionStart =
     sectionStarts.length > 0 ? Math.min(...sectionStarts) : normalized.length;
 
   const overview = normalized.slice(0, firstSectionStart).trim();
 
-  const commitEndCandidates = [validationIndex, risksIndex].filter(
-    (value) => value > commitIndex,
-  );
   const commitText =
     commitIndex >= 0
       ? normalized
           .slice(
             commitIndex,
-            commitEndCandidates.length > 0
-              ? Math.min(...commitEndCandidates)
-              : normalized.length,
+            nextSectionStart(sectionStarts, commitIndex, normalized.length),
           )
           .trim()
       : "";
@@ -994,11 +1025,13 @@ export function parseExecutionSummary(summary: string): ParsedExecutionSummary {
       }
     : null;
 
-  const validationEnd = risksIndex >= 0 ? risksIndex : normalized.length;
   const validationText =
     validationIndex >= 0
       ? normalized
-          .slice(validationIndex + validationMarker.length, validationEnd)
+          .slice(
+            validationIndex + validationMarker.length,
+            nextSectionStart(sectionStarts, validationIndex, normalized.length),
+          )
           .trim()
       : "";
   const validationSentences = validationText
@@ -1029,18 +1062,13 @@ export function parseExecutionSummary(summary: string): ParsedExecutionSummary {
   const risksText =
     risksIndex >= 0
       ? normalized
-          .slice(risksIndex + risksMarker.length)
+          .slice(
+            risksIndex + risksMarker.length,
+            nextSectionStart(sectionStarts, risksIndex, normalized.length),
+          )
           .trim()
-          .replace(/\.$/, "")
       : "";
-  const risks = risksText
-    ? risksText
-        .split(
-          /,\s+(?=(?:the|`|backend|integration|Codex|MCP|extra_env_allowlist)\b)/,
-        )
-        .map((risk) => risk.trim())
-        .filter(Boolean)
-    : [];
+  const risks = parseRisksSection(risksText);
 
   return {
     overview,
