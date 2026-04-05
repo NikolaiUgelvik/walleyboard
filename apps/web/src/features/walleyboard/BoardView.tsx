@@ -15,7 +15,6 @@ import {
 import {
   IconActivityHeartbeat,
   IconAlertCircle,
-  IconBrowser,
   IconFileDiff,
   IconPlayerPlay,
   IconPlayerStop,
@@ -423,18 +422,18 @@ export function ProjectWorkspaceActions({
               <Loader size={14} />
             ) : previewError ? (
               <IconAlertCircle size={16} />
+            ) : previewRunning ? (
+              <IconPlayerStop size={16} />
             ) : (
-              <IconBrowser size={16} />
+              <IconPlayerPlay size={16} />
             )
           }
           size="compact-sm"
-          title={previewError ?? undefined}
+          title={previewError ?? previewLabel}
           variant="light"
           onClick={controller.handleSelectedRepositoryPreviewAction}
         >
-          <span className="project-workspace-action-label">
-            {previewRunning ? "Stop Preview" : "Preview"}
-          </span>
+          <span className="project-workspace-action-label">{previewLabel}</span>
         </Button>
         <Button
           aria-label="Open project terminal"

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { Loader } from "@mantine/core";
 import {
   IconAlertCircle,
   IconPlayerPlay,
@@ -130,6 +131,7 @@ function createController(input?: {
   sessionQueryError?: string;
   repositoryPreview?: RepositoryWorkspacePreview | null;
   repositoryPreviewError?: string;
+  repositoryPreviewPending?: boolean;
   session?: Partial<ExecutionSession> | null;
   selectedSessionTicketSession?: Partial<ExecutionSession> | null;
   sessionQueryPending?: boolean;
@@ -251,7 +253,7 @@ function createController(input?: {
     selectedSessionTicket: input?.selectedTicket ?? ticket,
     selectedSessionTicketSession,
     repositoryPreviewActionError: input?.repositoryPreviewError ?? null,
-    repositoryPreviewActionPending: false,
+    repositoryPreviewActionPending: input?.repositoryPreviewPending ?? false,
     repositoryTerminalPending: false,
     repositoryWorkspacePreview: repositoryPreview,
     startTicketWorkspacePreviewMutation: {
@@ -549,7 +551,96 @@ test("ticket workspace activity action opens the activity modal from the card", 
   assert.deepEqual(openCalls, [{ kind: "activity", ticketId: ticket.id }]);
 });
 
-test("project workspace actions surface repository preview errors inline and switch labels", () => {
+test("project workspace actions mirror ticket preview play and stop states", () => {
+  const idle = ProjectWorkspaceActions({
+    controller: createController().controller,
+  });
+  assert.ok(idle);
+
+  const idlePreviewAction = findElementByProp(idle, "aria-label", "Preview");
+  assert.ok(idlePreviewAction);
+  assert.equal(collectText(idlePreviewAction), "Preview");
+  assert.equal(
+    isValidElement(
+      (idlePreviewAction.props as { leftSection?: ReactNode }).leftSection,
+    ) &&
+      (idlePreviewAction.props as { leftSection: ReactElement }).leftSection
+        .type,
+    IconPlayerPlay,
+  );
+  assert.equal(
+    (idlePreviewAction.props as { title?: string }).title,
+    "Preview",
+  );
+
+  const running = ProjectWorkspaceActions({
+    controller: createController({
+      repositoryPreview: {
+        repository_id: "repo-1",
+        state: "ready",
+        preview_url: "http://127.0.0.1:4173",
+        backend_url: null,
+        started_at: "2026-04-02T00:00:00.000Z",
+        error: null,
+      },
+    }).controller,
+  });
+  assert.ok(running);
+
+  const runningPreviewAction = findElementByProp(
+    running,
+    "aria-label",
+    "Turn off dev server",
+  );
+  assert.ok(runningPreviewAction);
+  assert.equal(collectText(runningPreviewAction), "Turn off dev server");
+  assert.equal(
+    isValidElement(
+      (runningPreviewAction.props as { leftSection?: ReactNode }).leftSection,
+    ) &&
+      (runningPreviewAction.props as { leftSection: ReactElement }).leftSection
+        .type,
+    IconPlayerStop,
+  );
+  assert.equal(
+    (runningPreviewAction.props as { title?: string }).title,
+    "Turn off dev server",
+  );
+});
+
+test("project workspace actions show a loading indicator and disable preview while pending", () => {
+  const { controller } = createController({
+    repositoryPreview: {
+      repository_id: "repo-1",
+      state: "ready",
+      preview_url: "http://127.0.0.1:4173",
+      backend_url: null,
+      started_at: "2026-04-02T00:00:00.000Z",
+      error: null,
+    },
+    repositoryPreviewPending: true,
+  });
+
+  const tree = ProjectWorkspaceActions({ controller });
+  assert.ok(tree);
+
+  const previewAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Turn off dev server",
+  );
+  assert.ok(previewAction);
+  assert.equal((previewAction.props as { disabled?: boolean }).disabled, true);
+  assert.equal(
+    isValidElement(
+      (previewAction.props as { leftSection?: ReactNode }).leftSection,
+    ) &&
+      (previewAction.props as { leftSection: ReactElement }).leftSection.type,
+    Loader,
+  );
+});
+
+test("project workspace actions surface repository preview errors inline and keep the alert icon", () => {
   const { controller } = createController({
     repositoryPreview: {
       repository_id: "repo-1",
