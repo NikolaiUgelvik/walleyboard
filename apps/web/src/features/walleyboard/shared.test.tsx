@@ -226,13 +226,9 @@ test("AgentAdapter option label renders the matching icon without changing text"
 });
 
 test("Project Agent CLI options expose Codex and Claude Code for Docker execution", () => {
-  assert.deepEqual(getProjectAgentAdapterOptions(true), [
+  assert.deepEqual(getProjectAgentAdapterOptions(), [
     { label: "Codex", value: "codex" },
     { label: "Claude Code", value: "claude-code", disabled: false },
-  ]);
-  assert.deepEqual(getProjectAgentAdapterOptions(false), [
-    { label: "Codex", value: "codex" },
-    { label: "Claude Code", value: "claude-code", disabled: true },
   ]);
 });
 
@@ -244,11 +240,7 @@ test("ProjectAgentAdapterSelect shows the selected icon and renders per-option i
     await act(async () => {
       root.render(
         <MantineProvider>
-          <ProjectAgentAdapterSelect
-            claudeCodeAvailable
-            value="codex"
-            onChange={() => {}}
-          />
+          <ProjectAgentAdapterSelect value="codex" onChange={() => {}} />
         </MantineProvider>,
       );
       await Promise.resolve();

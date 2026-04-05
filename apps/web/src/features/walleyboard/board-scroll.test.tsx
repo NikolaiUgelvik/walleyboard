@@ -339,11 +339,6 @@ function createHealth(): HealthResponse {
       server_version: "1.0.0",
       error: null,
     },
-    claude_code: {
-      available: false,
-      detected_path: null,
-      error: null,
-    },
   };
 }
 

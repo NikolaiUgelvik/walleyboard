@@ -164,7 +164,6 @@ export type WalleyBoardModalsController = Pick<
   | "archiveModalOpen"
   | "archivedTicketsQuery"
   | "canDeleteProject"
-  | "claudeCodeHealth"
   | "closeAgentReviewHistoryModal"
   | "closeArchiveModal"
   | "closeProjectModal"
@@ -431,7 +430,6 @@ export function createWalleyBoardViewState(
     archiveModalOpen: controller.archiveModalOpen,
     archivedTicketsQuery: controller.archivedTicketsQuery,
     canDeleteProject: controller.canDeleteProject,
-    claudeCodeHealth: controller.claudeCodeHealth,
     closeAgentReviewHistoryModal: controller.closeAgentReviewHistoryModal,
     closeArchiveModal: controller.closeArchiveModal,
     closeProjectModal: controller.closeProjectModal,

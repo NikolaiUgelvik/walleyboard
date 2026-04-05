@@ -230,7 +230,6 @@ export async function createApp(options: CreateAppOptions = {}) {
   await app.register(fastifyRateLimit, globalRateLimitOptions());
   await app.register(healthRoutes, {
     dockerRuntime,
-    getClaudeCodeAvailability,
   });
   await app.register(projectRoutes, {
     store,

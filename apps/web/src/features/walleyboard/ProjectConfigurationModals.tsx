@@ -75,9 +75,6 @@ export function ProjectConfigurationModals({
                   }}
                 />
                 <ProjectAgentAdapterSelect
-                  claudeCodeAvailable={Boolean(
-                    controller.claudeCodeHealth?.available,
-                  )}
                   value={controller.projectOptionsAgentAdapter}
                   onChange={(value) => {
                     controller.setProjectOptionsFormError(null);
@@ -97,8 +94,9 @@ export function ProjectConfigurationModals({
                 </Text>
                 <Text size="sm" c="dimmed">
                   Codex and Claude Code both run inside that Docker runtime.
-                  Claude Code is only selectable when the backend can confirm
-                  the Claude CLI is installed and usable.
+                  Adapter availability is validated when you save project
+                  options or start work, rather than through background health
+                  polling.
                 </Text>
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
@@ -127,24 +125,6 @@ export function ProjectConfigurationModals({
                     Docker status is unavailable because the backend health
                     check failed.
                   </Text>
-                ) : null}
-                {controller.claudeCodeHealth ? (
-                  controller.claudeCodeHealth.available ? (
-                    <Text size="sm" c="dimmed">
-                      Claude Code CLI is available
-                      {controller.claudeCodeHealth.detected_path
-                        ? ` (${controller.claudeCodeHealth.detected_path})`
-                        : ""}
-                      .
-                    </Text>
-                  ) : (
-                    <Text size="sm" c="orange">
-                      Claude Code is currently unavailable
-                      {controller.claudeCodeHealth.error
-                        ? `: ${controller.claudeCodeHealth.error}`
-                        : "."}
-                    </Text>
-                  )
                 ) : null}
               </Stack>
 

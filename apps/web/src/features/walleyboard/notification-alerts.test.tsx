@@ -912,11 +912,6 @@ test("opening an inbox item marks that notification instance as read", async () 
       server_version: "1.0.0",
       error: null,
     },
-    claude_code: {
-      available: false,
-      detected_path: null,
-      error: null,
-    },
   });
   queryClient.setQueryData(["projects"], {
     projects: storedProjects,

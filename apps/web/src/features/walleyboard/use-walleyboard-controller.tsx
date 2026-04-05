@@ -237,7 +237,6 @@ export function useWalleyBoardController() {
     selectedSessionId,
   });
   const dockerHealth = healthQuery.data?.docker ?? null;
-  const claudeCodeHealth = healthQuery.data?.claude_code ?? null;
   const codexMcpServers = healthQuery.data?.codex_mcp_servers ?? [];
   const projectRecords = projectsQuery.data?.projects ?? [];
   const projectsLoaded = projectsQuery.data !== undefined;
@@ -395,23 +394,6 @@ export function useWalleyBoardController() {
     projectOptionsProjectId,
     projectOptionsRepositoriesQuery.data,
     setProjectOptionsRepositoryTargetBranches,
-  ]);
-
-  useEffect(() => {
-    if (
-      projectOptionsProjectId === null ||
-      claudeCodeHealth?.available !== false ||
-      projectOptionsAgentAdapter !== "claude-code"
-    ) {
-      return;
-    }
-
-    setProjectOptionsAgentAdapter("codex");
-  }, [
-    claudeCodeHealth?.available,
-    projectOptionsAgentAdapter,
-    projectOptionsProjectId,
-    setProjectOptionsAgentAdapter,
   ]);
 
   useEffect(() => {
@@ -994,15 +976,9 @@ export function useWalleyBoardController() {
       repositories: projectOptionsRepositories,
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
-    const agentAdapter =
-      projectOptionsAgentAdapter === "claude-code" &&
-      claudeCodeHealth?.available === false
-        ? "codex"
-        : projectOptionsAgentAdapter;
-
     setProjectOptionsFormError(null);
     mutations.updateProjectMutation.mutate({
-      agentAdapter,
+      agentAdapter: projectOptionsAgentAdapter,
       projectId: projectOptionsProject.id,
       color: projectOptionsPersistedColor,
       disabledMcpServers: [...projectOptionsDisabledMcpServers].sort(
@@ -1189,7 +1165,6 @@ export function useWalleyBoardController() {
     defaultBranch,
     deleteTicket,
     editReadyTicket,
-    claudeCodeHealth,
     codexMcpServers,
     dockerHealth,
     doneColumnTickets,

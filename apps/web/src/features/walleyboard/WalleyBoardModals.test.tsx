@@ -226,9 +226,7 @@ function installDom() {
   };
 }
 
-function createHealth(
-  overrides: Partial<HealthResponse["claude_code"]> = {},
-): HealthResponse {
+function createHealth(): HealthResponse {
   return {
     ok: true,
     service: "backend",
@@ -240,12 +238,6 @@ function createHealth(
       client_version: "1.0.0",
       server_version: "1.0.0",
       error: null,
-    },
-    claude_code: {
-      available: false,
-      detected_path: null,
-      error: null,
-      ...overrides,
     },
   };
 }
@@ -1117,7 +1109,7 @@ test("edit project modal renders Codex MCP server settings", async () => {
   }
 });
 
-test("edit project modal falls back to Codex when Claude Code is unavailable", async () => {
+test("edit project modal preserves the selected Claude Code adapter without health overrides", async () => {
   const harness = installDom();
   let updatePayload: { agentAdapter: Project["agent_adapter"] } | null = null;
 
@@ -1128,20 +1120,16 @@ test("edit project modal falls back to Codex when Claude Code is unavailable", a
     const repository = createRepository({
       project_id: project.id,
     });
-    const { restoreFetch, root } = await renderControllerModalHarness({
-      harness,
-      mode: "edit",
-      health: createHealth({
-        available: false,
-        detected_path: null,
-        error: "Claude Code CLI is not installed or not on PATH.",
-      }),
-      onUpdateProject: (payload) => {
-        updatePayload = payload;
-      },
-      project,
-      repository,
-    });
+    const { getController, restoreFetch, root } =
+      await renderControllerModalHarness({
+        harness,
+        mode: "edit",
+        onUpdateProject: (payload) => {
+          updatePayload = payload;
+        },
+        project,
+        repository,
+      });
 
     try {
       const agentInput =
@@ -1149,14 +1137,15 @@ test("edit project modal falls back to Codex when Claude Code is unavailable", a
           'input[role="combobox"]',
         );
       assert.ok(agentInput, "Expected the project options agent CLI field");
-      assert.equal(agentInput.value, "Codex");
+      assert.equal(agentInput.value, "Claude Code");
 
       const modalText = harness.window.document.body.textContent ?? "";
-      assert.match(modalText, /Claude Code is currently unavailable/);
-      assert.match(
-        modalText,
-        /Claude Code CLI is not installed or not on PATH\./,
-      );
+      assert.doesNotMatch(modalText, /Claude Code is currently unavailable/);
+
+      await act(async () => {
+        getController().setProjectOptionsColor("#F97316");
+        await Promise.resolve();
+      });
 
       const saveButton = Array.from(
         harness.window.document.querySelectorAll<HTMLButtonElement>("button"),
@@ -1174,7 +1163,7 @@ test("edit project modal falls back to Codex when Claude Code is unavailable", a
       const emittedPayload = updatePayload as {
         agentAdapter: Project["agent_adapter"];
       };
-      assert.equal(emittedPayload.agentAdapter, "codex");
+      assert.equal(emittedPayload.agentAdapter, "claude-code");
     } finally {
       await act(async () => {
         root.unmount();
@@ -1186,7 +1175,7 @@ test("edit project modal falls back to Codex when Claude Code is unavailable", a
   }
 });
 
-test("edit project modal keeps Claude Code selectable when availability is true", async () => {
+test("edit project modal no longer shows Claude-specific health status", async () => {
   const harness = installDom();
   let updatePayload: { agentAdapter: Project["agent_adapter"] } | null = null;
 
@@ -1201,11 +1190,6 @@ test("edit project modal keeps Claude Code selectable when availability is true"
       await renderControllerModalHarness({
         harness,
         mode: "edit",
-        health: createHealth({
-          available: true,
-          detected_path: "/usr/local/bin/claude",
-          error: null,
-        }),
         onUpdateProject: (payload) => {
           updatePayload = payload;
         },
@@ -1222,8 +1206,7 @@ test("edit project modal keeps Claude Code selectable when availability is true"
       assert.equal(agentInput.value, "Claude Code");
 
       const modalText = harness.window.document.body.textContent ?? "";
-      assert.match(modalText, /Claude Code CLI is available/);
-      assert.match(modalText, /\/usr\/local\/bin\/claude/);
+      assert.doesNotMatch(modalText, /Claude Code CLI is available/);
 
       await act(async () => {
         getController().setProjectOptionsColor("#F97316");
