@@ -12,7 +12,6 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconGitPullRequest } from "@tabler/icons-react";
 import type React from "react";
 
 import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
@@ -22,6 +21,7 @@ import { SectionCard } from "../../components/SectionCard.js";
 import { summarizeSessionActivity } from "../../components/SessionActivityFeed.js";
 import { buildPendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
+import { PullRequestStatusBadge } from "./PullRequestStatusBadge.js";
 import {
   agentLabel,
   DraftEventResultView,
@@ -31,13 +31,11 @@ import {
 import { fetchJson } from "./shared-api.js";
 import type { TicketReferencesResponse } from "./shared-types.js";
 import {
-  formatPullRequestBadgeLabel,
   formatTimestamp,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
   parseDraftEventMeta,
-  pullRequestBadgeColor,
   resolveReviewCardActions,
   sessionStatusColor,
   ticketStatusColor,
@@ -835,19 +833,11 @@ export function InspectorPane({
                             Pull request
                           </Text>
                           <Group gap="xs" wrap="wrap">
-                            <Badge
-                              variant="outline"
-                              color={pullRequestBadgeColor(
-                                controller.selectedSessionTicket.linked_pr,
-                              )}
-                              leftSection={
-                                <IconGitPullRequest size={12} stroke={1.8} />
+                            <PullRequestStatusBadge
+                              linkedPr={
+                                controller.selectedSessionTicket.linked_pr
                               }
-                            >
-                              {formatPullRequestBadgeLabel(
-                                controller.selectedSessionTicket.linked_pr,
-                              )}
-                            </Badge>
+                            />
                             <Text
                               component="a"
                               href={

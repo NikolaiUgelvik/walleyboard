@@ -427,24 +427,34 @@ export function describePullRequestStatus(linkedPr: PullRequestRef): string {
   }
 }
 
+function describePullRequestBadgeStatus(linkedPr: PullRequestRef): string {
+  switch (linkedPr.state) {
+    case "merged":
+      return "Merged";
+    case "closed":
+      return "Closed";
+    case "open":
+      return "Open";
+    default:
+      return "Unknown";
+  }
+}
+
 export function formatPullRequestBadgeLabel(linkedPr: PullRequestRef): string {
-  return `#${linkedPr.number} ${describePullRequestStatus(linkedPr).toUpperCase()}`;
+  return `#${linkedPr.number} ${describePullRequestBadgeStatus(linkedPr).toUpperCase()}`;
 }
 
 export function pullRequestBadgeColor(linkedPr: PullRequestRef): string {
-  if (linkedPr.state === "merged") {
-    return "green";
+  switch (linkedPr.state) {
+    case "open":
+      return "green";
+    case "closed":
+      return "red";
+    case "merged":
+      return "violet";
+    default:
+      return "gray";
   }
-
-  if (linkedPr.review_status === "changes_requested") {
-    return "red";
-  }
-
-  if (linkedPr.review_status === "approved") {
-    return "green";
-  }
-
-  return "blue";
 }
 
 export function resolveReviewCardActions(

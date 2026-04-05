@@ -17,7 +17,6 @@ import {
   IconAlertCircle,
   IconBrowser,
   IconFileDiff,
-  IconGitPullRequest,
   IconPlayerPlay,
   IconPlayerStop,
   IconTerminal2,
@@ -39,12 +38,11 @@ import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
+import { PullRequestStatusBadge } from "./PullRequestStatusBadge.js";
 import { boardColumnMeta, boardColumns, ColorSchemeControl } from "./shared.js";
 import {
-  formatPullRequestBadgeLabel,
   humanizeSessionStatus,
   isStoppableSessionStatus,
-  pullRequestBadgeColor,
   resolveReviewCardActions,
   sessionStatusColor,
 } from "./shared-utils.js";
@@ -1143,22 +1141,9 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                     />
                                     {ticket.linked_pr ? (
                                       <Group gap={8} wrap="wrap">
-                                        <Badge
-                                          variant="outline"
-                                          color={pullRequestBadgeColor(
-                                            ticket.linked_pr,
-                                          )}
-                                          leftSection={
-                                            <IconGitPullRequest
-                                              size={12}
-                                              stroke={1.8}
-                                            />
-                                          }
-                                        >
-                                          {formatPullRequestBadgeLabel(
-                                            ticket.linked_pr,
-                                          )}
-                                        </Badge>
+                                        <PullRequestStatusBadge
+                                          linkedPr={ticket.linked_pr}
+                                        />
                                         <Text
                                           component="a"
                                           href={ticket.linked_pr.url}
