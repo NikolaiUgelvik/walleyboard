@@ -5,10 +5,13 @@ import test from "node:test";
 
 import type {
   DraftTicketState,
+  ExecutionAttempt,
   ExecutionSession,
   Project,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -133,6 +136,56 @@ function createReviewPackage(): ReviewPackage {
     validation_results: [],
     remaining_risks: [],
     created_at: "2026-04-01T00:10:00.000Z",
+  };
+}
+
+function createExecutionAttempt(): ExecutionAttempt {
+  return {
+    id: "attempt-1",
+    session_id: "session-1",
+    attempt_number: 1,
+    status: "completed",
+    prompt_kind: "implementation",
+    prompt: "Implement the PR body generator.",
+    pty_pid: null,
+    started_at: "2026-04-01T00:00:00.000Z",
+    ended_at: "2026-04-01T00:05:00.000Z",
+    end_reason: null,
+  };
+}
+
+function createReviewRun(): ReviewRun {
+  return {
+    id: "review-run-1",
+    ticket_id: 5,
+    review_package_id: "review-package-1",
+    implementation_session_id: "session-1",
+    status: "completed",
+    adapter_session_ref: null,
+    prompt: "Review the implementation.",
+    report: {
+      summary: "Looks good.",
+      strengths: [],
+      actionable_findings: [],
+    },
+    failure_message: null,
+    created_at: "2026-04-01T00:06:00.000Z",
+    updated_at: "2026-04-01T00:07:00.000Z",
+    completed_at: "2026-04-01T00:07:00.000Z",
+  };
+}
+
+function createTicketEvent(): StructuredEvent {
+  return {
+    id: "event-1",
+    occurred_at: "2026-04-01T00:08:00.000Z",
+    entity_type: "ticket",
+    entity_id: "5",
+    event_type: "pull_request.created",
+    payload: {
+      number: 12,
+      url: "https://github.com/acme/repo/pull/12",
+    },
   };
 }
 
@@ -343,6 +396,42 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
     "/walleyboard-home/agent-reviews/spacegame/ticket-5-review-run-1.json",
   );
   assert.ok(run.dockerSpec);
+});
+
+test("CodexCliAdapter.buildPullRequestBodyRun uses the draft model with read-only host permissions", () => {
+  const adapter = new CodexCliAdapter();
+  const project = {
+    ...createProject(),
+    draft_analysis_model: "gpt-5.4-mini",
+    draft_analysis_reasoning_effort: "medium" as const,
+  };
+
+  const run = adapter.buildPullRequestBodyRun({
+    attempts: [createExecutionAttempt()],
+    baseBranch: "main",
+    headBranch: "codex/ticket-5",
+    outputPath: "/tmp/pr-body.json",
+    patch: "diff --git a/file b/file",
+    project,
+    repository: createRepository(),
+    reviewPackage: createReviewPackage(),
+    reviewRuns: [createReviewRun()],
+    session: createSession(),
+    sessionLogs: ["Created review package."],
+    ticket: createTicket(),
+    ticketEvents: [createTicketEvent()],
+    useDockerRuntime: false,
+  });
+
+  assert.ok(run.args.includes("--full-auto"));
+  assert.ok(run.args.includes('approval_policy="on-request"'));
+  assert.ok(run.args.includes('sandbox_mode="read-only"'));
+  assert.ok(run.args.includes("--model"));
+  assert.ok(run.args.includes("gpt-5.4-mini"));
+  assert.ok(run.args.includes('model_reasoning_effort="medium"'));
+  assert.match(run.prompt, /## Pull Request Goal/);
+  assert.match(run.prompt, /## Output JSON/);
+  assert.equal(run.dockerSpec, null);
 });
 
 test("CodexCliAdapter.interpretOutputLine summarizes command execution events", () => {

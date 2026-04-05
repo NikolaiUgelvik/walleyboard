@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 
 import type {
+  ExecutionAttempt,
   ExecutionSession,
   Project,
   PullRequestRef,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -28,6 +33,10 @@ import {
   buildRequestedChangesBody,
   extractLatestRequestedChangesReview,
 } from "./github-requested-changes.js";
+import {
+  type PullRequestBodyGenerationContext,
+  generatePullRequestBody as runPullRequestBodyGeneration,
+} from "./pull-request-body-generator.js";
 import { assertAiReviewNotRunning } from "./review-run-guard.js";
 import type { GitHubPullRequestPersistence } from "./store.js";
 import { nowIso } from "./time.js";
@@ -45,6 +54,10 @@ type PullRequestSyncInput = {
 };
 
 type RunGhCommand = (args: string[], cwd: string) => Promise<string> | string;
+
+type GeneratePullRequestBody = (
+  input: PullRequestBodyGenerationContext,
+) => Promise<{ body: string }>;
 
 type GitHubRepositoryIdentity = {
   owner: string;
@@ -65,6 +78,14 @@ type PullRequestSnapshot = {
   reviewStatus: PullRequestRef["review_status"];
   headSha: string | null;
   changesRequestedBy: string | null;
+};
+
+type PullRequestTimelineContext = {
+  attempts: ExecutionAttempt[];
+  patch: string;
+  reviewRuns: ReviewRun[];
+  sessionLogs: string[];
+  ticketEvents: StructuredEvent[];
 };
 
 const basePollIntervalMs = 10 * 60 * 1_000;
@@ -411,6 +432,33 @@ function buildPullRequestBody(
   return lines.join("\n");
 }
 
+function readReviewPackagePatch(reviewPackage: ReviewPackage): string {
+  if (!isAbsolute(reviewPackage.diff_ref)) {
+    throw new Error("Stored review diff artifact path is invalid");
+  }
+
+  if (!existsSync(reviewPackage.diff_ref)) {
+    throw new Error("Stored review diff artifact is no longer available");
+  }
+
+  return readFileSync(reviewPackage.diff_ref, "utf8");
+}
+
+function collectPullRequestTimelineContext(
+  store: GitHubPullRequestPersistence,
+  ticket: TicketFrontmatter,
+  session: ExecutionSession,
+  reviewPackage: ReviewPackage,
+): PullRequestTimelineContext {
+  return {
+    attempts: store.listSessionAttempts(session.id),
+    patch: readReviewPackagePatch(reviewPackage),
+    reviewRuns: store.listReviewRuns(ticket.id),
+    sessionLogs: store.getSessionLogs(session.id),
+    ticketEvents: store.getTicketEvents(ticket.id),
+  };
+}
+
 function buildLinkedPullRequestRef(
   snapshot: PullRequestSnapshot,
   existing: PullRequestRef | null,
@@ -461,6 +509,7 @@ function projectTicketPairs(store: GitHubPullRequestPersistence): Array<{
 
 export class GitHubPullRequestService {
   readonly #dependencies: ReviewRouteDependencies;
+  readonly #generatePullRequestBody: GeneratePullRequestBody;
   readonly #runGhCommand: RunGhCommand;
   readonly #schedules = new Map<number, PullRequestSchedule>();
   #backgroundReconcileInFlight = false;
@@ -469,10 +518,28 @@ export class GitHubPullRequestService {
   constructor(
     dependencies: ReviewRouteDependencies,
     options?: {
+      generatePullRequestBody?: GeneratePullRequestBody;
       runGhCommand?: RunGhCommand;
     },
   ) {
     this.#dependencies = dependencies;
+    this.#generatePullRequestBody =
+      options?.generatePullRequestBody ??
+      (async (input) =>
+        await runPullRequestBodyGeneration({
+          adapter: this.#dependencies.adapterRegistry.get(
+            input.project.agent_adapter,
+          ),
+          context: input,
+          dockerRuntime: this.#dependencies.dockerRuntime,
+          onLogLine: (line) => {
+            this.#publishSessionOutput(
+              input.session.id,
+              input.session.current_attempt_id ?? input.session.id,
+              line,
+            );
+          },
+        }));
     this.#runGhCommand = options?.runGhCommand ?? defaultRunGhCommand;
   }
 
@@ -497,6 +564,7 @@ export class GitHubPullRequestService {
 
   async createPullRequest(ticketId: number): Promise<TicketFrontmatter> {
     const ticket = this.#requireTicket(ticketId);
+    const project = this.#requireProject(ticket.project);
     const session = this.#requireSession(ticket);
     const reviewPackage = this.#requireReviewPackage(ticketId);
     const repository = this.#requireRepository(ticket.repo);
@@ -535,6 +603,51 @@ export class GitHubPullRequestService {
       ticket.working_branch,
     ]);
 
+    let pullRequestBody = buildPullRequestBody(ticket, reviewPackage);
+    this.#publishSessionOutput(
+      session.id,
+      session.current_attempt_id ?? session.id,
+      `Generating GitHub pull request body with ${project.agent_adapter} using the draft refining model context`,
+    );
+    try {
+      const timelineContext = collectPullRequestTimelineContext(
+        this.#dependencies.store,
+        ticket,
+        session,
+        reviewPackage,
+      );
+      const generated = await this.#generatePullRequestBody({
+        attempts: timelineContext.attempts,
+        baseBranch,
+        headBranch: ticket.working_branch,
+        patch: timelineContext.patch,
+        project,
+        repository,
+        reviewPackage,
+        reviewRuns: timelineContext.reviewRuns,
+        session,
+        sessionLogs: timelineContext.sessionLogs,
+        ticket,
+        ticketEvents: timelineContext.ticketEvents,
+      });
+      pullRequestBody = generated.body;
+      this.#publishSessionOutput(
+        session.id,
+        session.current_attempt_id ?? session.id,
+        "Generated GitHub pull request body from the full review timeline context",
+      );
+    } catch (error) {
+      this.#publishSessionOutput(
+        session.id,
+        session.current_attempt_id ?? session.id,
+        `[pull request body fallback] ${
+          error instanceof Error
+            ? error.message
+            : "Unable to generate the GitHub pull request body"
+        }`,
+      );
+    }
+
     const prUrl = await this.#runGhCommand(
       [
         "pr",
@@ -548,7 +661,7 @@ export class GitHubPullRequestService {
         "--title",
         ticket.title,
         "--body",
-        buildPullRequestBody(ticket, reviewPackage),
+        pullRequestBody,
       ],
       session.worktree_path,
     );

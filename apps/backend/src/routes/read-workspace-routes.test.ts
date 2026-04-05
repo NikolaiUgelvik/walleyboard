@@ -835,6 +835,9 @@ test("workspace terminal stays available after execution starts in the same work
         buildReviewRun() {
           throw new Error("review runs are not used in this test");
         },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
+        },
         formatExitReason() {
           return "Codex exited";
         },

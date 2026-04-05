@@ -7,10 +7,13 @@ import { z } from "zod";
 
 import type {
   DraftTicketState,
+  ExecutionAttempt,
   ExecutionSession,
   Project,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -179,6 +182,56 @@ function createReviewPackage(): ReviewPackage {
     ],
     remaining_risks: [],
     created_at: "2026-04-01T00:10:00.000Z",
+  };
+}
+
+function createExecutionAttempt(): ExecutionAttempt {
+  return {
+    id: "attempt-1",
+    session_id: "session-1",
+    attempt_number: 1,
+    status: "completed",
+    prompt_kind: "implementation",
+    prompt: "Implement the PR body generator.",
+    pty_pid: null,
+    started_at: "2026-04-01T00:00:00.000Z",
+    ended_at: "2026-04-01T00:05:00.000Z",
+    end_reason: null,
+  };
+}
+
+function createReviewRun(): ReviewRun {
+  return {
+    id: "review-run-1",
+    ticket_id: 42,
+    review_package_id: "review-package-1",
+    implementation_session_id: "session-1",
+    status: "completed",
+    adapter_session_ref: null,
+    prompt: "Review the implementation.",
+    report: {
+      summary: "Looks good.",
+      strengths: [],
+      actionable_findings: [],
+    },
+    failure_message: null,
+    created_at: "2026-04-01T00:06:00.000Z",
+    updated_at: "2026-04-01T00:07:00.000Z",
+    completed_at: "2026-04-01T00:07:00.000Z",
+  };
+}
+
+function createTicketEvent(): StructuredEvent {
+  return {
+    id: "event-1",
+    occurred_at: "2026-04-01T00:08:00.000Z",
+    entity_type: "ticket",
+    entity_id: "42",
+    event_type: "pull_request.created",
+    payload: {
+      number: 12,
+      url: "https://github.com/acme/repo/pull/12",
+    },
   };
 }
 
@@ -1246,6 +1299,39 @@ test("ClaudeCodeAdapter.buildReviewRun uses read-only permissions and the shared
   assert.match(run.prompt, /## Review Goal/);
   assert.match(run.prompt, /## Evidence/);
   assert.match(run.prompt, /## Output JSON/);
+});
+
+test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and read-only permissions", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildPullRequestBodyRun({
+    attempts: [createExecutionAttempt()],
+    baseBranch: "main",
+    headBranch: "claude-code/ticket-42",
+    outputPath: createWorkspaceOutputPath("pr-body.json"),
+    patch: "diff --git a/file b/file",
+    project: createProject({
+      draft_analysis_model: "claude-haiku-3-5-20241022",
+      ticket_work_model: "claude-sonnet-4-5-20250514",
+    }),
+    repository: createRepository(),
+    reviewPackage: createReviewPackage(),
+    reviewRuns: [createReviewRun()],
+    session: createSession(),
+    sessionLogs: ["Created review package."],
+    ticket: createTicket(),
+    ticketEvents: [createTicketEvent()],
+    useDockerRuntime: true,
+  });
+
+  assert.equal(run.command, "bash");
+  assert.match(run.args[1] ?? "", /claude-haiku-3-5-20241022/);
+  assert.match(run.args[1] ?? "", /'--permission-mode' 'plan'/);
+  assert.match(run.prompt, /## Pull Request Goal/);
+  assert.match(run.prompt, /## Output JSON/);
+  assert.equal(
+    run.outputPath,
+    "/walleyboard-home/agent-summaries/project-1/pr-body.json",
+  );
 });
 
 // ---------------------------------------------------------------------------

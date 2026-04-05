@@ -222,6 +222,19 @@ export function buildOutputSummaryPath(
   return join(summaryDir, `ticket-${ticketId}-${sessionId}.txt`);
 }
 
+export function buildPullRequestBodyOutputPath(
+  project: Project,
+  ticketId: number,
+  sessionId: string,
+): string {
+  const summaryDir = resolveWalleyBoardPath(
+    "pull-request-bodies",
+    project.slug,
+  );
+  ensureDirectory(summaryDir);
+  return join(summaryDir, `ticket-${ticketId}-${sessionId}.json`);
+}
+
 export function buildMergeConflictSummaryPath(
   project: Project,
   ticketId: number,

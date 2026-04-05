@@ -9,6 +9,7 @@ import type { ReviewPackage } from "../../../../packages/contracts/src/index.js"
 
 import { EventHub } from "./event-hub.js";
 import { GitHubPullRequestService } from "./github-pull-request-service.js";
+import type { PullRequestBodyGenerationContext } from "./pull-request-body-generator.js";
 import { SqliteStore } from "./sqlite-store.js";
 import { prepareWorktree } from "./worktree-service.js";
 
@@ -103,11 +104,24 @@ function createTicketFixture(
     "Ready for review.",
   );
   store.updateTicketStatus(ticket.id, "review");
+  const diffRef = join(tempDir, "ticket.patch");
+  writeFileSync(
+    diffRef,
+    [
+      "diff --git a/base.txt b/feature.txt",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/feature.txt",
+      "@@ -0,0 +1 @@",
+      "+one",
+    ].join("\n"),
+    "utf8",
+  );
 
   const reviewPackage = store.createReviewPackage({
     ticket_id: ticket.id,
     session_id: started.session.id,
-    diff_ref: join(tempDir, "ticket.patch"),
+    diff_ref: diffRef,
     commit_refs: [runGit(runtime.worktreePath, ["rev-parse", "HEAD"])],
     change_summary: "Implements the feature and prepares review output.",
     validation_results: [],
@@ -138,6 +152,9 @@ function createService(
   store: SqliteStore,
   runGhCommand: (args: string[], cwd: string) => Promise<string> | string,
   options?: {
+    generatePullRequestBody?: (
+      input: PullRequestBodyGenerationContext,
+    ) => Promise<{ body: string }>;
     onAssertProjectExecutionBackendAvailable?: () => void;
     onStartExecution?: (input: {
       sessionId: string;
@@ -201,11 +218,26 @@ function createService(
     service: new GitHubPullRequestService(
       {
         eventHub: new EventHub(),
+        adapterRegistry: {
+          get() {
+            throw new Error("Adapter registry should not be used in this test");
+          },
+        } as never,
+        dockerRuntime: {
+          cleanupSessionContainer() {},
+          ensureSessionContainer() {},
+          getSessionContainerInfo() {
+            return null;
+          },
+        } as never,
         executionRuntime: executionRuntime as never,
         store,
         ticketWorkspaceService: ticketWorkspaceService as never,
       },
       {
+        ...(options?.generatePullRequestBody
+          ? { generatePullRequestBody: options.generatePullRequestBody }
+          : {}),
         runGhCommand,
       },
     ),
@@ -226,6 +258,11 @@ function dequeueGhResponse(
   };
 }
 
+function readFlagValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
 test("createPullRequest pushes the branch, creates the PR, and links it to the ticket", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-gh-create-pr-"));
   const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
@@ -243,6 +280,10 @@ test("createPullRequest pushes the branch, creates the PR, and links it to the t
             ghCalls.push(args);
             assert.equal(args[0], "pr");
             assert.equal(args[1], "create");
+            assert.equal(
+              readFlagValue(args, "--body"),
+              "## Summary\n- Generated PR body",
+            );
           },
           output: "https://github.com/acme/repo/pull/12",
         },
@@ -275,6 +316,13 @@ test("createPullRequest pushes the branch, creates the PR, and links it to the t
           }),
         },
       ]),
+      {
+        async generatePullRequestBody() {
+          return {
+            body: "## Summary\n- Generated PR body",
+          };
+        },
+      },
     );
 
     const updatedTicket = await service.createPullRequest(fixture.ticket.id);
@@ -292,6 +340,203 @@ test("createPullRequest pushes the branch, creates the PR, and links it to the t
       true,
     );
     assert.equal(ghCalls.length, 2);
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createPullRequest passes the full canonical timeline context to the generator", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-create-pr-context-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    assert.ok(fixture.session.current_attempt_id);
+
+    fixture.store.updateExecutionAttempt(fixture.session.current_attempt_id, {
+      prompt_kind: "implementation",
+      prompt: "Implement the pull request body generator.",
+      status: "completed",
+    });
+    fixture.store.appendSessionLog(
+      fixture.session.id,
+      "Prepared pull request metadata from the timeline.",
+    );
+    const reviewRun = fixture.store.createReviewRun({
+      ticket_id: fixture.ticket.id,
+      review_package_id: fixture.reviewPackage.id,
+      implementation_session_id: fixture.session.id,
+    });
+    fixture.store.updateReviewRun(reviewRun.id, {
+      prompt: "Review the final implementation carefully.",
+      report: {
+        summary: "Looks good overall.",
+        strengths: ["Context coverage is strong."],
+        actionable_findings: [],
+      },
+      status: "completed",
+      completed_at: "2026-04-01T00:08:00.000Z",
+    });
+    fixture.store.recordTicketEvent(fixture.ticket.id, "pull_request.ready", {
+      ticket_id: fixture.ticket.id,
+      summary: "PR metadata is ready.",
+    });
+
+    let capturedInput: {
+      attempts: unknown[];
+      baseBranch: string;
+      headBranch: string;
+      patch: string;
+      reviewRuns: unknown[];
+      sessionLogs: string[];
+      ticketEvents: unknown[];
+    } | null = null;
+
+    const { service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          output: "https://github.com/acme/repo/pull/32",
+        },
+        {
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_32: {
+                  number: 32,
+                  url: "https://github.com/acme/repo/pull/32",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: runGit(fixture.runtime.worktreePath, [
+                    "rev-parse",
+                    "HEAD",
+                  ]),
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+      {
+        async generatePullRequestBody(input) {
+          capturedInput = input;
+          return {
+            body: "## Summary\n- Generated from the captured context",
+          };
+        },
+      },
+    );
+
+    await service.createPullRequest(fixture.ticket.id);
+
+    assert.ok(capturedInput);
+    const context = capturedInput as {
+      attempts: unknown[];
+      baseBranch: string;
+      headBranch: string;
+      patch: string;
+      reviewRuns: unknown[];
+      sessionLogs: string[];
+      ticketEvents: unknown[];
+    };
+    assert.equal(context.baseBranch, "main");
+    assert.equal(context.headBranch, fixture.ticket.working_branch);
+    assert.equal(
+      context.patch.includes("diff --git a/base.txt b/feature.txt"),
+      true,
+    );
+    assert.equal(context.attempts.length > 0, true);
+    assert.equal(context.reviewRuns.length > 0, true);
+    assert.equal(context.ticketEvents.length > 0, true);
+    assert.equal(context.sessionLogs.length > 0, true);
+    assert.equal(
+      context.sessionLogs.some((line: string) =>
+        line.includes("Prepared pull request metadata from the timeline."),
+      ),
+      true,
+    );
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createPullRequest falls back to the static body when generation fails", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-create-pr-fallback-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const ticket = fixture.ticket;
+    if (!ticket) {
+      throw new Error("Expected fixture ticket");
+    }
+
+    const { service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(
+              readFlagValue(args, "--body"),
+              [
+                `WalleyBoard ticket #${ticket.id}`,
+                "",
+                fixture.reviewPackage.change_summary,
+                "",
+                "Acceptance criteria:",
+                "- Keep review automation on the same worktree.",
+              ].join("\n"),
+            );
+          },
+          output: "https://github.com/acme/repo/pull/44",
+        },
+        {
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_44: {
+                  number: 44,
+                  url: "https://github.com/acme/repo/pull/44",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: runGit(fixture.runtime.worktreePath, [
+                    "rev-parse",
+                    "HEAD",
+                  ]),
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+      {
+        async generatePullRequestBody() {
+          throw new Error("Generator unavailable");
+        },
+      },
+    );
+
+    const updatedTicket = await service.createPullRequest(fixture.ticket.id);
+    assert.equal(updatedTicket.linked_pr?.number, 44);
+    assert.equal(updatedTicket.linked_pr?.state, "open");
   } finally {
     restoreWalleyBoardHome();
     rmSync(tempDir, { recursive: true, force: true });

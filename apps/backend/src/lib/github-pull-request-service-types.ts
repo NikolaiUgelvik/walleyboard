@@ -1,3 +1,5 @@
+import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
+import type { DockerRuntime } from "./docker-runtime.js";
 import type { EventHub } from "./event-hub.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
 import type { GitHubPullRequestPersistence } from "./store.js";
@@ -22,6 +24,8 @@ export type PullRequestSchedule = {
 };
 
 export type ReviewRouteDependencies = {
+  adapterRegistry: AgentAdapterRegistry;
+  dockerRuntime: DockerRuntime;
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
   store: GitHubPullRequestPersistence;

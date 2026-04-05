@@ -20,6 +20,7 @@ import {
   buildImplementationPrompt,
   buildMergeConflictPrompt,
   buildPlanPrompt,
+  buildPullRequestBodyPrompt,
   buildReviewPrompt,
 } from "./shared-execution-prompts.js";
 import type {
@@ -29,6 +30,7 @@ import type {
   InterpretedAdapterLine,
   MergeConflictRunInput,
   PreparedAgentRun,
+  PullRequestBodyRunInput,
   ReviewRunInput,
 } from "./types.js";
 
@@ -612,6 +614,57 @@ export class CodexCliAdapter implements AgentCliAdapter {
       args.push("--full-auto");
       appendCodexExecutionModeArgs(args, "plan");
     }
+    appendCodexModelArgs(args, {
+      model,
+      reasoningEffort,
+    });
+    args.push(prompt);
+
+    return {
+      command: "codex",
+      args,
+      prompt,
+      outputPath,
+      dockerSpec: input.useDockerRuntime ? codexDockerSpec : null,
+    };
+  }
+
+  buildPullRequestBodyRun(input: PullRequestBodyRunInput): PreparedAgentRun {
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "draft",
+    );
+    const prompt = buildPullRequestBodyPrompt({
+      attempts: input.attempts,
+      baseBranch: input.baseBranch,
+      headBranch: input.headBranch,
+      patch: input.patch,
+      repository: input.repository,
+      reviewPackage: input.reviewPackage,
+      reviewRuns: input.reviewRuns,
+      session: {
+        id: input.session.id,
+        plan_summary: input.session.plan_summary,
+        last_summary: input.session.last_summary,
+      },
+      sessionLogs: input.sessionLogs,
+      ticket: input.ticket,
+      ticketEvents: input.ticketEvents,
+    });
+    const outputPath = resolveAgentOutputPath({
+      outputPath: input.outputPath,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath: input.session.worktree_path,
+    });
+    const args = ["exec", "--json", "--output-last-message", outputPath];
+
+    if (input.useDockerRuntime) {
+      appendDangerousDockerArgs(args);
+    } else {
+      args.push("--full-auto");
+      appendCodexExecutionModeArgs(args, "plan");
+    }
+
     appendCodexModelArgs(args, {
       model,
       reasoningEffort,

@@ -17,6 +17,7 @@ import {
   buildImplementationPrompt,
   buildMergeConflictPrompt,
   buildPlanPrompt,
+  buildPullRequestBodyPrompt,
   buildReviewPrompt,
 } from "./shared-execution-prompts.js";
 import type {
@@ -26,6 +27,7 @@ import type {
   InterpretedAdapterLine,
   MergeConflictRunInput,
   PreparedAgentRun,
+  PullRequestBodyRunInput,
   ReviewRunInput,
 } from "./types.js";
 
@@ -614,6 +616,52 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       repository: input.repository,
       reviewPackage: input.reviewPackage,
       ticket: input.ticket,
+    });
+    const claudeArgs = ["-p", prompt, "--output-format", "json"];
+    appendClaudePermissionArgs(claudeArgs, "read-only");
+    appendClaudeCodeModelArgs(claudeArgs, model);
+
+    const { command, args } = buildDraftShellCommand(
+      this.#resolveCommand(),
+      claudeArgs,
+      outputPath,
+    );
+
+    return {
+      command,
+      args,
+      prompt,
+      outputPath,
+      dockerSpec: claudeCodeDockerSpec,
+    };
+  }
+
+  buildPullRequestBodyRun(input: PullRequestBodyRunInput): PreparedAgentRun {
+    assertDockerRuntimeEnabled(input.useDockerRuntime);
+    const { model } = this.resolveModelSelection(input.project, "draft");
+    const worktreePath = input.session.worktree_path;
+    if (!worktreePath) {
+      throw new Error(
+        "Docker-backed Claude Code runs require a prepared worktree path.",
+      );
+    }
+    const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
+    const prompt = buildPullRequestBodyPrompt({
+      attempts: input.attempts,
+      baseBranch: input.baseBranch,
+      headBranch: input.headBranch,
+      patch: input.patch,
+      repository: input.repository,
+      reviewPackage: input.reviewPackage,
+      reviewRuns: input.reviewRuns,
+      session: {
+        id: input.session.id,
+        plan_summary: input.session.plan_summary,
+        last_summary: input.session.last_summary,
+      },
+      sessionLogs: input.sessionLogs,
+      ticket: input.ticket,
+      ticketEvents: input.ticketEvents,
     });
     const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");

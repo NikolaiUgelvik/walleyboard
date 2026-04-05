@@ -206,6 +206,9 @@ test("runTicketReviewSession streams Docker reviews through a child process", as
             },
           };
         },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
+        },
         interpretOutputLine(line) {
           return {
             logLine: line,

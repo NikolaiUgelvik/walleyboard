@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  ExecutionAttempt,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -11,6 +14,7 @@ import {
   buildImplementationPrompt,
   buildMergeConflictPrompt,
   buildPlanPrompt,
+  buildPullRequestBodyPrompt,
   buildReviewPrompt,
 } from "./shared-execution-prompts.js";
 
@@ -80,6 +84,67 @@ function createReviewPackage(): ReviewPackage {
     ],
     remaining_risks: ["Manual gameplay feel is still only code-verified."],
     created_at: "2026-04-01T00:10:00.000Z",
+  };
+}
+
+function createExecutionAttempt(): ExecutionAttempt {
+  return {
+    id: "attempt-1",
+    session_id: "session-1",
+    attempt_number: 1,
+    status: "completed",
+    prompt_kind: "implementation",
+    prompt: "Implement the pull request body generator.",
+    pty_pid: null,
+    started_at: "2026-04-01T00:00:00.000Z",
+    ended_at: "2026-04-01T00:05:00.000Z",
+    end_reason: null,
+  };
+}
+
+function createReviewRun(): ReviewRun {
+  return {
+    id: "review-run-1",
+    ticket_id: 5,
+    review_package_id: "review-package-1",
+    implementation_session_id: "session-1",
+    status: "completed",
+    adapter_session_ref: "review-session-1",
+    prompt: "Review the implementation carefully.",
+    report: {
+      summary: "Looks good overall.",
+      strengths: [
+        "Clear separation between prompt building and orchestration.",
+      ],
+      actionable_findings: [
+        {
+          severity: "medium",
+          category: "testing",
+          title: "Missing fallback assertion",
+          details: "There is no regression test for fallback behavior.",
+          suggested_fix: "Add a service test that forces generation failure.",
+        },
+      ],
+    },
+    failure_message: null,
+    created_at: "2026-04-01T00:06:00.000Z",
+    updated_at: "2026-04-01T00:07:00.000Z",
+    completed_at: "2026-04-01T00:07:00.000Z",
+  };
+}
+
+function createTicketEvent(): StructuredEvent {
+  return {
+    id: "event-1",
+    occurred_at: "2026-04-01T00:08:00.000Z",
+    entity_type: "pull_request",
+    entity_id: "5",
+    event_type: "pull_request.created",
+    payload: {
+      ticket_id: 5,
+      number: 12,
+      url: "https://github.com/acme/repo/pull/12",
+    },
   };
 }
 
@@ -245,4 +310,50 @@ test("buildReviewPrompt omits empty validation and risk sections", () => {
   assert.doesNotMatch(prompt, /### Commits/);
   assert.doesNotMatch(prompt, /### Validation Results/);
   assert.doesNotMatch(prompt, /### Known Risks/);
+});
+
+test("buildPullRequestBodyPrompt includes the full canonical timeline context and strict JSON contract", () => {
+  const prompt = buildPullRequestBodyPrompt({
+    attempts: [createExecutionAttempt()],
+    baseBranch: "main",
+    headBranch: "codex/ticket-5",
+    patch: "diff --git a/src/app.ts b/src/app.ts\n+console.log('hi');",
+    repository: createRepository(),
+    reviewPackage: createReviewPackage(),
+    reviewRuns: [createReviewRun()],
+    session: {
+      id: "session-1",
+      plan_summary: "Plan the PR body generation work.",
+      last_summary: "Implementation finished cleanly.",
+    },
+    sessionLogs: [
+      "Starting execution attempt 1",
+      "Created review package",
+      "Prepared pull request metadata",
+    ],
+    ticket: createTicket(),
+    ticketEvents: [createTicketEvent()],
+  });
+
+  assert.match(prompt, /## Pull Request Goal/);
+  assert.match(prompt, /- Base branch: main/);
+  assert.match(prompt, /- Head branch: codex\/ticket-5/);
+  assert.match(prompt, /## Review Package/);
+  assert.match(prompt, /### Validation Results/);
+  assert.match(prompt, /Label: npm test -- --run tests\/main-menu\.test\.ts/);
+  assert.match(prompt, /## Session Summary/);
+  assert.match(prompt, /Plan the PR body generation work\./);
+  assert.match(prompt, /Implementation finished cleanly\./);
+  assert.match(prompt, /## Execution Attempts/);
+  assert.match(prompt, /Implement the pull request body generator\./);
+  assert.match(prompt, /## Review Runs/);
+  assert.match(prompt, /Missing fallback assertion/);
+  assert.match(prompt, /## Ticket Events/);
+  assert.match(prompt, /pull_request\.created/);
+  assert.match(prompt, /## Session Logs/);
+  assert.match(prompt, /Prepared pull request metadata/);
+  assert.match(prompt, /## Diff Patch/);
+  assert.match(prompt, /\+console\.log\('hi'\);/);
+  assert.match(prompt, /## Output JSON/);
+  assert.match(prompt, /"body": "## Summary\\n- \.\.\."/);
 });

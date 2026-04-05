@@ -181,6 +181,9 @@ test("runMergeRecovery streams Docker child-process output through the log callb
         buildReviewRun() {
           throw new Error("review runs are not used in this test");
         },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
+        },
         interpretOutputLine(line) {
           return {
             logLine: `[codex] ${line}`,

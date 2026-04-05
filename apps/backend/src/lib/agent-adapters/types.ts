@@ -3,11 +3,14 @@ import type { z } from "zod";
 import type {
   AgentAdapter,
   DraftTicketState,
+  ExecutionAttempt,
   ExecutionSession,
   Project,
   ReasoningEffort,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 import type {
@@ -87,6 +90,27 @@ export type ReviewRunInput = {
   useDockerRuntime: boolean;
 };
 
+export type PullRequestBodyRunInput = {
+  attempts: ExecutionAttempt[];
+  baseBranch: string;
+  headBranch: string;
+  outputPath: string;
+  patch: string;
+  project: Project;
+  repository: RepositoryConfig;
+  reviewPackage: ReviewPackage;
+  reviewRuns: ReviewRun[];
+  session: ExecutionSession;
+  sessionLogs: string[];
+  ticket: TicketFrontmatter;
+  ticketEvents: StructuredEvent[];
+  useDockerRuntime: boolean;
+};
+
+export type PullRequestBodyResult = {
+  body: string;
+};
+
 export interface AgentCliAdapter {
   readonly id: AgentAdapterId;
   readonly label: string;
@@ -94,6 +118,7 @@ export interface AgentCliAdapter {
   buildExecutionRun(input: ExecutionRunInput): PreparedAgentRun;
   buildMergeConflictRun(input: MergeConflictRunInput): PreparedAgentRun;
   buildReviewRun(input: ReviewRunInput): PreparedAgentRun;
+  buildPullRequestBodyRun(input: PullRequestBodyRunInput): PreparedAgentRun;
   interpretOutputLine(line: string): InterpretedAdapterLine;
   parseDraftResult<T>(rawOutput: string, schema: z.ZodType<T>): T;
   formatExitReason(

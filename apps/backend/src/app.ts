@@ -113,6 +113,8 @@ export async function createApp(options: CreateAppOptions = {}) {
   const githubPullRequestService =
     options.githubPullRequestService ??
     new GitHubPullRequestService({
+      adapterRegistry,
+      dockerRuntime,
       eventHub,
       executionRuntime,
       store,

@@ -1,7 +1,11 @@
 import type {
+  ExecutionAttempt,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
+  ValidationResult,
 } from "../../../../../packages/contracts/src/index.js";
 import { hasMeaningfulContent } from "../execution-runtime/helpers.js";
 import type { PromptContextSection } from "../execution-runtime/types.js";
@@ -62,6 +66,17 @@ function appendCodeBlock(
   content: string,
 ): void {
   sections.push(`\`\`\`${language}`, content, "```");
+}
+
+function appendMetadataBullets(
+  sections: string[],
+  metadata: Array<[label: string, value: string | null | undefined]>,
+): void {
+  for (const [label, value] of metadata) {
+    sections.push(
+      `- ${label}: ${hasMeaningfulContent(value) ? value : "None."}`,
+    );
+  }
 }
 
 function appendSubsection(
@@ -147,6 +162,125 @@ function formatValidationResults(reviewPackage: ReviewPackage): string[] {
 
 function formatRemainingRisks(reviewPackage: ReviewPackage): string[] {
   return reviewPackage.remaining_risks;
+}
+
+function formatValidationResult(result: ValidationResult): string {
+  return [
+    `Label: ${result.label}`,
+    `Status: ${result.status}`,
+    `Started at: ${result.started_at}`,
+    `Ended at: ${result.ended_at}`,
+    `Exit code: ${result.exit_code === null ? "None" : String(result.exit_code)}`,
+    `Failure overridden: ${result.failure_overridden ? "yes" : "no"}`,
+    `Summary: ${hasMeaningfulContent(result.summary) ? result.summary : "None."}`,
+    `Log ref: ${hasMeaningfulContent(result.log_ref) ? result.log_ref : "None."}`,
+  ].join("\n");
+}
+
+function appendExecutionAttemptsSection(
+  sections: string[],
+  attempts: ExecutionAttempt[],
+): void {
+  appendHeading(sections, "Execution Attempts");
+  if (attempts.length === 0) {
+    sections.push("None.");
+    return;
+  }
+
+  for (const attempt of attempts) {
+    appendHeading(sections, `Attempt ${attempt.attempt_number}`, 3);
+    appendMetadataBullets(sections, [
+      ["Status", attempt.status],
+      ["Prompt kind", attempt.prompt_kind],
+      ["Started at", attempt.started_at],
+      ["Ended at", attempt.ended_at],
+      ["End reason", attempt.end_reason],
+    ]);
+    appendSubsection(sections, "Prompt", attempt.prompt);
+  }
+}
+
+function appendReviewRunsSection(
+  sections: string[],
+  reviewRuns: ReviewRun[],
+): void {
+  appendHeading(sections, "Review Runs");
+  if (reviewRuns.length === 0) {
+    sections.push("None.");
+    return;
+  }
+
+  for (const [index, reviewRun] of reviewRuns.entries()) {
+    appendHeading(sections, `Review Run ${index + 1}`, 3);
+    appendMetadataBullets(sections, [
+      ["Review run id", reviewRun.id],
+      ["Status", reviewRun.status],
+      ["Created at", reviewRun.created_at],
+      ["Updated at", reviewRun.updated_at],
+      ["Completed at", reviewRun.completed_at],
+      ["Adapter session ref", reviewRun.adapter_session_ref],
+    ]);
+    appendSubsection(sections, "Prompt", reviewRun.prompt);
+    appendSubsection(
+      sections,
+      "Report summary",
+      reviewRun.report?.summary ?? null,
+    );
+    appendBulletSubsection(
+      sections,
+      "Report strengths",
+      reviewRun.report?.strengths ?? [],
+    );
+    appendBulletSubsection(
+      sections,
+      "Actionable findings",
+      (reviewRun.report?.actionable_findings ?? []).map((finding) =>
+        [
+          `Severity: ${finding.severity}`,
+          `Category: ${finding.category}`,
+          `Title: ${finding.title}`,
+          `Details: ${finding.details}`,
+          `Suggested fix: ${finding.suggested_fix}`,
+        ].join(" | "),
+      ),
+    );
+    appendSubsection(sections, "Failure message", reviewRun.failure_message);
+  }
+}
+
+function appendTicketEventsSection(
+  sections: string[],
+  ticketEvents: StructuredEvent[],
+): void {
+  appendHeading(sections, "Ticket Events");
+  if (ticketEvents.length === 0) {
+    sections.push("None.");
+    return;
+  }
+
+  for (const [index, event] of ticketEvents.entries()) {
+    appendHeading(sections, `Event ${index + 1}`, 3);
+    appendMetadataBullets(sections, [
+      ["Occurred at", event.occurred_at],
+      ["Entity type", event.entity_type],
+      ["Entity id", event.entity_id],
+      ["Event type", event.event_type],
+    ]);
+    appendCodeBlock(sections, "json", JSON.stringify(event.payload, null, 2));
+  }
+}
+
+function appendSessionLogsSection(
+  sections: string[],
+  sessionLogs: string[],
+): void {
+  appendHeading(sections, "Session Logs");
+  if (sessionLogs.length === 0) {
+    sections.push("None.");
+    return;
+  }
+
+  appendCodeBlock(sections, "text", sessionLogs.join("\n"));
 }
 
 export function buildImplementationPrompt(
@@ -389,6 +523,113 @@ export function buildReviewPrompt(input: {
   appendBullets(sections, [
     "Use the repository context, ticket intent, validation output, and git diff to justify your conclusions.",
   ]);
+
+  return sections.join("\n");
+}
+
+export function buildPullRequestBodyPrompt(input: {
+  attempts: ExecutionAttempt[];
+  baseBranch: string;
+  headBranch: string;
+  patch: string;
+  repository: RepositoryConfig;
+  reviewPackage: ReviewPackage;
+  reviewRuns: ReviewRun[];
+  session: {
+    id: string;
+    plan_summary: string | null;
+    last_summary: string | null;
+  };
+  sessionLogs: string[];
+  ticket: TicketFrontmatter;
+  ticketEvents: StructuredEvent[];
+}): string {
+  const sections: string[] = [];
+
+  appendHeading(sections, "Pull Request Goal");
+  sections.push(
+    `Write the GitHub pull request body for ticket #${input.ticket.id} in repository \`${input.repository.name}\`.`,
+    "Do not write a title. Return only the PR body content in the required JSON shape.",
+  );
+
+  appendHeading(sections, "Ticket");
+  appendMetadataBullets(sections, [
+    ["Ticket id", String(input.ticket.id)],
+    ["Title", input.ticket.title],
+    ["Type", input.ticket.ticket_type],
+    ["Status", input.ticket.status],
+    ["Repository", input.repository.name],
+    ["Base branch", input.baseBranch],
+    ["Head branch", input.headBranch],
+    ["Session id", input.session.id],
+  ]);
+  appendSubsection(sections, "Description", input.ticket.description);
+  appendBulletSubsection(
+    sections,
+    "Acceptance Criteria",
+    input.ticket.acceptance_criteria,
+  );
+
+  appendHeading(sections, "Review Package");
+  appendMetadataBullets(sections, [
+    ["Review package id", input.reviewPackage.id],
+    ["Diff artifact", input.reviewPackage.diff_ref],
+    ["Created at", input.reviewPackage.created_at],
+  ]);
+  appendSubsection(
+    sections,
+    "Change summary",
+    input.reviewPackage.change_summary,
+  );
+  appendBulletSubsection(
+    sections,
+    "Commit Refs",
+    input.reviewPackage.commit_refs.map((commitRef) => `\`${commitRef}\``),
+  );
+
+  appendHeading(sections, "Validation Results", 3);
+  if (input.reviewPackage.validation_results.length === 0) {
+    sections.push("None.");
+  } else {
+    for (const result of input.reviewPackage.validation_results) {
+      appendCodeBlock(sections, "text", formatValidationResult(result));
+    }
+  }
+
+  appendBulletSubsection(
+    sections,
+    "Remaining Risks",
+    input.reviewPackage.remaining_risks,
+  );
+
+  appendHeading(sections, "Session Summary");
+  appendSubsection(sections, "Plan summary", input.session.plan_summary);
+  appendSubsection(sections, "Last summary", input.session.last_summary);
+
+  appendExecutionAttemptsSection(sections, input.attempts);
+  appendReviewRunsSection(sections, input.reviewRuns);
+  appendTicketEventsSection(sections, input.ticketEvents);
+  appendSessionLogsSection(sections, input.sessionLogs);
+
+  appendHeading(sections, "Diff Patch");
+  appendCodeBlock(sections, "diff", input.patch);
+
+  appendHeading(sections, "Output JSON");
+  sections.push(
+    "Return strict JSON with exactly one key: `body`.",
+    "The `body` should be polished GitHub Markdown that summarizes the change, includes acceptance criteria, validation, and any remaining risks when present.",
+  );
+  appendCodeBlock(
+    sections,
+    "json",
+    JSON.stringify(
+      {
+        body: "## Summary\n- ...",
+      },
+      null,
+      2,
+    ),
+  );
 
   return sections.join("\n");
 }

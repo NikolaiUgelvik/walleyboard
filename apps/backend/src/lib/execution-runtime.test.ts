@@ -276,6 +276,9 @@ test("docker-backed execution launches the configured adapter command inside Doc
         buildReviewRun() {
           throw new Error("review runs are not used in this test");
         },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
+        },
         interpretOutputLine(line) {
           return {
             logLine: line,
@@ -438,6 +441,9 @@ test("draft refinement launches the configured adapter command inside Docker", (
         },
         buildReviewRun() {
           throw new Error("review runs are not used in this test");
+        },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
         },
         interpretOutputLine(line) {
           return {
@@ -719,6 +725,9 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
         buildReviewRun() {
           throw new Error("review runs are not used in this test");
         },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
+        },
         interpretOutputLine(line) {
           return {
             logLine: `[codex raw] ${line}`,
@@ -928,6 +937,9 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
         },
         buildReviewRun() {
           throw new Error("review runs are not used in this test");
+        },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
         },
         interpretOutputLine(line) {
           return {
