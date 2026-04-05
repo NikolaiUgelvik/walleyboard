@@ -24,6 +24,7 @@ import type {
   InspectorState,
   ProjectsResponse,
   ReviewRunResponse,
+  ReviewRunsResponse,
   TicketsResponse,
   TicketWorkspacePreviewResponse,
 } from "./shared-types.js";
@@ -121,6 +122,58 @@ export function setOptimisticRunningReviewRun(input: {
         },
       };
     },
+  );
+}
+
+export function setStoppedReviewRun(input: {
+  failureMessage: string;
+  queryClient: QueryClient;
+  ticketId: number;
+}): void {
+  const now = new Date().toISOString();
+  let updatedReviewRun: ReviewRunResponse["review_run"] = null;
+
+  input.queryClient.setQueryData<ReviewRunResponse | null>(
+    ["tickets", input.ticketId, "review-run"],
+    (current) => {
+      const currentReviewRun = current?.review_run ?? null;
+      if (!currentReviewRun) {
+        return current;
+      }
+
+      updatedReviewRun = {
+        ...currentReviewRun,
+        completed_at: now,
+        failure_message: input.failureMessage,
+        status: "failed",
+        updated_at: now,
+      };
+      return {
+        review_run: updatedReviewRun,
+      };
+    },
+  );
+
+  if (!updatedReviewRun) {
+    return;
+  }
+  const stoppedReviewRun = updatedReviewRun;
+
+  input.queryClient.setQueryData<ReviewRunsResponse>(
+    ["tickets", input.ticketId, "review-runs"],
+    (previous) =>
+      previous
+        ? {
+            review_runs: upsertById(
+              previous.review_runs,
+              stoppedReviewRun,
+            ).sort(
+              (left, right) =>
+                left.created_at.localeCompare(right.created_at) ||
+                left.id.localeCompare(right.id),
+            ),
+          }
+        : previous,
   );
 }
 
@@ -898,6 +951,36 @@ export function useWalleyBoardMutations({
     },
   });
 
+  const stopAgentReviewMutation = useMutation({
+    mutationFn: (ticketId: number) =>
+      postJson<CommandAck>(`/tickets/${ticketId}/stop-agent-review`, {}),
+    onSuccess: async (_, ticketId) => {
+      setStoppedReviewRun({
+        failureMessage: "Agent review stopped by user.",
+        queryClient,
+        ticketId,
+      });
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["projects", selectedProjectId, "tickets"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["sessions", selectedSessionId, "logs"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-run"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets", ticketId, "review-runs"],
+        }),
+      ]);
+    },
+  });
+
   const requestChangesMutation = useMutation({
     mutationFn: (input: { ticketId: number; body: string }) =>
       postJson<CommandAck>(`/tickets/${input.ticketId}/request-changes`, {
@@ -1049,6 +1132,7 @@ export function useWalleyBoardMutations({
     startAgentReviewMutation,
     startTicketMutation,
     startTicketWorkspacePreviewMutation,
+    stopAgentReviewMutation,
     stopTicketWorkspacePreviewMutation,
     stopTicketMutation,
     terminalInputMutation,

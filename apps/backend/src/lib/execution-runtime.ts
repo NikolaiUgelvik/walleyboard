@@ -109,6 +109,10 @@ export class ExecutionRuntime {
   readonly #stoppingSessions = new Map<string, string>();
   readonly #stoppingManualTerminals = new Map<string, string>();
   readonly #exitWaiters = new Map<string, Set<(didExit: boolean) => void>>();
+  readonly #reviewRunExitWaiters = new Map<
+    string,
+    Set<(didExit: boolean) => void>
+  >();
   readonly #manualExitWaiters = new Map<
     string,
     Set<(didExit: boolean) => void>
@@ -198,6 +202,41 @@ export class ExecutionRuntime {
 
   hasActiveExecution(sessionId: string): boolean {
     return this.#activeSessions.has(sessionId);
+  }
+
+  hasActiveReviewRun(reviewRunId: string): boolean {
+    return this.#activeReviewRuns.has(reviewRunId);
+  }
+
+  async stopReviewRun(
+    reviewRunId: string,
+    timeoutMs = 1_500,
+  ): Promise<boolean> {
+    const child = this.#activeReviewRuns.get(reviewRunId);
+    if (!child) {
+      this.cleanupExecutionEnvironment(`review-${reviewRunId}`);
+      return false;
+    }
+
+    child.kill("SIGTERM");
+
+    const exitedAfterTerm = await waitForTrackedExit(
+      this.#activeReviewRuns,
+      this.#reviewRunExitWaiters,
+      reviewRunId,
+      timeoutMs,
+    );
+    if (exitedAfterTerm) {
+      return true;
+    }
+
+    child.kill("SIGKILL");
+    return await waitForTrackedExit(
+      this.#activeReviewRuns,
+      this.#reviewRunExitWaiters,
+      reviewRunId,
+      1_000,
+    );
   }
 
   hasActiveDraftRun(draftId: string): boolean {
@@ -391,6 +430,7 @@ export class ExecutionRuntime {
       project: input.project,
       repository: input.repository,
       reviewPackage: input.reviewPackage,
+      reviewRunExitWaiters: this.#reviewRunExitWaiters,
       reviewRunId: input.reviewRunId,
       session: input.session,
       ticket: input.ticket,

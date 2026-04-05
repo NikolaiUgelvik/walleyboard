@@ -9,7 +9,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
-import { type EventHub, makeProtocolEvent } from "./event-hub.js";
+import { makeProtocolEvent } from "./event-hub.js";
 import { resolveTargetBranch } from "./execution-runtime/helpers.js";
 import {
   publishSessionOutput,
@@ -17,9 +17,14 @@ import {
   publishTicketUpdated,
   shouldPublishPreExecutionSessionUpdate,
 } from "./execution-runtime/publishers.js";
-import type { ExecutionRuntime } from "./execution-runtime.js";
+import type {
+  DetailedRequestedChanges,
+  GraphQlReviewNode,
+  PullRequestSchedule,
+  ReviewRouteDependencies,
+} from "./github-pull-request-service-types.js";
+import { assertAiReviewNotRunning } from "./review-run-guard.js";
 import type { GitHubPullRequestPersistence } from "./store.js";
-import type { TicketWorkspaceService } from "./ticket-workspace-service.js";
 import { nowIso } from "./time.js";
 import {
   removeLocalBranch,
@@ -56,46 +61,6 @@ type PullRequestSnapshot = {
   headSha: string | null;
   changesRequestedBy: string | null;
 };
-
-type DetailedRequestedChanges = {
-  reviewerLogin: string | null;
-  submittedAt: string | null;
-  summary: string | null;
-  comments: Array<{
-    body: string;
-    path: string | null;
-    line: number | null;
-  }>;
-};
-
-type PullRequestSchedule = {
-  intervalMs: number;
-  nextRunAt: number;
-  fingerprint: string | null;
-};
-
-type ReviewRouteDependencies = {
-  eventHub: EventHub;
-  executionRuntime: ExecutionRuntime;
-  store: GitHubPullRequestPersistence;
-  ticketWorkspaceService: TicketWorkspaceService;
-};
-
-type GraphQlReviewNode = {
-  state?: unknown;
-  submittedAt?: unknown;
-  body?: unknown;
-  author?: {
-    login?: unknown;
-  } | null;
-  comments?: {
-    nodes?: Array<{
-      body?: unknown;
-      path?: unknown;
-      line?: unknown;
-    } | null> | null;
-  } | null;
-} | null;
 
 const basePollIntervalMs = 10 * 60 * 1_000;
 const maxPollIntervalMs = 60 * 60 * 1_000;
@@ -642,6 +607,7 @@ export class GitHubPullRequestService {
     if (isActiveLinkedPullRequest(ticket.linked_pr)) {
       throw new Error("Ticket already has an active linked pull request");
     }
+    assertAiReviewNotRunning(this.#dependencies.store, ticketId);
 
     const githubRepository = await resolveGitHubRepositoryIdentity(
       session.worktree_path,

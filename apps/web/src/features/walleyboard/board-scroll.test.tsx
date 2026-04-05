@@ -395,6 +395,7 @@ function createWalleyBoardController(): WalleyBoardController {
     archiveActionFeedback: null,
     archiveDoneTickets: () => undefined,
     archiveDoneTicketsMutation: createMutationStub(),
+    archiveTicketMutation: createMutationStub(),
     archiveModalOpen: false,
     archivedTicketsQuery: {
       isPending: false,
@@ -461,6 +462,7 @@ function createWalleyBoardController(): WalleyBoardController {
     setInspectorState: () => undefined,
     setProjectModalOpen: () => undefined,
     setTicketWorkspaceDiffLayout: () => undefined,
+    stopAgentReviewMutation: createMutationStub(),
     ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspaceDiff: null,
     ticketWorkspaceDiffLayout: "split",
@@ -1604,6 +1606,473 @@ test("ticket cards pin the overflow trigger in a dedicated header slot during AI
   }
 });
 
+test("review tickets disable merge and create pull request actions while AI review runs", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "Merge should stay blocked while AI review is active.",
+    id: 58,
+    session_id: "session-58",
+    status: "review",
+    title: "Disable merge while AI review runs",
+    working_branch: "ticket-58",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [ticket],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    selectedProject: createProject(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopAgentReviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map([[ticket.id, true]]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const mergeButton = [...harness.mountNode.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Merge") ?? false,
+    ) as HTMLButtonElement | undefined;
+    assert.ok(mergeButton, "Expected the review card merge button");
+    assert.equal(
+      mergeButton.disabled,
+      true,
+      "Expected merge to be disabled while AI review runs",
+    );
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the review ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let createPullRequestAction: HTMLButtonElement | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      createPullRequestAction = [
+        ...harness.window.document.querySelectorAll("button"),
+      ].find(
+        (button) =>
+          button.textContent?.includes("Create pull request") ?? false,
+      ) as HTMLButtonElement | null;
+      if (createPullRequestAction) {
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      createPullRequestAction,
+      "Expected the overflow menu create pull request action",
+    );
+    assert.equal(
+      createPullRequestAction?.disabled,
+      true,
+      "Expected create pull request to be disabled while AI review runs",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
+test("review tickets disable create pull request and merge actions while AI review runs", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description:
+      "Create pull request should stay blocked while AI review runs.",
+    id: 59,
+    session_id: "session-59",
+    status: "review",
+    title: "Disable create pull request while AI review runs",
+    working_branch: "ticket-59",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [ticket],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    selectedProject: {
+      ...createProject(),
+      default_review_action: "pull_request",
+    },
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopAgentReviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map([[ticket.id, true]]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const createPullRequestButton = [
+      ...harness.mountNode.querySelectorAll("button"),
+    ].find(
+      (button) => button.textContent?.includes("Create pull request") ?? false,
+    ) as HTMLButtonElement | undefined;
+    assert.ok(
+      createPullRequestButton,
+      "Expected the review card create pull request button",
+    );
+    assert.equal(
+      createPullRequestButton.disabled,
+      true,
+      "Expected create pull request to be disabled while AI review runs",
+    );
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the review ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let mergeAction: HTMLButtonElement | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      mergeAction = [
+        ...harness.window.document.querySelectorAll("button"),
+      ].find(
+        (button) => button.textContent?.includes("Merge") ?? false,
+      ) as HTMLButtonElement | null;
+      if (mergeAction) {
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(mergeAction, "Expected the overflow menu merge action");
+    assert.equal(
+      mergeAction?.disabled,
+      true,
+      "Expected merge to be disabled while AI review runs",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
+test("review tickets expose stop AI review from the overflow menu and reuse the stop-review mutation", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "AI review should be stoppable from the menu.",
+    id: 60,
+    session_id: "session-60",
+    status: "review",
+    title: "Stop AI review from overflow menu",
+    working_branch: "ticket-60",
+  });
+  const stopAgentReviewCalls: number[] = [];
+
+  Object.assign(controller as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [ticket],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    selectedProject: createProject(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopAgentReviewMutation: {
+      ...createMutationStub(),
+      mutate: (ticketId: number) => {
+        stopAgentReviewCalls.push(ticketId);
+      },
+    },
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map([[ticket.id, true]]),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the review ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let stopAiReviewAction: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      stopAiReviewAction = [
+        ...harness.window.document.querySelectorAll("button"),
+      ].find(
+        (button) => button.textContent?.includes("Stop AI review") ?? false,
+      ) as HTMLElement | null;
+      if (stopAiReviewAction) {
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.ok(
+      stopAiReviewAction,
+      "Expected the review ticket overflow menu to include Stop AI review",
+    );
+
+    await act(async () => {
+      stopAiReviewAction?.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    assert.deepEqual(stopAgentReviewCalls, [ticket.id]);
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
+test("review tickets hide stop AI review from the overflow menu when no AI review is active", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    description: "Do not show AI review stop when nothing is running.",
+    id: 61,
+    session_id: "session-61",
+    status: "review",
+    title: "Hide stop AI review when inactive",
+    working_branch: "ticket-61",
+  });
+
+  Object.assign(controller as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [ticket],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    selectedProject: createProject(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopAgentReviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const menuButton = harness.mountNode.querySelector(
+      `[aria-label="More actions for ticket ${ticket.id}"]`,
+    );
+    assert.ok(menuButton, "Expected the review ticket overflow button");
+
+    await act(async () => {
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+        }),
+      );
+      menuButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+      await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+    });
+
+    let stopAiReviewAction: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      stopAiReviewAction = [
+        ...harness.window.document.querySelectorAll("button"),
+      ].find(
+        (button) => button.textContent?.includes("Stop AI review") ?? false,
+      ) as HTMLElement | null;
+      if (stopAiReviewAction) {
+        break;
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => harness.window.setTimeout(resolve, 0));
+      });
+    }
+
+    assert.equal(
+      stopAiReviewAction ?? null,
+      null,
+      "Expected Stop AI review to stay hidden when no AI review is active",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
+});
+
 test("ready tickets expose an edit action in the overflow menu", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
@@ -2270,6 +2739,143 @@ test("session inspector removes the old ticket panel header copy", () => {
     /Diff, terminal, preview, and full activity moved to the ticket card actions\./,
   );
   assert.doesNotMatch(markup, />Execution</);
+});
+
+test("session inspector disables merge and create pull request while AI review runs", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const ticket = createTicket({
+    id: 62,
+    session_id: "session-62",
+    status: "review",
+    title: "Disable inspector review actions during AI review",
+    working_branch: "ticket-62",
+  });
+  const session = {
+    adapter_session_ref: null,
+    agent_adapter: "codex" as const,
+    completed_at: "2026-04-03T00:10:00.000Z",
+    current_attempt_id: null,
+    id: "session-62",
+    last_heartbeat_at: "2026-04-03T00:10:00.000Z",
+    last_summary: "Review package ready.",
+    latest_requested_change_note_id: null,
+    latest_review_package_id: "review-package-62",
+    plan_status: "not_requested" as const,
+    plan_summary: null,
+    planning_enabled: false,
+    project_id: ticket.project,
+    queue_entered_at: null,
+    repo_id: ticket.repo,
+    started_at: "2026-04-03T00:00:00.000Z",
+    status: "completed" as const,
+    ticket_id: ticket.id,
+    worktree_path: "/tmp/worktree-62",
+  };
+
+  Object.assign(controller as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicket: () => undefined,
+    deleteTicketMutation: createMutationStub(),
+    inspectorState: { kind: "session" },
+    inspectorVisible: true,
+    latestReviewRun: {
+      id: "review-run-62",
+      ticket_id: ticket.id,
+      review_package_id: "review-package-62",
+      implementation_session_id: session.id,
+      status: "running",
+      adapter_session_ref: null,
+      prompt: "Review the current implementation.",
+      report: null,
+      failure_message: null,
+      created_at: "2026-04-03T00:10:00.000Z",
+      updated_at: "2026-04-03T00:10:00.000Z",
+      completed_at: null,
+    },
+    latestReviewRunQuery: { isPending: false },
+    mergeTicketMutation: createMutationStub(),
+    openAgentReviewHistoryModal: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    planFeedbackBody: "",
+    planFeedbackMutation: createMutationStub(),
+    requestChangesMutation: createMutationStub(),
+    requestedChangesBody: "",
+    restartTicketFromScratch: () => undefined,
+    restartTicketMutation: createMutationStub(),
+    reviewPackage: {
+      id: "review-package-62",
+      ticket_id: ticket.id,
+      session_id: session.id,
+      diff_ref: "/tmp/review-package-62.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Ready for review.",
+      validation_results: [],
+      remaining_risks: [],
+      created_at: "2026-04-03T00:10:00.000Z",
+    },
+    reviewPackageQuery: { isPending: false },
+    selectedProject: {
+      ...createProject(),
+      default_review_action: "pull_request",
+    },
+    selectedSessionId: session.id,
+    selectedSessionTicket: ticket,
+    selectedSessionTicketSession: session,
+    sessionInputMutation: createMutationStub(),
+    session,
+    sessionById: new Map([[session.id, session]]),
+    setPlanFeedbackBody: () => undefined,
+    setRequestedChangesBody: () => undefined,
+    setResumeReason: () => undefined,
+    startAgentReviewMutation: createMutationStub(),
+    stopAgentReviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <InspectorPane controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const createPullRequestButton = [
+      ...harness.mountNode.querySelectorAll("button"),
+    ].find(
+      (button) => button.textContent?.includes("Create pull request") ?? false,
+    ) as HTMLButtonElement | undefined;
+    const mergeButton = [...harness.mountNode.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Merge") ?? false,
+    ) as HTMLButtonElement | undefined;
+
+    assert.ok(
+      createPullRequestButton,
+      "Expected the inspector create pull request button",
+    );
+    assert.ok(mergeButton, "Expected the inspector merge button");
+    assert.equal(
+      createPullRequestButton.disabled,
+      true,
+      "Expected create pull request to be disabled during AI review",
+    );
+    assert.equal(
+      mergeButton.disabled,
+      true,
+      "Expected merge to be disabled during AI review",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    harness.cleanup();
+  }
 });
 
 test("narrow inspector-open layout keeps board scrolling on the shared board pane", async () => {

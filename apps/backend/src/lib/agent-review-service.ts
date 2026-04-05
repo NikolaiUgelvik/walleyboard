@@ -32,6 +32,14 @@ type ReviewLoopContext = {
 };
 
 type ReviewLoopTrigger = "automatic" | "manual";
+type ActiveReviewLoop = {
+  attemptId: string | null;
+  reviewRunId: string;
+  sessionId: string;
+  stopRequested: boolean;
+};
+
+const userStoppedReviewMessage = "Agent review stopped by user.";
 
 export class AutomaticReviewRunLimitReachedError extends Error {
   constructor(limit: number) {
@@ -46,7 +54,7 @@ export class AgentReviewService {
   readonly #eventHub: EventHub;
   readonly #executionRuntime: ExecutionRuntime;
   readonly #store: AgentReviewPersistence;
-  readonly #activeTicketIds = new Set<number>();
+  readonly #activeReviewLoops = new Map<number, ActiveReviewLoop>();
 
   constructor({
     eventHub,
@@ -59,7 +67,7 @@ export class AgentReviewService {
   }
 
   hasActiveReviewLoop(ticketId: number): boolean {
-    return this.#activeTicketIds.has(ticketId);
+    return this.#activeReviewLoops.has(ticketId);
   }
 
   startReviewLoop(
@@ -68,7 +76,7 @@ export class AgentReviewService {
       trigger?: ReviewLoopTrigger;
     },
   ): ReviewRun {
-    if (this.#activeTicketIds.has(ticketId)) {
+    if (this.#activeReviewLoops.has(ticketId)) {
       throw new Error("Agent review is already running for this ticket");
     }
 
@@ -92,7 +100,7 @@ export class AgentReviewService {
     const trigger = options?.trigger ?? "manual";
     const reviewRun = this.#createReviewRun(context, trigger);
 
-    this.#activeTicketIds.add(ticketId);
+    this.#setActiveReviewRun(ticketId, context, reviewRun);
     this.#appendSessionOutput(
       context.session.id,
       context.session.current_attempt_id,
@@ -100,10 +108,53 @@ export class AgentReviewService {
     );
 
     void this.#runLoop(ticketId, context, reviewRun, trigger).finally(() => {
-      this.#activeTicketIds.delete(ticketId);
+      this.#activeReviewLoops.delete(ticketId);
     });
 
     return reviewRun;
+  }
+
+  async stopReviewLoop(ticketId: number): Promise<ReviewRun> {
+    const activeReviewLoop = this.#activeReviewLoops.get(ticketId);
+    if (!activeReviewLoop) {
+      throw new Error("Agent review is not running for this ticket");
+    }
+
+    const latestReviewRun = this.#store.getLatestReviewRun(ticketId);
+    if (
+      !latestReviewRun ||
+      latestReviewRun.id !== activeReviewLoop.reviewRunId ||
+      latestReviewRun.status !== "running"
+    ) {
+      throw new Error("Agent review is not running for this ticket");
+    }
+
+    if (activeReviewLoop.stopRequested) {
+      return latestReviewRun;
+    }
+
+    activeReviewLoop.stopRequested = true;
+    const stoppedReviewRun = this.#store.updateReviewRun(
+      activeReviewLoop.reviewRunId,
+      {
+        failure_message: userStoppedReviewMessage,
+        status: "failed",
+      },
+    );
+    if (!stoppedReviewRun) {
+      activeReviewLoop.stopRequested = false;
+      throw new Error("Running agent review could not be found");
+    }
+
+    publishReviewRunUpdated(this.#eventHub, stoppedReviewRun);
+    this.#appendSessionOutput(
+      activeReviewLoop.sessionId,
+      activeReviewLoop.attemptId,
+      userStoppedReviewMessage,
+    );
+    await this.#executionRuntime.stopReviewRun(activeReviewLoop.reviewRunId);
+
+    return stoppedReviewRun;
   }
 
   async #runLoop(
@@ -125,6 +176,10 @@ export class AgentReviewService {
           session: context.session,
           ticket: context.ticket,
         });
+
+        if (this.#isStopRequested(ticketId, reviewRun.id)) {
+          return;
+        }
 
         const completedReviewRun = this.#store.updateReviewRun(reviewRun.id, {
           status: "completed",
@@ -179,12 +234,17 @@ export class AgentReviewService {
 
         context = nextContext;
         reviewRun = this.#createReviewRun(context, trigger);
+        this.#setActiveReviewRun(ticketId, context, reviewRun);
         this.#appendSessionOutput(
           context.session.id,
           context.session.current_attempt_id,
           `Starting separate agent review session for review package ${context.reviewPackage.id}.`,
         );
       } catch (error) {
+        if (this.#isStopRequested(ticketId, reviewRun.id)) {
+          return;
+        }
+
         if (error instanceof AutomaticReviewRunLimitReachedError) {
           return;
         }
@@ -257,7 +317,7 @@ export class AgentReviewService {
     previousReviewPackageId: string,
     sessionId: string,
   ): Promise<ReviewLoopContext | null> {
-    while (this.#activeTicketIds.has(ticketId)) {
+    while (this.#activeReviewLoops.has(ticketId)) {
       await new Promise((resolve) => {
         setTimeout(resolve, 1_000);
       });
@@ -320,6 +380,27 @@ export class AgentReviewService {
     });
     publishReviewRunUpdated(this.#eventHub, reviewRun);
     return reviewRun;
+  }
+
+  #setActiveReviewRun(
+    ticketId: number,
+    context: ReviewLoopContext,
+    reviewRun: ReviewRun,
+  ): void {
+    this.#activeReviewLoops.set(ticketId, {
+      attemptId: context.session.current_attempt_id,
+      reviewRunId: reviewRun.id,
+      sessionId: context.session.id,
+      stopRequested: false,
+    });
+  }
+
+  #isStopRequested(ticketId: number, reviewRunId: string): boolean {
+    const activeReviewLoop = this.#activeReviewLoops.get(ticketId);
+    return (
+      activeReviewLoop?.reviewRunId === reviewRunId &&
+      activeReviewLoop.stopRequested
+    );
   }
 
   #formatRequestedChanges(report: ReviewReport): string {

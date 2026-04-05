@@ -923,6 +923,183 @@ test("start-agent-review route delegates to the agent review service", async () 
   }
 });
 
+test("stop-agent-review route delegates to the agent review service", async () => {
+  const stoppedTicketIds: number[] = [];
+  const app = Fastify();
+
+  try {
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        async stopReviewLoop(ticketId: number) {
+          stoppedTicketIds.push(ticketId);
+          return {
+            id: "review-run-1",
+            ticket_id: ticketId,
+            review_package_id: "review-package-1",
+            implementation_session_id: "session-7",
+            status: "failed",
+            adapter_session_ref: null,
+            prompt: null,
+            report: null,
+            failure_message: "Agent review stopped by user.",
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:01:00.000Z",
+            completed_at: "2026-04-02T00:01:00.000Z",
+          };
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store: {
+        appendSessionLog() {
+          return 0;
+        },
+      } as never,
+      executionRuntime: {} as never,
+      githubPullRequestService: {} as never,
+      ticketWorkspaceService: {} as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tickets/7/stop-agent-review",
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().accepted, true);
+    assert.deepEqual(stoppedTicketIds, [7]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("create-pr route rejects while AI review is still running", async () => {
+  let createPullRequestCalls = 0;
+  const app = Fastify();
+
+  try {
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {} as never,
+      eventHub: new EventHub(),
+      store: {
+        appendSessionLog() {
+          return 0;
+        },
+        getLatestReviewRun() {
+          return {
+            id: "review-run-1",
+            ticket_id: 7,
+            review_package_id: "review-package-1",
+            implementation_session_id: "session-7",
+            status: "running",
+            adapter_session_ref: null,
+            prompt: null,
+            report: null,
+            failure_message: null,
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:00:00.000Z",
+            completed_at: null,
+          };
+        },
+      } as never,
+      executionRuntime: {} as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          createPullRequestCalls += 1;
+          throw new Error("Should not be called");
+        },
+      } as never,
+      ticketWorkspaceService: {} as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tickets/7/create-pr",
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), {
+      error:
+        "AI review is still running for this ticket. Stop it or wait for it to finish first.",
+    });
+    assert.equal(createPullRequestCalls, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test("merge route rejects while AI review is still running", async () => {
+  const app = Fastify();
+
+  try {
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {} as never,
+      eventHub: new EventHub(),
+      store: {
+        appendSessionLog() {
+          return 0;
+        },
+        getLatestReviewRun() {
+          return {
+            id: "review-run-1",
+            ticket_id: 7,
+            review_package_id: "review-package-1",
+            implementation_session_id: "session-7",
+            status: "running",
+            adapter_session_ref: null,
+            prompt: null,
+            report: null,
+            failure_message: null,
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:00:00.000Z",
+            completed_at: null,
+          };
+        },
+        getTicket() {
+          return {
+            id: 7,
+            project: "project-1",
+            repo: "repo-1",
+            artifact_scope_id: "artifact-scope-1",
+            status: "review",
+            title: "Guard merge while review runs",
+            description: "Do not merge while AI review is active.",
+            ticket_type: "feature",
+            acceptance_criteria: ["Wait for AI review to finish first."],
+            working_branch: "ticket-7",
+            target_branch: "main",
+            linked_pr: null,
+            session_id: "session-7",
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:00:00.000Z",
+          };
+        },
+      } as never,
+      executionRuntime: {} as never,
+      githubPullRequestService: {} as never,
+      ticketWorkspaceService: {} as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tickets/7/merge",
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), {
+      error:
+        "AI review is still running for this ticket. Stop it or wait for it to finish first.",
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 test("start route blocks Claude projects when Claude is unavailable", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-start-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");

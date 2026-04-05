@@ -1149,6 +1149,8 @@ export function InspectorPane({
                               controller.selectedProject,
                               controller.selectedSessionTicket,
                             );
+                            const aiReviewActive =
+                              controller.latestReviewRun?.status === "running";
 
                             return [
                               reviewActions.primary,
@@ -1213,6 +1215,7 @@ export function InspectorPane({
                                           .variables ===
                                           selectedSessionTicket?.id
                                       }
+                                      disabled={aiReviewActive}
                                       onClick={() => {
                                         if (selectedSessionTicket) {
                                           controller.createPullRequestMutation.mutate(
@@ -1245,6 +1248,7 @@ export function InspectorPane({
                                       controller.mergeTicketMutation
                                         .variables === selectedSessionTicket?.id
                                     }
+                                    disabled={aiReviewActive}
                                     onClick={() => {
                                       if (selectedSessionTicket) {
                                         controller.mergeTicketMutation.mutate(

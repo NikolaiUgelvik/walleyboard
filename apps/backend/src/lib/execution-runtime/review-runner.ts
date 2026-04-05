@@ -20,6 +20,7 @@ import {
   hasMeaningfulContent,
   streamPtyLines,
 } from "./helpers.js";
+import { resolveTrackedExit } from "./waiters.js";
 
 export async function runTicketReviewSession(input: {
   activeReviewRuns: Map<string, { kill(signal?: NodeJS.Signals): unknown }>;
@@ -31,6 +32,7 @@ export async function runTicketReviewSession(input: {
   project: Project;
   repository: RepositoryConfig;
   reviewPackage: ReviewPackage;
+  reviewRunExitWaiters: Map<string, Set<(didExit: boolean) => void>>;
   reviewRunId: string;
   session: ExecutionSession;
   ticket: TicketFrontmatter;
@@ -112,18 +114,27 @@ export async function runTicketReviewSession(input: {
     let rawOutput = "";
     let settled = false;
 
+    const cleanupTrackedRun = () => {
+      if (settled) {
+        return false;
+      }
+
+      settled = true;
+      input.activeReviewRuns.delete(input.reviewRunId);
+      input.cleanupExecutionEnvironment(reviewSessionId);
+      resolveTrackedExit(input.reviewRunExitWaiters, input.reviewRunId, true);
+      return true;
+    };
+
     const finish = (
       handler: () => {
         adapterSessionRef: string | null;
         report: ReviewReport;
       },
     ) => {
-      if (settled) {
+      if (!cleanupTrackedRun()) {
         return;
       }
-      settled = true;
-      input.activeReviewRuns.delete(input.reviewRunId);
-      input.cleanupExecutionEnvironment(reviewSessionId);
       try {
         resolve(handler());
       } catch (error) {
@@ -161,8 +172,9 @@ export async function runTicketReviewSession(input: {
         outputFromFile || lastOutputContent?.trim() || rawOutput.trim() || "";
 
       if (exitCode !== 0) {
-        input.activeReviewRuns.delete(input.reviewRunId);
-        input.cleanupExecutionEnvironment(reviewSessionId);
+        if (!cleanupTrackedRun()) {
+          return;
+        }
         reject(
           new Error(
             input.adapter.formatExitReason(

@@ -329,6 +329,120 @@ test("AgentReviewService stops automatic reruns at the configured limit without 
   }
 });
 
+test("AgentReviewService stops a running review without restarting implementation", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-agent-review-stop-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Stop Running Review Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const draft = store.createDraft({
+      project_id: project.id,
+      title: "Stop a running review",
+      description: "Allow an operator to stop the active review loop.",
+    });
+    const ticket = store.confirmDraft(draft.id, {
+      title: draft.title_draft,
+      description: draft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: ["Stop the active review loop without restarting."],
+      target_branch: "main",
+    });
+
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "codex/ticket-review-stop",
+      worktreePath: join(tempDir, "worktrees", "ticket-review-stop"),
+      logs: ["Started ticket session"],
+    });
+    const reviewPackage = store.createReviewPackage({
+      ticket_id: ticket.id,
+      session_id: started.session.id,
+      diff_ref: "ticket.patch",
+      commit_refs: ["abc123"],
+      change_summary: "Implements the requested ticket.",
+      validation_results: [],
+      remaining_risks: [],
+    });
+    store.updateTicketStatus(ticket.id, "review");
+    store.completeSession(started.session.id, {
+      status: "completed",
+      last_summary: "Initial implementation finished.",
+      latest_review_package_id: reviewPackage.id,
+    });
+
+    let rejectReviewRun: ((reason?: unknown) => void) | null = null;
+    let startExecutionCalls = 0;
+    const stopReviewRunCalls: string[] = [];
+    const executionRuntime = {
+      assertProjectExecutionBackendAvailable() {},
+      hasActiveExecution() {
+        return false;
+      },
+      async runTicketReview() {
+        return await new Promise<never>((_resolve, reject) => {
+          rejectReviewRun = reject;
+        });
+      },
+      async stopReviewRun(reviewRunId: string) {
+        stopReviewRunCalls.push(reviewRunId);
+        rejectReviewRun?.(new Error("Review run stopped by user."));
+        return true;
+      },
+      startExecution() {
+        startExecutionCalls += 1;
+      },
+    };
+
+    const service = new AgentReviewService({
+      eventHub: new EventHub(),
+      executionRuntime: executionRuntime as never,
+      store,
+    });
+
+    const reviewRun = service.startReviewLoop(ticket.id);
+    const stoppedReviewRun = await service.stopReviewLoop(ticket.id);
+
+    await waitFor(() => !service.hasActiveReviewLoop(ticket.id));
+
+    assert.equal(stoppedReviewRun.id, reviewRun.id);
+    assert.equal(stoppedReviewRun.status, "failed");
+    assert.equal(
+      stoppedReviewRun.failure_message,
+      "Agent review stopped by user.",
+    );
+    assert.deepEqual(stopReviewRunCalls, [reviewRun.id]);
+    assert.equal(startExecutionCalls, 0);
+
+    const latestReviewRun = store.getLatestReviewRun(ticket.id);
+    assert.ok(latestReviewRun);
+    assert.equal(latestReviewRun.status, "failed");
+    assert.equal(
+      latestReviewRun.failure_message,
+      "Agent review stopped by user.",
+    );
+    assert.equal(
+      store
+        .getSessionLogs(started.session.id)
+        .join("\n")
+        .includes("Agent review stopped by user."),
+      true,
+    );
+    assert.equal(
+      store.getSession(started.session.id)?.latest_requested_change_note_id,
+      null,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("AgentReviewService does not restart implementation when Claude becomes unavailable", async () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-agent-review-unavailable-"),

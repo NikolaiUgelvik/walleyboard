@@ -13,6 +13,10 @@ import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { createKeyedSerialTaskRunner } from "../../lib/keyed-serial-task-runner.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
+  activeAiReviewError,
+  isAiReviewRunning,
+} from "../../lib/review-run-guard.js";
+import {
   AutomaticMergeRecoveryError,
   mergeReviewedBranch,
   removeLocalBranch,
@@ -165,12 +169,46 @@ export function registerTicketReviewRoutes(
   );
 
   app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/stop-agent-review",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      try {
+        const reviewRun = await agentReviewService.stopReviewLoop(ticketId);
+        reply.send(
+          makeCommandAck(true, "Agent review stopped", {
+            ticket_id: ticketId,
+            session_id: reviewRun.implementation_session_id,
+          }),
+        );
+      } catch (error) {
+        reply.code(409).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to stop agent review",
+        });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/create-pr",
     { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {
       const ticketId = parsePositiveInt(request.params.ticketId);
       if (!ticketId) {
         reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      if (isAiReviewRunning(store, ticketId)) {
+        reply.code(409).send({ error: activeAiReviewError });
         return;
       }
 
@@ -217,6 +255,10 @@ export function registerTicketReviewRoutes(
         reply.code(409).send({ error: "Ticket is missing merge metadata" });
         return;
       }
+      if (isAiReviewRunning(store, ticketId)) {
+        reply.code(409).send({ error: activeAiReviewError });
+        return;
+      }
 
       const repository = store.getRepository(ticket.repo);
       if (!repository) {
@@ -245,6 +287,12 @@ export function registerTicketReviewRoutes(
               return {
                 statusCode: 409,
                 body: { error: "Ticket is missing merge metadata" },
+              };
+            }
+            if (isAiReviewRunning(store, ticketId)) {
+              return {
+                statusCode: 409,
+                body: { error: activeAiReviewError },
               };
             }
 

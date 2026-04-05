@@ -80,10 +80,13 @@ function TicketMenu({
 }) {
   const canResume = ticketSession?.status === "interrupted";
   const canRestart = ticketSession?.status === "interrupted";
+  const aiReviewActive =
+    controller.ticketAiReviewActiveById.get(ticket.id) === true;
   const canStop =
     ticket.status === "in_progress" &&
     ticketSession !== null &&
     isStoppableSessionStatus(ticketSession.status);
+  const canStopAiReview = ticket.status === "review" && aiReviewActive;
   const reviewActions = resolveReviewCardActions(project, ticket);
   const isResuming =
     controller.resumeTicketMutation.isPending &&
@@ -94,6 +97,9 @@ function TicketMenu({
   const isStopping =
     controller.stopTicketMutation.isPending &&
     controller.stopTicketMutation.variables?.ticketId === ticket.id;
+  const isStoppingAiReview =
+    controller.stopAgentReviewMutation.isPending &&
+    controller.stopAgentReviewMutation.variables === ticket.id;
   const isCreatingPullRequest =
     controller.createPullRequestMutation.isPending &&
     controller.createPullRequestMutation.variables === ticket.id;
@@ -120,9 +126,10 @@ function TicketMenu({
         {reviewActions.secondary ? (
           <Menu.Item
             disabled={
-              reviewActions.secondary.kind === "create_pr"
+              aiReviewActive ||
+              (reviewActions.secondary.kind === "create_pr"
                 ? isCreatingPullRequest
-                : isMerging
+                : isMerging)
             }
             onClick={(event) => {
               event.stopPropagation();
@@ -143,6 +150,19 @@ function TicketMenu({
               : isMerging
                 ? "Merging..."
                 : reviewActions.secondary.label}
+          </Menu.Item>
+        ) : null}
+        {canStopAiReview ? (
+          <Menu.Item
+            color="orange"
+            closeMenuOnClick={false}
+            disabled={isStoppingAiReview}
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.stopAgentReviewMutation.mutate(ticket.id);
+            }}
+          >
+            {isStoppingAiReview ? "Stopping AI review..." : "Stop AI review"}
           </Menu.Item>
         ) : null}
         {canStop ? (
@@ -948,6 +968,10 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                 controller.stopTicketMutation.isError &&
                                 controller.stopTicketMutation.variables
                                   ?.ticketId === ticket.id;
+                              const showStopAiReviewError =
+                                controller.stopAgentReviewMutation.isError &&
+                                controller.stopAgentReviewMutation.variables ===
+                                  ticket.id;
                               const showEditError =
                                 controller.editReadyTicketMutation.isError &&
                                 controller.editReadyTicketMutation.variables
@@ -1202,6 +1226,14 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                         }
                                       </Text>
                                     ) : null}
+                                    {showStopAiReviewError ? (
+                                      <Text size="sm" c="red">
+                                        {
+                                          controller.stopAgentReviewMutation
+                                            .error?.message
+                                        }
+                                      </Text>
+                                    ) : null}
                                     {showEditError ? (
                                       <Text size="sm" c="red">
                                         {
@@ -1297,6 +1329,10 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                       </Group>
                                     ) : column === "review" ? (
                                       (() => {
+                                        const aiReviewActive =
+                                          controller.ticketAiReviewActiveById.get(
+                                            ticket.id,
+                                          ) === true;
                                         const reviewActions =
                                           resolveReviewCardActions(
                                             controller.selectedProject,
@@ -1339,6 +1375,13 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                                         .createPullRequestMutation
                                                         .variables === ticket.id
                                                     : false
+                                              }
+                                              disabled={
+                                                aiReviewActive &&
+                                                (primaryAction.kind ===
+                                                  "merge" ||
+                                                  primaryAction.kind ===
+                                                    "create_pr")
                                               }
                                               onClick={(event) => {
                                                 event.stopPropagation();

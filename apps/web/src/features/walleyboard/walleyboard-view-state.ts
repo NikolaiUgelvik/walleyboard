@@ -68,6 +68,7 @@ export type BoardViewController = Pick<
   | "startAgentReviewMutation"
   | "startTicketMutation"
   | "startTicketWorkspacePreviewMutation"
+  | "stopAgentReviewMutation"
   | "stopTicketMutation"
   | "stopTicketWorkspacePreviewMutation"
   | "ticketAiReviewActiveById"
@@ -150,6 +151,7 @@ export type InspectorPaneController = Pick<
   | "setRequestedChangesBody"
   | "setResumeReason"
   | "startAgentReviewMutation"
+  | "stopAgentReviewMutation"
   | "stopTicketMutation"
   | "uploadDraftEditorImage"
   | "uploadDraftArtifactMutation"
@@ -331,6 +333,7 @@ export function createWalleyBoardViewState(
     startTicketMutation: controller.startTicketMutation,
     startTicketWorkspacePreviewMutation:
       controller.startTicketWorkspacePreviewMutation,
+    stopAgentReviewMutation: controller.stopAgentReviewMutation,
     stopTicketMutation: controller.stopTicketMutation,
     stopTicketWorkspacePreviewMutation:
       controller.stopTicketWorkspacePreviewMutation,
@@ -416,6 +419,7 @@ export function createWalleyBoardViewState(
     setRequestedChangesBody: controller.setRequestedChangesBody,
     setResumeReason: controller.setResumeReason,
     startAgentReviewMutation: controller.startAgentReviewMutation,
+    stopAgentReviewMutation: controller.stopAgentReviewMutation,
     stopTicketMutation: controller.stopTicketMutation,
     uploadDraftEditorImage: controller.uploadDraftEditorImage,
     uploadDraftArtifactMutation: controller.uploadDraftArtifactMutation,

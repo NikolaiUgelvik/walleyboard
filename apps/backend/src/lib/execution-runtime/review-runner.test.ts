@@ -136,6 +136,10 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
     string,
     { kill(signal?: NodeJS.Signals): unknown }
   >();
+  const reviewRunExitWaiters = new Map<
+    string,
+    Set<(didExit: boolean) => void>
+  >();
 
   try {
     process.env.WALLEYBOARD_HOME = walleyBoardHome;
@@ -228,6 +232,7 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
       project: createProject(),
       repository: createRepository(worktreePath),
       reviewPackage: createReviewPackage(),
+      reviewRunExitWaiters,
       reviewRunId: "review-run-1",
       session: createSession(worktreePath),
       ticket: createTicket(),
