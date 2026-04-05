@@ -11,6 +11,7 @@ import {
 } from "./session-activity-log.js";
 
 export type SessionTimelineEntry = {
+  copyMarkdown?: string;
   detail: string | null;
   key: string;
   kicker: string;
@@ -26,6 +27,7 @@ type PendingTimelineLog = {
 };
 
 function createTimelineEntry(input: {
+  copyMarkdown?: string | null;
   detail?: string | null;
   key: string;
   kicker: string;
@@ -34,7 +36,7 @@ function createTimelineEntry(input: {
   title: string;
   tone: ActivityTone;
 }): SessionTimelineEntry {
-  return {
+  const entry: SessionTimelineEntry = {
     detail: input.detail ?? null,
     key: input.key,
     kicker: input.kicker,
@@ -43,6 +45,12 @@ function createTimelineEntry(input: {
     title: input.title,
     tone: input.tone,
   };
+
+  if (input.copyMarkdown != null) {
+    entry.copyMarkdown = input.copyMarkdown;
+  }
+
+  return entry;
 }
 
 function parseAttemptNumberFromLogLine(line: string): number | null {
@@ -195,6 +203,8 @@ function buildAttemptTimelineEntries(
     if (attempt.prompt && attempt.prompt_kind) {
       entries.push(
         createTimelineEntry({
+          copyMarkdown:
+            attempt.prompt_kind === "implementation" ? attempt.prompt : null,
           detail: attempt.prompt,
           key: `attempt-prompt-${attempt.id}`,
           kicker: attemptPromptKicker(attempt.prompt_kind),
@@ -233,6 +243,7 @@ function buildReviewTimelineEntries(
     if (reviewRun.prompt) {
       entries.push(
         createTimelineEntry({
+          copyMarkdown: reviewRun.prompt,
           detail: reviewRun.prompt,
           key: `review-prompt-${reviewRun.id}`,
           kicker: "AI REVIEW PROMPT",

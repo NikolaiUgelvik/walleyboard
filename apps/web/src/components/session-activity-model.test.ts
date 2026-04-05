@@ -160,6 +160,24 @@ test("buildSessionTimeline merges attempts, prompts, review runs, and ticket eve
       "Ticket created",
     ],
   );
+
+  assert.equal(
+    timeline.find(
+      (entry) => entry.title === "Implementation prompt prepared for attempt 3",
+    )?.copyMarkdown,
+    "Address review feedback for ticket 7.",
+  );
+  assert.equal(
+    timeline.find(
+      (entry) => entry.title === "Plan prompt prepared for attempt 1",
+    )?.copyMarkdown,
+    undefined,
+  );
+  assert.equal(
+    timeline.find((entry) => entry.title === "AI review prompt prepared")
+      ?.copyMarkdown,
+    "Review the ticket implementation.",
+  );
 });
 
 test("buildSessionTimeline preserves expanded restart and input prompts from logs", () => {

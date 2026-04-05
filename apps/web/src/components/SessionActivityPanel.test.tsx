@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import type {
   ExecutionAttempt,
   ExecutionSession,
+  ReviewRun,
   StructuredEvent,
 } from "../../../../packages/contracts/src/index.js";
 import { SessionActivityPanel } from "./SessionActivityPanel.js";
@@ -180,6 +181,256 @@ test("session activity panel defaults to overview and switches to the timeline t
     assert.ok(implementationPromptIndex >= 0);
     assert.ok(ticketCreatedIndex >= 0);
     assert.ok(implementationPromptIndex < ticketCreatedIndex);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
+test("timeline copies raw markdown only for implementation prompt entries", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const session = createSession();
+  const copiedMarkdown: string[] = [];
+  const implementationPrompt = [
+    "## Implementation prompt",
+    "- Add a copy action button",
+    "- Keep the rendered markdown unchanged",
+    "",
+    "```ts",
+    "navigator.clipboard.writeText(rawMarkdown);",
+    "```",
+  ].join("\n");
+
+  Object.defineProperty(harness.window.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText(value: string) {
+        copiedMarkdown.push(value);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  const attempts: ExecutionAttempt[] = [
+    {
+      id: "attempt-1",
+      session_id: session.id,
+      attempt_number: 1,
+      status: "completed",
+      prompt_kind: "plan",
+      prompt: "Draft the execution plan first.",
+      pty_pid: null,
+      started_at: "2026-04-04T10:00:00.000Z",
+      ended_at: "2026-04-04T10:05:00.000Z",
+      end_reason: "plan_completed",
+    },
+    {
+      id: "attempt-2",
+      session_id: session.id,
+      attempt_number: 2,
+      status: "completed",
+      prompt_kind: "implementation",
+      prompt: implementationPrompt,
+      pty_pid: null,
+      started_at: "2026-04-04T10:06:00.000Z",
+      ended_at: "2026-04-04T10:30:00.000Z",
+      end_reason: "completed",
+    },
+  ];
+  const events: StructuredEvent[] = [
+    {
+      id: "event-created",
+      occurred_at: "2026-04-04T09:59:00.000Z",
+      entity_type: "ticket",
+      entity_id: "42",
+      event_type: "ticket.created",
+      payload: {
+        title: "Wire up the activity timeline",
+      },
+    },
+  ];
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <SessionActivityPanel
+            attempts={attempts}
+            logs={[]}
+            reviewRuns={[]}
+            session={session}
+            ticketEvents={events}
+            timelineError={null}
+            timelinePending={false}
+          />
+        </MantineProvider>,
+      );
+    });
+
+    const timelineTab = Array.from(
+      harness.window.document.querySelectorAll<HTMLElement>('[role="tab"]'),
+    ).find((tab) => tab.textContent?.trim() === "Timeline");
+    assert.ok(timelineTab);
+
+    await act(async () => {
+      timelineTab.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+    });
+
+    const bodyText = harness.window.document.body.textContent ?? "";
+    assert.match(bodyText, /Plan prompt prepared for attempt 1/);
+    assert.match(bodyText, /Implementation prompt prepared for attempt 2/);
+    assert.match(bodyText, /Ticket created/);
+
+    const copyButtons = Array.from(
+      harness.window.document.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label="Copy raw prompt markdown"]',
+      ),
+    );
+    assert.equal(copyButtons.length, 1);
+
+    await act(async () => {
+      copyButtons[0]?.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+    });
+
+    assert.deepEqual(copiedMarkdown, [implementationPrompt]);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
+test("timeline copies raw markdown for AI review prompt entries", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const session = createSession();
+  const copiedMarkdown: string[] = [];
+  const reviewPrompt = [
+    "# Review checklist",
+    "- Confirm the copy action only appears on prompt rows",
+    "- Verify the clipboard receives the raw markdown",
+  ].join("\n");
+
+  Object.defineProperty(harness.window.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText(value: string) {
+        copiedMarkdown.push(value);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  const attempts: ExecutionAttempt[] = [
+    {
+      id: "attempt-1",
+      session_id: session.id,
+      attempt_number: 1,
+      status: "completed",
+      prompt_kind: "plan",
+      prompt: "Draft the execution plan first.",
+      pty_pid: null,
+      started_at: "2026-04-04T10:00:00.000Z",
+      ended_at: "2026-04-04T10:05:00.000Z",
+      end_reason: "plan_completed",
+    },
+  ];
+  const reviewRuns: ReviewRun[] = [
+    {
+      id: "review-run-1",
+      ticket_id: session.ticket_id,
+      review_package_id: "review-package-1",
+      implementation_session_id: session.id,
+      status: "completed",
+      adapter_session_ref: null,
+      prompt: reviewPrompt,
+      report: {
+        summary: "Review completed successfully.",
+        strengths: [],
+        actionable_findings: [],
+      },
+      failure_message: null,
+      created_at: "2026-04-04T10:10:00.000Z",
+      updated_at: "2026-04-04T10:12:00.000Z",
+      completed_at: "2026-04-04T10:12:00.000Z",
+    },
+  ];
+  const events: StructuredEvent[] = [
+    {
+      id: "event-created",
+      occurred_at: "2026-04-04T09:59:00.000Z",
+      entity_type: "ticket",
+      entity_id: "42",
+      event_type: "ticket.created",
+      payload: {
+        title: "Wire up the activity timeline",
+      },
+    },
+  ];
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <SessionActivityPanel
+            attempts={attempts}
+            logs={[]}
+            reviewRuns={reviewRuns}
+            session={session}
+            ticketEvents={events}
+            timelineError={null}
+            timelinePending={false}
+          />
+        </MantineProvider>,
+      );
+    });
+
+    const timelineTab = Array.from(
+      harness.window.document.querySelectorAll<HTMLElement>('[role="tab"]'),
+    ).find((tab) => tab.textContent?.trim() === "Timeline");
+    assert.ok(timelineTab);
+
+    await act(async () => {
+      timelineTab.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+    });
+
+    const bodyText = harness.window.document.body.textContent ?? "";
+    assert.match(bodyText, /AI review prompt prepared/);
+    assert.match(bodyText, /Plan prompt prepared for attempt 1/);
+    assert.match(bodyText, /Ticket created/);
+
+    const copyButtons = Array.from(
+      harness.window.document.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label="Copy raw prompt markdown"]',
+      ),
+    );
+    assert.equal(copyButtons.length, 1);
+
+    await act(async () => {
+      copyButtons[0]?.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+    });
+
+    assert.deepEqual(copiedMarkdown, [reviewPrompt]);
   } finally {
     await act(async () => {
       root.unmount();

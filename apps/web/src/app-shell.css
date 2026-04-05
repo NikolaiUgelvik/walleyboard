@@ -1219,6 +1219,14 @@ body {
   flex-wrap: wrap;
 }
 
+.session-timeline-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .session-timeline-kicker {
   font-size: 11px;
   font-weight: 800;
