@@ -52,6 +52,7 @@ test("buildDraftRefinementPrompt uses human-readable Markdown sections", () => {
   const prompt = buildDraftRefinementPrompt(
     createDraft(),
     createRepository(),
+    ["context7", "sentry"],
     "Prefer the terminology already used in the repo.",
   );
 
@@ -61,6 +62,9 @@ test("buildDraftRefinementPrompt uses human-readable Markdown sections", () => {
   assert.match(prompt, /### Description/);
   assert.match(prompt, /### Proposed Ticket Type/);
   assert.match(prompt, /## Proposed Acceptance Checklist/);
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /- `context7` - enabled/);
+  assert.match(prompt, /- `sentry` - enabled/);
   assert.match(prompt, /## Context/);
   assert.match(prompt, /### Additional Instruction/);
   assert.match(prompt, /## Guardrails/);
@@ -71,11 +75,17 @@ test("buildDraftRefinementPrompt uses human-readable Markdown sections", () => {
 });
 
 test("buildDraftQuestionsPrompt keeps the JSON contract in a fenced block", () => {
-  const prompt = buildDraftQuestionsPrompt(createDraft(), createRepository());
+  const prompt = buildDraftQuestionsPrompt(
+    createDraft(),
+    createRepository(),
+    [],
+  );
 
   assert.match(prompt, /## Objective/);
   assert.match(prompt, /## Draft/);
   assert.match(prompt, /## Proposed Acceptance Checklist/);
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /No MCP servers are enabled for this project\./);
   assert.match(prompt, /1\. Escape returns the player to the main menu\./);
   assert.match(prompt, /## Guardrails/);
   assert.match(prompt, /## Output JSON/);

@@ -50,6 +50,24 @@ export function listConfiguredCodexMcpServers(): string[] {
   return listConfiguredCodexMcpServersInConfig(configToml);
 }
 
+export function selectEnabledCodexMcpServers(
+  configuredServers: readonly string[],
+  disabledServers: readonly string[],
+): string[] {
+  const disabled = new Set(normalizeServerNames(disabledServers));
+
+  return normalizeServerNames(configuredServers).filter(
+    (server) => !disabled.has(server),
+  );
+}
+
+export function listEnabledProjectCodexMcpServers(project: Project): string[] {
+  return selectEnabledCodexMcpServers(
+    listConfiguredCodexMcpServers(),
+    project.disabled_mcp_servers,
+  );
+}
+
 export function filterCodexConfigToml(
   configToml: string,
   disabledServers: readonly string[],

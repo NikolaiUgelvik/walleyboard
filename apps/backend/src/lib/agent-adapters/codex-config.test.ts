@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   filterCodexConfigToml,
   listConfiguredCodexMcpServersInConfig,
+  selectEnabledCodexMcpServers,
 } from "./codex-config.js";
 
 test("filterCodexConfigToml removes disabled MCP server sections", () => {
@@ -42,6 +43,15 @@ url = "https://example.com"
 [mcp_servers.chrome-devtools]
 command = "npx"
 `);
+
+  assert.deepEqual(servers, ["chrome-devtools", "context7"]);
+});
+
+test("selectEnabledCodexMcpServers excludes disabled MCP servers from the configured set", () => {
+  const servers = selectEnabledCodexMcpServers(
+    ["context7", "sentry", "context7", "chrome-devtools"],
+    ["sentry", "unknown-server", "sentry"],
+  );
 
   assert.deepEqual(servers, ["chrome-devtools", "context7"]);
 });

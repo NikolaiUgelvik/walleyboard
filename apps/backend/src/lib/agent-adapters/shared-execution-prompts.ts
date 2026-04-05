@@ -102,6 +102,23 @@ function appendAcceptanceChecklist(
   appendNumberedList(sections, criteria, emptyFallback);
 }
 
+function appendAvailableMcpSection(
+  sections: string[],
+  enabledMcpServers: readonly string[],
+): void {
+  appendHeading(sections, "Available MCPs");
+
+  if (enabledMcpServers.length === 0) {
+    sections.push("No MCP servers are enabled for this project.");
+    return;
+  }
+
+  appendBullets(
+    sections,
+    enabledMcpServers.map((server) => `\`${server}\` - enabled`),
+  );
+}
+
 function appendContext(
   sections: string[],
   planSummary: string | null,
@@ -135,6 +152,7 @@ function formatRemainingRisks(reviewPackage: ReviewPackage): string[] {
 export function buildImplementationPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
+  enabledMcpServers: readonly string[],
   extraInstructions: PromptContextSection[],
   planSummary: string | null,
 ): string {
@@ -152,6 +170,7 @@ export function buildImplementationPrompt(
     ticket.acceptance_criteria,
     "Preserve the intended user workflow and keep the change small and focused.",
   );
+  appendAvailableMcpSection(sections, enabledMcpServers);
   appendContext(sections, planSummary, extraInstructions);
 
   appendHeading(sections, "Guardrails");
@@ -188,6 +207,7 @@ export function buildImplementationPrompt(
 export function buildPlanPrompt(
   ticket: TicketFrontmatter,
   repository: RepositoryConfig,
+  enabledMcpServers: readonly string[],
   extraInstructions: PromptContextSection[],
 ): string {
   const sections: string[] = [];
@@ -204,6 +224,7 @@ export function buildPlanPrompt(
     ticket.acceptance_criteria,
     "Preserve the intended user workflow and keep the change small and focused.",
   );
+  appendAvailableMcpSection(sections, enabledMcpServers);
   appendContext(sections, null, extraInstructions);
 
   appendHeading(sections, "Guardrails");

@@ -84,22 +84,29 @@ function createReviewPackage(): ReviewPackage {
 }
 
 test("buildPlanPrompt includes referenced ticket patch context", () => {
-  const prompt = buildPlanPrompt(createTicket(), createRepository(), [
-    {
-      label: "Referenced ticket #3",
-      content: [
-        "Ticket: #3",
-        "Title: Previous dependency",
-        "Status: done",
-        "Repository: spacegame",
-        "Patch file: /walleyboard-home/review-packages/project-1/ticket-3.patch",
-      ].join("\n"),
-    },
-  ]);
+  const prompt = buildPlanPrompt(
+    createTicket(),
+    createRepository(),
+    ["context7"],
+    [
+      {
+        label: "Referenced ticket #3",
+        content: [
+          "Ticket: #3",
+          "Title: Previous dependency",
+          "Status: done",
+          "Repository: spacegame",
+          "Patch file: /walleyboard-home/review-packages/project-1/ticket-3.patch",
+        ].join("\n"),
+      },
+    ],
+  );
 
   assert.match(prompt, /## Objective/);
   assert.match(prompt, /## Ticket/);
   assert.match(prompt, /## Acceptance Checklist/);
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /- `context7` - enabled/);
   assert.match(prompt, /## Context/);
   assert.match(prompt, /### Referenced ticket #3/);
   assert.match(prompt, /## Guardrails/);
@@ -118,6 +125,7 @@ test("buildImplementationPrompt includes referenced ticket patch context", () =>
   const prompt = buildImplementationPrompt(
     createTicket(),
     createRepository(),
+    ["chrome-devtools", "context7"],
     [
       {
         label: "Referenced ticket #3",
@@ -133,6 +141,9 @@ test("buildImplementationPrompt includes referenced ticket patch context", () =>
     "Use the prior ticket as the baseline.",
   );
 
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /- `chrome-devtools` - enabled/);
+  assert.match(prompt, /- `context7` - enabled/);
   assert.match(prompt, /## Context/);
   assert.match(prompt, /### Approved Plan/);
   assert.match(prompt, /Use the prior ticket as the baseline\./);
@@ -146,6 +157,19 @@ test("buildImplementationPrompt includes referenced ticket patch context", () =>
     prompt,
     /Patch file: \/walleyboard-home\/review-packages\/project-1\/ticket-3\.patch/,
   );
+});
+
+test("buildImplementationPrompt states when no MCPs are enabled", () => {
+  const prompt = buildImplementationPrompt(
+    createTicket(),
+    createRepository(),
+    [],
+    [],
+    null,
+  );
+
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /No MCP servers are enabled for this project\./);
 });
 
 test("buildMergeConflictPrompt separates facts from completion criteria", () => {

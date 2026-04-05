@@ -83,9 +83,27 @@ function appendDraftSection(sections: string[], draft: DraftTicketState): void {
   );
 }
 
+function appendAvailableMcpSection(
+  sections: string[],
+  enabledMcpServers: readonly string[],
+): void {
+  appendHeading(sections, "Available MCPs");
+
+  if (enabledMcpServers.length === 0) {
+    sections.push("No MCP servers are enabled for this project.");
+    return;
+  }
+
+  appendBullets(
+    sections,
+    enabledMcpServers.map((server) => `\`${server}\` - enabled`),
+  );
+}
+
 export function buildDraftRefinementPrompt(
   draft: DraftTicketState,
   repository: RepositoryConfig,
+  enabledMcpServers: readonly string[],
   instruction?: string,
 ): string {
   const sections: string[] = [];
@@ -99,6 +117,7 @@ export function buildDraftRefinementPrompt(
 
   appendHeading(sections, "Proposed Acceptance Checklist");
   appendNumberedList(sections, draft.proposed_acceptance_criteria);
+  appendAvailableMcpSection(sections, enabledMcpServers);
 
   if (hasMeaningfulContent(instruction)) {
     appendHeading(sections, "Context");
@@ -131,6 +150,7 @@ export function buildDraftRefinementPrompt(
 export function buildDraftQuestionsPrompt(
   draft: DraftTicketState,
   repository: RepositoryConfig,
+  enabledMcpServers: readonly string[],
   instruction?: string,
 ): string {
   const sections: string[] = [];
@@ -144,6 +164,7 @@ export function buildDraftQuestionsPrompt(
 
   appendHeading(sections, "Proposed Acceptance Checklist");
   appendNumberedList(sections, draft.proposed_acceptance_criteria);
+  appendAvailableMcpSection(sections, enabledMcpServers);
 
   if (hasMeaningfulContent(instruction)) {
     appendHeading(sections, "Context");

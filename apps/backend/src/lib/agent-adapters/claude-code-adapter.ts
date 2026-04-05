@@ -7,6 +7,7 @@ import {
   truncate,
 } from "../execution-runtime/helpers.js";
 import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
+import { listEnabledProjectCodexMcpServers } from "./codex-config.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
 import {
   buildDraftQuestionsPrompt,
@@ -447,6 +448,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildDraftRun(input: DraftRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "draft");
+    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
     const outputPath = resolveDockerOutputPath(
       input.outputPath,
       input.repository.path,
@@ -456,11 +458,13 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
         ? buildDraftRefinementPrompt(
             input.draft,
             input.repository,
+            enabledMcpServers,
             input.instruction,
           )
         : buildDraftQuestionsPrompt(
             input.draft,
             input.repository,
+            enabledMcpServers,
             input.instruction,
           );
     const claudeArgs = ["-p", prompt, "--output-format", "json"];
@@ -489,6 +493,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildExecutionRun(input: ExecutionRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
+    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
       throw new Error(
@@ -501,11 +506,13 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
         ? buildPlanPrompt(
             input.ticket,
             input.repository,
+            enabledMcpServers,
             input.extraInstructions,
           )
         : buildImplementationPrompt(
             input.ticket,
             input.repository,
+            enabledMcpServers,
             input.extraInstructions,
             input.planSummary,
           );

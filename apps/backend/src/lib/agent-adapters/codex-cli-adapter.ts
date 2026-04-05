@@ -10,6 +10,7 @@ import {
   normalizeOptionalReasoningEffort,
   truncate,
 } from "../execution-runtime/helpers.js";
+import { listEnabledProjectCodexMcpServers } from "./codex-config.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
 import {
   buildDraftQuestionsPrompt,
@@ -428,6 +429,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "draft",
     );
+    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
@@ -438,11 +440,13 @@ export class CodexCliAdapter implements AgentCliAdapter {
         ? buildDraftRefinementPrompt(
             input.draft,
             input.repository,
+            enabledMcpServers,
             input.instruction,
           )
         : buildDraftQuestionsPrompt(
             input.draft,
             input.repository,
+            enabledMcpServers,
             input.instruction,
           );
     const args = ["exec", "--json", "--output-last-message", outputPath];
@@ -478,6 +482,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
+    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
@@ -488,11 +493,13 @@ export class CodexCliAdapter implements AgentCliAdapter {
         ? buildPlanPrompt(
             input.ticket,
             input.repository,
+            enabledMcpServers,
             input.extraInstructions,
           )
         : buildImplementationPrompt(
             input.ticket,
             input.repository,
+            enabledMcpServers,
             input.extraInstructions,
             input.planSummary,
           );
