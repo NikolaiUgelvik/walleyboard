@@ -247,6 +247,7 @@ export function buildPlanPrompt(
 export function buildMergeConflictPrompt(input: {
   ticket: TicketFrontmatter;
   repository: RepositoryConfig;
+  enabledMcpServers: readonly string[];
   recoveryKind: "conflicts" | "target_branch_advanced";
   targetBranch: string;
   stage: "rebase" | "merge";
@@ -269,6 +270,7 @@ export function buildMergeConflictPrompt(input: {
     input.ticket.acceptance_criteria,
     "Preserve the ticket intent while resolving the git conflicts.",
   );
+  appendAvailableMcpSection(sections, input.enabledMcpServers);
 
   appendHeading(sections, "Conflict Facts");
   appendBullets(sections, [

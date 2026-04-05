@@ -168,3 +168,60 @@ test("writeClaudeConfigOverridesInConfigHome filters Claude settings overrides p
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Claude MCP discovery and overrides ignore unreadable settings files", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-claude-config-"));
+  const configHomePath = join(tempDir, ".claude");
+  const overrideDir = join(tempDir, "overrides");
+
+  mkdirSync(configHomePath, { recursive: true });
+  mkdirSync(join(configHomePath, "settings.json"));
+  writeFileSync(
+    join(configHomePath, "settings.local.json"),
+    JSON.stringify(
+      {
+        mcp_servers: {
+          context7: { command: "npx" },
+          sentry: { command: "npx" },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  try {
+    const project = createProject({
+      disabled_mcp_servers: ["sentry"],
+    });
+
+    assert.deepEqual(
+      listEnabledProjectClaudeMcpServersInConfigHome(configHomePath, project),
+      ["context7"],
+    );
+    assert.deepEqual(
+      writeClaudeConfigOverridesInConfigHome(
+        configHomePath,
+        overrideDir,
+        project,
+      ),
+      [
+        {
+          hostPath: join(overrideDir, "settings.local.json"),
+          relativePath: "settings.local.json",
+        },
+      ],
+    );
+    assert.match(
+      readFileSync(join(overrideDir, "settings.local.json"), "utf8"),
+      /context7/,
+    );
+    assert.doesNotMatch(
+      readFileSync(join(overrideDir, "settings.local.json"), "utf8"),
+      /sentry/,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

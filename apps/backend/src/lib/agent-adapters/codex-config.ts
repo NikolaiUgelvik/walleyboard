@@ -13,12 +13,16 @@ const codexConfigPath = join(homedir(), ".codex", "config.toml");
 const mcpServerHeaderPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)\]\s*$/;
 const mcpServerSectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)(?:[.\]])/;
 
-function readCodexConfigToml(): string | null {
-  if (!existsSync(codexConfigPath)) {
+function readCodexConfigToml(configPath: string): string | null {
+  if (!existsSync(configPath)) {
     return null;
   }
 
-  return readFileSync(codexConfigPath, "utf8");
+  try {
+    return readFileSync(configPath, "utf8");
+  } catch {
+    return null;
+  }
 }
 
 export function listConfiguredCodexMcpServersInConfig(
@@ -36,7 +40,13 @@ export function listConfiguredCodexMcpServersInConfig(
 }
 
 export function listConfiguredCodexMcpServers(): string[] {
-  const configToml = readCodexConfigToml();
+  return listConfiguredCodexMcpServersInConfigPath(codexConfigPath);
+}
+
+export function listConfiguredCodexMcpServersInConfigPath(
+  configPath: string,
+): string[] {
+  const configToml = readCodexConfigToml(configPath);
   if (!configToml) {
     return [];
   }
@@ -52,8 +62,18 @@ export function selectEnabledCodexMcpServers(
 }
 
 export function listEnabledProjectCodexMcpServers(project: Project): string[] {
+  return listEnabledProjectCodexMcpServersInConfigPath(
+    codexConfigPath,
+    project,
+  );
+}
+
+export function listEnabledProjectCodexMcpServersInConfigPath(
+  configPath: string,
+  project: Project,
+): string[] {
   return selectEnabledCodexMcpServers(
-    listConfiguredCodexMcpServers(),
+    listConfiguredCodexMcpServersInConfigPath(configPath),
     project.disabled_mcp_servers,
   );
 }
@@ -87,21 +107,28 @@ export function filterCodexConfigToml(
 }
 
 export function writeCodexConfigOverride(project: Project): string | null {
+  return writeCodexConfigOverrideForConfigPath(
+    codexConfigPath,
+    resolveWalleyBoardPath("agent-config-overrides", "codex", project.id),
+    project,
+  );
+}
+
+export function writeCodexConfigOverrideForConfigPath(
+  configPath: string,
+  overrideDir: string,
+  project: Project,
+): string | null {
   const disabledServers = normalizeMcpServerNames(project.disabled_mcp_servers);
   if (disabledServers.length === 0) {
     return null;
   }
 
-  const configToml = readCodexConfigToml();
+  const configToml = readCodexConfigToml(configPath);
   if (!configToml) {
     return null;
   }
 
-  const overrideDir = resolveWalleyBoardPath(
-    "agent-config-overrides",
-    "codex",
-    project.id,
-  );
   mkdirSync(overrideDir, { recursive: true });
   const overridePath = join(overrideDir, "config.toml");
   writeFileSync(

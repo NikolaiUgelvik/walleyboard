@@ -555,6 +555,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildMergeConflictRun(input: MergeConflictRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
+    const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
       throw new Error(
@@ -565,6 +566,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     const prompt = buildMergeConflictPrompt({
       ticket: input.ticket,
       repository: input.repository,
+      enabledMcpServers,
       recoveryKind: input.recoveryKind,
       targetBranch: input.targetBranch,
       stage: input.stage,

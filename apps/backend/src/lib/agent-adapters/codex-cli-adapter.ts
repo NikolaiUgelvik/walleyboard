@@ -539,9 +539,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
+    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
     const prompt = buildMergeConflictPrompt({
       ticket: input.ticket,
       repository: input.repository,
+      enabledMcpServers,
       recoveryKind: input.recoveryKind,
       targetBranch: input.targetBranch,
       stage: input.stage,

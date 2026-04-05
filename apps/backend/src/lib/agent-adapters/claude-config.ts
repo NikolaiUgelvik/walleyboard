@@ -19,6 +19,18 @@ function isJsonRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function readClaudeSettingsFile(settingsPath: string): string | null {
+  if (!existsSync(settingsPath)) {
+    return null;
+  }
+
+  try {
+    return readFileSync(settingsPath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 function listMcpServersInSettingsObject(settings: JsonRecord): string[] {
   const servers = new Set<string>();
 
@@ -60,11 +72,7 @@ export function listConfiguredClaudeMcpServersInConfigHome(
 
   for (const relativePath of claudeSettingsFiles) {
     const settingsPath = join(configHomePath, relativePath);
-    if (!existsSync(settingsPath)) {
-      continue;
-    }
-
-    const settingsJson = readFileSync(settingsPath, "utf8");
+    const settingsJson = readClaudeSettingsFile(settingsPath);
     if (!settingsJson) {
       continue;
     }
@@ -150,11 +158,7 @@ export function writeClaudeConfigOverridesInConfigHome(
 
   for (const relativePath of claudeSettingsFiles) {
     const settingsPath = join(configHomePath, relativePath);
-    if (!existsSync(settingsPath)) {
-      continue;
-    }
-
-    const settingsJson = readFileSync(settingsPath, "utf8");
+    const settingsJson = readClaudeSettingsFile(settingsPath);
     if (!settingsJson) {
       continue;
     }

@@ -176,6 +176,7 @@ test("buildMergeConflictPrompt separates facts from completion criteria", () => 
   const prompt = buildMergeConflictPrompt({
     ticket: createTicket(),
     repository: createRepository(),
+    enabledMcpServers: ["context7"],
     recoveryKind: "conflicts",
     targetBranch: "origin/main",
     stage: "merge",
@@ -183,12 +184,30 @@ test("buildMergeConflictPrompt separates facts from completion criteria", () => 
     failureMessage: "Automatic merge failed after target branch advanced.",
   });
 
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /- `context7` - enabled/);
   assert.match(prompt, /## Conflict Facts/);
   assert.match(prompt, /### Conflicted Files/);
   assert.match(prompt, /- `src\/story\.txt`/);
   assert.match(prompt, /- `tests\/story\.test\.ts`/);
   assert.match(prompt, /### Git Failure/);
   assert.match(prompt, /## Completion Checklist/);
+});
+
+test("buildMergeConflictPrompt states when no MCPs are enabled", () => {
+  const prompt = buildMergeConflictPrompt({
+    ticket: createTicket(),
+    repository: createRepository(),
+    enabledMcpServers: [],
+    recoveryKind: "target_branch_advanced",
+    targetBranch: "origin/main",
+    stage: "merge",
+    conflictedFiles: [],
+    failureMessage: "Target branch moved forward during the final merge.",
+  });
+
+  assert.match(prompt, /## Available MCPs/);
+  assert.match(prompt, /No MCP servers are enabled for this project\./);
 });
 
 test("buildReviewPrompt includes evidence blocks and fenced JSON output", () => {
