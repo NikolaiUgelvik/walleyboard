@@ -1,10 +1,11 @@
 {
   "name": "walleyboard",
-  "version": "0.0.0",
+  "version": "0.1.1",
   "description": "Local-first WalleyBoard workbench launcher",
+  "license": "MIT",
   "type": "module",
   "bin": {
-    "walleyboard": "./dist/cli.js"
+    "walleyboard": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -21,12 +22,20 @@
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
-    "esbuild": "^0.27.4",
+    "esbuild": "^0.28.0",
     "typescript": "^6.0.2"
   },
   "engines": {
     "node": ">=22"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NikolaiUgelvik/walleyboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NikolaiUgelvik/walleyboard/issues"
+  },
+  "homepage": "https://github.com/NikolaiUgelvik/walleyboard#readme",
   "publishConfig": {
     "access": "public"
   }

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,24 +14,23 @@ const backendOutput = resolve(outputDir, "backend/index.js");
 const cliEntry = resolve(packageDir, "src/cli.ts");
 const cliOutput = resolve(outputDir, "cli.js");
 const frontendRoot = resolve(repoRoot, "apps/web");
-const frontendConfig = resolve(frontendRoot, "vite.config.ts");
 const frontendDist = resolve(frontendRoot, "dist");
 const bundledFrontendDist = resolve(outputDir, "web");
 const drizzleDir = resolve(repoRoot, "packages/db/drizzle");
 const bundledDrizzleDir = resolve(outputDir, "drizzle");
 const shouldForceFrontendBuild =
   process.env.WALLEYBOARD_FORCE_WEB_BUILD === "1";
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 async function ensureFrontendBuild() {
   if (!shouldForceFrontendBuild && existsSync(frontendDist)) {
     return;
   }
 
-  const { build: viteBuild } = await import("vite");
-  await viteBuild({
-    configFile: frontendConfig,
-    root: frontendRoot,
-    logLevel: "info",
+  execFileSync(npmCommand, ["--workspace", "@walleyboard/web", "run", "build"], {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: "inherit",
   });
 }
 

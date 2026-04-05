@@ -273,6 +273,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     clearInterval(draftArtifactCleanupInterval);
     socketServer.close();
     githubPullRequestService.stop();
+    await ticketWorkspaceService.dispose();
     executionRuntime.dispose();
     store.close();
   });

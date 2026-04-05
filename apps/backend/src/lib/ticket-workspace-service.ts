@@ -740,6 +740,28 @@ export class TicketWorkspaceService {
     await this.#stopPreviewAndWaitByKey(getRepositoryPreviewKey(repositoryId));
   }
 
+  async dispose(): Promise<void> {
+    const previewKeys = [...this.#previews.keys()];
+    await Promise.all(
+      previewKeys.map(async (key) => {
+        await this.#stopPreviewAndWaitByKey(key);
+      }),
+    );
+
+    for (const registration of this.#watchRegistrations.values()) {
+      if (registration.debounceTimer) {
+        clearTimeout(registration.debounceTimer);
+      }
+
+      for (const watcher of registration.watchers) {
+        watcher.close();
+      }
+    }
+
+    this.#watchRegistrations.clear();
+    this.#summaryCache.clear();
+  }
+
   async disposeTicket(ticketId: number): Promise<void> {
     await this.stopPreviewAndWait(ticketId);
 

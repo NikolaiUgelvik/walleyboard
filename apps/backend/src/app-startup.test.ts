@@ -11,11 +11,13 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createApp } from "./app.js";
+import { EventHub } from "./lib/event-hub.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import {
   buildTicketArtifactFilePath,
   ensureTicketArtifactScopeDir,
 } from "./lib/ticket-artifacts.js";
+import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
 import {
   createIsolatedApp,
   createTestDockerRuntime,
@@ -152,6 +154,72 @@ test("createApp preserves fresh orphaned draft artifact scopes during startup", 
     } else {
       process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
     }
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createApp closes active workspace previews during shutdown", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-app-shutdown-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+  const dockerRuntime = createTestDockerRuntime();
+  let stopCalls = 0;
+  let stopAndWaitCalls = 0;
+  let unrefCalls = 0;
+
+  const ticketWorkspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub: new EventHub(),
+    previewRuntimeDependencies: {
+      findAvailablePort: async () => 4310,
+      spawnPreviewProcess: () => ({
+        get exitCode() {
+          return null;
+        },
+        get pid() {
+          return 123;
+        },
+        onStderr() {},
+        onStdout() {},
+        onceExit() {},
+        stop() {
+          stopCalls += 1;
+        },
+        async stopAndWait() {
+          stopAndWaitCalls += 1;
+        },
+        unref() {
+          unrefCalls += 1;
+        },
+      }),
+      waitForPort: async () => {},
+    },
+  });
+
+  try {
+    const preview = await ticketWorkspaceService.ensureRepositoryPreview({
+      repositoryId: "repo-1",
+      previewStartCommand: "npm run dev",
+      worktreePath: tempDir,
+    });
+    assert.equal(preview.state, "ready");
+    assert.equal(unrefCalls, 1);
+
+    const app = await createApp({
+      databasePath,
+      dockerRuntime,
+      skipStartupDockerCleanup: true,
+      ticketWorkspaceService,
+    });
+
+    await app.close();
+
+    assert.equal(stopCalls, 1);
+    assert.equal(stopAndWaitCalls, 1);
+    assert.equal(
+      ticketWorkspaceService.getRepositoryPreview("repo-1").state,
+      "idle",
+    );
+  } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
