@@ -10,12 +10,12 @@ test("codemirror selection styling uses native highlight colors", async () => {
     },
   );
 
-  assert.match(
+  assert.doesNotMatch(
     stylesheet,
-    /\.walleyboard-codemirror \.cm-selectionBackground\s*\{\s*background-color:\s*Highlight;\s*\}/s,
+    /\.walleyboard-codemirror \.cm-selectionBackground\s*\{/s,
   );
-  assert.match(
+  assert.doesNotMatch(
     stylesheet,
-    /\.walleyboard-codemirror \.cm-content ::selection\s*\{\s*background-color:\s*Highlight;\s*color:\s*HighlightText;\s*\}/s,
+    /\.walleyboard-codemirror \.cm-content ::selection\s*\{/s,
   );
 });

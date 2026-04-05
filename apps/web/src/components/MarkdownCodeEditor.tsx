@@ -2,8 +2,21 @@ import {
   autocompletion,
   type CompletionContext,
   type CompletionResult,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
 } from "@codemirror/autocomplete";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import {
+  bracketMatching,
+  defaultHighlightStyle,
+  foldGutter,
+  indentOnInput,
+  syntaxHighlighting,
+} from "@codemirror/language";
+import { lintKeymap } from "@codemirror/lint";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
   EditorSelection,
   EditorState,
@@ -11,13 +24,20 @@ import {
   StateField,
 } from "@codemirror/state";
 import {
+  crosshairCursor,
   Decoration,
   type DecorationSet,
+  dropCursor,
   EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+  rectangularSelection,
   WidgetType,
 } from "@codemirror/view";
 import { Input, type InputWrapperProps } from "@mantine/core";
-import { basicSetup } from "codemirror";
 import { useEffect, useMemo, useRef } from "react";
 import type { TicketReference } from "../../../../packages/contracts/src/index.js";
 
@@ -38,6 +58,33 @@ type MarkdownCodeEditorProps = {
 };
 
 const ticketReferenceCompletionDebounceMs = 150;
+
+const markdownEditorBaseExtensions = [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history(),
+  foldGutter(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
+];
+
 class MarkdownImageWidget extends WidgetType {
   constructor(
     private readonly alt: string,
@@ -282,7 +329,7 @@ export function MarkdownCodeEditor({
       state: EditorState.create({
         doc: initialValueRef.current,
         extensions: [
-          basicSetup,
+          markdownEditorBaseExtensions,
           markdown(),
           EditorView.lineWrapping,
           markdownImageWidgetExtension,

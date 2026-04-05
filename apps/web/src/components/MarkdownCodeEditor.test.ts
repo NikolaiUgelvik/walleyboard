@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { buildMarkdownImageInsertion } from "./MarkdownCodeEditor.js";
+
+test("MarkdownCodeEditor uses native browser selection rendering", async () => {
+  const source = await readFile(
+    new URL("./MarkdownCodeEditor.tsx", import.meta.url),
+    {
+      encoding: "utf8",
+    },
+  );
+
+  assert.doesNotMatch(source, /\bbasicSetup\b/);
+  assert.doesNotMatch(source, /\bdrawSelection\s*\(/);
+});
 
 test("buildMarkdownImageInsertion moves the cursor below a pasted image at the end of the document", () => {
   const insertion = buildMarkdownImageInsertion(

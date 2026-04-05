@@ -817,15 +817,6 @@ body {
   background: transparent;
 }
 
-.walleyboard-codemirror .cm-selectionBackground {
-  background-color: Highlight;
-}
-
-.walleyboard-codemirror .cm-content ::selection {
-  background-color: Highlight;
-  color: HighlightText;
-}
-
 .walleyboard-codemirror .cm-placeholder {
   color: var(--mantine-color-placeholder);
 }
