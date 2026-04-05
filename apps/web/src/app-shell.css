@@ -817,13 +817,13 @@ body {
   background: transparent;
 }
 
-.walleyboard-codemirror .cm-selectionBackground,
+.walleyboard-codemirror .cm-selectionBackground {
+  background-color: Highlight;
+}
+
 .walleyboard-codemirror .cm-content ::selection {
-  background: color-mix(
-    in srgb,
-    var(--mantine-primary-color-filled) 24%,
-    transparent
-  );
+  background-color: Highlight;
+  color: HighlightText;
 }
 
 .walleyboard-codemirror .cm-placeholder {
