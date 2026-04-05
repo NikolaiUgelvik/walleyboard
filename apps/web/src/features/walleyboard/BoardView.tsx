@@ -17,6 +17,7 @@ import {
   IconAlertCircle,
   IconBrowser,
   IconFileDiff,
+  IconGitPullRequest,
   IconPlayerPlay,
   IconPlayerStop,
   IconTerminal2,
@@ -40,10 +41,11 @@ import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
 import { boardColumnMeta, boardColumns, ColorSchemeControl } from "./shared.js";
 import {
-  describePullRequestStatus,
+  formatPullRequestBadgeLabel,
   hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   isStoppableSessionStatus,
+  pullRequestBadgeColor,
   resolveReviewCardActions,
   sessionStatusColor,
 } from "./shared-utils.js";
@@ -1144,27 +1146,20 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                       <Group gap={8} wrap="wrap">
                                         <Badge
                                           variant="outline"
-                                          color={
-                                            ticket.linked_pr.state === "merged"
-                                              ? "green"
-                                              : ticket.linked_pr
-                                                    .review_status ===
-                                                  "changes_requested"
-                                                ? "red"
-                                                : ticket.linked_pr
-                                                      .review_status ===
-                                                    "approved"
-                                                  ? "green"
-                                                  : "blue"
-                                          }
-                                        >
-                                          PR #{ticket.linked_pr.number}
-                                        </Badge>
-                                        <Text size="xs" c="dimmed">
-                                          {describePullRequestStatus(
+                                          color={pullRequestBadgeColor(
                                             ticket.linked_pr,
                                           )}
-                                        </Text>
+                                          leftSection={
+                                            <IconGitPullRequest
+                                              size={12}
+                                              stroke={1.8}
+                                            />
+                                          }
+                                        >
+                                          {formatPullRequestBadgeLabel(
+                                            ticket.linked_pr,
+                                          )}
+                                        </Badge>
                                         <Text
                                           component="a"
                                           href={ticket.linked_pr.url}

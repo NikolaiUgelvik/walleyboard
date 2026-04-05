@@ -12,6 +12,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
+import { IconGitPullRequest } from "@tabler/icons-react";
 import type React from "react";
 
 import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
@@ -30,13 +31,14 @@ import {
 import { fetchJson } from "./shared-api.js";
 import type { TicketReferencesResponse } from "./shared-types.js";
 import {
-  describePullRequestStatus,
+  formatPullRequestBadgeLabel,
   formatTimestamp,
   hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
   parseDraftEventMeta,
+  pullRequestBadgeColor,
   resolveReviewCardActions,
   sessionStatusColor,
   ticketStatusColor,
@@ -836,30 +838,17 @@ export function InspectorPane({
                           <Group gap="xs" wrap="wrap">
                             <Badge
                               variant="outline"
-                              color={
-                                controller.selectedSessionTicket.linked_pr
-                                  .state === "merged"
-                                  ? "green"
-                                  : controller.selectedSessionTicket.linked_pr
-                                        .review_status === "changes_requested"
-                                    ? "red"
-                                    : controller.selectedSessionTicket.linked_pr
-                                          .review_status === "approved"
-                                      ? "green"
-                                      : "blue"
-                              }
-                            >
-                              #
-                              {
-                                controller.selectedSessionTicket.linked_pr
-                                  .number
-                              }
-                            </Badge>
-                            <Text size="sm" c="dimmed">
-                              {describePullRequestStatus(
+                              color={pullRequestBadgeColor(
                                 controller.selectedSessionTicket.linked_pr,
                               )}
-                            </Text>
+                              leftSection={
+                                <IconGitPullRequest size={12} stroke={1.8} />
+                              }
+                            >
+                              {formatPullRequestBadgeLabel(
+                                controller.selectedSessionTicket.linked_pr,
+                              )}
+                            </Badge>
                             <Text
                               component="a"
                               href={

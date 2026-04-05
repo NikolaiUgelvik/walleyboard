@@ -427,6 +427,26 @@ export function describePullRequestStatus(linkedPr: PullRequestRef): string {
   }
 }
 
+export function formatPullRequestBadgeLabel(linkedPr: PullRequestRef): string {
+  return `#${linkedPr.number} ${describePullRequestStatus(linkedPr).toUpperCase()}`;
+}
+
+export function pullRequestBadgeColor(linkedPr: PullRequestRef): string {
+  if (linkedPr.state === "merged") {
+    return "green";
+  }
+
+  if (linkedPr.review_status === "changes_requested") {
+    return "red";
+  }
+
+  if (linkedPr.review_status === "approved") {
+    return "green";
+  }
+
+  return "blue";
+}
+
 export function resolveReviewCardActions(
   project: Project | null | undefined,
   ticket: TicketFrontmatter,

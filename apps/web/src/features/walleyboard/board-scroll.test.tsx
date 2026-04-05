@@ -1017,6 +1017,138 @@ test("ticket cards expose stable ids for ticket reference targets", () => {
   assert.match(markup, /tabindex="-1"/);
 });
 
+test("linked pull request badges show an icon plus number and status on cards and in the inspector", () => {
+  const linkedPr = {
+    base_branch: "main",
+    changes_requested_by: null,
+    head_branch: "ticket-37",
+    head_sha: "abc123",
+    last_changes_requested_head_sha: null,
+    last_reconciled_at: "2026-04-03T00:00:00.000Z",
+    number: 37,
+    provider: "github" as const,
+    repo_name: "repo",
+    repo_owner: "example",
+    review_status: "unknown" as const,
+    state: "open" as const,
+    url: "https://github.com/example/repo/pull/37",
+  };
+  const ticket = createTicket({
+    id: 37,
+    linked_pr: linkedPr,
+    session_id: "session-37",
+    status: "review",
+    title: "Show linked pull request status in the badge",
+  });
+
+  const boardController = createWalleyBoardController();
+  Object.assign(boardController as Record<string, unknown>, {
+    archiveTicketMutation: createMutationStub(),
+    createPullRequestMutation: createMutationStub(),
+    deleteTicketMutation: createMutationStub(),
+    editReadyTicketMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [ticket],
+      done: [],
+    },
+    handleTicketPreviewAction: () => undefined,
+    mergeTicketMutation: createMutationStub(),
+    openTicketSession: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    previewActionErrorByTicketId: {},
+    restartTicketMutation: createMutationStub(),
+    resumeTicketMutation: createMutationStub(),
+    sessionSummaryStateById: new Map(),
+    startAgentReviewMutation: createMutationStub(),
+    startTicketMutation: createMutationStub(),
+    startTicketWorkspacePreviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+    stopTicketWorkspacePreviewMutation: createMutationStub(),
+    ticketAiReviewActiveById: new Map(),
+    ticketWorkspacePreviewByTicketId: new Map(),
+    visibleDrafts: [],
+  });
+
+  const boardMarkup = renderToStaticMarkup(
+    <MantineProvider>
+      <BoardView controller={boardController} />
+    </MantineProvider>,
+  );
+
+  assert.match(boardMarkup, /tabler-icon-git-pull-request/);
+  assert.match(boardMarkup, /#37 OPEN/);
+  assert.doesNotMatch(boardMarkup, />PR #37</);
+
+  const inspectorController = createWalleyBoardController();
+  const inspectorSession = {
+    adapter_session_ref: null,
+    agent_adapter: "codex" as const,
+    completed_at: null,
+    current_attempt_id: null,
+    id: "session-37",
+    last_heartbeat_at: "2026-04-03T00:00:00.000Z",
+    last_summary: null,
+    latest_requested_change_note_id: null,
+    latest_review_package_id: null,
+    plan_status: "not_requested" as const,
+    plan_summary: null,
+    planning_enabled: false,
+    project_id: ticket.project,
+    queue_entered_at: null,
+    repo_id: ticket.repo,
+    started_at: "2026-04-03T00:00:00.000Z",
+    status: "running" as const,
+    ticket_id: ticket.id,
+    worktree_path: "/tmp/worktree-37",
+  };
+  Object.assign(inspectorController as Record<string, unknown>, {
+    createPullRequestMutation: createMutationStub(),
+    deleteTicket: () => undefined,
+    deleteTicketMutation: createMutationStub(),
+    inspectorState: { kind: "session" },
+    inspectorVisible: true,
+    latestReviewRun: null,
+    latestReviewRunQuery: { isPending: false },
+    mergeTicketMutation: createMutationStub(),
+    openAgentReviewHistoryModal: () => undefined,
+    openTicketWorkspaceModal: () => undefined,
+    planFeedbackBody: "",
+    planFeedbackMutation: createMutationStub(),
+    requestChangesMutation: createMutationStub(),
+    requestedChangesBody: "",
+    restartTicketFromScratch: () => undefined,
+    restartTicketMutation: createMutationStub(),
+    resumeReason: "",
+    resumeTicketMutation: createMutationStub(),
+    reviewPackage: null,
+    reviewPackageQuery: { isPending: false },
+    selectedSessionId: "session-37",
+    selectedSessionTicket: ticket,
+    selectedSessionTicketSession: inspectorSession,
+    sessionInputMutation: createMutationStub(),
+    session: inspectorSession,
+    sessionById: new Map([[inspectorSession.id, inspectorSession]]),
+    setPlanFeedbackBody: () => undefined,
+    setRequestedChangesBody: () => undefined,
+    setResumeReason: () => undefined,
+    startAgentReviewMutation: createMutationStub(),
+    stopTicketMutation: createMutationStub(),
+  });
+
+  const inspectorMarkup = renderToStaticMarkup(
+    <MantineProvider>
+      <InspectorPane controller={inspectorController} />
+    </MantineProvider>,
+  );
+
+  assert.match(inspectorMarkup, /tabler-icon-git-pull-request/);
+  assert.match(inspectorMarkup, /#37 OPEN/);
+  assert.doesNotMatch(inspectorMarkup, />PR #37</);
+});
+
 test("ticket cards show inline diff summaries for in-progress, review, and done tickets above the description preview", () => {
   const controller = createWalleyBoardController();
   const readyTicket = createTicket({
