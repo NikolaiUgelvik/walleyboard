@@ -172,6 +172,14 @@ test("session activity panel defaults to overview and switches to the timeline t
       harness.window.document.body.textContent ?? "",
       /Implementation prompt prepared for attempt 1/,
     );
+    const bodyText = harness.window.document.body.textContent ?? "";
+    const implementationPromptIndex = bodyText.indexOf(
+      "Implementation prompt prepared for attempt 1",
+    );
+    const ticketCreatedIndex = bodyText.indexOf("Ticket created");
+    assert.ok(implementationPromptIndex >= 0);
+    assert.ok(ticketCreatedIndex >= 0);
+    assert.ok(implementationPromptIndex < ticketCreatedIndex);
   } finally {
     await act(async () => {
       root.unmount();

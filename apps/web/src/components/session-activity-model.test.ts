@@ -33,7 +33,7 @@ function createSession(): ExecutionSession {
   };
 }
 
-test("buildSessionTimeline merges attempts, prompts, review runs, and ticket events oldest to newest", () => {
+test("buildSessionTimeline merges attempts, prompts, review runs, and ticket events newest to oldest", () => {
   const session = createSession();
   const attempts: ExecutionAttempt[] = [
     {
@@ -144,20 +144,20 @@ test("buildSessionTimeline merges attempts, prompts, review runs, and ticket eve
   assert.deepEqual(
     timeline.map((entry) => entry.title),
     [
-      "Ticket created",
-      "Plan prompt prepared for attempt 1",
-      "Attempt 1 completed",
-      "Plan approved",
-      "Implementation prompt prepared for attempt 2",
-      "Attempt 2 completed",
-      "AI review prompt prepared",
-      "AI review completed",
-      "Pull request created",
-      "Requested changes recorded",
-      "Implementation prompt prepared for attempt 3",
-      "Backend restart recovery",
-      "Attempt 3 interrupted",
       "Session interrupted",
+      "Attempt 3 interrupted",
+      "Backend restart recovery",
+      "Implementation prompt prepared for attempt 3",
+      "Requested changes recorded",
+      "Pull request created",
+      "AI review completed",
+      "AI review prompt prepared",
+      "Attempt 2 completed",
+      "Implementation prompt prepared for attempt 2",
+      "Plan approved",
+      "Attempt 1 completed",
+      "Plan prompt prepared for attempt 1",
+      "Ticket created",
     ],
   );
 });

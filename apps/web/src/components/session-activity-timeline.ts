@@ -806,13 +806,13 @@ export function buildSessionTimeline(input: {
     const leftTime = Date.parse(left.occurredAt);
     const rightTime = Date.parse(right.occurredAt);
     if (leftTime !== rightTime) {
-      return leftTime - rightTime;
+      return rightTime - leftTime;
     }
 
     if (left.sortOrder !== right.sortOrder) {
-      return left.sortOrder - right.sortOrder;
+      return right.sortOrder - left.sortOrder;
     }
 
-    return left.key.localeCompare(right.key);
+    return right.key.localeCompare(left.key);
   });
 }
