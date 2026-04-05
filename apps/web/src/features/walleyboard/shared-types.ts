@@ -141,7 +141,7 @@ export type WorkspaceTerminalContext =
       repositories: WorkspaceTerminalTab[];
       surfaceLabel: "repository";
     };
-export type ReviewCardActionKind = "merge" | "create_pr" | "open_pr";
+export type ReviewCardActionKind = "merge" | "create_pr";
 export type ReviewCardAction = {
   kind: ReviewCardActionKind;
   label: string;

@@ -120,10 +120,7 @@ test("linked pull requests switch review cards into tracking mode", () => {
       ticket,
     ),
     {
-      primary: {
-        kind: "open_pr",
-        label: "Open PR #44",
-      },
+      primary: null,
       secondary: null,
     },
   );

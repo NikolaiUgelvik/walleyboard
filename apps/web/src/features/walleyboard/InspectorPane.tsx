@@ -33,7 +33,6 @@ import type { TicketReferencesResponse } from "./shared-types.js";
 import {
   formatPullRequestBadgeLabel,
   formatTimestamp,
-  hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   humanizeTicketStatus,
   isStoppableSessionStatus,
@@ -1149,36 +1148,6 @@ export function InspectorPane({
                               .map((action) => {
                                 if (!action) {
                                   return null;
-                                }
-
-                                if (action.kind === "open_pr") {
-                                  return (
-                                    <Button
-                                      key={action.kind}
-                                      className={projectAccentButtonClassName(
-                                        "light",
-                                      )}
-                                      variant="light"
-                                      onClick={() => {
-                                        if (
-                                          controller.selectedSessionTicket &&
-                                          hasActiveLinkedPullRequest(
-                                            controller.selectedSessionTicket
-                                              .linked_pr,
-                                          )
-                                        ) {
-                                          window.open(
-                                            controller.selectedSessionTicket
-                                              .linked_pr.url,
-                                            "_blank",
-                                            "noopener,noreferrer",
-                                          );
-                                        }
-                                      }}
-                                    >
-                                      {action.label}
-                                    </Button>
-                                  );
                                 }
 
                                 if (action.kind === "create_pr") {

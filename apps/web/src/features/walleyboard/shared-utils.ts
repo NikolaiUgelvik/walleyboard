@@ -463,10 +463,7 @@ export function resolveReviewCardActions(
 
   if (hasActiveLinkedPullRequest(ticket.linked_pr)) {
     return {
-      primary: {
-        kind: "open_pr",
-        label: `Open PR #${ticket.linked_pr.number}`,
-      },
+      primary: null,
       secondary: null,
     };
   }

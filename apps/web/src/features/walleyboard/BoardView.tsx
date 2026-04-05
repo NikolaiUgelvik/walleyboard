@@ -42,7 +42,6 @@ import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-p
 import { boardColumnMeta, boardColumns, ColorSchemeControl } from "./shared.js";
 import {
   formatPullRequestBadgeLabel,
-  hasActiveLinkedPullRequest,
   humanizeSessionStatus,
   isStoppableSessionStatus,
   pullRequestBadgeColor,
@@ -1343,16 +1342,10 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                           <Group justify="flex-end" gap="xs">
                                             <Button
                                               className={projectAccentButtonClassName(
-                                                primaryAction.kind === "open_pr"
-                                                  ? "light"
-                                                  : "filled",
+                                                "filled",
                                               )}
                                               size="xs"
-                                              variant={
-                                                primaryAction.kind === "open_pr"
-                                                  ? "light"
-                                                  : "filled"
-                                              }
+                                              variant="filled"
                                               loading={
                                                 primaryAction.kind === "merge"
                                                   ? controller
@@ -1395,21 +1388,6 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                                 ) {
                                                   controller.createPullRequestMutation.mutate(
                                                     ticket.id,
-                                                  );
-                                                  return;
-                                                }
-
-                                                if (
-                                                  primaryAction.kind ===
-                                                    "open_pr" &&
-                                                  hasActiveLinkedPullRequest(
-                                                    ticket.linked_pr,
-                                                  )
-                                                ) {
-                                                  window.open(
-                                                    ticket.linked_pr.url,
-                                                    "_blank",
-                                                    "noopener,noreferrer",
                                                   );
                                                 }
                                               }}
