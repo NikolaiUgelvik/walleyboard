@@ -19,10 +19,15 @@ import {
 } from "./execution-runtime/publishers.js";
 import type {
   DetailedRequestedChanges,
+  GraphQlDiscussionCommentNode,
   GraphQlReviewNode,
   PullRequestSchedule,
   ReviewRouteDependencies,
 } from "./github-pull-request-service-types.js";
+import {
+  buildRequestedChangesBody,
+  extractLatestRequestedChangesReview,
+} from "./github-requested-changes.js";
 import { assertAiReviewNotRunning } from "./review-run-guard.js";
 import type { GitHubPullRequestPersistence } from "./store.js";
 import { nowIso } from "./time.js";
@@ -440,105 +445,6 @@ function buildSnapshotFingerprint(snapshot: PullRequestSnapshot): string {
     snapshot.headSha ?? "",
     snapshot.changesRequestedBy ?? "",
   ].join("|");
-}
-
-function buildRequestedChangesBody(
-  ticket: TicketFrontmatter,
-  linkedPr: PullRequestRef,
-  details: DetailedRequestedChanges,
-): string {
-  const reviewer =
-    details.reviewerLogin ?? linkedPr.changes_requested_by ?? null;
-  const lines = [
-    `GitHub requested changes on PR #${linkedPr.number} (${linkedPr.url}).`,
-    `Reviewer: ${reviewer ? `@${reviewer}` : "Unknown reviewer"}`,
-  ];
-
-  if (details.submittedAt) {
-    lines.push(`Submitted at: ${details.submittedAt}`);
-  }
-
-  if (details.summary) {
-    lines.push("", "Review summary:", details.summary);
-  }
-
-  if (details.comments.length > 0) {
-    lines.push("", "Inline comments:");
-    for (const comment of details.comments) {
-      const location =
-        comment.path && comment.line
-          ? `${comment.path}:${comment.line}`
-          : (comment.path ?? "General");
-      lines.push(`- ${location}: ${comment.body}`);
-    }
-  } else {
-    lines.push(
-      "",
-      `No inline comments were returned. Review the PR discussion before finalizing ticket #${ticket.id}.`,
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function extractLatestRequestedChangesReview(
-  reviews: GraphQlReviewNode[],
-): DetailedRequestedChanges {
-  const requestedChangesReviews = reviews
-    .filter(
-      (review): review is NonNullable<GraphQlReviewNode> =>
-        review !== null && review.state === "CHANGES_REQUESTED",
-    )
-    .sort((left, right) => {
-      const leftValue =
-        typeof left.submittedAt === "string" ? left.submittedAt : "";
-      const rightValue =
-        typeof right.submittedAt === "string" ? right.submittedAt : "";
-      return rightValue.localeCompare(leftValue);
-    });
-  const latestReview = requestedChangesReviews[0] ?? null;
-
-  if (!latestReview) {
-    return {
-      reviewerLogin: null,
-      submittedAt: null,
-      summary: null,
-      comments: [],
-    };
-  }
-
-  return {
-    reviewerLogin:
-      latestReview.author &&
-      typeof latestReview.author.login === "string" &&
-      latestReview.author.login.length > 0
-        ? latestReview.author.login
-        : null,
-    submittedAt:
-      typeof latestReview.submittedAt === "string"
-        ? latestReview.submittedAt
-        : null,
-    summary:
-      typeof latestReview.body === "string" &&
-      latestReview.body.trim().length > 0
-        ? latestReview.body.trim()
-        : null,
-    comments: (latestReview.comments?.nodes ?? [])
-      .filter(
-        (comment): comment is NonNullable<typeof comment> =>
-          comment !== null &&
-          typeof comment.body === "string" &&
-          comment.body.trim().length > 0,
-      )
-      .map((comment) => ({
-        body: comment.body as string,
-        path: typeof comment.path === "string" ? comment.path : null,
-        line:
-          typeof comment.line === "number" && Number.isFinite(comment.line)
-            ? comment.line
-            : null,
-      })),
-  };
 }
 
 function projectTicketPairs(store: GitHubPullRequestPersistence): Array<{
@@ -1276,6 +1182,16 @@ export class GitHubPullRequestService {
                 }
               }
             }
+            comments(last: 50) {
+              nodes {
+                body
+                createdAt
+                isMinimized
+                author {
+                  login
+                }
+              }
+            }
           }
         }
       }
@@ -1287,14 +1203,19 @@ export class GitHubPullRequestService {
             reviews?: {
               nodes?: GraphQlReviewNode[];
             } | null;
+            comments?: {
+              nodes?: GraphQlDiscussionCommentNode[];
+            } | null;
           } | null;
         } | null;
       } | null;
     }>(cwd, query);
     const reviews =
       response.data?.repository?.pullRequest?.reviews?.nodes ?? [];
+    const discussionComments =
+      response.data?.repository?.pullRequest?.comments?.nodes ?? [];
 
-    return extractLatestRequestedChangesReview(reviews);
+    return extractLatestRequestedChangesReview(reviews, discussionComments);
   }
 
   async #runGraphQl<T>(cwd: string, query: string): Promise<T> {

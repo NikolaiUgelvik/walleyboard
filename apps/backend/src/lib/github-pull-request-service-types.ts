@@ -12,6 +12,7 @@ export type DetailedRequestedChanges = {
     path: string | null;
     line: number | null;
   }>;
+  discussionComments: string[];
 };
 
 export type PullRequestSchedule = {
@@ -40,5 +41,14 @@ export type GraphQlReviewNode = {
       path?: unknown;
       line?: unknown;
     } | null> | null;
+  } | null;
+} | null;
+
+export type GraphQlDiscussionCommentNode = {
+  body?: unknown;
+  createdAt?: unknown;
+  isMinimized?: unknown;
+  author?: {
+    login?: unknown;
   } | null;
 } | null;

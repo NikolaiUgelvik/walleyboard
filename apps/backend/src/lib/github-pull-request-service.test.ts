@@ -840,6 +840,153 @@ test("changes requested resumes the same session and follow-up sync pushes commi
   }
 });
 
+test("changes requested includes PR discussion comments when inline comments are absent", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-requested-discussion-comments-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const originalHead = runGit(fixture.runtime.worktreePath, [
+      "rev-parse",
+      "HEAD",
+    ]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 37,
+      url: "https://github.com/acme/repo/pull/37",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: originalHead,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    const { executionStarts, service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_37: {
+                  number: 37,
+                  url: "https://github.com/acme/repo/pull/37",
+                  state: "OPEN",
+                  reviewDecision: "CHANGES_REQUESTED",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: originalHead,
+                  reviews: {
+                    nodes: [
+                      {
+                        state: "CHANGES_REQUESTED",
+                        submittedAt: "2026-04-05T16:10:34Z",
+                        author: {
+                          login: "reviewer1",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          }),
+        },
+        {
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  reviews: {
+                    nodes: [
+                      {
+                        state: "CHANGES_REQUESTED",
+                        submittedAt: "2026-04-05T16:10:34Z",
+                        body: "Please address the structural review feedback.",
+                        author: {
+                          login: "reviewer1",
+                        },
+                        comments: {
+                          nodes: [],
+                        },
+                      },
+                    ],
+                  },
+                  comments: {
+                    nodes: [
+                      {
+                        body: "Use the shared grenade count helper from CombatECS.",
+                        createdAt: "2026-04-05T16:10:41Z",
+                        isMinimized: false,
+                        author: {
+                          login: "reviewer1",
+                        },
+                      },
+                      {
+                        body: "This older note should not be included.",
+                        createdAt: "2026-04-05T16:09:00Z",
+                        isMinimized: false,
+                        author: {
+                          login: "reviewer1",
+                        },
+                      },
+                      {
+                        body: "Preview deployed.",
+                        createdAt: "2026-04-05T16:10:42Z",
+                        isMinimized: false,
+                        author: {
+                          login: "preview-bot",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    await service.reconcileTicket(fixture.ticket.id);
+
+    const restartedSession = fixture.store.getSession(fixture.session.id);
+    const requestedChangeBody =
+      restartedSession?.latest_requested_change_note_id
+        ? fixture.store.getRequestedChangeNote(
+            restartedSession.latest_requested_change_note_id,
+          )?.body
+        : null;
+    assert.equal(executionStarts.length, 1);
+    assert.match(requestedChangeBody ?? "", /Review summary:/);
+    assert.match(requestedChangeBody ?? "", /PR discussion comments:/);
+    assert.match(
+      requestedChangeBody ?? "",
+      /Use the shared grenade count helper from CombatECS\./,
+    );
+    assert.doesNotMatch(
+      requestedChangeBody ?? "",
+      /This older note should not be included\./,
+    );
+    assert.doesNotMatch(requestedChangeBody ?? "", /Preview deployed\./);
+    assert.doesNotMatch(
+      requestedChangeBody ?? "",
+      /No inline or PR discussion comments were returned/,
+    );
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("changes requested does not restart Claude when the execution backend is unavailable", async () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-gh-requested-claude-unavailable-"),
