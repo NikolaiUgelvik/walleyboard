@@ -49,7 +49,10 @@ export interface DockerRuntime {
   }): void;
   ensureSessionContainer(input: {
     dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
-    configTomlPath?: string | null;
+    configFileOverrides?: ReadonlyArray<{
+      hostPath: string;
+      relativePath: string;
+    }> | null;
     sessionId: string;
     projectId: string;
     ticketId: number;
@@ -157,7 +160,10 @@ function buildContainerName(repoRootHash: string, sessionId: string): string {
 function buildConfigMountSpecs(input: {
   configHomePath: string;
   configMountPath: string;
-  configTomlPath?: string | null | undefined;
+  configFileOverrides?:
+    | ReadonlyArray<{ hostPath: string; relativePath: string }>
+    | null
+    | undefined;
 }): string[] {
   const mounts = [
     `type=bind,src=${input.configHomePath},dst=${input.configMountPath}`,
@@ -177,13 +183,12 @@ function buildConfigMountSpecs(input: {
     mounts.push(`type=bind,src=${input.configHomePath},dst=${hostPathAlias}`);
   }
 
-  if (input.configTomlPath) {
-    mounts.push(
-      `type=bind,src=${input.configTomlPath},dst=${input.configMountPath}/config.toml`,
-    );
+  for (const override of input.configFileOverrides ?? []) {
+    const mountTarget = join(input.configMountPath, override.relativePath);
+    mounts.push(`type=bind,src=${override.hostPath},dst=${mountTarget}`);
     if (hostPathAlias) {
       mounts.push(
-        `type=bind,src=${input.configTomlPath},dst=${hostPathAlias}/config.toml`,
+        `type=bind,src=${override.hostPath},dst=${join(hostPathAlias, override.relativePath)}`,
       );
     }
   }
@@ -382,7 +387,10 @@ export class DockerRuntimeManager implements DockerRuntime {
 
   ensureSessionContainer(input: {
     dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>;
-    configTomlPath?: string | null;
+    configFileOverrides?: ReadonlyArray<{
+      hostPath: string;
+      relativePath: string;
+    }> | null;
     sessionId: string;
     projectId: string;
     ticketId: number;
@@ -399,7 +407,7 @@ export class DockerRuntimeManager implements DockerRuntime {
     const configMountSpecs = buildConfigMountSpecs({
       configHomePath,
       configMountPath: input.dockerSpec.configMountPath,
-      configTomlPath: input.configTomlPath,
+      configFileOverrides: input.configFileOverrides,
     });
 
     const name = buildContainerName(this.#repoRootHash, input.sessionId);

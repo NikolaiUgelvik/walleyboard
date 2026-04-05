@@ -4,20 +4,14 @@ import { join } from "node:path";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
+import {
+  normalizeMcpServerNames,
+  selectEnabledMcpServers,
+} from "./mcp-server-config.js";
 
 const codexConfigPath = join(homedir(), ".codex", "config.toml");
 const mcpServerHeaderPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)\]\s*$/;
 const mcpServerSectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)(?:[.\]])/;
-
-function normalizeServerNames(servers: readonly string[]): string[] {
-  return Array.from(
-    new Set(
-      servers
-        .map((server) => server.trim())
-        .filter((server) => server.length > 0),
-    ),
-  ).sort((left, right) => left.localeCompare(right));
-}
 
 function readCodexConfigToml(): string | null {
   if (!existsSync(codexConfigPath)) {
@@ -54,11 +48,7 @@ export function selectEnabledCodexMcpServers(
   configuredServers: readonly string[],
   disabledServers: readonly string[],
 ): string[] {
-  const disabled = new Set(normalizeServerNames(disabledServers));
-
-  return normalizeServerNames(configuredServers).filter(
-    (server) => !disabled.has(server),
-  );
+  return selectEnabledMcpServers(configuredServers, disabledServers);
 }
 
 export function listEnabledProjectCodexMcpServers(project: Project): string[] {
@@ -72,7 +62,7 @@ export function filterCodexConfigToml(
   configToml: string,
   disabledServers: readonly string[],
 ): string {
-  const disabled = new Set(normalizeServerNames(disabledServers));
+  const disabled = new Set(normalizeMcpServerNames(disabledServers));
   if (disabled.size === 0) {
     return configToml;
   }
@@ -97,7 +87,7 @@ export function filterCodexConfigToml(
 }
 
 export function writeCodexConfigOverride(project: Project): string | null {
-  const disabledServers = normalizeServerNames(project.disabled_mcp_servers);
+  const disabledServers = normalizeMcpServerNames(project.disabled_mcp_servers);
   if (disabledServers.length === 0) {
     return null;
   }

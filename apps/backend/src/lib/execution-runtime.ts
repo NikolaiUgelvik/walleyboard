@@ -11,7 +11,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
-import { writeCodexConfigOverride } from "./agent-adapters/codex-config.js";
+import { resolveProjectAgentConfigFileOverrides } from "./agent-adapters/agent-config-overrides.js";
 import type { AgentAdapterRegistry } from "./agent-adapters/registry.js";
 import type { AgentCliAdapter } from "./agent-adapters/types.js";
 import type { DockerRuntime } from "./docker-runtime.js";
@@ -44,6 +44,7 @@ import {
   publishTicketUpdated,
 } from "./execution-runtime/publishers.js";
 import { buildReferencedTicketContextSections } from "./execution-runtime/referenced-ticket-context.js";
+import type { ReviewReadyHandler } from "./execution-runtime/review-ready.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
 import { runMergeRecovery } from "./execution-runtime/run-merge-recovery.js";
 import {
@@ -74,15 +75,6 @@ import {
   resolveTrackedExit,
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
-
-type ReviewReadyInput = {
-  project: Project;
-  repository: RepositoryConfig;
-  reviewPackage: ReviewPackage;
-  session: ExecutionSession;
-  ticket: TicketFrontmatter;
-};
-type ReviewReadyHandler = (input: ReviewReadyInput) => Promise<void>;
 
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
@@ -624,8 +616,10 @@ export class ExecutionRuntime {
         );
       }
       this.#dockerRuntime.ensureSessionContainer({
-        configTomlPath:
-          adapter.id === "codex" ? writeCodexConfigOverride(project) : null,
+        configFileOverrides: resolveProjectAgentConfigFileOverrides(
+          adapter.id,
+          project,
+        ),
         dockerSpec: run.dockerSpec,
         sessionId: runId,
         projectId: project.id,
@@ -947,8 +941,10 @@ export class ExecutionRuntime {
         );
       }
       this.#dockerRuntime.ensureSessionContainer({
-        configTomlPath:
-          adapter.id === "codex" ? writeCodexConfigOverride(project) : null,
+        configFileOverrides: resolveProjectAgentConfigFileOverrides(
+          adapter.id,
+          project,
+        ),
         dockerSpec: run.dockerSpec,
         sessionId: session.id,
         projectId: project.id,

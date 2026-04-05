@@ -230,7 +230,7 @@ test("ensureSessionContainer mounts a config override when provided", () => {
   );
   const worktreePath = join(tempDir, "workspace");
   const configHomePath = join(tempDir, ".test-agent");
-  const configTomlPath = join(tempDir, "config.toml");
+  const settingsPath = join(tempDir, "settings.json");
   const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
   const commands: Array<{ command: string; args: string[] }> = [];
   const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
@@ -266,7 +266,12 @@ test("ensureSessionContainer mounts a config override when provided", () => {
     });
 
     runtime.ensureSessionContainer({
-      configTomlPath,
+      configFileOverrides: [
+        {
+          hostPath: settingsPath,
+          relativePath: "settings.json",
+        },
+      ],
       dockerSpec: {
         imageTag: "example/test-agent:latest",
         dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
@@ -286,7 +291,7 @@ test("ensureSessionContainer mounts a config override when provided", () => {
     );
     assert.deepEqual(mountArgs, [
       `type=bind,src=${configHomePath},dst=/home/test-agent/.test-agent`,
-      `type=bind,src=${configTomlPath},dst=/home/test-agent/.test-agent/config.toml`,
+      `type=bind,src=${settingsPath},dst=/home/test-agent/.test-agent/settings.json`,
       `type=bind,src=${worktreePath},dst=/workspace`,
       `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
     ]);
@@ -306,7 +311,7 @@ test("ensureSessionContainer mounts host-home config paths at both container and
   );
   const worktreePath = join(tempDir, "workspace");
   const hostConfigHomePath = join(homedir(), ".codex");
-  const configTomlPath = join(tempDir, "config.toml");
+  const settingsPath = join(tempDir, "settings.local.json");
   const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
   const commands: Array<{ command: string; args: string[] }> = [];
   const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
@@ -342,7 +347,12 @@ test("ensureSessionContainer mounts host-home config paths at both container and
     });
 
     runtime.ensureSessionContainer({
-      configTomlPath,
+      configFileOverrides: [
+        {
+          hostPath: settingsPath,
+          relativePath: "settings.local.json",
+        },
+      ],
       dockerSpec: {
         imageTag: "example/test-agent:latest",
         dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
@@ -363,8 +373,8 @@ test("ensureSessionContainer mounts host-home config paths at both container and
     assert.deepEqual(mountArgs, [
       `type=bind,src=${hostConfigHomePath},dst=/home/test-agent/.test-agent`,
       `type=bind,src=${hostConfigHomePath},dst=${hostConfigHomePath}`,
-      `type=bind,src=${configTomlPath},dst=/home/test-agent/.test-agent/config.toml`,
-      `type=bind,src=${configTomlPath},dst=${hostConfigHomePath}/config.toml`,
+      `type=bind,src=${settingsPath},dst=/home/test-agent/.test-agent/settings.local.json`,
+      `type=bind,src=${settingsPath},dst=${hostConfigHomePath}/settings.local.json`,
       `type=bind,src=${worktreePath},dst=/workspace`,
       `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
     ]);

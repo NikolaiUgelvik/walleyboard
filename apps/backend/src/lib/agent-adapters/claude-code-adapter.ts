@@ -7,7 +7,7 @@ import {
   truncate,
 } from "../execution-runtime/helpers.js";
 import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
-import { listEnabledProjectCodexMcpServers } from "./codex-config.js";
+import { listEnabledProjectClaudeMcpServers } from "./claude-config.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
 import {
   buildDraftQuestionsPrompt,
@@ -448,7 +448,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildDraftRun(input: DraftRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "draft");
-    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
+    const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const outputPath = resolveDockerOutputPath(
       input.outputPath,
       input.repository.path,
@@ -493,7 +493,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildExecutionRun(input: ExecutionRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
-    const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
+    const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
       throw new Error(
