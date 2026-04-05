@@ -223,6 +223,91 @@ test("updateProject persists repository target branch changes", () => {
   }
 });
 
+test("searchProjectTicketReferences filters, ranks, and excludes archived tickets", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-ticket-search-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Ticket Search",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const exactIdDraft = store.createDraft({
+      project_id: project.id,
+      title: "Handle notifications",
+      description: "Exact id match candidate",
+    });
+    const exactIdTicket = store.confirmDraft(exactIdDraft.id, {
+      title: exactIdDraft.title_draft,
+      description: exactIdDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: [],
+      target_branch: "main",
+    });
+
+    const prefixTitleDraft = store.createDraft({
+      project_id: project.id,
+      title: `Ticket ${exactIdTicket.id} follow-up`,
+      description: "Prefix title match candidate",
+    });
+    const prefixTitleTicket = store.confirmDraft(prefixTitleDraft.id, {
+      title: prefixTitleDraft.title_draft,
+      description: prefixTitleDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: [],
+      target_branch: "main",
+    });
+
+    const containsTitleDraft = store.createDraft({
+      project_id: project.id,
+      title: `Wrap up ticket ${exactIdTicket.id} migration`,
+      description: "Contains title match candidate",
+    });
+    const containsTitleTicket = store.confirmDraft(containsTitleDraft.id, {
+      title: containsTitleDraft.title_draft,
+      description: containsTitleDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: [],
+      target_branch: "main",
+    });
+
+    const archivedDraft = store.createDraft({
+      project_id: project.id,
+      title: `Archived ticket ${exactIdTicket.id}`,
+      description: "Archived match should stay hidden",
+    });
+    const archivedTicket = store.confirmDraft(archivedDraft.id, {
+      title: archivedDraft.title_draft,
+      description: archivedDraft.description_draft,
+      repo_id: repository.id,
+      ticket_type: "feature",
+      acceptance_criteria: [],
+      target_branch: "main",
+    });
+    store.updateTicketStatus(archivedTicket.id, "done");
+    store.archiveTicket(archivedTicket.id);
+
+    const results = store.searchProjectTicketReferences(project.id, {
+      limit: 10,
+      query: String(exactIdTicket.id),
+    });
+
+    assert.deepEqual(
+      results.map((ticket) => ticket.ticket_id),
+      [exactIdTicket.id, prefixTitleTicket.id, containsTitleTicket.id],
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("updateProject persists automatic agent review changes", () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-project-auto-review-"),

@@ -9,6 +9,7 @@ import type {
   ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
+  TicketReference,
   TicketWorkspaceDiff,
   TicketWorkspacePreview,
   UploadDraftArtifactResponse,
@@ -44,6 +45,10 @@ export type DraftsResponse = {
 
 export type TicketsResponse = {
   tickets: TicketFrontmatter[];
+};
+
+export type TicketReferencesResponse = {
+  ticket_references: TicketReference[];
 };
 
 export type DraftEventsResponse = {

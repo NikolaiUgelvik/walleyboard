@@ -97,8 +97,8 @@ export type InspectorPaneController = Pick<
   | "draftEvents"
   | "draftEventsQuery"
   | "draftFormDirty"
+  | "globalTickets"
   | "handleConfirmNewDraft"
-  | "handleDraftDescriptionTextareaPaste"
   | "handleQuestionNewDraft"
   | "handleRefineNewDraft"
   | "handleSaveNewDraft"
@@ -151,6 +151,7 @@ export type InspectorPaneController = Pick<
   | "setResumeReason"
   | "startAgentReviewMutation"
   | "stopTicketMutation"
+  | "uploadDraftEditorImage"
   | "uploadDraftArtifactMutation"
 >;
 
@@ -357,9 +358,8 @@ export function createWalleyBoardViewState(
     draftEvents: controller.draftEvents,
     draftEventsQuery: controller.draftEventsQuery,
     draftFormDirty: controller.draftFormDirty,
+    globalTickets: controller.globalTickets,
     handleConfirmNewDraft: controller.handleConfirmNewDraft,
-    handleDraftDescriptionTextareaPaste:
-      controller.handleDraftDescriptionTextareaPaste,
     handleQuestionNewDraft: controller.handleQuestionNewDraft,
     handleRefineNewDraft: controller.handleRefineNewDraft,
     handleSaveNewDraft: controller.handleSaveNewDraft,
@@ -413,6 +413,7 @@ export function createWalleyBoardViewState(
     setResumeReason: controller.setResumeReason,
     startAgentReviewMutation: controller.startAgentReviewMutation,
     stopTicketMutation: controller.stopTicketMutation,
+    uploadDraftEditorImage: controller.uploadDraftEditorImage,
     uploadDraftArtifactMutation: controller.uploadDraftArtifactMutation,
   };
 

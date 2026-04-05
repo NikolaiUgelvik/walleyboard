@@ -6,6 +6,7 @@ import {
 } from "../../../../packages/contracts/src/index.js";
 
 import { resolveProjectArtifactHref } from "../lib/api-base-url.js";
+import { TicketReferenceChip } from "./TicketReferenceChip.js";
 
 type MarkdownContentProps = {
   content: string;
@@ -242,15 +243,6 @@ function isExternalHref(href: string): boolean {
   return href.startsWith("http://") || href.startsWith("https://");
 }
 
-function humanizeTicketStatus(status: TicketReference["status"]): string {
-  switch (status) {
-    case "in_progress":
-      return "In progress";
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1);
-  }
-}
-
 function renderTextWithTicketReferences(
   text: string,
   keyPrefix: string,
@@ -273,25 +265,16 @@ function renderTextWithTicketReferences(
 
     const key = `${keyPrefix}-ticket-reference-${matchIndex}`;
     nodes.push(
-      <React.Fragment key={key}>
-        <a
-          className="markdown-ticket-reference"
-          href={`#ticket-${ticketReference.ticket_id}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            renderContext.onTicketReferenceNavigate?.(
-              ticketReference.ticket_id,
-            );
-          }}
-        >
-          #{ticketReference.ticket_id}
-        </a>
-        <span className="markdown-ticket-reference-meta">
-          {" "}
-          ({ticketReference.title} •{" "}
-          {humanizeTicketStatus(ticketReference.status)})
-        </span>
-      </React.Fragment>,
+      <TicketReferenceChip
+        className="markdown-ticket-reference"
+        href={`#ticket-${ticketReference.ticket_id}`}
+        key={key}
+        onClick={(event) => {
+          event.stopPropagation();
+          renderContext.onTicketReferenceNavigate?.(ticketReference.ticket_id);
+        }}
+        reference={ticketReference}
+      />,
     );
 
     lastIndex = match.end;

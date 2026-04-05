@@ -5,16 +5,37 @@ import {
   structuredEventsTable,
   ticketsTable,
 } from "@walleyboard/db";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import type {
   PullRequestRef,
   TicketFrontmatter,
+  TicketReference,
 } from "../../../../../packages/contracts/src/index.js";
 
-import type { ListProjectTicketsOptions } from "../store.js";
+import type {
+  ListProjectTicketsOptions,
+  SearchProjectTicketReferencesInput,
+} from "../store.js";
 import { nowIso } from "../time.js";
 import { mapTicket, type SqliteStoreContext } from "./shared.js";
 import { resolveTicketReferences } from "./ticket-references.js";
+
+function escapeSqlLikePattern(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_");
+}
 
 export class TicketRepository {
   constructor(private readonly context: SqliteStoreContext) {}
@@ -51,6 +72,79 @@ export class TicketRepository {
       .orderBy(desc(ticketsTable.updatedAt), desc(ticketsTable.id))
       .all();
     return rows.map((row) => this.#mapTicketRow(row));
+  }
+
+  searchProjectTicketReferences(
+    projectId: string,
+    input: SearchProjectTicketReferencesInput,
+  ): TicketReference[] {
+    const normalizedQuery = input.query.trim().toLowerCase();
+    const limit = Math.max(1, input.limit);
+    const idText = sql<string>`cast(${ticketsTable.id} as text)`;
+    const normalizedTitle = sql<string>`lower(${ticketsTable.title})`;
+    const baseWhere = and(
+      eq(ticketsTable.projectId, projectId),
+      isNull(ticketsTable.archivedAt),
+    );
+
+    const rows =
+      normalizedQuery.length === 0
+        ? this.context.db
+            .select({
+              id: ticketsTable.id,
+              status: ticketsTable.status,
+              title: ticketsTable.title,
+            })
+            .from(ticketsTable)
+            .where(baseWhere)
+            .orderBy(desc(ticketsTable.updatedAt), desc(ticketsTable.id))
+            .limit(limit)
+            .all()
+        : (() => {
+            const escapedQuery = escapeSqlLikePattern(normalizedQuery);
+            const startsWithPattern = `${escapedQuery}%`;
+            const containsPattern = `%${escapedQuery}%`;
+            const scoreExpression = sql<number>`
+              case
+                when ${idText} = ${normalizedQuery} then 0
+                when ${idText} like ${startsWithPattern} escape '\\' then 1
+                when ${normalizedTitle} like ${startsWithPattern} escape '\\' then 2
+                when ${idText} like ${containsPattern} escape '\\' then 3
+                when ${normalizedTitle} like ${containsPattern} escape '\\' then 4
+                else 5
+              end
+            `;
+
+            return this.context.db
+              .select({
+                id: ticketsTable.id,
+                status: ticketsTable.status,
+                title: ticketsTable.title,
+              })
+              .from(ticketsTable)
+              .where(
+                and(
+                  baseWhere,
+                  or(
+                    sql`${idText} like ${containsPattern} escape '\\'`,
+                    sql`${normalizedTitle} like ${containsPattern} escape '\\'`,
+                  ),
+                ),
+              )
+              .orderBy(
+                scoreExpression,
+                desc(ticketsTable.updatedAt),
+                asc(ticketsTable.id),
+              )
+              .limit(limit)
+              .all();
+          })();
+
+    return rows.map((row) => ({
+      status: row.status as TicketReference["status"],
+      ticket_id: row.id,
+      title: row.title,
+    }));
   }
 
   getTicket(ticketId: number): TicketFrontmatter | undefined {

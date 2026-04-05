@@ -139,3 +139,70 @@ test("draft analysis routes return 409 when Claude is unavailable", async () => 
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("draft updates succeed even when artifact cleanup fails afterwards", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-draft-routes-"));
+
+  try {
+    const sqliteStore = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project } = sqliteStore.createProject({
+      name: "Draft Cleanup Failure",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const draft = sqliteStore.createDraft({
+      project_id: project.id,
+      title: "Before update",
+      description: "Old description",
+    });
+
+    const store = new Proxy(sqliteStore, {
+      get(target, property, receiver) {
+        if (property === "listProjectDrafts") {
+          return () => {
+            throw new Error("cleanup failed");
+          };
+        }
+
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(draftRoutes, {
+      eventHub: new EventHub(),
+      executionRuntime: {
+        hasActiveDraftRun() {
+          return false;
+        },
+        runDraftFeasibility() {},
+        runDraftRefinement() {},
+      } as never,
+      store: store as never,
+    });
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/drafts/${draft.id}`,
+      payload: {
+        title_draft: "After update",
+        description_draft: "New description",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(sqliteStore.getDraft(draft.id)?.title_draft, "After update");
+    assert.equal(
+      sqliteStore.getDraft(draft.id)?.description_draft,
+      "New description",
+    );
+
+    await app.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

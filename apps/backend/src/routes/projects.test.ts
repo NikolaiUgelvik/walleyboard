@@ -234,6 +234,77 @@ test("repository preview runs from the repository path", async () => {
   }
 });
 
+test("ticket reference search caps results and filters by the typed query", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-search-"));
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Search project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    for (let index = 1; index <= 25; index += 1) {
+      const draft = store.createDraft({
+        project_id: project.id,
+        title: `Searchable ticket ${index}`,
+        description: `Match result ${index}`,
+      });
+
+      store.confirmDraft(draft.id, {
+        title: draft.title_draft,
+        description: draft.description_draft,
+        repo_id: repository.id,
+        ticket_type: "feature",
+        acceptance_criteria: [],
+        target_branch: "main",
+      });
+    }
+
+    const app = Fastify();
+
+    try {
+      await app.register(fastifyRateLimit, { global: false });
+      await app.register(projectRoutes, {
+        executionRuntime: {} as never,
+        store,
+        ticketWorkspaceService: {} as never,
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/projects/${project.id}/ticket-references?query=searchable&limit=999`,
+      });
+
+      assert.equal(response.statusCode, 200);
+
+      const body = response.json() as {
+        ticket_references: Array<{
+          status: string;
+          ticket_id: number;
+          title: string;
+        }>;
+      };
+
+      assert.equal(body.ticket_references.length, 20);
+      assert.match(body.ticket_references[0]?.title ?? "", /Searchable ticket/);
+      assert.equal(
+        body.ticket_references.every((reference) =>
+          reference.title.toLowerCase().includes("searchable"),
+        ),
+        true,
+      );
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("repository terminal attaches to the repository path", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-terminal-"));
   const repository: RepositoryConfig = {

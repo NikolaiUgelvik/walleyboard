@@ -18,6 +18,7 @@ import {
 } from "../../../../packages/contracts/src/index.js";
 
 import { makeCommandAck } from "../lib/command-ack.js";
+import { cleanupProjectDraftArtifacts } from "../lib/draft-artifact-garbage-collector.js";
 import { type EventHub, makeProtocolEvent } from "../lib/event-hub.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody } from "../lib/http.js";
@@ -319,6 +320,25 @@ export const draftRoutes: FastifyPluginAsync<DraftRouteOptions> = async (
 
       try {
         const draft = store.updateDraft(request.params.draftId, input);
+        const project = store.getProject(draft.project_id);
+        if (project) {
+          try {
+            cleanupProjectDraftArtifacts({
+              orphanScopeGraceMs: 24 * 60 * 60 * 1_000,
+              project,
+              store,
+            });
+          } catch (error) {
+            app.log.warn(
+              {
+                draftId: draft.id,
+                error: error instanceof Error ? error.message : String(error),
+                projectId: project.id,
+              },
+              "Unable to clean up draft artifacts after draft update",
+            );
+          }
+        }
 
         eventHub.publish(
           makeProtocolEvent("draft.updated", "draft", draft.id, {

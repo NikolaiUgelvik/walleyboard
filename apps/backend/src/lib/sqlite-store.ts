@@ -12,6 +12,7 @@ import type {
   ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
+  TicketReference,
   UpdateProjectInput,
 } from "../../../../packages/contracts/src/index.js";
 
@@ -37,6 +38,7 @@ import type {
   ProjectPersistence,
   RestartTicketResult,
   ReviewPersistence,
+  SearchProjectTicketReferencesInput,
   SessionPersistence,
   StartTicketResult,
   StartupRecoveryResult,
@@ -134,6 +136,8 @@ export class SqliteStore implements WalleyboardPersistence {
       getTicketEvents: (ticketId) => this.getTicketEvents(ticketId),
       listProjectTickets: (projectId, options) =>
         this.listProjectTickets(projectId, options),
+      searchProjectTicketReferences: (projectId, input) =>
+        this.searchProjectTicketReferences(projectId, input),
       recordMergeConflict: (ticketId, body) =>
         this.recordMergeConflict(ticketId, body),
       recordTicketEvent: (ticketId, eventType, payload) =>
@@ -249,6 +253,13 @@ export class SqliteStore implements WalleyboardPersistence {
     options?: ListProjectTicketsOptions,
   ): TicketFrontmatter[] {
     return this.#tickets.listProjectTickets(projectId, options);
+  }
+
+  searchProjectTicketReferences(
+    projectId: string,
+    input: SearchProjectTicketReferencesInput,
+  ): TicketReference[] {
+    return this.#tickets.searchProjectTicketReferences(projectId, input);
   }
 
   createDraft(input: CreateDraftInput): DraftTicketState {

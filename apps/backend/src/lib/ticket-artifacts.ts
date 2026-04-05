@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
@@ -50,6 +50,13 @@ export function ensureTicketArtifactScopeDir(
   return path;
 }
 
+export function buildTicketArtifactScopePath(
+  projectSlug: string,
+  artifactScopeId: string,
+): string {
+  return resolveArtifactPath(projectSlug, artifactScopeId);
+}
+
 export function buildTicketArtifactFilePath(
   projectSlug: string,
   artifactScopeId: string,
@@ -74,6 +81,41 @@ export function removeTicketArtifactScope(
   artifactScopeId: string,
 ): string | null {
   return removePathIfPresent(resolveArtifactPath(projectSlug, artifactScopeId));
+}
+
+export function listTicketArtifactScopes(projectSlug: string): string[] {
+  const rootPath = resolveArtifactRoot(projectSlug);
+  if (!existsSync(rootPath)) {
+    return [];
+  }
+
+  return readdirSync(rootPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+}
+
+export function listTicketArtifactScopeFiles(
+  projectSlug: string,
+  artifactScopeId: string,
+): string[] {
+  const scopePath = buildTicketArtifactScopePath(projectSlug, artifactScopeId);
+  if (!existsSync(scopePath)) {
+    return [];
+  }
+
+  return readdirSync(scopePath, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name);
+}
+
+export function removeTicketArtifactFile(
+  projectSlug: string,
+  artifactScopeId: string,
+  filename: string,
+): string | null {
+  return removePathIfPresent(
+    buildTicketArtifactFilePath(projectSlug, artifactScopeId, filename),
+  );
 }
 
 export function removeTicketArtifacts(

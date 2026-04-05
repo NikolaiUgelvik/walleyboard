@@ -11,6 +11,7 @@ import {
   type DockerRuntime,
   DockerRuntimeManager,
 } from "./lib/docker-runtime.js";
+import { cleanupAllDraftArtifacts } from "./lib/draft-artifact-garbage-collector.js";
 import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { registerFrontendStaticRoutes } from "./lib/frontend-static.js";
@@ -30,6 +31,9 @@ import { ticketRoutes } from "./routes/tickets.js";
 function shouldSkipStartupDockerCleanup(): boolean {
   return process.env.WALLEYBOARD_SKIP_STARTUP_DOCKER_CLEANUP === "1";
 }
+
+const staleDraftArtifactScopeGraceMs = 24 * 60 * 60 * 1_000;
+const draftArtifactCleanupIntervalMs = 60 * 60 * 1_000;
 
 export type CreateAppOptions = {
   databasePath?: string;
@@ -126,6 +130,54 @@ export async function createApp(options: CreateAppOptions = {}) {
     }
   }
 
+  try {
+    const cleanup = cleanupAllDraftArtifacts({
+      orphanScopeGraceMs: staleDraftArtifactScopeGraceMs,
+      store,
+    });
+    if (cleanup.removedFiles.length > 0 || cleanup.removedScopes.length > 0) {
+      app.log.info(
+        {
+          removedFileCount: cleanup.removedFiles.length,
+          removedScopeCount: cleanup.removedScopes.length,
+        },
+        "Cleaned up orphaned draft artifacts during backend startup",
+      );
+    }
+  } catch (error) {
+    app.log.warn(
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Unable to clean up orphaned draft artifacts during backend startup",
+    );
+  }
+
+  const draftArtifactCleanupInterval = setInterval(() => {
+    try {
+      const cleanup = cleanupAllDraftArtifacts({
+        orphanScopeGraceMs: staleDraftArtifactScopeGraceMs,
+        store,
+      });
+      if (cleanup.removedFiles.length > 0 || cleanup.removedScopes.length > 0) {
+        app.log.info(
+          {
+            removedFileCount: cleanup.removedFiles.length,
+            removedScopeCount: cleanup.removedScopes.length,
+          },
+          "Cleaned up orphaned draft artifacts",
+        );
+      }
+    } catch (error) {
+      app.log.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Unable to clean up orphaned draft artifacts",
+      );
+    }
+  }, draftArtifactCleanupIntervalMs);
+
   if (recovery.sessions.length > 0) {
     app.log.warn(
       {
@@ -177,6 +229,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   }
 
   app.addHook("onClose", async () => {
+    clearInterval(draftArtifactCleanupInterval);
     socketServer.close();
     githubPullRequestService.stop();
     executionRuntime.dispose();

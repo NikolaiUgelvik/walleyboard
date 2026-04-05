@@ -4,6 +4,7 @@ import test from "node:test";
 import type { DraftTicketState } from "../../../../packages/contracts/src/index.js";
 
 import {
+  buildPendingDraftEditorSync,
   type DraftEditorFields,
   type PendingDraftEditorSync,
   resolveDraftEditorSync,
@@ -81,4 +82,38 @@ test("unsaved draft refine sync updates the editor after completion", () => {
     acceptanceCriteria: "Refined criterion",
   });
   assert.equal(completedResult.nextPendingSync, null);
+});
+
+test("pending draft sync preserves acceptance criteria text", () => {
+  const pendingSync = buildPendingDraftEditorSync({
+    acceptanceCriteria: "First criterion",
+    description: "Initial description",
+    draftId: "draft-1",
+    sourceUpdatedAt: "2026-04-01T10:00:00.000Z",
+    ticketType: "feature",
+    title: "Initial title",
+  });
+
+  assert.equal(pendingSync.acceptanceCriteria, "First criterion");
+});
+
+test("clean selected drafts do not keep reapplying identical editor state", () => {
+  const selectedDraft = createDraft();
+  const editor: DraftEditorFields = {
+    sourceId: selectedDraft.id,
+    title: selectedDraft.title_draft,
+    description: selectedDraft.description_draft,
+    ticketType: selectedDraft.proposed_ticket_type,
+    acceptanceCriteria: selectedDraft.proposed_acceptance_criteria.join("\n"),
+  };
+
+  const result = resolveDraftEditorSync({
+    draftFormDirty: false,
+    editor,
+    pendingSync: null,
+    selectedDraft,
+  });
+
+  assert.equal(result.nextEditor, undefined);
+  assert.equal(result.nextPendingSync, undefined);
 });

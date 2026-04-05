@@ -12,7 +12,7 @@ import {
 } from "../lib/claude-code-availability.js";
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
-import { parseBody } from "../lib/http.js";
+import { parseBody, parsePositiveInt } from "../lib/http.js";
 import {
   commandRouteRateLimit,
   repositoryRouteRateLimit,
@@ -80,6 +80,7 @@ const activeProjectSessionStatuses = new Set([
   "paused_user_control",
   "awaiting_input",
 ]);
+const maxTicketReferenceSearchResults = 20;
 
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   app,
@@ -314,6 +315,30 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       tickets: store.listProjectTickets(request.params.projectId),
     }),
   );
+
+  app.get<{
+    Params: { projectId: string };
+    Querystring: {
+      limit?: string;
+      query?: string;
+    };
+  }>("/projects/:projectId/ticket-references", async (request) => {
+    const limit = Math.min(
+      parsePositiveInt(request.query.limit ?? "") ??
+        maxTicketReferenceSearchResults,
+      maxTicketReferenceSearchResults,
+    );
+
+    return {
+      ticket_references: store.searchProjectTicketReferences(
+        request.params.projectId,
+        {
+          limit,
+          query: request.query.query ?? "",
+        },
+      ),
+    };
+  });
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/drafts",

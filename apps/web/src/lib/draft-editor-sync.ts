@@ -1,5 +1,18 @@
 import type { DraftTicketState } from "../../../../packages/contracts/src/index.js";
 
+function draftMatchesEditor(
+  draft: DraftTicketState,
+  editor: DraftEditorFields,
+): boolean {
+  return (
+    editor.sourceId === draft.id &&
+    editor.title === draft.title_draft &&
+    editor.description === draft.description_draft &&
+    editor.ticketType === draft.proposed_ticket_type &&
+    editor.acceptanceCriteria === draft.proposed_acceptance_criteria.join("\n")
+  );
+}
+
 export type DraftEditorFields = {
   sourceId: string | null;
   title: string;
@@ -97,10 +110,11 @@ export function resolveDraftEditorSync(input: {
     pendingSyncMatchesCurrentEditor &&
     pendingSync.sourceUpdatedAt !== null &&
     pendingSync.sourceUpdatedAt !== selectedDraft.updated_at;
+  const selectedDraftMatchesEditor = draftMatchesEditor(selectedDraft, editor);
 
   if (
     editor.sourceId !== selectedDraft.id ||
-    (pendingSync === null && !draftFormDirty) ||
+    (pendingSync === null && !draftFormDirty && !selectedDraftMatchesEditor) ||
     shouldApplyPendingDraftSync
   ) {
     return {

@@ -81,7 +81,7 @@ test("resolves project artifact links against the backend origin", () => {
   );
 });
 
-test("renders resolved ticket references as linked summaries", () => {
+test("renders resolved ticket references as linked chips", () => {
   const html = renderToStaticMarkup(
     React.createElement(MarkdownContent, {
       inline: true,
@@ -98,7 +98,7 @@ test("renders resolved ticket references as linked summaries", () => {
 
   assert.match(
     html,
-    /Depends on <a class="markdown-ticket-reference" href="#ticket-33">#33<\/a><span class="markdown-ticket-reference-meta"> \(Finish the API contract • In progress\)<\/span> before merge\./,
+    /Depends on <a class="ticket-reference-chip markdown-ticket-reference" href="#ticket-33"><span class="ticket-reference-chip__id">#33<\/span><span class="ticket-reference-chip__title">Finish the API contract<\/span><span class="ticket-reference-chip__status">In progress<\/span><\/a> before merge\./,
   );
 });
 
@@ -125,10 +125,11 @@ test("ignores ticket references inside markdown links, code spans, and escapes",
   );
   assert.doesNotMatch(
     html,
-    /<a href="https:\/\/example\.com"[^>]*><a class="markdown-ticket-reference"/,
+    /<a href="https:\/\/example\.com"[^>]*><a class="ticket-reference-chip markdown-ticket-reference"/,
   );
   assert.equal(
-    [...html.matchAll(/class="markdown-ticket-reference"/g)].length,
+    [...html.matchAll(/class="[^"]*\bmarkdown-ticket-reference\b[^"]*"/g)]
+      .length,
     1,
   );
 });
@@ -157,11 +158,12 @@ test("ignores ticket references inside bare urls, autolinks, and reference defin
   assert.match(html, /&lt;https:\/\/example\.com\/#33&gt;/);
   assert.match(html, /\[#33\]: https:\/\/example\.com/);
   assert.equal(
-    [...html.matchAll(/class="markdown-ticket-reference"/g)].length,
+    [...html.matchAll(/class="[^"]*\bmarkdown-ticket-reference\b[^"]*"/g)]
+      .length,
     1,
   );
   assert.match(
     html,
-    /Real dependency <a class="markdown-ticket-reference" href="#ticket-33">#33<\/a><span class="markdown-ticket-reference-meta"> \(Finish the API contract • In progress\)<\/span>\./,
+    /Real dependency <a class="ticket-reference-chip markdown-ticket-reference" href="#ticket-33"><span class="ticket-reference-chip__id">#33<\/span><span class="ticket-reference-chip__title">Finish the API contract<\/span><span class="ticket-reference-chip__status">In progress<\/span><\/a>\./,
   );
 });

@@ -7,6 +7,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
+import { sanitizeDraftAcceptanceCriteria } from "../../lib/draft-acceptance-criteria.js";
 import { resolveDraftEditorSync } from "../../lib/draft-editor-sync.js";
 import { deriveInboxState } from "../../lib/inbox-items.js";
 import { useAgentReviewHistoryModalState } from "./agent-review-history-modal-state.js";
@@ -671,9 +672,9 @@ export function useWalleyBoardController() {
             item.id ===
             (selectedDraft.confirmed_repo_id ?? selectedDraft.proposed_repo_id),
         ) ?? selectedRepository);
-  const draftEditorAcceptanceCriteriaLines = draftEditorAcceptanceCriteria
-    .split("\n")
-    .filter((line) => line.trim().length > 0);
+  const draftEditorAcceptanceCriteriaLines = sanitizeDraftAcceptanceCriteria(
+    draftEditorAcceptanceCriteria,
+  );
   const draftEditorCanPersist =
     draftEditorTitle.trim().length > 0 &&
     draftEditorDescription.trim().length > 0;
@@ -746,13 +747,12 @@ export function useWalleyBoardController() {
       : null;
 
   const {
-    handleDraftDescriptionTextareaPaste,
     initializeNewDraftEditor,
     persistNewDraftFromEditor,
+    uploadDraftEditorImage,
   } = createDraftEditorController({
     createDraftMutation: mutations.createDraftMutation,
     draftEditorAcceptanceCriteria,
-    draftEditorAcceptanceCriteriaLines,
     draftEditorArtifactScopeId,
     draftEditorDescription,
     draftEditorProjectId,
@@ -1210,7 +1210,6 @@ export function useWalleyBoardController() {
     globalTickets,
     groupedTickets,
     handleConfirmNewDraft,
-    handleDraftDescriptionTextareaPaste,
     handleQuestionNewDraft,
     handleRefineNewDraft,
     handleSaveNewDraft,
@@ -1376,6 +1375,7 @@ export function useWalleyBoardController() {
     sessionSummaries,
     terminalCommand,
     handleTicketPreviewAction,
+    uploadDraftEditorImage,
     ticketAiReviewActiveById,
     ticketDiffLineSummaryByTicketId,
     ticketWorkspaceDiff,

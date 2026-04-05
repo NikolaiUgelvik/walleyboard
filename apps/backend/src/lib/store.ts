@@ -15,6 +15,7 @@ import type {
   ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
+  TicketReference,
   TicketType,
   UpdateDraftInput,
   UpdateProjectInput,
@@ -128,6 +129,11 @@ export type ListProjectTicketsOptions = {
   archivedOnly?: boolean;
 };
 
+export type SearchProjectTicketReferencesInput = {
+  limit: number;
+  query: string;
+};
+
 export interface ProjectPersistence {
   listProjects(): Project[];
   getProject(projectId: string): Project | undefined;
@@ -163,6 +169,10 @@ export interface TicketPersistence {
     projectId: string,
     options?: ListProjectTicketsOptions,
   ): TicketFrontmatter[];
+  searchProjectTicketReferences(
+    projectId: string,
+    input: SearchProjectTicketReferencesInput,
+  ): TicketReference[];
   getTicket(ticketId: number): TicketFrontmatter | undefined;
   startTicket(
     ticketId: number,
@@ -276,7 +286,9 @@ export type ExecutionRuntimePersistence = DraftPersistence &
   SessionPersistence &
   TicketPersistence;
 
-export type DraftRoutePersistence = DraftPersistence & ProjectPersistence;
+export type DraftRoutePersistence = DraftPersistence &
+  ProjectPersistence &
+  TicketPersistence;
 
 export type GitHubPullRequestPersistence = ProjectPersistence &
   ReviewPersistence &

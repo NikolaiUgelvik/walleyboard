@@ -15,6 +15,7 @@ import {
 import type React from "react";
 
 import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
+import { MarkdownCodeEditor } from "../../components/MarkdownCodeEditor.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SectionCard } from "../../components/SectionCard.js";
 import { summarizeSessionActivity } from "../../components/SessionActivityFeed.js";
@@ -26,6 +27,8 @@ import {
   DraftQuestionsResultView,
   MarkdownListItems,
 } from "./shared.js";
+import { fetchJson } from "./shared-api.js";
+import type { TicketReferencesResponse } from "./shared-types.js";
 import {
   describePullRequestStatus,
   formatTimestamp,
@@ -111,19 +114,24 @@ function DraftEditorFields({
         }
         required
       />
-      <Textarea
+      <MarkdownCodeEditor
         id="draft-description"
         label="Description"
         description="Markdown is stored literally. Paste a screenshot from the clipboard to insert a hosted image reference."
-        placeholder="Users should be able to save and reuse receipt layout presets."
+        onChange={controller.setDraftEditorDescription}
+        searchTicketReferences={async (query) => {
+          const projectId = controller.draftEditorProject?.id;
+          if (!projectId) {
+            return [];
+          }
+
+          const response = await fetchJson<TicketReferencesResponse>(
+            `/projects/${projectId}/ticket-references?query=${encodeURIComponent(query)}`,
+          );
+          return response.ticket_references;
+        }}
+        uploadFile={controller.uploadDraftEditorImage}
         value={controller.draftEditorDescription}
-        onChange={(event) =>
-          controller.setDraftEditorDescription(event.currentTarget.value)
-        }
-        onPaste={controller.handleDraftDescriptionTextareaPaste}
-        autosize
-        minRows={10}
-        required
       />
       {controller.uploadDraftArtifactMutation.isPending ? (
         <Text size="sm" c="dimmed">

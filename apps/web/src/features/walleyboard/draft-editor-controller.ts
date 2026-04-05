@@ -1,12 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { ClipboardEvent } from "react";
 import type { DraftTicketState } from "../../../../../packages/contracts/src/index.js";
-
+import { sanitizeDraftAcceptanceCriteria } from "../../lib/draft-acceptance-criteria.js";
 import {
   buildPendingDraftEditorSync,
   emptyDraftEditorFields,
 } from "../../lib/draft-editor-sync.js";
-import { blobToBase64, buildMarkdownImageInsertion } from "./shared-api.js";
+import { blobToBase64 } from "./shared-api.js";
 import type {
   DraftArtifactUploadResponse,
   DraftsResponse,
@@ -38,7 +37,6 @@ type UploadDraftArtifactMutationLike = {
 export function createDraftEditorController(input: {
   createDraftMutation: CreateDraftMutationLike;
   draftEditorAcceptanceCriteria: string;
-  draftEditorAcceptanceCriteriaLines: string[];
   draftEditorArtifactScopeId: string | null;
   draftEditorDescription: string;
   draftEditorProjectId: string | null;
@@ -61,9 +59,12 @@ export function createDraftEditorController(input: {
   setPendingNewDraftAction: (value: NewDraftAction | null) => void;
   uploadDraftArtifactMutation: UploadDraftArtifactMutationLike;
 }) {
+  let draftEditorArtifactScopeId = input.draftEditorArtifactScopeId;
+
   const initializeNewDraftEditor = (projectId: string | null): void => {
     input.setDraftEditorProjectId(projectId);
     input.setDraftEditorSourceId(emptyDraftEditorFields.sourceId);
+    draftEditorArtifactScopeId = null;
     input.setDraftEditorArtifactScopeId(null);
     input.setDraftEditorTitle(emptyDraftEditorFields.title);
     input.setDraftEditorDescription(emptyDraftEditorFields.description);
@@ -84,15 +85,18 @@ export function createDraftEditorController(input: {
     }
 
     input.setPendingNewDraftAction(action);
+    const acceptanceCriteriaLines = sanitizeDraftAcceptanceCriteria(
+      input.draftEditorAcceptanceCriteria,
+    );
 
     try {
       const ack = await input.createDraftMutation.mutateAsync({
         projectId: input.draftEditorProjectId,
-        artifactScopeId: input.draftEditorArtifactScopeId,
+        artifactScopeId: draftEditorArtifactScopeId,
         title: input.draftEditorTitle,
         description: input.draftEditorDescription,
         proposedTicketType: input.draftEditorTicketType,
-        proposedAcceptanceCriteria: input.draftEditorAcceptanceCriteriaLines,
+        proposedAcceptanceCriteria: acceptanceCriteriaLines,
       });
 
       const draftId = ack.resource_refs?.draft_id ?? null;
@@ -124,77 +128,34 @@ export function createDraftEditorController(input: {
     }
   };
 
-  const handleDraftDescriptionPaste = async (
-    file: File,
-    selection: { start: number; end: number },
-  ): Promise<{ cursorOffset: number; value: string } | null> => {
+  const uploadDraftEditorImage = async (file: File): Promise<string> => {
     if (!input.draftEditorProjectId) {
-      return null;
+      throw new Error("Choose a project before uploading images.");
     }
     input.setDraftEditorUploadError(null);
 
     try {
       const response = await input.uploadDraftArtifactMutation.mutateAsync({
         projectId: input.draftEditorProjectId,
-        artifactScopeId: input.draftEditorArtifactScopeId,
+        artifactScopeId: draftEditorArtifactScopeId,
         mimeType: file.type,
         dataBase64: await blobToBase64(file),
       });
-      const insertion = buildMarkdownImageInsertion(
-        input.draftEditorDescription,
-        response.markdown_image,
-        selection.start,
-        selection.end,
-      );
 
+      draftEditorArtifactScopeId = response.artifact_scope_id;
       input.setDraftEditorArtifactScopeId(response.artifact_scope_id);
-      return insertion;
+      return response.markdown_image;
     } catch (error) {
-      input.setDraftEditorUploadError(
-        error instanceof Error ? error.message : "Unable to paste screenshot",
-      );
-      return null;
+      const message =
+        error instanceof Error ? error.message : "Unable to paste screenshot";
+      input.setDraftEditorUploadError(message);
+      throw new Error(message);
     }
-  };
-
-  const handleDraftDescriptionTextareaPaste = (
-    event: ClipboardEvent<HTMLTextAreaElement>,
-  ): void => {
-    const imageItem = Array.from(event.clipboardData.items).find((item) =>
-      item.type.startsWith("image/"),
-    );
-    if (!imageItem) {
-      return;
-    }
-
-    const file = imageItem.getAsFile();
-    if (!file) {
-      return;
-    }
-
-    event.preventDefault();
-    const target = event.currentTarget;
-    void (async () => {
-      const result = await handleDraftDescriptionPaste(file, {
-        start: target.selectionStart,
-        end: target.selectionEnd,
-      });
-      if (!result) {
-        return;
-      }
-
-      input.setDraftEditorDescription(result.value);
-      window.requestAnimationFrame(() => {
-        target.selectionStart = result.cursorOffset;
-        target.selectionEnd = result.cursorOffset;
-        target.focus();
-      });
-    })();
   };
 
   return {
-    handleDraftDescriptionTextareaPaste,
     initializeNewDraftEditor,
     persistNewDraftFromEditor,
+    uploadDraftEditorImage,
   };
 }
