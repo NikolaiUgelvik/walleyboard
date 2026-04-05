@@ -1,3 +1,4 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { IPty } from "node-pty";
@@ -18,16 +19,23 @@ import type { DockerRuntime } from "./docker-runtime.js";
 import { preserveDraftArtifactImages } from "./draft-artifact-images.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import {
+  clearExecutionActivity,
+  updateExecutionActivity,
+} from "./execution-runtime/activity-observability.js";
+import { forwardExecutionInput } from "./execution-runtime/forward-input.js";
+import {
   buildDraftAnalysisOutputPath,
   buildMergeConflictSummaryPath,
   buildOutputSummaryPath,
   buildProcessEnv,
   extractPersistedAttemptGuidance,
+  extractSuppressedDockerFailureDetail,
   formatMarkdownLog,
   hasMeaningfulContent,
   resolveTargetBranch,
   runGit,
-  streamPtyLines,
+  shouldSuppressDockerAdapterLine,
+  streamChildProcessLines,
   summarizeDraftQuestions,
   summarizeDraftRefinement,
   truncate,
@@ -76,12 +84,14 @@ import {
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
 
+type ActiveSessionProcess = ChildProcessWithoutNullStreams;
+
 export class ExecutionRuntime {
   readonly #adapterRegistry: AgentAdapterRegistry;
   readonly #dockerRuntime: DockerRuntime;
   readonly #eventHub: EventHub;
   readonly #store: ExecutionRuntimeOptions["store"];
-  readonly #activeSessions = new Map<string, IPty>();
+  readonly #activeSessions = new Map<string, ActiveSessionProcess>();
   readonly #activeDraftRuns = new Map<
     string,
     { kill(signal?: NodeJS.Signals): unknown }
@@ -521,41 +531,14 @@ export class ExecutionRuntime {
   }
 
   forwardInput(sessionId: string, body: string): ForwardedInputTarget | null {
-    if (!hasMeaningfulContent(body)) {
-      return null;
-    }
-
-    const manualTerminal = this.#manualTerminals.get(sessionId);
-    if (manualTerminal) {
-      manualTerminal.pty.write(`${body}\r`);
-      publishSessionOutput(
-        this.#eventHub,
-        this.#store,
-        sessionId,
-        manualTerminal.attemptId ??
-          this.#store.getSession(sessionId)?.current_attempt_id ??
-          sessionId,
-        `[terminal input] ${body}`,
-      );
-      return "terminal";
-    }
-
-    const agentSession = this.#activeSessions.get(sessionId);
-    if (!agentSession) {
-      return null;
-    }
-
-    const attemptId =
-      this.#store.getSession(sessionId)?.current_attempt_id ?? sessionId;
-    agentSession.write(`${body}\r`);
-    publishSessionOutput(
-      this.#eventHub,
-      this.#store,
+    return forwardExecutionInput({
+      activeSession: this.#activeSessions.get(sessionId),
+      body,
+      eventHub: this.#eventHub,
+      manualTerminal: this.#manualTerminals.get(sessionId),
       sessionId,
-      attemptId,
-      `[agent input]\n${body}`,
-    );
-    return "agent";
+      store: this.#store,
+    });
   }
 
   #startDraftAnalysis({
@@ -606,8 +589,9 @@ export class ExecutionRuntime {
       useDockerRuntime: true,
       ...(hasMeaningfulContent(instruction) ? { instruction } : {}),
     });
-    const ptyEnv = buildProcessEnv();
-    let child: IPty;
+    const processEnv = buildProcessEnv();
+    let child: ChildProcessWithoutNullStreams;
+    const startedAt = new Date().toISOString();
 
     try {
       if (!run.dockerSpec) {
@@ -626,20 +610,18 @@ export class ExecutionRuntime {
         ticketId: 0,
         worktreePath: repository.path,
       });
-      child = this.#dockerRuntime.spawnPtyInSession(
+      child = this.#dockerRuntime.spawnProcessInSession(
         runId,
         run.command,
         run.args,
         {
           cwd: repository.path,
-          env: ptyEnv,
-          cols: 120,
-          rows: 32,
-          name: "xterm-256color",
+          env: processEnv,
         },
       );
     } catch (error) {
       this.cleanupExecutionEnvironment(runId);
+      clearExecutionActivity(runId);
       const message =
         error instanceof Error
           ? error.message
@@ -663,6 +645,13 @@ export class ExecutionRuntime {
     }
 
     this.#activeDraftRuns.set(draft.id, child);
+    updateExecutionActivity(this.#dockerRuntime, {
+      activityId: runId,
+      activityType: "draft",
+      adapter: adapter.id,
+      startedAt,
+      ticketId: 0,
+    });
 
     let finalized = false;
     const capturedOutput: string[] = [];
@@ -685,6 +674,7 @@ export class ExecutionRuntime {
 
       finalized = true;
       this.#activeDraftRuns.delete(draft.id);
+      clearExecutionActivity(runId);
       this.cleanupExecutionEnvironment(runId);
       const failedEvent = this.#store.recordDraftEvent(
         draft.id,
@@ -722,6 +712,8 @@ export class ExecutionRuntime {
       if (finalized) {
         return;
       }
+
+      clearExecutionActivity(runId);
 
       const rawOutput = existsSync(outputPath)
         ? readFileSync(outputPath, "utf8").trim()
@@ -761,6 +753,7 @@ export class ExecutionRuntime {
 
           finalized = true;
           this.#activeDraftRuns.delete(draft.id);
+          clearExecutionActivity(runId);
           this.cleanupExecutionEnvironment(runId);
           const completedEvent = this.#store.recordDraftEvent(
             draft.id,
@@ -788,6 +781,7 @@ export class ExecutionRuntime {
         );
         finalized = true;
         this.#activeDraftRuns.delete(draft.id);
+        clearExecutionActivity(runId);
         this.cleanupExecutionEnvironment(runId);
         const completedEvent = this.#store.recordDraftEvent(
           draft.id,
@@ -812,12 +806,24 @@ export class ExecutionRuntime {
       }
     };
 
-    streamPtyLines(child, {
+    streamChildProcessLines(child, {
+      onError: (error) => {
+        clearTimeout(timeoutId);
+        failRun(error.message || `${adapter.label} failed to start`);
+      },
       onExit: ({ exitCode }) => {
-        completeRun(exitCode);
+        completeRun(exitCode ?? -1);
       },
       onLine: (line) => {
         captureLine(adapter.interpretOutputLine(line).logLine);
+        updateExecutionActivity(this.#dockerRuntime, {
+          activityId: runId,
+          activityType: "draft",
+          adapter: adapter.id,
+          lastOutputAt: new Date().toISOString(),
+          startedAt,
+          ticketId: 0,
+        });
       },
     });
   }
@@ -931,8 +937,9 @@ export class ExecutionRuntime {
       "ticket",
     );
 
-    const ptyEnv = buildProcessEnv();
-    let child: IPty;
+    const processEnv = buildProcessEnv();
+    let child: ChildProcessWithoutNullStreams;
+    const startedAt = new Date().toISOString();
 
     try {
       if (!run.dockerSpec) {
@@ -951,24 +958,22 @@ export class ExecutionRuntime {
         ticketId: ticket.id,
         worktreePath: session.worktree_path,
       });
-      child = this.#dockerRuntime.spawnPtyInSession(
+      child = this.#dockerRuntime.spawnProcessInSession(
         session.id,
         run.command,
         run.args,
         {
           cwd: session.worktree_path,
-          env: ptyEnv,
-          cols: 120,
-          rows: 32,
-          name: "xterm-256color",
+          env: processEnv,
         },
       );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : `${adapter.label} PTY failed to start`;
+          : `${adapter.label} process failed to start`;
       this.cleanupExecutionEnvironment(session.id);
+      clearExecutionActivity(session.id);
       this.#finishFailure({
         ticket,
         sessionId: session.id,
@@ -979,6 +984,13 @@ export class ExecutionRuntime {
     }
 
     this.#activeSessions.set(session.id, child);
+    updateExecutionActivity(this.#dockerRuntime, {
+      activityId: session.id,
+      activityType: "session",
+      adapter: adapter.id,
+      startedAt,
+      ticketId: ticket.id,
+    });
     this.#store.updateExecutionAttempt(attemptId, {
       status: "running",
       pty_pid: child.pid ?? null,
@@ -1083,7 +1095,6 @@ export class ExecutionRuntime {
       );
     }
 
-    let pendingBuffer = "";
     let persistedSessionRef = activeSessionRef;
     let lastOutputContent: string | undefined;
     let lastPlanContent: string | undefined;
@@ -1129,27 +1140,103 @@ export class ExecutionRuntime {
       return interpreted;
     };
 
-    const shouldSuppressDockerAdapterLine = (line: string) =>
-      adapter.id === "codex" && line.startsWith("[codex raw]");
+    streamChildProcessLines(child, {
+      onError: (error) => {
+        clearExecutionActivity(session.id);
+        this.#finishFailure({
+          ticket,
+          sessionId: session.id,
+          attemptId,
+          reason: `${adapter.label} runtime failed: ${error.message}`,
+        });
+        resolveTrackedExit(this.#exitWaiters, session.id, true);
+      },
+      onExit: async ({ exitCode }) => {
+        const stopReason = this.#stoppingSessions.get(session.id);
+        if (stopReason) {
+          this.#stoppingSessions.delete(session.id);
+          this.#activeSessions.delete(session.id);
+          clearExecutionActivity(session.id);
+          this.cleanupExecutionEnvironment(session.id);
+          resolveTrackedExit(this.#exitWaiters, session.id, true);
+          return;
+        }
+        clearExecutionActivity(session.id);
 
-    const recordSuppressedDockerFailureDetail = (line: string) => {
-      const detail = line.replace(/^\[codex raw\]\s*/, "").trim();
-      if (detail.length > 0) {
-        suppressedDockerFailureDetail = detail;
-      }
-    };
+        // Prefer plan content (from ExitPlanMode) over generic output content.
+        // Plan content is set only for ExitPlanMode tool_use blocks, so later
+        // assistant text messages cannot overwrite the actual plan.
+        const bestOutputContent = lastPlanContent ?? lastOutputContent;
+        let finalSummary = existsSync(outputSummaryPath)
+          ? readFileSync(outputSummaryPath, "utf8").trim()
+          : null;
+        if ((!finalSummary || finalSummary.length === 0) && bestOutputContent) {
+          writeFileSync(outputSummaryPath, bestOutputContent, "utf8");
+          finalSummary = bestOutputContent.trim();
+        }
+        this.cleanupExecutionEnvironment(session.id);
 
-    child.onData((chunk) => {
-      pendingBuffer += chunk.replace(/\r\n/g, "\n");
+        if (exitCode === 0) {
+          const summary =
+            finalSummary && finalSummary.length > 0
+              ? finalSummary
+              : executionMode === "plan"
+                ? `${adapter.label} finished planning, but no plan summary was captured.`
+                : `${adapter.label} finished successfully, but no final summary was captured.`;
 
-      while (pendingBuffer.includes("\n")) {
-        const newlineIndex = pendingBuffer.indexOf("\n");
-        const line = pendingBuffer.slice(0, newlineIndex);
-        pendingBuffer = pendingBuffer.slice(newlineIndex + 1);
+          if (executionMode === "plan") {
+            this.#finishPlanSuccess({
+              projectId: ticket.project,
+              sessionId: session.id,
+              attemptId,
+              summary,
+            });
+          } else {
+            await this.#finishSuccess({
+              adapterLabel: adapter.label,
+              project,
+              repository,
+              ticketId: ticket.id,
+              sessionId: session.id,
+              attemptId,
+              targetBranch: resolveTargetBranch(
+                repository,
+                ticket.target_branch,
+              ),
+              summary,
+            });
+          }
+          resolveTrackedExit(this.#exitWaiters, session.id, true);
+          return;
+        }
+
+        this.#finishFailure({
+          ticket,
+          sessionId: session.id,
+          attemptId,
+          reason: adapter.formatExitReason(
+            exitCode ?? null,
+            null,
+            finalSummary ?? suppressedDockerFailureDetail ?? "",
+          ),
+        });
+        resolveTrackedExit(this.#exitWaiters, session.id, true);
+      },
+      onLine: (line) => {
         const interpreted = processAdapterLine(line);
-        if (shouldSuppressDockerAdapterLine(interpreted.logLine)) {
-          recordSuppressedDockerFailureDetail(interpreted.logLine);
-          continue;
+        updateExecutionActivity(this.#dockerRuntime, {
+          activityId: session.id,
+          activityType: "session",
+          adapter: adapter.id,
+          lastOutputAt: new Date().toISOString(),
+          startedAt,
+          ticketId: ticket.id,
+        });
+        if (shouldSuppressDockerAdapterLine(adapter.id, interpreted.logLine)) {
+          suppressedDockerFailureDetail =
+            extractSuppressedDockerFailureDetail(interpreted.logLine) ??
+            suppressedDockerFailureDetail;
+          return;
         }
         publishSessionOutput(
           this.#eventHub,
@@ -1158,90 +1245,7 @@ export class ExecutionRuntime {
           attemptId,
           interpreted.logLine,
         );
-      }
-    });
-
-    child.onExit(async ({ exitCode }) => {
-      const stopReason = this.#stoppingSessions.get(session.id);
-      if (stopReason) {
-        this.#stoppingSessions.delete(session.id);
-        this.#activeSessions.delete(session.id);
-        this.cleanupExecutionEnvironment(session.id);
-        resolveTrackedExit(this.#exitWaiters, session.id, true);
-        return;
-      }
-
-      if (pendingBuffer.trim().length > 0) {
-        const interpreted = processAdapterLine(pendingBuffer);
-        if (shouldSuppressDockerAdapterLine(interpreted.logLine)) {
-          recordSuppressedDockerFailureDetail(interpreted.logLine);
-        } else {
-          publishSessionOutput(
-            this.#eventHub,
-            this.#store,
-            session.id,
-            attemptId,
-            interpreted.logLine,
-          );
-        }
-        pendingBuffer = "";
-      }
-
-      // Prefer plan content (from ExitPlanMode) over generic output content.
-      // Plan content is set only for ExitPlanMode tool_use blocks, so later
-      // assistant text messages cannot overwrite the actual plan.
-      const bestOutputContent = lastPlanContent ?? lastOutputContent;
-      let finalSummary = existsSync(outputSummaryPath)
-        ? readFileSync(outputSummaryPath, "utf8").trim()
-        : null;
-      if ((!finalSummary || finalSummary.length === 0) && bestOutputContent) {
-        writeFileSync(outputSummaryPath, bestOutputContent, "utf8");
-        finalSummary = bestOutputContent.trim();
-      }
-      this.cleanupExecutionEnvironment(session.id);
-
-      if (exitCode === 0) {
-        const summary =
-          finalSummary && finalSummary.length > 0
-            ? finalSummary
-            : executionMode === "plan"
-              ? `${adapter.label} finished planning, but no plan summary was captured.`
-              : `${adapter.label} finished successfully, but no final summary was captured.`;
-
-        if (executionMode === "plan") {
-          this.#finishPlanSuccess({
-            projectId: ticket.project,
-            sessionId: session.id,
-            attemptId,
-            summary,
-          });
-        } else {
-          await this.#finishSuccess({
-            adapterLabel: adapter.label,
-            project,
-            repository,
-            ticketId: ticket.id,
-            sessionId: session.id,
-            attemptId,
-            targetBranch: resolveTargetBranch(repository, ticket.target_branch),
-            summary,
-          });
-        }
-        resolveTrackedExit(this.#exitWaiters, session.id, true);
-        return;
-      }
-
-      this.#finishFailure({
-        ticket,
-        sessionId: session.id,
-        attemptId,
-        reason: adapter.formatExitReason(
-          exitCode ?? null,
-          null,
-          finalSummary ?? suppressedDockerFailureDetail ?? "",
-        ),
-      });
-      resolveTrackedExit(this.#exitWaiters, session.id, true);
+      },
     });
   }
 

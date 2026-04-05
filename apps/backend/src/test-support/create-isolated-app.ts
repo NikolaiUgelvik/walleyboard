@@ -103,6 +103,19 @@ export function createTestDockerRuntime(
     spawnProcessInSession(): ChildProcessWithoutNullStreams {
       throw new Error("Test Docker runtime does not spawn child processes.");
     },
+    getSessionContainerInfo(sessionId) {
+      if (!trackedSessionIds.has(sessionId)) {
+        return null;
+      }
+
+      return {
+        id: `container-${sessionId}`,
+        name: `test-container-${sessionId}`,
+        projectId: "test-project",
+        ticketId: 0,
+        worktreePath: "/tmp/test-worktree",
+      };
+    },
     cleanupSessionContainer(sessionId) {
       trackedSessionIds.delete(sessionId);
       cleanupSessionContainerCalls.push(sessionId);

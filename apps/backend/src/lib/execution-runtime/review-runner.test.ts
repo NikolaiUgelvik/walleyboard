@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
@@ -118,18 +121,44 @@ function createReviewPackage(): ReviewPackage {
   };
 }
 
-test("runTicketReviewSession streams Docker reviews through a PTY", async () => {
+function createFakeChildProcess(): {
+  child: ChildProcessWithoutNullStreams;
+  emitExit: (event: { exitCode: number; signal?: NodeJS.Signals }) => void;
+  emitStdout: (chunk: string) => void;
+} {
+  const emitter = new EventEmitter();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const stdin = new PassThrough();
+
+  return {
+    child: Object.assign(emitter, {
+      kill() {
+        return true;
+      },
+      pid: 321,
+      stderr,
+      stdin,
+      stdout,
+    }) as unknown as ChildProcessWithoutNullStreams,
+    emitExit(event) {
+      emitter.emit("exit", event.exitCode, event.signal ?? null);
+    },
+    emitStdout(chunk) {
+      stdout.write(chunk);
+    },
+  };
+}
+
+test("runTicketReviewSession streams Docker reviews through a child process", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runner-"));
   const worktreePath = join(tempDir, "workspace");
   const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(worktreePath, { recursive: true });
   const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
-  let onDataHandler: ((chunk: string) => void) | null = null;
-  let onExitHandler:
-    | ((event: { exitCode: number; signal?: number }) => void)
-    | null = null;
-  let spawnPtyCalls = 0;
+  const fakeChild = createFakeChildProcess();
+  let spawnProcessCalls = 0;
   let cleanedSessionId: string | null = null;
   const loggedLines: string[] = [];
   const activeReviewRuns = new Map<
@@ -201,29 +230,28 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
       },
       dockerRuntime: {
         ensureSessionContainer() {},
-        spawnPtyInSession(_sessionId: string, command: string, args: string[]) {
-          spawnPtyCalls += 1;
+        getSessionContainerInfo() {
+          return {
+            id: "container-review-review-run-1",
+            name: "test-container-review-review-run-1",
+            projectId: "project-1",
+            ticketId: 5,
+            worktreePath,
+          };
+        },
+        spawnProcessInSession(
+          _sessionId: string,
+          command: string,
+          args: string[],
+        ) {
+          spawnProcessCalls += 1;
           assert.equal(command, "codex");
           assert.deepEqual(args.slice(0, 3), [
             "exec",
             "--json",
             "--output-last-message",
           ]);
-          return {
-            kill() {},
-            onData(callback: (chunk: string) => void) {
-              onDataHandler = callback;
-            },
-            onExit(
-              callback: (event: { exitCode: number; signal?: number }) => void,
-            ) {
-              onExitHandler = callback;
-            },
-            pid: 321,
-            process: "docker",
-            resize() {},
-            write() {},
-          } as never;
+          return fakeChild.child;
         },
       } as never,
       onLogLine(line) {
@@ -238,20 +266,13 @@ test("runTicketReviewSession streams Docker reviews through a PTY", async () => 
       ticket: createTicket(),
     });
 
-    assert.equal(spawnPtyCalls, 1);
+    assert.equal(spawnProcessCalls, 1);
     assert.equal(activeReviewRuns.size, 1);
-    if (!onDataHandler || !onExitHandler) {
-      throw new Error("Expected Docker PTY callbacks to be registered");
-    }
-    const emitData: (chunk: string) => void = onDataHandler;
-    const emitExit: (event: { exitCode: number; signal?: number }) => void =
-      onExitHandler;
-
-    emitData(
+    fakeChild.emitStdout(
       '{"summary":"Looks good","strengths":["Covers the scene transitions"],',
     );
-    emitData('"actionable_findings":[]}\n');
-    emitExit({ exitCode: 0 });
+    fakeChild.emitStdout('"actionable_findings":[]}\n');
+    fakeChild.emitExit({ exitCode: 0 });
 
     const result = await reviewPromise;
     assert.equal(result.adapterSessionRef, null);

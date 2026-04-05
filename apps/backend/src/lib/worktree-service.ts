@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -20,6 +20,13 @@ import { runObservedOperation } from "./backend-observability.js";
 import { resolveTargetBranch } from "./execution-runtime/helpers.js";
 import type { PreparedExecutionRuntime } from "./store.js";
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
+import {
+  GitCommandError,
+  type RemoteTrackingRef,
+  refreshTargetBranch,
+  refreshTargetBranchAsync,
+  syncTargetBranchIntoWorktree,
+} from "./worktree-target-branch.js";
 
 const worktreeCommandShell = "bash";
 
@@ -76,30 +83,6 @@ export type MergeReviewedBranchOptions = {
         | Promise<MergeConflictResolutionResult>)
     | undefined;
 };
-
-class GitCommandError extends Error {
-  readonly args: string[];
-  readonly exitCode: number | null;
-  readonly stdout: string;
-  readonly stderr: string;
-
-  constructor(
-    args: string[],
-    message: string,
-    options?: {
-      exitCode?: number | null;
-      stdout?: string;
-      stderr?: string;
-    },
-  ) {
-    super(message);
-    this.name = "GitCommandError";
-    this.args = args;
-    this.exitCode = options?.exitCode ?? null;
-    this.stdout = options?.stdout ?? "";
-    this.stderr = options?.stderr ?? "";
-  }
-}
 
 export class AutomaticMergeRecoveryError extends Error {
   readonly logs: string[];
@@ -164,6 +147,98 @@ function runGitAtRoot(args: string[]): string {
           encoding: "utf8",
           stdio: ["ignore", "pipe", "pipe"],
         }).trim();
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown git execution failure";
+        throw new Error(`Git command failed (${args.join(" ")}): ${message}`);
+      }
+    },
+  );
+}
+
+async function runGitAsync(repoPath: string, args: string[]): Promise<string> {
+  return await runObservedOperation(
+    "worktree.git",
+    {
+      command: args.join(" "),
+      repoPath,
+    },
+    async () => {
+      try {
+        return (
+          await new Promise<string>((resolve, reject) => {
+            execFile(
+              "git",
+              ["-C", repoPath, ...args],
+              { encoding: "utf8" },
+              (error, stdout, stderr) => {
+                if (!error) {
+                  resolve(stdout.trim());
+                  return;
+                }
+
+                const gitError = error as GitExecError;
+                if (
+                  typeof (error as { code?: unknown }).code === "number" &&
+                  gitError.status === undefined
+                ) {
+                  gitError.status = (error as { code: number }).code;
+                }
+                gitError.stdout = stdout;
+                gitError.stderr = stderr;
+                reject(gitError);
+              },
+            );
+          })
+        ).trim();
+      } catch (error) {
+        const gitError = error as GitExecError;
+        const stdout =
+          typeof gitError.stdout === "string"
+            ? gitError.stdout.trim()
+            : (gitError.stdout?.toString("utf8").trim() ?? "");
+        const stderr =
+          typeof gitError.stderr === "string"
+            ? gitError.stderr.trim()
+            : (gitError.stderr?.toString("utf8").trim() ?? "");
+        const detail =
+          stderr || stdout || gitError.message || "Unknown git failure";
+        throw new GitCommandError(
+          args,
+          `Git command failed (${args.join(" ")}): ${detail}`,
+          {
+            exitCode: gitError.status ?? null,
+            stdout,
+            stderr,
+          },
+        );
+      }
+    },
+  );
+}
+
+async function runGitAtRootAsync(args: string[]): Promise<string> {
+  return await runObservedOperation(
+    "worktree.git-root",
+    {
+      command: args.join(" "),
+    },
+    async () => {
+      try {
+        return (
+          await new Promise<string>((resolve, reject) => {
+            execFile("git", args, { encoding: "utf8" }, (error, stdout) => {
+              if (!error) {
+                resolve(stdout.trim());
+                return;
+              }
+
+              reject(error);
+            });
+          })
+        ).trim();
       } catch (error) {
         const message =
           error instanceof Error
@@ -272,6 +347,42 @@ function copyGitIdentity(sourceRepoPath: string, workspacePath: string): void {
   }
 }
 
+async function copyGitIdentityAsync(
+  sourceRepoPath: string,
+  workspacePath: string,
+): Promise<void> {
+  let userName = "";
+  let userEmail = "";
+
+  try {
+    userName = await runGitAsync(sourceRepoPath, [
+      "config",
+      "--get",
+      "user.name",
+    ]);
+  } catch {
+    userName = "";
+  }
+
+  try {
+    userEmail = await runGitAsync(sourceRepoPath, [
+      "config",
+      "--get",
+      "user.email",
+    ]);
+  } catch {
+    userEmail = "";
+  }
+
+  if (userName.length > 0) {
+    await runGitAsync(workspacePath, ["config", "user.name", userName]);
+  }
+
+  if (userEmail.length > 0) {
+    await runGitAsync(workspacePath, ["config", "user.email", userEmail]);
+  }
+}
+
 function addWorkspaceExclude(workspacePath: string, pattern: string): void {
   const excludePath = join(workspacePath, ".git", "info", "exclude");
   const existing = existsSync(excludePath)
@@ -336,11 +447,12 @@ export function prepareWorktree(
 
   const targetBranch = resolveTargetBranch(repository, ticket.target_branch);
   runGit(repository.path, ["rev-parse", "--is-inside-work-tree"]);
-  const refreshedTarget = refreshTargetBranch(
-    repository.path,
+  const refreshedTarget = refreshTargetBranch({
+    repositoryPath: repository.path,
     repository,
+    runGit,
     targetBranch,
-  );
+  });
 
   try {
     runGitAtRoot([
@@ -354,6 +466,68 @@ export function prepareWorktree(
     ]);
     copyGitIdentity(repository.path, worktreeRoot);
     runGit(worktreeRoot, ["checkout", "-b", workingBranch]);
+    addWorkspaceExclude(worktreeRoot, ".walleyboard/");
+  } catch (error) {
+    if (existsSync(worktreeRoot)) {
+      removeStandaloneWorkspace(worktreeRoot);
+    }
+
+    throw error;
+  }
+
+  const logs = [
+    `Verified git repository: ${repository.path}`,
+    ...refreshedTarget.logs,
+    `Cloned isolated repository checkout: ${worktreeRoot}`,
+    `Created working branch ${workingBranch} from ${refreshedTarget.mergeBackBranch}`,
+  ];
+
+  return {
+    workingBranch,
+    worktreePath: worktreeRoot,
+    logs,
+  };
+}
+
+export async function prepareWorktreeAsync(
+  project: Project,
+  repository: RepositoryConfig,
+  ticket: TicketFrontmatter,
+): Promise<PreparedExecutionRuntime> {
+  if (ticket.working_branch) {
+    throw new Error("Ticket already has a working branch");
+  }
+
+  const workingBranch = deriveWorkingBranch(ticket, project.agent_adapter);
+  const projectWorktreeRoot = resolveWalleyBoardPath("worktrees", project.slug);
+  const worktreeRoot = join(projectWorktreeRoot, `ticket-${ticket.id}`);
+  mkdirSync(projectWorktreeRoot, { recursive: true });
+
+  if (existsSync(worktreeRoot)) {
+    throw new Error(`Worktree path already exists: ${worktreeRoot}`);
+  }
+
+  const targetBranch = resolveTargetBranch(repository, ticket.target_branch);
+  await runGitAsync(repository.path, ["rev-parse", "--is-inside-work-tree"]);
+  const refreshedTarget = await refreshTargetBranchAsync({
+    repositoryPath: repository.path,
+    repository,
+    runGitAsync,
+    targetBranch,
+  });
+
+  try {
+    await runGitAtRootAsync([
+      "clone",
+      "--quiet",
+      "--no-hardlinks",
+      "--branch",
+      refreshedTarget.mergeBackBranch,
+      repository.path,
+      worktreeRoot,
+    ]);
+    await copyGitIdentityAsync(repository.path, worktreeRoot);
+    await runGitAsync(worktreeRoot, ["checkout", "-b", workingBranch]);
     addWorkspaceExclude(worktreeRoot, ".walleyboard/");
   } catch (error) {
     if (existsSync(worktreeRoot)) {
@@ -544,234 +718,6 @@ function isMergeInProgress(repoPath: string): boolean {
   return existsSync(
     runGit(repoPath, ["rev-parse", "--git-path", "MERGE_HEAD"]),
   );
-}
-
-function gitRefExists(repoPath: string, ref: string): boolean {
-  try {
-    runGit(repoPath, ["show-ref", "--verify", "--quiet", ref]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-type RemoteTrackingRef = {
-  refName: string;
-  remoteName: string;
-  branchName: string;
-};
-
-type NormalizedTargetBranch = {
-  configuredName: string;
-  localBranchName: string;
-  remoteTrackingRef: RemoteTrackingRef | null;
-};
-
-function resolveRemoteTrackingRef(
-  repoPath: string,
-  refName: string,
-): RemoteTrackingRef | null {
-  if (!gitRefExists(repoPath, `refs/remotes/${refName}`)) {
-    return null;
-  }
-
-  const refSegments = refName.split("/");
-  const remoteName = refSegments[0];
-  const branchSegments = refSegments.slice(1);
-  if (!remoteName || branchSegments.length === 0) {
-    return null;
-  }
-
-  return {
-    refName,
-    remoteName,
-    branchName: branchSegments.join("/"),
-  };
-}
-
-function localBranchExists(repoPath: string, branchName: string): boolean {
-  return gitRefExists(repoPath, `refs/heads/${branchName}`);
-}
-
-function normalizeTargetBranch(
-  repoPath: string,
-  targetBranch: string,
-): NormalizedTargetBranch {
-  const configuredRemoteTrackingRef = resolveRemoteTrackingRef(
-    repoPath,
-    targetBranch,
-  );
-  if (configuredRemoteTrackingRef) {
-    if (!localBranchExists(repoPath, configuredRemoteTrackingRef.branchName)) {
-      throw new Error(
-        `Configured target branch ${targetBranch} resolves to local branch ${configuredRemoteTrackingRef.branchName}, but that local branch does not exist. Create or fetch it, then try again.`,
-      );
-    }
-
-    return {
-      configuredName: targetBranch,
-      localBranchName: configuredRemoteTrackingRef.branchName,
-      remoteTrackingRef: configuredRemoteTrackingRef,
-    };
-  }
-
-  if (!localBranchExists(repoPath, targetBranch)) {
-    throw new Error(
-      `Configured target branch ${targetBranch} is not available as a local branch. Create or fetch it, then try again.`,
-    );
-  }
-
-  const upstream = resolveBranchUpstream(repoPath, targetBranch);
-  return {
-    configuredName: targetBranch,
-    localBranchName: targetBranch,
-    remoteTrackingRef: upstream
-      ? resolveRemoteTrackingRef(repoPath, upstream)
-      : null,
-  };
-}
-
-function resolveBranchUpstream(
-  repoPath: string,
-  branchName: string,
-): string | null {
-  try {
-    const upstream = runGit(repoPath, [
-      "rev-parse",
-      "--abbrev-ref",
-      `${branchName}@{upstream}`,
-    ]);
-    return upstream.length > 0 ? upstream : null;
-  } catch {
-    return null;
-  }
-}
-
-type RefreshedTargetBranch = {
-  logs: string[];
-  syncRef: string;
-  mergeBackBranch: string;
-  remoteTrackingRef: RemoteTrackingRef | null;
-};
-
-type WorktreeSyncedTargetBranch = {
-  logs: string[];
-  syncRef: string;
-};
-
-function refreshTargetBranch(
-  repositoryPath: string,
-  repository: RepositoryConfig,
-  targetBranch: string,
-): RefreshedTargetBranch {
-  const normalizedTarget = normalizeTargetBranch(repository.path, targetBranch);
-  const logs: string[] = [];
-
-  if (normalizedTarget.configuredName !== normalizedTarget.localBranchName) {
-    logs.push(
-      `Configured target branch ${normalizedTarget.configuredName} resolves to local branch ${normalizedTarget.localBranchName} for local git operations`,
-    );
-  }
-
-  const repoStatus = gitStatusPorcelain(repositoryPath);
-  if (repoStatus.length > 0) {
-    throw new Error(
-      `Cannot update target branch ${normalizedTarget.localBranchName} before continuing because ${repositoryPath} has uncommitted changes. Resolve the repository state and try again.`,
-    );
-  }
-
-  const currentBranch = runGit(repositoryPath, [
-    "rev-parse",
-    "--abbrev-ref",
-    "HEAD",
-  ]);
-  if (currentBranch !== normalizedTarget.localBranchName) {
-    runGit(repositoryPath, ["checkout", normalizedTarget.localBranchName]);
-    logs.push(
-      `Checked out ${normalizedTarget.localBranchName} in ${repositoryPath}`,
-    );
-  }
-
-  if (!normalizedTarget.remoteTrackingRef) {
-    const refreshedHead = runGit(repositoryPath, [
-      "rev-parse",
-      normalizedTarget.localBranchName,
-    ]);
-    return {
-      logs: [
-        ...logs,
-        `No upstream is configured for ${normalizedTarget.localBranchName}; using the current local branch head.`,
-        `Target branch sync ref after refresh: ${refreshedHead}`,
-      ],
-      syncRef: normalizedTarget.localBranchName,
-      mergeBackBranch: normalizedTarget.localBranchName,
-      remoteTrackingRef: null,
-    };
-  }
-
-  try {
-    runGit(repositoryPath, [
-      "pull",
-      "--ff-only",
-      "--quiet",
-      normalizedTarget.remoteTrackingRef.remoteName,
-      normalizedTarget.remoteTrackingRef.branchName,
-    ]);
-  } catch (error) {
-    if (error instanceof GitCommandError) {
-      throw new Error(
-        `Unable to update target branch ${normalizedTarget.localBranchName} from ${normalizedTarget.remoteTrackingRef.refName}. Resolve the repository state and try again. ${error.message}`,
-      );
-    }
-
-    throw error;
-  }
-
-  const refreshedHead = runGit(repositoryPath, [
-    "rev-parse",
-    normalizedTarget.localBranchName,
-  ]);
-  return {
-    logs: [
-      ...logs,
-      `Pulled ${normalizedTarget.localBranchName} from ${normalizedTarget.remoteTrackingRef.refName}`,
-      `Target branch sync ref after refresh: ${refreshedHead}`,
-    ],
-    syncRef: normalizedTarget.localBranchName,
-    mergeBackBranch: normalizedTarget.localBranchName,
-    remoteTrackingRef: normalizedTarget.remoteTrackingRef,
-  };
-}
-
-function syncTargetBranchIntoWorktree(
-  repositoryPath: string,
-  worktreePath: string,
-  refreshedTarget: RefreshedTargetBranch,
-  workingBranch: string,
-): WorktreeSyncedTargetBranch {
-  if (!isSelfContainedWorkspace(worktreePath)) {
-    return {
-      logs: [],
-      syncRef: refreshedTarget.syncRef,
-    };
-  }
-
-  const importedRef = `refs/walleyboard/merge-target/${workingBranch.replace(/[^A-Za-z0-9/_-]+/g, "-")}`;
-  runGit(worktreePath, [
-    "fetch",
-    "--quiet",
-    repositoryPath,
-    `+${refreshedTarget.mergeBackBranch}:${importedRef}`,
-  ]);
-  const importedHead = runGit(worktreePath, ["rev-parse", importedRef]);
-
-  return {
-    logs: [
-      `Imported refreshed ${refreshedTarget.mergeBackBranch} into ${worktreePath} as ${importedRef}`,
-      `Worktree target sync ref after import: ${importedHead}`,
-    ],
-    syncRef: importedRef,
-  };
 }
 
 function pushTargetBranch(
@@ -1077,18 +1023,21 @@ export async function mergeReviewedBranch(
   let attempt = 1;
 
   while (attempt <= maxMergeAttempts) {
-    const refreshedTarget = refreshTargetBranch(
-      repository.path,
+    const refreshedTarget = refreshTargetBranch({
+      repositoryPath: repository.path,
       repository,
+      runGit,
       targetBranch,
-    );
+    });
     logs.push(...refreshedTarget.logs);
-    const worktreeTarget = syncTargetBranchIntoWorktree(
-      repository.path,
-      worktreePath,
+    const worktreeTarget = syncTargetBranchIntoWorktree({
+      isSelfContainedWorkspace,
       refreshedTarget,
+      repositoryPath: repository.path,
+      runGit,
       workingBranch,
-    );
+      worktreePath,
+    });
     logs.push(...worktreeTarget.logs);
 
     let rebaseResult: {
@@ -1209,18 +1158,21 @@ export async function mergeReviewedBranch(
 
       if (isFastForwardFailure(error)) {
         if (!targetAdvanceRecoveryUsed) {
-          const refreshedTargetAfterAdvance = refreshTargetBranch(
-            repository.path,
+          const refreshedTargetAfterAdvance = refreshTargetBranch({
+            repositoryPath: repository.path,
             repository,
+            runGit,
             targetBranch,
-          );
+          });
           logs.push(...refreshedTargetAfterAdvance.logs);
-          const worktreeTargetAfterAdvance = syncTargetBranchIntoWorktree(
-            repository.path,
-            worktreePath,
-            refreshedTargetAfterAdvance,
+          const worktreeTargetAfterAdvance = syncTargetBranchIntoWorktree({
+            isSelfContainedWorkspace,
+            refreshedTarget: refreshedTargetAfterAdvance,
+            repositoryPath: repository.path,
+            runGit,
             workingBranch,
-          );
+            worktreePath,
+          });
           logs.push(...worktreeTargetAfterAdvance.logs);
           const recovery = await attemptTargetBranchCatchupWithRecovery(
             worktreePath,

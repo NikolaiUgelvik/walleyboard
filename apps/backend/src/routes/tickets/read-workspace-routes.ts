@@ -6,6 +6,7 @@ import type {
   ReviewPackage,
   TicketFrontmatter,
   TicketWorkspaceDiff,
+  TicketWorkspaceSummary,
 } from "../../../../../packages/contracts/src/index.js";
 import { resolveTargetBranch } from "../../lib/execution-runtime/helpers.js";
 import { parsePositiveInt } from "../../lib/http.js";
@@ -42,6 +43,19 @@ function readPersistedWorkspaceDiff(
     patch: readFileSync(reviewPackage.diff_ref, "utf8"),
     generated_at: reviewPackage.created_at,
   };
+}
+
+function readPersistedWorkspaceSummary(
+  ticket: TicketFrontmatter,
+  reviewPackage: ReviewPackage,
+  ticketWorkspaceService: TicketRouteDependencies["ticketWorkspaceService"],
+): TicketWorkspaceSummary {
+  const diff = readPersistedWorkspaceDiff(ticket, reviewPackage);
+  return ticketWorkspaceService.summarizePersistedDiff({
+    generatedAt: diff.generated_at,
+    patch: diff.patch,
+    ticketId: ticket.id,
+  });
 }
 
 export function registerTicketReadWorkspaceRoutes(
@@ -131,6 +145,75 @@ export function registerTicketReadWorkspaceRoutes(
   );
 
   app.get<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/workspace/summary",
+    { preHandler: repositoryRouteRateLimit(app) },
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      const ticket = store.getTicket(ticketId);
+      if (!ticket) {
+        reply.code(404).send({ error: "Ticket not found" });
+        return;
+      }
+
+      const sendPersistedWorkspaceSummary = () => {
+        const reviewPackage = store.getReviewPackage(ticketId);
+        if (!reviewPackage) {
+          reply
+            .code(409)
+            .send({ error: "Ticket has no summary available yet" });
+          return;
+        }
+
+        try {
+          return {
+            workspace_summary: readPersistedWorkspaceSummary(
+              ticket,
+              reviewPackage,
+              ticketWorkspaceService,
+            ),
+          };
+        } catch (error) {
+          reply.code(409).send({
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unable to load the stored review summary",
+          });
+        }
+      };
+
+      if (ticket.status === "done") {
+        return sendPersistedWorkspaceSummary();
+      }
+
+      if (ticket.session_id && ticket.working_branch) {
+        const session = store.getSession(ticket.session_id);
+        if (session?.worktree_path) {
+          const repository = store.getRepository(ticket.repo);
+          const effectiveTargetBranch = repository
+            ? resolveTargetBranch(repository, ticket.target_branch)
+            : ticket.target_branch;
+          return {
+            workspace_summary: await ticketWorkspaceService.getSummary({
+              targetBranch: effectiveTargetBranch,
+              ticketId: ticket.id,
+              workingBranch: ticket.working_branch,
+              worktreePath: session.worktree_path,
+            }),
+          };
+        }
+      }
+
+      return sendPersistedWorkspaceSummary();
+    },
+  );
+
+  app.get<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/workspace/diff",
     { preHandler: repositoryRouteRateLimit(app) },
     async (request, reply) => {
@@ -179,7 +262,7 @@ export function registerTicketReadWorkspaceRoutes(
             ? resolveTargetBranch(repository, ticket.target_branch)
             : ticket.target_branch;
           return {
-            workspace_diff: ticketWorkspaceService.getDiff({
+            workspace_diff: await ticketWorkspaceService.getDiff({
               targetBranch: effectiveTargetBranch,
               ticketId: ticket.id,
               workingBranch: ticket.working_branch,

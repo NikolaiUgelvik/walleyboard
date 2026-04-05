@@ -111,7 +111,7 @@ function createPreviewRuntimeHarness(options?: {
   };
 }
 
-test("TicketWorkspaceService diffs the worktree and publishes live diff updates", async () => {
+test("TicketWorkspaceService diffs the worktree and publishes live summary updates", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-workspace-"));
   const repoPath = join(tempDir, "repo");
   const worktreePath = join(tempDir, "ticket-worktree");
@@ -144,7 +144,7 @@ test("TicketWorkspaceService diffs the worktree and publishes live diff updates"
     writeFileSync(join(worktreePath, "tracked.txt"), "ticket update\n", "utf8");
     writeFileSync(join(worktreePath, "draft.txt"), "untracked draft\n", "utf8");
 
-    const diff = workspaceService.getDiff({
+    const diff = await workspaceService.getDiff({
       targetBranch: "main",
       ticketId: 29,
       workingBranch: "ticket-branch",
@@ -165,7 +165,7 @@ test("TicketWorkspaceService diffs the worktree and publishes live diff updates"
         if (
           event.event_type === "ticket.workspace.updated" &&
           event.payload.ticket_id === 29 &&
-          event.payload.kind === "diff"
+          event.payload.kind === "summary"
         ) {
           clearTimeout(timeout);
           unsubscribe();
@@ -181,6 +181,22 @@ test("TicketWorkspaceService diffs the worktree and publishes live diff updates"
     });
 
     assert.ok(workspaceUpdate);
+    assert.deepEqual(
+      (workspaceUpdate as { payload: { summary: unknown } }).payload.summary,
+      {
+        ticket_id: 29,
+        source: "live_worktree",
+        added_lines: 2,
+        removed_lines: 1,
+        files_changed: 2,
+        has_changes: true,
+        generated_at: (
+          workspaceUpdate as {
+            payload: { summary: { generated_at: string } };
+          }
+        ).payload.summary.generated_at,
+      },
+    );
   } finally {
     await workspaceService.disposeTicket(29);
     rmSync(tempDir, { recursive: true, force: true });

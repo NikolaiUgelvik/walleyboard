@@ -1,5 +1,5 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import type { IPty } from "node-pty";
 
 import {
   type ExecutionSession,
@@ -13,12 +13,16 @@ import {
 
 import { resolveProjectAgentConfigFileOverrides } from "../agent-adapters/agent-config-overrides.js";
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
+import {
+  clearObservedExecutionActivity,
+  upsertObservedExecutionActivity,
+} from "../backend-observability.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildProcessEnv,
   buildReviewRunOutputPath,
   hasMeaningfulContent,
-  streamPtyLines,
+  streamChildProcessLines,
 } from "./helpers.js";
 import { resolveTrackedExit } from "./waiters.js";
 
@@ -70,7 +74,8 @@ export async function runTicketReviewSession(input: {
   }
 
   return await new Promise((resolve, reject) => {
-    let child: IPty;
+    let child: ChildProcessWithoutNullStreams;
+    const startedAt = new Date().toISOString();
     try {
       if (!run.dockerSpec) {
         throw new Error(
@@ -88,16 +93,13 @@ export async function runTicketReviewSession(input: {
         ticketId: input.ticket.id,
         worktreePath,
       });
-      child = input.dockerRuntime.spawnPtyInSession(
+      child = input.dockerRuntime.spawnProcessInSession(
         reviewSessionId,
         run.command,
         run.args,
         {
-          cols: 120,
-          rows: 32,
           cwd: worktreePath,
           env: buildProcessEnv(),
-          name: "xterm-256color",
         },
       );
     } catch (error) {
@@ -113,6 +115,21 @@ export async function runTicketReviewSession(input: {
     let lastOutputContent: string | null = null;
     let rawOutput = "";
     let settled = false;
+    upsertObservedExecutionActivity({
+      activityId: reviewSessionId,
+      activityType: "review",
+      adapter: input.adapter.id,
+      containerId:
+        input.dockerRuntime.getSessionContainerInfo(reviewSessionId)?.id ??
+        null,
+      containerName:
+        input.dockerRuntime.getSessionContainerInfo(reviewSessionId)?.name ??
+        null,
+      executionMode: "non_pty",
+      lastOutputAt: null,
+      startedAt,
+      ticketId: input.ticket.id,
+    });
 
     const cleanupTrackedRun = () => {
       if (settled) {
@@ -121,6 +138,7 @@ export async function runTicketReviewSession(input: {
 
       settled = true;
       input.activeReviewRuns.delete(input.reviewRunId);
+      clearObservedExecutionActivity(reviewSessionId);
       input.cleanupExecutionEnvironment(reviewSessionId);
       resolveTrackedExit(input.reviewRunExitWaiters, input.reviewRunId, true);
       return true;
@@ -197,11 +215,34 @@ export async function runTicketReviewSession(input: {
     };
 
     input.activeReviewRuns.set(input.reviewRunId, child);
-    streamPtyLines(child, {
-      onExit: ({ exitCode }) => {
-        handleExit(exitCode, null);
+    streamChildProcessLines(child, {
+      onError: (error) => {
+        if (!cleanupTrackedRun()) {
+          return;
+        }
+        reject(error);
       },
-      onLine: handleLine,
+      onExit: ({ exitCode, signal }) => {
+        handleExit(exitCode, signal);
+      },
+      onLine: (line) => {
+        handleLine(line);
+        upsertObservedExecutionActivity({
+          activityId: reviewSessionId,
+          activityType: "review",
+          adapter: input.adapter.id,
+          containerId:
+            input.dockerRuntime.getSessionContainerInfo(reviewSessionId)?.id ??
+            null,
+          containerName:
+            input.dockerRuntime.getSessionContainerInfo(reviewSessionId)
+              ?.name ?? null,
+          executionMode: "non_pty",
+          lastOutputAt: new Date().toISOString(),
+          startedAt,
+          ticketId: input.ticket.id,
+        });
+      },
     });
   });
 }

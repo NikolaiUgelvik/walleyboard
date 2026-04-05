@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
@@ -148,6 +151,35 @@ function createSession(worktreePath: string): ExecutionSession {
   };
 }
 
+function createFakeChildProcess(): {
+  child: ChildProcessWithoutNullStreams;
+  emitExit: (event: { exitCode: number; signal?: NodeJS.Signals }) => void;
+  emitStdout: (chunk: string) => void;
+} {
+  const emitter = new EventEmitter();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const stdin = new PassThrough();
+
+  return {
+    child: Object.assign(emitter, {
+      kill() {
+        return true;
+      },
+      pid: 1234,
+      stderr,
+      stdin,
+      stdout,
+    }) as unknown as ChildProcessWithoutNullStreams,
+    emitExit(event) {
+      emitter.emit("exit", event.exitCode, event.signal ?? null);
+    },
+    emitStdout(chunk) {
+      stdout.write(chunk);
+    },
+  };
+}
+
 test("docker-backed execution launches the configured adapter command inside Docker", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-execution-runtime-"));
   const worktreePath = join(tempDir, "workspace");
@@ -156,6 +188,7 @@ test("docker-backed execution launches the configured adapter command inside Doc
   const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   let spawnedArgs: string[] | null = null;
+  const { child } = createFakeChildProcess();
   const updateExecutionAttemptCalls: Array<{
     attemptId: string;
     input: Record<string, unknown>;
@@ -173,18 +206,19 @@ test("docker-backed execution launches the configured adapter command inside Doc
     cleanupSessionContainer() {},
     dispose() {},
     ensureSessionContainer() {},
-    spawnPtyInSession(_sessionId: string, command: string, args: string[]) {
+    getSessionContainerInfo() {
+      return {
+        id: "container-session-1",
+        name: "test-container-session-1",
+        projectId: "project-1",
+        ticketId: 14,
+        worktreePath,
+      };
+    },
+    spawnProcessInSession(_sessionId: string, command: string, args: string[]) {
       assert.equal(command, "test-agent");
       spawnedArgs = args;
-      return {
-        kill() {},
-        onData() {},
-        onExit() {},
-        pid: 1234,
-        process: "docker",
-        resize() {},
-        write() {},
-      } as never;
+      return child;
     },
   };
   const store = {
@@ -324,9 +358,7 @@ test("draft refinement launches the configured adapter command inside Docker", (
     ticketId: number;
   } | null = null;
   let spawned: { command: string; args: string[] } | null = null;
-  let onExitHandler:
-    | ((event: { exitCode: number; signal?: number }) => void)
-    | null = null;
+  const fakeChild = createFakeChildProcess();
 
   const dockerRuntime = {
     assertAvailable() {
@@ -344,21 +376,18 @@ test("draft refinement launches the configured adapter command inside Docker", (
       ensureSessionContainerInput = input;
       return undefined;
     },
-    spawnPtyInSession(_sessionId: string, command: string, args: string[]) {
-      spawned = { command, args };
+    getSessionContainerInfo() {
       return {
-        kill() {},
-        onData() {},
-        onExit(
-          callback: (event: { exitCode: number; signal?: number }) => void,
-        ) {
-          onExitHandler = callback;
-        },
-        pid: 1234,
-        process: "docker",
-        resize() {},
-        write() {},
-      } as never;
+        id: "container-draft-run",
+        name: "test-container-draft-run",
+        projectId: "project-1",
+        ticketId: 0,
+        worktreePath: repositoryPath,
+      };
+    },
+    spawnProcessInSession(_sessionId: string, command: string, args: string[]) {
+      spawned = { command, args };
+      return fakeChild.child;
     },
   };
   const store = {
@@ -452,11 +481,7 @@ test("draft refinement launches the configured adapter command inside Docker", (
     assert.equal(capturedContainerInput.worktreePath, repositoryPath);
     assert.equal(capturedContainerInput.ticketId, 0);
     assert.equal(spawnedRun.command, "test-agent");
-    assert.ok(onExitHandler);
-
-    (onExitHandler as (event: { exitCode: number; signal?: number }) => void)({
-      exitCode: 1,
-    });
+    fakeChild.emitExit({ exitCode: 1 });
   } finally {
     if (previousWalleyBoardHome === undefined) {
       delete process.env.WALLEYBOARD_HOME;
@@ -599,10 +624,7 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
   const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   const sessionLogs: string[] = [];
-  let onDataHandler: ((chunk: string) => void) | null = null;
-  let onExitHandler:
-    | ((event: { exitCode: number; signal?: number }) => void)
-    | null = null;
+  const fakeChild = createFakeChildProcess();
 
   const dockerRuntime = {
     assertAvailable() {
@@ -617,23 +639,18 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
     cleanupSessionContainer() {},
     dispose() {},
     ensureSessionContainer() {},
-    spawnPtyInSession(_sessionId: string, command: string) {
-      assert.equal(command, "codex");
+    getSessionContainerInfo() {
       return {
-        kill() {},
-        onData(callback: (chunk: string) => void) {
-          onDataHandler = callback;
-        },
-        onExit(
-          callback: (event: { exitCode: number; signal?: number }) => void,
-        ) {
-          onExitHandler = callback;
-        },
-        pid: 1234,
-        process: "docker",
-        resize() {},
-        write() {},
-      } as never;
+        id: "container-session-1",
+        name: "test-container-session-1",
+        projectId: "project-1",
+        ticketId: 14,
+        worktreePath,
+      };
+    },
+    spawnProcessInSession(_sessionId: string, command: string) {
+      assert.equal(command, "codex");
+      return fakeChild.child;
     },
   };
   const store = {
@@ -735,20 +752,11 @@ test("docker-backed execution suppresses repeated raw Codex errors and reports o
       session: createSession(worktreePath),
     });
 
-    if (!onDataHandler || !onExitHandler) {
-      throw new Error("Expected Docker PTY callbacks to be registered");
-    }
-    const emitData: (chunk: string) => void = onDataHandler;
-    const emitExit: (event: { exitCode: number; signal?: number }) => void =
-      onExitHandler;
-
     const noisyLine =
       "ERROR codex_rollout::list reporting a stale rollout path /tmp/stale-rollout";
 
-    emitData(`${noisyLine}\n${noisyLine}\n${noisyLine}\n`);
-    emitExit({
-      exitCode: 1,
-    });
+    fakeChild.emitStdout(`${noisyLine}\n${noisyLine}\n${noisyLine}\n`);
+    fakeChild.emitExit({ exitCode: 1 });
 
     assert.equal(
       sessionLogs.some((line) => line.startsWith("[codex raw]")),
@@ -830,6 +838,7 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
     stage: "merge" | "rebase";
     targetBranch: string;
   } | null = null;
+  const { child } = createFakeChildProcess();
 
   const dockerRuntime = {
     assertAvailable() {
@@ -844,17 +853,18 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
     cleanupSessionContainer() {},
     dispose() {},
     ensureSessionContainer() {},
-    spawnPtyInSession(_sessionId: string, command: string) {
-      assert.equal(command, "test-agent");
+    getSessionContainerInfo() {
       return {
-        kill() {},
-        onData() {},
-        onExit() {},
-        pid: 1234,
-        process: "docker",
-        resize() {},
-        write() {},
-      } as never;
+        id: "container-session-1",
+        name: "test-container-session-1",
+        projectId: "project-1",
+        ticketId: 14,
+        worktreePath,
+      };
+    },
+    spawnProcessInSession(_sessionId: string, command: string) {
+      assert.equal(command, "test-agent");
+      return child;
     },
   };
   const store = {

@@ -13,6 +13,7 @@ import type {
   TicketReference,
   TicketWorkspaceDiff,
   TicketWorkspacePreview,
+  TicketWorkspaceSummary,
   UploadDraftArtifactResponse,
 } from "../../../../../packages/contracts/src/index.js";
 
@@ -77,6 +78,10 @@ export type TicketEventsResponse = {
 
 export type TicketWorkspaceDiffResponse = {
   workspace_diff: TicketWorkspaceDiff;
+};
+
+export type TicketWorkspaceSummaryResponse = {
+  workspace_summary: TicketWorkspaceSummary;
 };
 
 export type TicketWorkspacePreviewResponse = {

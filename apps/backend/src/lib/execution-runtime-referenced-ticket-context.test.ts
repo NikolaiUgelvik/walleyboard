@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
@@ -110,6 +113,11 @@ function createSession(worktreePath: string): ExecutionSession {
 }
 
 function createDockerRuntime() {
+  const emitter = new EventEmitter();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const stdin = new PassThrough();
+
   return {
     assertAvailable() {
       return {
@@ -123,16 +131,23 @@ function createDockerRuntime() {
     cleanupSessionContainer() {},
     dispose() {},
     ensureSessionContainer() {},
-    spawnPtyInSession() {
+    getSessionContainerInfo() {
       return {
+        id: "container-session-1",
+        name: "test-container-session-1",
+        projectId: "project-1",
+        ticketId: 14,
+        worktreePath: "/tmp/worktree",
+      };
+    },
+    spawnProcessInSession() {
+      return Object.assign(emitter, {
         kill() {},
-        onData() {},
-        onExit() {},
         pid: 1234,
-        process: "docker",
-        resize() {},
-        write() {},
-      } as never;
+        stderr,
+        stdin,
+        stdout,
+      }) as unknown as ChildProcessWithoutNullStreams;
     },
   };
 }

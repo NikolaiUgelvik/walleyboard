@@ -85,6 +85,13 @@ export interface DockerRuntime {
       env: Record<string, string>;
     },
   ): ChildProcessWithoutNullStreams;
+  getSessionContainerInfo(sessionId: string): {
+    id: string;
+    name: string;
+    projectId: string;
+    ticketId: number;
+    worktreePath: string;
+  } | null;
   cleanupSessionContainer(sessionId: string): void;
   dispose(): void;
 }
@@ -516,6 +523,27 @@ export class DockerRuntimeManager implements DockerRuntime {
       ],
       options,
     );
+  }
+
+  getSessionContainerInfo(sessionId: string): {
+    id: string;
+    name: string;
+    projectId: string;
+    ticketId: number;
+    worktreePath: string;
+  } | null {
+    const container = this.#sessionContainers.get(sessionId);
+    if (!container) {
+      return null;
+    }
+
+    return {
+      id: container.id,
+      name: container.name,
+      projectId: container.projectId,
+      ticketId: container.ticketId,
+      worktreePath: container.worktreePath,
+    };
   }
 
   cleanupSessionContainer(sessionId: string): void {

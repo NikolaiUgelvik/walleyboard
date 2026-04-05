@@ -146,7 +146,7 @@ test("includes done tickets when selecting cards that should load diff summaries
   );
 });
 
-test("loads persisted diff totals for done tickets from the workspace diff endpoint", async () => {
+test("loads persisted line counts for done tickets from the workspace summary endpoint", async () => {
   const dom = installDom();
   const queryClient = createQueryClient();
   const root = createRoot(dom.mountNode);
@@ -157,32 +157,18 @@ test("loads persisted diff totals for done tickets from the workspace diff endpo
     const url = String(input);
     fetchCalls.push(url);
 
-    assert.equal(url, "http://127.0.0.1:4000/tickets/4/workspace/diff");
+    assert.equal(url, "http://127.0.0.1:4000/tickets/4/workspace/summary");
 
     return new Response(
       JSON.stringify({
-        workspace_diff: {
-          artifact_path: "/tmp/review-artifacts/ticket-4.diff",
+        workspace_summary: {
+          added_lines: 3,
+          files_changed: 1,
           generated_at: "2026-04-04T00:00:00.000Z",
-          patch: [
-            "diff --git a/src/example.ts b/src/example.ts",
-            "index 1111111..2222222 100644",
-            "--- a/src/example.ts",
-            "+++ b/src/example.ts",
-            "@@ -1,3 +1,4 @@",
-            "-old line one",
-            "-old line two",
-            " kept line",
-            "+new line one",
-            "+new line two",
-            "+new line three",
-            "",
-          ].join("\n"),
+          has_changes: true,
+          removed_lines: 2,
           source: "review_artifact",
-          target_branch: "main",
           ticket_id: 4,
-          working_branch: null,
-          worktree_path: null,
         },
       }),
       {
@@ -221,7 +207,7 @@ test("loads persisted diff totals for done tickets from the workspace diff endpo
         JSON.stringify([[4, { additions: 3, deletions: 2, files: 1 }]]),
       );
       assert.deepEqual(fetchCalls, [
-        "http://127.0.0.1:4000/tickets/4/workspace/diff",
+        "http://127.0.0.1:4000/tickets/4/workspace/summary",
       ]);
     });
   } finally {
@@ -233,7 +219,7 @@ test("loads persisted diff totals for done tickets from the workspace diff endpo
   }
 });
 
-test("omits done ticket diff totals when the persisted diff endpoint reports no diff", async () => {
+test("omits done ticket line counts when the persisted summary endpoint reports no summary", async () => {
   const dom = installDom();
   const queryClient = createQueryClient();
   const root = createRoot(dom.mountNode);
@@ -244,7 +230,7 @@ test("omits done ticket diff totals when the persisted diff endpoint reports no 
     const url = String(input);
     fetchCalls.push(url);
 
-    assert.equal(url, "http://127.0.0.1:4000/tickets/5/workspace/diff");
+    assert.equal(url, "http://127.0.0.1:4000/tickets/5/workspace/summary");
 
     return new Response(
       JSON.stringify({ error: "Ticket has no diff available yet" }),
@@ -281,7 +267,7 @@ test("omits done ticket diff totals when the persisted diff endpoint reports no 
       assert.equal(dom.mountNode.textContent, "[]");
       assert.equal(queryClient.isFetching(), 0);
       assert.deepEqual(fetchCalls, [
-        "http://127.0.0.1:4000/tickets/5/workspace/diff",
+        "http://127.0.0.1:4000/tickets/5/workspace/summary",
       ]);
     });
   } finally {

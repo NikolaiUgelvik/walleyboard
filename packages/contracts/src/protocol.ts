@@ -235,6 +235,20 @@ export const ticketWorkspaceDiffResponseSchema = z.object({
   workspace_diff: ticketWorkspaceDiffSchema,
 });
 
+export const ticketWorkspaceSummarySchema = z.object({
+  ticket_id: z.number().int().positive(),
+  source: z.enum(["live_worktree", "review_artifact"]),
+  added_lines: z.number().int().nonnegative(),
+  removed_lines: z.number().int().nonnegative(),
+  files_changed: z.number().int().nonnegative(),
+  has_changes: z.boolean(),
+  generated_at: timestampSchema,
+});
+
+export const ticketWorkspaceSummaryResponseSchema = z.object({
+  workspace_summary: ticketWorkspaceSummarySchema,
+});
+
 export const ticketWorkspacePreviewStateSchema = z.enum([
   "idle",
   "starting",
@@ -357,6 +371,12 @@ export type EventEntityType = z.infer<typeof eventEntityTypeSchema>;
 export type TicketWorkspaceDiff = z.infer<typeof ticketWorkspaceDiffSchema>;
 export type TicketWorkspaceDiffResponse = z.infer<
   typeof ticketWorkspaceDiffResponseSchema
+>;
+export type TicketWorkspaceSummary = z.infer<
+  typeof ticketWorkspaceSummarySchema
+>;
+export type TicketWorkspaceSummaryResponse = z.infer<
+  typeof ticketWorkspaceSummaryResponseSchema
 >;
 export type TicketWorkspacePreviewState = z.infer<
   typeof ticketWorkspacePreviewStateSchema

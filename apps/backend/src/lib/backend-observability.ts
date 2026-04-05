@@ -42,6 +42,18 @@ type RecentOperation = {
   url: string | null;
 };
 
+export type ObservedExecutionActivity = {
+  activityId: string;
+  activityType: "draft" | "review" | "session";
+  adapter: string;
+  containerId: string | null;
+  containerName: string | null;
+  executionMode: "non_pty";
+  lastOutputAt: string | null;
+  startedAt: string;
+  ticketId: number | null;
+};
+
 type AnyFunction = (...args: unknown[]) => unknown;
 
 const defaultConfig = {
@@ -65,6 +77,10 @@ class NoopLogger implements LoggerLike {
 
 class BackendObservability {
   readonly #activeOperations = new Map<number, ActiveOperation>();
+  readonly #activeExecutionActivities = new Map<
+    string,
+    ObservedExecutionActivity
+  >();
   readonly #activeRequests = new Map<string, RequestContext>();
   readonly #config: ObservabilityConfig;
   readonly #requestStorage = new AsyncLocalStorage<RequestContext>();
@@ -84,6 +100,7 @@ class BackendObservability {
 
   dispose(): void {
     clearInterval(this.#sampleInterval);
+    this.#activeExecutionActivities.clear();
     this.#activeOperations.clear();
     this.#activeRequests.clear();
     this.#recentOperations.length = 0;
@@ -190,6 +207,14 @@ class BackendObservability {
     });
   }
 
+  upsertExecutionActivity(activity: ObservedExecutionActivity): void {
+    this.#activeExecutionActivities.set(activity.activityId, activity);
+  }
+
+  clearExecutionActivity(activityId: string): void {
+    this.#activeExecutionActivities.delete(activityId);
+  }
+
   #recordRecentOperation(operation: ActiveOperation, durationMs: number): void {
     const now = performance.now();
     this.#recentOperations.push({
@@ -236,6 +261,7 @@ class BackendObservability {
         activeOperations: this.#snapshotActiveOperations(now),
         activeRequests: this.#snapshotActiveRequests(now),
         delayMs: roundDuration(delayMs),
+        executionActivity: this.#snapshotExecutionActivity(),
         recentOperations: this.#snapshotRecentOperations(),
       },
       "Event loop stall detected",
@@ -277,6 +303,22 @@ class BackendObservability {
       requestId: operation.requestId,
       url: operation.url,
     }));
+  }
+
+  #snapshotExecutionActivity(): Record<string, unknown>[] {
+    return [...this.#activeExecutionActivities.values()]
+      .slice(0, 5)
+      .map((activity) => ({
+        activityId: activity.activityId,
+        activityType: activity.activityType,
+        adapter: activity.adapter,
+        containerId: activity.containerId,
+        containerName: activity.containerName,
+        executionMode: activity.executionMode,
+        lastOutputAt: activity.lastOutputAt,
+        startedAt: activity.startedAt,
+        ticketId: activity.ticketId,
+      }));
   }
 }
 
@@ -334,6 +376,16 @@ export function runObservedOperation<T>(
   }
 
   return activeObservability.runOperation(name, details, operation);
+}
+
+export function upsertObservedExecutionActivity(
+  activity: ObservedExecutionActivity,
+): void {
+  activeObservability?.upsertExecutionActivity(activity);
+}
+
+export function clearObservedExecutionActivity(activityId: string): void {
+  activeObservability?.clearExecutionActivity(activityId);
 }
 
 export function instrumentObservedMethods<

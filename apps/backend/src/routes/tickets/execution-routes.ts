@@ -20,7 +20,7 @@ import {
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
-  prepareWorktree,
+  prepareWorktreeAsync,
   resetPreparedWorktreeImmediately,
   runPreWorktreeCommand,
 } from "../../lib/worktree-service.js";
@@ -77,7 +77,7 @@ export function registerTicketExecutionRoutes(
         );
         executionRuntime.assertProjectExecutionBackendAvailable(project);
 
-        const runtime = prepareWorktree(
+        const runtime = await prepareWorktreeAsync(
           project,
           repository,
           ticketForPreparation,
@@ -411,7 +411,7 @@ export function registerTicketExecutionRoutes(
           );
         }
 
-        const runtime = prepareWorktree(project, repository, {
+        const runtime = await prepareWorktreeAsync(project, repository, {
           ...ticket,
           working_branch: null,
         });

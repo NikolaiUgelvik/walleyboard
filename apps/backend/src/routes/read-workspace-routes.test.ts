@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn as spawnProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -488,6 +489,17 @@ test("workspace diff prefers the persisted review artifact for done tickets even
           "Live worktree diff should not be used for done tickets",
         );
       },
+      summarizePersistedDiff() {
+        return {
+          ticket_id: 9,
+          source: "review_artifact",
+          added_lines: 2,
+          removed_lines: 1,
+          files_changed: 1,
+          has_changes: true,
+          generated_at: reviewPackage.created_at,
+        };
+      },
     } as never,
   });
 
@@ -508,6 +520,88 @@ test("workspace diff prefers the persisted review artifact for done tickets even
         ticket_id: 9,
         working_branch: "ticket-9",
         worktree_path: null,
+      },
+    });
+  } finally {
+    await app.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("workspace summary prefers the persisted review artifact for done tickets even when a worktree remains", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-summary-route-"));
+  const diffDir = join(tempDir, "review-artifacts");
+  const diffPath = join(diffDir, "ticket-9.patch");
+  const patch = [
+    "diff --git a/src/example.ts b/src/example.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/example.ts",
+    "+++ b/src/example.ts",
+    "@@ -1,2 +1,3 @@",
+    '-console.log("before");',
+    '+console.log("after");',
+    '+console.log("extra");',
+  ].join("\n");
+  const reviewPackage: ReviewPackage = {
+    change_summary: "Merged and archived.",
+    commit_refs: ["abc123"],
+    created_at: "2026-04-02T00:05:00.000Z",
+    diff_ref: diffPath,
+    id: "review-package-9",
+    remaining_risks: [],
+    session_id: "session-9",
+    ticket_id: 9,
+    validation_results: [],
+  };
+
+  mkdirSync(diffDir, { recursive: true });
+  writeFileSync(diffPath, patch, "utf8");
+
+  const app = await createApp({
+    store: {
+      getReviewPackage(ticketId: number) {
+        return ticketId === 9 ? reviewPackage : null;
+      },
+      getSession(sessionId: string) {
+        return sessionId === "session-9"
+          ? createSession(join(tempDir, "ticket-worktree"))
+          : null;
+      },
+      getTicket(ticketId: number) {
+        return ticketId === 9 ? createTicket({ status: "done" }) : null;
+      },
+    } as never,
+    ticketWorkspaceService: {
+      summarizePersistedDiff() {
+        return {
+          ticket_id: 9,
+          source: "review_artifact",
+          added_lines: 2,
+          removed_lines: 1,
+          files_changed: 1,
+          has_changes: true,
+          generated_at: reviewPackage.created_at,
+        };
+      },
+    } as never,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/tickets/9/workspace/summary",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), {
+      workspace_summary: {
+        ticket_id: 9,
+        source: "review_artifact",
+        added_lines: 2,
+        removed_lines: 1,
+        files_changed: 1,
+        has_changes: true,
+        generated_at: reviewPackage.created_at,
       },
     });
   } finally {
@@ -773,16 +867,22 @@ test("workspace terminal stays available after execution starts in the same work
       cleanupSessionContainer() {},
       dispose() {},
       ensureSessionContainer() {},
-      spawnPtyInSession() {
-        return spawnPty("bash", ["-lc", "sleep 30"], {
+      getSessionContainerInfo() {
+        return {
+          id: "container-session-2",
+          name: "test-container-session-2",
+          projectId: project.id,
+          ticketId: ticket.id,
+          worktreePath: tempDir,
+        };
+      },
+      spawnProcessInSession() {
+        return spawnProcess("bash", ["-lc", "sleep 30"], {
           cwd: tempDir,
           env: {
             ...process.env,
-            TERM: "xterm-256color",
           },
-          cols: 120,
-          rows: 32,
-          name: "xterm-256color",
+          stdio: ["pipe", "pipe", "pipe"],
         });
       },
     } as never,
@@ -792,6 +892,9 @@ test("workspace terminal stays available after execution starts in the same work
     store: {
       appendSessionLog() {
         return 0;
+      },
+      claimNextQueuedSession() {
+        return undefined;
       },
       completeSession() {
         return session;

@@ -1,4 +1,7 @@
-import { execFileSync } from "node:child_process";
+import {
+  type ChildProcessWithoutNullStreams,
+  execFileSync,
+} from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import readline from "node:readline";
@@ -157,6 +160,20 @@ export function runGit(repoPath: string, args: string[]): string {
         stdio: ["ignore", "pipe", "pipe"],
       }).trim(),
   );
+}
+
+export function shouldSuppressDockerAdapterLine(
+  adapterId: string,
+  line: string,
+): boolean {
+  return adapterId === "codex" && line.startsWith("[codex raw]");
+}
+
+export function extractSuppressedDockerFailureDetail(
+  line: string,
+): string | null {
+  const detail = line.replace(/^\[codex raw\]\s*/, "").trim();
+  return detail.length > 0 ? detail : null;
 }
 
 export function writeReviewDiff(
@@ -424,6 +441,78 @@ export function streamPtyLines(
       pendingBuffer = "";
     }
     handlers.onExit(event);
+  });
+}
+
+export function streamChildProcessLines(
+  child: ChildProcessWithoutNullStreams,
+  handlers: {
+    onError?: (error: Error) => void;
+    onExit: (event: {
+      exitCode: number | null;
+      signal: NodeJS.Signals | null;
+    }) => void;
+    onLine: (line: string) => void;
+  },
+): void {
+  const pendingBuffers = {
+    stderr: "",
+    stdout: "",
+  };
+  let settled = false;
+
+  const flushBuffer = (streamKey: keyof typeof pendingBuffers) => {
+    const pendingBuffer = pendingBuffers[streamKey];
+    if (pendingBuffer.trim().length === 0) {
+      pendingBuffers[streamKey] = "";
+      return;
+    }
+
+    handlers.onLine(pendingBuffer);
+    pendingBuffers[streamKey] = "";
+  };
+
+  const attachStream = (
+    stream: NodeJS.ReadableStream,
+    streamKey: keyof typeof pendingBuffers,
+  ) => {
+    stream.on("data", (chunk: Buffer | string) => {
+      pendingBuffers[streamKey] += String(chunk)
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n");
+
+      while (pendingBuffers[streamKey].includes("\n")) {
+        const newlineIndex = pendingBuffers[streamKey].indexOf("\n");
+        const line = pendingBuffers[streamKey].slice(0, newlineIndex);
+        pendingBuffers[streamKey] = pendingBuffers[streamKey].slice(
+          newlineIndex + 1,
+        );
+        handlers.onLine(line);
+      }
+    });
+  };
+
+  attachStream(child.stdout, "stdout");
+  attachStream(child.stderr, "stderr");
+
+  child.once("error", (error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    flushBuffer("stdout");
+    flushBuffer("stderr");
+    handlers.onError?.(error);
+  });
+
+  child.once("exit", (exitCode, signal) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    flushBuffer("stdout");
+    flushBuffer("stderr");
+    handlers.onExit({ exitCode, signal });
   });
 }
 

@@ -22,6 +22,7 @@ import type {
   SessionResponse,
   TicketEventsResponse,
   TicketsResponse,
+  TicketWorkspaceSummaryResponse,
 } from "./shared-types.js";
 import { parseDraftEventMeta, upsertById } from "./shared-utils.js";
 
@@ -45,7 +46,9 @@ function isRealtimeBackedQueryKey(queryKey: readonly unknown[]): boolean {
       queryKey[2] === "review-runs" ||
       queryKey[2] === "events" ||
       (queryKey[2] === "workspace" &&
-        (queryKey[3] === "diff" || queryKey[3] === "preview"))
+        (queryKey[3] === "diff" ||
+          queryKey[3] === "preview" ||
+          queryKey[3] === "summary"))
     );
   }
 
@@ -172,7 +175,11 @@ export function useProtocolEventSync({
 
     if (event.event_type === "ticket.workspace.updated") {
       const ticketId = event.payload.ticket_id as number | undefined;
-      const kind = event.payload.kind as "diff" | "preview" | undefined;
+      const kind = event.payload.kind as
+        | "diff"
+        | "preview"
+        | "summary"
+        | undefined;
       if (ticketId === undefined) {
         return;
       }
@@ -187,6 +194,23 @@ export function useProtocolEventSync({
         queryClient.invalidateQueries({
           queryKey: ["tickets", ticketId, "workspace", "preview"],
         });
+      }
+
+      if (!kind || kind === "summary") {
+        const summary = event.payload.summary;
+        if (summary) {
+          queryClient.setQueryData<TicketWorkspaceSummaryResponse>(
+            ["tickets", ticketId, "workspace", "summary"],
+            {
+              workspace_summary:
+                summary as TicketWorkspaceSummaryResponse["workspace_summary"],
+            },
+          );
+        } else {
+          queryClient.invalidateQueries({
+            queryKey: ["tickets", ticketId, "workspace", "summary"],
+          });
+        }
       }
       return;
     }
@@ -233,6 +257,9 @@ export function useProtocolEventSync({
       });
       queryClient.removeQueries({
         queryKey: ["tickets", ticketId, "workspace", "preview"],
+      });
+      queryClient.removeQueries({
+        queryKey: ["tickets", ticketId, "workspace", "summary"],
       });
       return;
     }

@@ -1,10 +1,11 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync, type FSWatcher, readFileSync, watch } from "node:fs";
 import net from "node:net";
 
 import type {
   TicketWorkspaceDiff,
   TicketWorkspacePreview,
+  TicketWorkspaceSummary,
 } from "../../../../packages/contracts/src/index.js";
 
 import { runObservedOperation } from "./backend-observability.js";
@@ -19,7 +20,22 @@ type GitExecError = Error & {
 
 type WatchRegistration = {
   debounceTimer: NodeJS.Timeout | null;
+  pendingRerun: boolean;
+  recomputePromise: Promise<void> | null;
+  summaryContext: {
+    targetBranch: string;
+    ticketId: number;
+    workingBranch: string;
+    worktreePath: string;
+  } | null;
   watchers: FSWatcher[];
+};
+
+type WorkspaceSummaryStats = {
+  addedLines: number;
+  filesChanged: number;
+  hasChanges: boolean;
+  removedLines: number;
 };
 
 type PreviewProcess = {
@@ -100,27 +116,49 @@ function parseGitOutput(error: GitExecError): {
   };
 }
 
-function runGit(
+async function runGit(
   repoPath: string,
   args: string[],
   options?: {
     allowExitCodes?: number[];
   },
-): string {
-  return runObservedOperation(
+): Promise<string> {
+  return await runObservedOperation(
     "ticket-workspace.git",
     {
       allowExitCodes: options?.allowExitCodes ?? [0],
       command: args.join(" "),
       repoPath,
     },
-    () => {
+    async () => {
       const allowExitCodes = options?.allowExitCodes ?? [0];
 
       try {
-        return execFileSync("git", ["-C", repoPath, ...args], {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
+        return await new Promise<string>((resolve, reject) => {
+          execFile(
+            "git",
+            ["-C", repoPath, ...args],
+            {
+              encoding: "utf8",
+            },
+            (error, stdout, stderr) => {
+              if (!error) {
+                resolve(stdout);
+                return;
+              }
+
+              const gitError = error as GitExecError;
+              if (
+                typeof (error as { code?: unknown }).code === "number" &&
+                gitError.status === undefined
+              ) {
+                gitError.status = (error as { code: number }).code;
+              }
+              gitError.stdout = stdout;
+              gitError.stderr = stderr;
+              reject(gitError);
+            },
+          );
         });
       } catch (error) {
         const gitError = error as GitExecError;
@@ -244,8 +282,8 @@ function makeRepositoryPreviewSnapshot(
   };
 }
 
-function collectUntrackedFiles(worktreePath: string): string[] {
-  const output = runGit(
+async function collectUntrackedFiles(worktreePath: string): Promise<string[]> {
+  const output = await runGit(
     worktreePath,
     ["ls-files", "--others", "--exclude-standard", "-z"],
     {
@@ -254,6 +292,96 @@ function collectUntrackedFiles(worktreePath: string): string[] {
   );
 
   return output.split("\0").filter((value) => value.length > 0);
+}
+
+function parseNumstatOutput(output: string): WorkspaceSummaryStats {
+  const summary: WorkspaceSummaryStats = {
+    addedLines: 0,
+    filesChanged: 0,
+    hasChanges: false,
+    removedLines: 0,
+  };
+
+  for (const line of output.split("\n")) {
+    const normalized = line.trim();
+    if (normalized.length === 0) {
+      continue;
+    }
+
+    const [added, removed] = normalized.split("\t");
+    summary.filesChanged += 1;
+    summary.hasChanges = true;
+
+    if (added === "-" || removed === "-") {
+      continue;
+    }
+
+    summary.addedLines += Number.parseInt(added ?? "0", 10) || 0;
+    summary.removedLines += Number.parseInt(removed ?? "0", 10) || 0;
+  }
+
+  return summary;
+}
+
+function mergeWorkspaceSummaryStats(
+  left: WorkspaceSummaryStats,
+  right: WorkspaceSummaryStats,
+): WorkspaceSummaryStats {
+  return {
+    addedLines: left.addedLines + right.addedLines,
+    filesChanged: left.filesChanged + right.filesChanged,
+    hasChanges: left.hasChanges || right.hasChanges,
+    removedLines: left.removedLines + right.removedLines,
+  };
+}
+
+function summarizePatch(patch: string): WorkspaceSummaryStats {
+  const summary: WorkspaceSummaryStats = {
+    addedLines: 0,
+    filesChanged: 0,
+    hasChanges: patch.trim().length > 0,
+    removedLines: 0,
+  };
+  let insideHunk = false;
+
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      summary.filesChanged += 1;
+      summary.hasChanges = true;
+      insideHunk = false;
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      insideHunk = true;
+      continue;
+    }
+
+    if (!insideHunk) {
+      if (
+        line.startsWith("Binary files ") ||
+        line.startsWith("GIT binary patch")
+      ) {
+        summary.hasChanges = true;
+      }
+      continue;
+    }
+
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      summary.addedLines += 1;
+      continue;
+    }
+
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      summary.removedLines += 1;
+    }
+  }
+
+  if (summary.filesChanged === 0 && patch.trim().length > 0) {
+    summary.filesChanged = 1;
+  }
+
+  return summary;
 }
 
 async function findAvailablePort(): Promise<number> {
@@ -402,6 +530,7 @@ export class TicketWorkspaceService {
   readonly #apiBaseUrl: string;
   readonly #eventHub: EventHub;
   readonly #previews = new Map<string, PreviewRuntime>();
+  readonly #summaryCache = new Map<string, TicketWorkspaceSummary>();
   readonly #watchRegistrations = new Map<number, WatchRegistration>();
   readonly #previewRuntimeDependencies: PreviewRuntimeDependencies;
 
@@ -431,31 +560,52 @@ export class TicketWorkspaceService {
     };
   }
 
-  getDiff(input: {
+  async getDiff(input: {
     targetBranch: string;
     ticketId: number;
     workingBranch: string;
     worktreePath: string;
-  }): TicketWorkspaceDiff {
-    this.#ensureWatcher(input.ticketId, input.worktreePath);
+  }): Promise<TicketWorkspaceDiff> {
+    this.#ensureWatcher({
+      targetBranch: input.targetBranch,
+      ticketId: input.ticketId,
+      workingBranch: input.workingBranch,
+      worktreePath: input.worktreePath,
+    });
 
-    const trackedPatch = runGit(input.worktreePath, [
-      "diff",
-      "--no-color",
-      "--find-renames",
-      input.targetBranch,
-      "--",
-    ]).trim();
-    const untrackedPatch = collectUntrackedFiles(input.worktreePath)
-      .map((relativePath) =>
-        runGit(
-          input.worktreePath,
-          ["diff", "--no-index", "--no-color", "--", "/dev/null", relativePath],
-          {
-            allowExitCodes: [0, 1],
-          },
-        ).trim(),
+    const trackedPatch = (
+      await runGit(input.worktreePath, [
+        "diff",
+        "--no-color",
+        "--find-renames",
+        input.targetBranch,
+        "--",
+      ])
+    ).trim();
+    const untrackedPatch = (
+      await Promise.all(
+        (
+          await collectUntrackedFiles(input.worktreePath)
+        ).map(async (relativePath) =>
+          (
+            await runGit(
+              input.worktreePath,
+              [
+                "diff",
+                "--no-index",
+                "--no-color",
+                "--",
+                "/dev/null",
+                relativePath,
+              ],
+              {
+                allowExitCodes: [0, 1],
+              },
+            )
+          ).trim(),
+        ),
       )
+    )
       .filter((patch) => patch.length > 0)
       .join("\n\n");
 
@@ -468,6 +618,48 @@ export class TicketWorkspaceService {
       artifact_path: null,
       patch: [trackedPatch, untrackedPatch].filter(Boolean).join("\n\n"),
       generated_at: nowIso(),
+    };
+  }
+
+  async getSummary(input: {
+    targetBranch: string;
+    ticketId: number;
+    workingBranch: string;
+    worktreePath: string;
+  }): Promise<TicketWorkspaceSummary> {
+    this.#ensureWatcher({
+      targetBranch: input.targetBranch,
+      ticketId: input.ticketId,
+      workingBranch: input.workingBranch,
+      worktreePath: input.worktreePath,
+    });
+
+    const cacheKey = this.#getSummaryCacheKey(
+      input.ticketId,
+      input.worktreePath,
+    );
+    const cached = this.#summaryCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    return await this.#computeAndCacheLiveSummary(input);
+  }
+
+  summarizePersistedDiff(input: {
+    generatedAt: string;
+    patch: string;
+    ticketId: number;
+  }): TicketWorkspaceSummary {
+    const summary = summarizePatch(input.patch);
+    return {
+      ticket_id: input.ticketId,
+      source: "review_artifact",
+      added_lines: summary.addedLines,
+      removed_lines: summary.removedLines,
+      files_changed: summary.filesChanged,
+      has_changes: summary.hasChanges,
+      generated_at: input.generatedAt,
     };
   }
 
@@ -556,6 +748,15 @@ export class TicketWorkspaceService {
       return;
     }
 
+    if (watchRegistration.summaryContext) {
+      this.#summaryCache.delete(
+        this.#getSummaryCacheKey(
+          ticketId,
+          watchRegistration.summaryContext.worktreePath,
+        ),
+      );
+    }
+
     if (watchRegistration.debounceTimer) {
       clearTimeout(watchRegistration.debounceTimer);
     }
@@ -565,6 +766,119 @@ export class TicketWorkspaceService {
     }
 
     this.#watchRegistrations.delete(ticketId);
+  }
+
+  #getSummaryCacheKey(ticketId: number, worktreePath: string): string {
+    return `${ticketId}:${worktreePath}`;
+  }
+
+  async #computeLiveSummary(input: {
+    targetBranch: string;
+    ticketId: number;
+    worktreePath: string;
+  }): Promise<TicketWorkspaceSummary> {
+    const trackedSummary = parseNumstatOutput(
+      await runGit(input.worktreePath, [
+        "diff",
+        "--numstat",
+        input.targetBranch,
+        "--",
+      ]),
+    );
+    const untrackedFiles = await collectUntrackedFiles(input.worktreePath);
+    const untrackedSummary = (
+      await Promise.all(
+        untrackedFiles.map((relativePath) =>
+          runGit(
+            input.worktreePath,
+            [
+              "diff",
+              "--no-index",
+              "--numstat",
+              "--",
+              "/dev/null",
+              relativePath,
+            ],
+            { allowExitCodes: [0, 1] },
+          ),
+        ),
+      )
+    )
+      .map(parseNumstatOutput)
+      .reduce(mergeWorkspaceSummaryStats, {
+        addedLines: 0,
+        filesChanged: 0,
+        hasChanges: false,
+        removedLines: 0,
+      });
+    const summary = mergeWorkspaceSummaryStats(
+      trackedSummary,
+      untrackedSummary,
+    );
+
+    return {
+      ticket_id: input.ticketId,
+      source: "live_worktree",
+      added_lines: summary.addedLines,
+      removed_lines: summary.removedLines,
+      files_changed: summary.filesChanged,
+      has_changes: summary.hasChanges,
+      generated_at: nowIso(),
+    };
+  }
+
+  async #computeAndCacheLiveSummary(input: {
+    targetBranch: string;
+    ticketId: number;
+    worktreePath: string;
+  }): Promise<TicketWorkspaceSummary> {
+    const cacheKey = this.#getSummaryCacheKey(
+      input.ticketId,
+      input.worktreePath,
+    );
+    const summary = await this.#computeLiveSummary(input);
+    this.#summaryCache.set(cacheKey, summary);
+    return summary;
+  }
+
+  async #recomputeSummary(ticketId: number): Promise<void> {
+    const registration = this.#watchRegistrations.get(ticketId);
+    if (!registration?.summaryContext) {
+      return;
+    }
+
+    if (registration.recomputePromise) {
+      registration.pendingRerun = true;
+      return;
+    }
+
+    registration.recomputePromise = (async () => {
+      const summary = await this.#computeAndCacheLiveSummary({
+        targetBranch: registration.summaryContext?.targetBranch ?? "HEAD",
+        ticketId,
+        worktreePath: registration.summaryContext?.worktreePath ?? "",
+      });
+      this.#publishWorkspaceUpdate(ticketId, "summary", { summary });
+    })()
+      .catch(() => {
+        this.#publishWorkspaceUpdate(ticketId, "summary");
+      })
+      .finally(() => {
+        const latestRegistration = this.#watchRegistrations.get(ticketId);
+        if (!latestRegistration) {
+          return;
+        }
+
+        latestRegistration.recomputePromise = null;
+        if (!latestRegistration.pendingRerun) {
+          return;
+        }
+
+        latestRegistration.pendingRerun = false;
+        void this.#recomputeSummary(ticketId);
+      });
+
+    await registration.recomputePromise;
   }
 
   async #ensurePreviewRuntime(input: {
@@ -876,8 +1190,15 @@ export class TicketWorkspaceService {
     return previewProcess;
   }
 
-  #ensureWatcher(ticketId: number, worktreePath: string): void {
-    if (this.#watchRegistrations.has(ticketId)) {
+  #ensureWatcher(input: {
+    targetBranch: string;
+    ticketId: number;
+    workingBranch: string;
+    worktreePath: string;
+  }): void {
+    const existingRegistration = this.#watchRegistrations.get(input.ticketId);
+    if (existingRegistration) {
+      existingRegistration.summaryContext = input;
       return;
     }
 
@@ -886,7 +1207,7 @@ export class TicketWorkspaceService {
         return;
       }
 
-      const registration = this.#watchRegistrations.get(ticketId);
+      const registration = this.#watchRegistrations.get(input.ticketId);
       if (!registration) {
         return;
       }
@@ -897,32 +1218,45 @@ export class TicketWorkspaceService {
 
       registration.debounceTimer = setTimeout(() => {
         registration.debounceTimer = null;
-        this.#publishWorkspaceUpdate(ticketId, "diff");
-      }, 150);
+        void this.#recomputeSummary(input.ticketId);
+      }, 300);
     };
 
     const watchers: FSWatcher[] = [];
     try {
       watchers.push(
-        watch(worktreePath, { recursive: true }, (_eventType, filename) => {
-          scheduleUpdate(filename ?? null);
-        }),
+        watch(
+          input.worktreePath,
+          { recursive: true },
+          (_eventType, filename) => {
+            scheduleUpdate(filename ?? null);
+          },
+        ),
       );
     } catch {
       watchers.push(
-        watch(worktreePath, (_eventType, filename) => {
+        watch(input.worktreePath, (_eventType, filename) => {
           scheduleUpdate(filename ?? null);
         }),
       );
     }
 
-    this.#watchRegistrations.set(ticketId, {
+    this.#watchRegistrations.set(input.ticketId, {
       debounceTimer: null,
+      pendingRerun: false,
+      recomputePromise: null,
+      summaryContext: input,
       watchers,
     });
   }
 
-  #publishWorkspaceUpdate(ticketId: number, kind: "diff" | "preview"): void {
+  #publishWorkspaceUpdate(
+    ticketId: number,
+    kind: "diff" | "preview" | "summary",
+    options?: {
+      summary?: TicketWorkspaceSummary;
+    },
+  ): void {
     this.#eventHub.publish(
       makeProtocolEvent(
         "ticket.workspace.updated",
@@ -931,6 +1265,7 @@ export class TicketWorkspaceService {
         {
           ticket_id: ticketId,
           kind,
+          ...(options?.summary ? { summary: options.summary } : {}),
           updated_at: nowIso(),
         },
       ),

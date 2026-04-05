@@ -1,5 +1,5 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import type { IPty } from "node-pty";
 
 import type {
   ExecutionSession,
@@ -9,12 +9,16 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 import { resolveProjectAgentConfigFileOverrides } from "../agent-adapters/agent-config-overrides.js";
 import type { AgentCliAdapter } from "../agent-adapters/types.js";
+import {
+  clearObservedExecutionActivity,
+  upsertObservedExecutionActivity,
+} from "../backend-observability.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildMergeConflictSummaryPath,
   buildProcessEnv,
   hasMeaningfulContent,
-  streamPtyLines,
+  streamChildProcessLines,
   truncate,
 } from "./helpers.js";
 import type { MergeRecoveryKind } from "./merge-recovery.js";
@@ -90,6 +94,7 @@ export async function runMergeRecovery(input: {
   return await new Promise((resolve) => {
     let settled = false;
     let adapterOutput = "";
+    const startedAt = new Date().toISOString();
 
     const finish = (result: {
       resolved: boolean;
@@ -100,11 +105,12 @@ export async function runMergeRecovery(input: {
         return;
       }
       settled = true;
+      clearObservedExecutionActivity(input.session.id);
       input.cleanupExecutionEnvironment(input.session.id);
       resolve(result);
     };
 
-    let child: IPty;
+    let child: ChildProcessWithoutNullStreams;
     try {
       if (!run.dockerSpec) {
         throw new Error(
@@ -122,16 +128,13 @@ export async function runMergeRecovery(input: {
         ticketId: input.ticket.id,
         worktreePath,
       });
-      child = input.dockerRuntime.spawnPtyInSession(
+      child = input.dockerRuntime.spawnProcessInSession(
         input.session.id,
         run.command,
         run.args,
         {
-          cols: 120,
-          rows: 32,
           cwd: worktreePath,
           env: ptyEnv,
-          name: "xterm-256color",
         },
       );
     } catch (error) {
@@ -153,6 +156,21 @@ export async function runMergeRecovery(input: {
       });
       return;
     }
+    upsertObservedExecutionActivity({
+      activityId: input.session.id,
+      activityType: "session",
+      adapter: input.adapter.id,
+      containerId:
+        input.dockerRuntime.getSessionContainerInfo(input.session.id)?.id ??
+        null,
+      containerName:
+        input.dockerRuntime.getSessionContainerInfo(input.session.id)?.name ??
+        null,
+      executionMode: "non_pty",
+      lastOutputAt: null,
+      startedAt,
+      ticketId: input.ticket.id,
+    });
 
     let lastOutputContent: string | undefined;
     const captureAdapterLine = (line: string) => {
@@ -167,7 +185,21 @@ export async function runMergeRecovery(input: {
       adapterOutput += `${line}\n`;
     };
 
-    streamPtyLines(child, {
+    streamChildProcessLines(child, {
+      onError: (error) => {
+        finish({
+          resolved: false,
+          logs,
+          note: formatMergeRecoveryFailureNote({
+            adapterLabel: input.adapter.label,
+            message: error.message,
+            recoveryKind: input.recoveryKind,
+            stage: input.stage,
+            targetBranch: input.targetBranch,
+            when: "finish",
+          }),
+        });
+      },
       onExit: ({ exitCode }) => {
         let summary = existsSync(outputSummaryPath)
           ? readFileSync(outputSummaryPath, "utf8").trim()
@@ -208,7 +240,24 @@ export async function runMergeRecovery(input: {
           }),
         });
       },
-      onLine: captureAdapterLine,
+      onLine: (line) => {
+        captureAdapterLine(line);
+        upsertObservedExecutionActivity({
+          activityId: input.session.id,
+          activityType: "session",
+          adapter: input.adapter.id,
+          containerId:
+            input.dockerRuntime.getSessionContainerInfo(input.session.id)?.id ??
+            null,
+          containerName:
+            input.dockerRuntime.getSessionContainerInfo(input.session.id)
+              ?.name ?? null,
+          executionMode: "non_pty",
+          lastOutputAt: new Date().toISOString(),
+          startedAt,
+          ticketId: input.ticket.id,
+        });
+      },
     });
   });
 }

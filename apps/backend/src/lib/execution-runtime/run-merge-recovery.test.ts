@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
@@ -103,52 +106,36 @@ function createSession(worktreePath: string): ExecutionSession {
   };
 }
 
-function createFakePty(): {
-  emitData: (chunk: string) => void;
-  emitExit: (event: { exitCode: number; signal?: number }) => void;
-  pty: {
-    kill(signal?: NodeJS.Signals): unknown;
-    onData(callback: (chunk: string) => void): void;
-    onExit(
-      callback: (event: { exitCode: number; signal?: number }) => void,
-    ): void;
-    pid: number;
-    process: string;
-    resize(cols: number, rows: number): void;
-    write(data: string): void;
-  };
+function createFakeChildProcess(): {
+  child: ChildProcessWithoutNullStreams;
+  emitExit: (event: { exitCode: number; signal?: NodeJS.Signals }) => void;
+  emitStdout: (chunk: string) => void;
 } {
-  let onDataHandler: ((chunk: string) => void) | null = null;
-  let onExitHandler:
-    | ((event: { exitCode: number; signal?: number }) => void)
-    | null = null;
+  const emitter = new EventEmitter();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const stdin = new PassThrough();
 
   return {
-    emitData(chunk: string) {
-      onDataHandler?.(chunk);
-    },
-    emitExit(event: { exitCode: number; signal?: number }) {
-      onExitHandler?.(event);
-    },
-    pty: {
+    child: Object.assign(emitter, {
       kill() {
         return true;
       },
-      onData(callback: (chunk: string) => void) {
-        onDataHandler = callback;
-      },
-      onExit(callback: (event: { exitCode: number; signal?: number }) => void) {
-        onExitHandler = callback;
-      },
       pid: 1234,
-      process: "docker",
-      resize() {},
-      write() {},
+      stderr,
+      stdin,
+      stdout,
+    }) as unknown as ChildProcessWithoutNullStreams,
+    emitExit(event) {
+      emitter.emit("exit", event.exitCode, event.signal ?? null);
+    },
+    emitStdout(chunk: string) {
+      stdout.write(chunk);
     },
   };
 }
 
-test("runMergeRecovery streams Docker PTY output through the log callback", async () => {
+test("runMergeRecovery streams Docker child-process output through the log callback", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-merge-recovery-"));
   const worktreePath = join(tempDir, "workspace");
   const walleyBoardHome = join(tempDir, ".walleyboard-home");
@@ -157,7 +144,7 @@ test("runMergeRecovery streams Docker PTY output through the log callback", asyn
 
   const loggedLines: string[] = [];
   let cleanedSessionId: string | null = null;
-  const { emitData, emitExit, pty } = createFakePty();
+  const { emitStdout, emitExit, child } = createFakeChildProcess();
 
   try {
     process.env.WALLEYBOARD_HOME = walleyBoardHome;
@@ -221,8 +208,17 @@ test("runMergeRecovery streams Docker PTY output through the log callback", asyn
       ],
       dockerRuntime: {
         ensureSessionContainer() {},
-        spawnPtyInSession() {
-          return pty as never;
+        getSessionContainerInfo() {
+          return {
+            id: "container-session-1",
+            name: "test-container-session-1",
+            projectId: "project-1",
+            ticketId: 5,
+            worktreePath,
+          };
+        },
+        spawnProcessInSession() {
+          return child;
         },
       } as never,
       failureMessage: "Git rebase stopped on board-scroll.test.tsx.",
@@ -238,7 +234,7 @@ test("runMergeRecovery streams Docker PTY output through the log callback", asyn
       ticket: createTicket(),
     });
 
-    emitData(
+    emitStdout(
       '{"summary":"Resolved the conflict and continued the rebase."}\nStill waiting on one more tool check.\n',
     );
     emitExit({ exitCode: 0 });
