@@ -60,9 +60,8 @@ Logs and pid files for this helper live under `~/.walleyboard/dev/`.
 
 ## CLI
 
-WalleyBoard also has a publishable CLI workspace at
-[`packages/cli`](./packages/cli). Once published to npm as `walleyboard`, it
-can be launched with:
+WalleyBoard is also published to npm as `walleyboard`, backed by the CLI
+workspace at [`packages/cli`](./packages/cli). You can launch it with:
 
 ```sh
 npx walleyboard
@@ -72,8 +71,9 @@ Optional launcher flags:
 
 - `npx walleyboard --host 0.0.0.0`
 - `npx walleyboard --port 4310`
+- `npx walleyboard --no-open`
 
-To build the package locally from this monorepo:
+To build or republish the package from this monorepo:
 
 1. Run `npm install`.
 2. Run `npm run build:cli`.
