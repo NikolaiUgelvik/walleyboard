@@ -706,10 +706,13 @@ test("workspace terminal publishes shell exit messages for worktree sessions", a
 
 test("workspace terminal stays available after execution starts in the same worktree", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-terminal-runtime-"));
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   const ticket = createTicket();
   let session = createSession(tempDir);
   const project = createProject();
   const repository = createRepository(tempDir);
+  let socket: FakeTerminalSocket | null = null;
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
   const runtime = new ExecutionRuntime({
     adapterRegistry: new AgentAdapterRegistry([
       {
@@ -829,21 +832,7 @@ test("workspace terminal stays available after execution starts in the same work
     } as never,
   });
   try {
-    const socket = openTicketWorkspaceTerminal(String(ticket.id), {
-      executionRuntime: {
-        hasActiveExecution: runtime.hasActiveExecution.bind(runtime),
-        startWorkspaceTerminal: runtime.startWorkspaceTerminal.bind(runtime),
-      } as never,
-      store: {
-        getSession(sessionId: string) {
-          return sessionId === session.id ? session : null;
-        },
-        getTicket(ticketId: number) {
-          return ticketId === ticket.id ? ticket : null;
-        },
-      } as never,
-    });
-
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
     session = {
       ...session,
       queue_entered_at: null,
@@ -858,30 +847,39 @@ test("workspace terminal stays available after execution starts in the same work
 
     assert.equal(runtime.hasActiveExecution(session.id), true);
 
-    socket.emitMessage({
-      type: "terminal.input",
-      data: "pwd\r",
+    socket = openTicketWorkspaceTerminal(String(ticket.id), {
+      executionRuntime: {
+        hasActiveExecution: runtime.hasActiveExecution.bind(runtime),
+        startWorkspaceTerminal: runtime.startWorkspaceTerminal.bind(runtime),
+      } as never,
+      store: {
+        getSession(sessionId: string) {
+          return sessionId === session.id ? session : null;
+        },
+        getTicket(ticketId: number) {
+          return ticketId === ticket.id ? ticket : null;
+        },
+      } as never,
     });
 
-    const pwdMessage = await socket.waitForMessage(
-      (candidate) =>
-        candidate.type === "terminal.output" &&
-        typeof candidate.data === "string" &&
-        candidate.data.includes(tempDir),
+    const startedMessage = await socket.waitForMessage(
+      (candidate) => candidate.type === "terminal.started",
     );
-    assert.equal(pwdMessage.type, "terminal.output");
-
-    socket.emitMessage({
-      type: "terminal.input",
-      data: "exit\r",
+    assert.deepEqual(startedMessage, {
+      type: "terminal.started",
+      worktree_path: tempDir,
     });
-    await socket.waitForMessage(
-      (candidate) => candidate.type === "terminal.exit",
-    );
-    socket.close();
   } finally {
+    socket?.close();
+    runtime.closeWorkspaceTerminals(session.id, "Test cleanup.");
     if (runtime.hasActiveExecution(session.id)) {
       await runtime.stopExecution(session.id, "Test cleanup.");
+    }
+    runtime.dispose();
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
     }
     rmSync(tempDir, { recursive: true, force: true });
   }

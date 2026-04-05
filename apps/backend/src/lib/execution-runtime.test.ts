@@ -324,6 +324,9 @@ test("draft refinement launches the configured adapter command inside Docker", (
     ticketId: number;
   } | null = null;
   let spawned: { command: string; args: string[] } | null = null;
+  let onExitHandler:
+    | ((event: { exitCode: number; signal?: number }) => void)
+    | null = null;
 
   const dockerRuntime = {
     assertAvailable() {
@@ -346,7 +349,11 @@ test("draft refinement launches the configured adapter command inside Docker", (
       return {
         kill() {},
         onData() {},
-        onExit() {},
+        onExit(
+          callback: (event: { exitCode: number; signal?: number }) => void,
+        ) {
+          onExitHandler = callback;
+        },
         pid: 1234,
         process: "docker",
         resize() {},
@@ -445,6 +452,11 @@ test("draft refinement launches the configured adapter command inside Docker", (
     assert.equal(capturedContainerInput.worktreePath, repositoryPath);
     assert.equal(capturedContainerInput.ticketId, 0);
     assert.equal(spawnedRun.command, "test-agent");
+    assert.ok(onExitHandler);
+
+    (onExitHandler as (event: { exitCode: number; signal?: number }) => void)({
+      exitCode: 1,
+    });
   } finally {
     if (previousWalleyBoardHome === undefined) {
       delete process.env.WALLEYBOARD_HOME;
