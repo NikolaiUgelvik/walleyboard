@@ -1,9 +1,10 @@
 import { Badge } from "@mantine/core";
-import {
-  IconGitMerge,
-  IconGitPullRequest,
-  IconGitPullRequestClosed,
-} from "@tabler/icons-react";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconGitMerge from "@tabler/icons-react/dist/esm/icons/IconGitMerge.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconGitPullRequest from "@tabler/icons-react/dist/esm/icons/IconGitPullRequest.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconGitPullRequestClosed from "@tabler/icons-react/dist/esm/icons/IconGitPullRequestClosed.mjs";
 import type React from "react";
 
 import type { PullRequestRef } from "../../../../../packages/contracts/src/index.js";

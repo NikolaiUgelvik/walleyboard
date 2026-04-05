@@ -8,7 +8,12 @@ import {
   Text,
   UnstyledButton,
 } from "@mantine/core";
-import { IconBellRinging2, IconPlus, IconSettings } from "@tabler/icons-react";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconBellRinging2 from "@tabler/icons-react/dist/esm/icons/IconBellRinging2.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { MarkdownContent } from "../../components/MarkdownContent.js";

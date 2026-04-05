@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Loader } from "@mantine/core";
-import {
-  IconAlertCircle,
-  IconPlayerPlay,
-  IconPlayerStop,
-} from "@tabler/icons-react";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconAlertCircle from "@tabler/icons-react/dist/esm/icons/IconAlertCircle.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import React, {
   isValidElement,
   type ReactElement,

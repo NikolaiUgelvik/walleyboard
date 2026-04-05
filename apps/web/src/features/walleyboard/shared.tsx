@@ -12,7 +12,8 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
-import { IconCheck } from "@tabler/icons-react";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 import type {
   AgentAdapter,
   ReviewAction,

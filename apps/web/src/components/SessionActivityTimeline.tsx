@@ -1,5 +1,6 @@
 import { ActionIcon, Box, Loader, Stack, Text } from "@mantine/core";
-import { IconCopy } from "@tabler/icons-react";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconCopy from "@tabler/icons-react/dist/esm/icons/IconCopy.mjs";
 import type {
   ExecutionAttempt,
   ExecutionSession,
