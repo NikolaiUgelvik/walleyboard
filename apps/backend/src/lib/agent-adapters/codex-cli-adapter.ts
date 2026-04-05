@@ -596,15 +596,18 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "ticket",
     );
+    const worktreePath = input.session.worktree_path;
     const prompt = buildReviewPrompt({
       repository: input.repository,
       reviewPackage: input.reviewPackage,
       ticket: input.ticket,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath,
     });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
-      worktreePath: input.session.worktree_path,
+      worktreePath,
     });
     const args = ["exec", "--json", "--output-last-message", outputPath];
 

@@ -9,6 +9,7 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
+import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 
 import {
   buildImplementationPrompt,
@@ -293,6 +294,43 @@ test("buildReviewPrompt includes evidence blocks and fenced JSON output", () => 
   assert.match(prompt, /trust the repository state and git diff/i);
   assert.match(prompt, /## Output JSON/);
   assert.match(prompt, /```json/);
+});
+
+test("buildReviewPrompt rewrites mounted patch paths for Docker review runs", () => {
+  const prompt = buildReviewPrompt({
+    repository: createRepository(),
+    reviewPackage: {
+      ...createReviewPackage(),
+      diff_ref: resolveWalleyBoardPath(
+        "review-packages",
+        "spacegame",
+        "ticket-5.patch",
+      ),
+    },
+    ticket: createTicket(),
+    useDockerRuntime: true,
+    worktreePath: "/tmp/spacegame-worktree",
+  });
+
+  assert.match(
+    prompt,
+    /- Diff patch: `\/walleyboard-home\/review-packages\/spacegame\/ticket-5\.patch`/,
+  );
+});
+
+test("buildReviewPrompt states when a Docker review patch is outside mounted paths", () => {
+  const prompt = buildReviewPrompt({
+    repository: createRepository(),
+    reviewPackage: createReviewPackage(),
+    ticket: createTicket(),
+    useDockerRuntime: true,
+    worktreePath: "/tmp/spacegame-worktree",
+  });
+
+  assert.match(
+    prompt,
+    /- Diff patch: `Persisted patch artifact is not available inside Docker\.`/,
+  );
 });
 
 test("buildReviewPrompt omits empty validation and risk sections", () => {

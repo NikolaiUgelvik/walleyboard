@@ -9,6 +9,10 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 import { hasMeaningfulContent } from "../execution-runtime/helpers.js";
 import type { PromptContextSection } from "../execution-runtime/types.js";
+import { resolveDockerMountedPath } from "./docker-paths.js";
+
+const unavailableDockerPatchMessage =
+  "Persisted patch artifact is not available inside Docker.";
 
 function appendHeading(
   sections: string[],
@@ -455,8 +459,17 @@ export function buildReviewPrompt(input: {
   repository: RepositoryConfig;
   reviewPackage: ReviewPackage;
   ticket: TicketFrontmatter;
+  useDockerRuntime?: boolean;
+  worktreePath?: string | null;
 }): string {
   const sections: string[] = [];
+  const diffPath =
+    input.useDockerRuntime && input.worktreePath
+      ? (resolveDockerMountedPath({
+          hostPath: input.reviewPackage.diff_ref,
+          worktreePath: input.worktreePath,
+        }) ?? unavailableDockerPatchMessage)
+      : input.reviewPackage.diff_ref;
 
   appendHeading(sections, "Review Goal");
   sections.push(
@@ -481,7 +494,7 @@ export function buildReviewPrompt(input: {
   appendHeading(sections, "Evidence");
   appendBullets(sections, [
     `Target branch: \`${input.ticket.target_branch}\``,
-    `Diff patch: \`${input.reviewPackage.diff_ref}\``,
+    `Diff patch: \`${diffPath}\``,
   ]);
   appendSubsection(
     sections,

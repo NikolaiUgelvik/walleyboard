@@ -616,6 +616,8 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       repository: input.repository,
       reviewPackage: input.reviewPackage,
       ticket: input.ticket,
+      useDockerRuntime: input.useDockerRuntime,
+      worktreePath,
     });
     const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");

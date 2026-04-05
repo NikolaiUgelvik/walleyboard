@@ -349,6 +349,7 @@ test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is 
   assert.ok(run.args.includes('sandbox_mode="read-only"'));
   assert.match(run.prompt, /## Review Goal/);
   assert.match(run.prompt, /## Output JSON/);
+  assert.match(run.prompt, /- Diff patch: `\/tmp\/ticket-5\.patch`/);
   assert.equal(
     run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
     false,
@@ -395,7 +396,44 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
     run.outputPath,
     "/walleyboard-home/agent-reviews/spacegame/ticket-5-review-run-1.json",
   );
+  assert.match(
+    run.prompt,
+    /- Diff patch: `Persisted patch artifact is not available inside Docker\.`/,
+  );
   assert.ok(run.dockerSpec);
+});
+
+test("CodexCliAdapter.buildReviewRun uses mounted WalleyBoard patch paths in Docker prompts", () => {
+  const adapter = new CodexCliAdapter();
+  const session = createSession();
+
+  const run = adapter.buildReviewRun({
+    outputPath: join(
+      resolveWalleyBoardHomeForTest(),
+      "agent-reviews",
+      "spacegame",
+      "ticket-5-review-run-1.json",
+    ),
+    project: createProject(),
+    repository: createRepository(),
+    reviewPackage: {
+      ...createReviewPackage(),
+      diff_ref: join(
+        resolveWalleyBoardHomeForTest(),
+        "review-packages",
+        "spacegame",
+        "ticket-5.patch",
+      ),
+    },
+    session,
+    ticket: createTicket(),
+    useDockerRuntime: true,
+  });
+
+  assert.match(
+    run.prompt,
+    /- Diff patch: `\/walleyboard-home\/review-packages\/spacegame\/ticket-5\.patch`/,
+  );
 });
 
 test("CodexCliAdapter.buildPullRequestBodyRun uses the draft model with read-only host permissions", () => {
