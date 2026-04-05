@@ -12,10 +12,15 @@ Run it directly with `npx`:
 npx walleyboard
 ```
 
+By default, the CLI starts the local server and opens WalleyBoard in your
+default browser. This also works from WSL by opening the native Windows
+browser when available.
+
 Optional flags:
 
 - `npx walleyboard --host 0.0.0.0`
 - `npx walleyboard --port 4310`
+- `npx walleyboard --no-open`
 
 ## Requirements
 

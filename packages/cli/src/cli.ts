@@ -2,8 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+  resolveBrowserUrl,
+  shouldAutoOpenBrowser,
+  tryOpenBrowser,
+} from "./browser-launch.js";
+
 type CliOptions = {
   host?: string;
+  openBrowser: boolean;
   port?: string;
   showHelp: boolean;
   showVersion: boolean;
@@ -19,7 +26,7 @@ function readPackageVersion(packageRoot: string): string {
 }
 
 function printHelp(): void {
-  process.stdout.write(`Usage: walleyboard [--host <host>] [--port <port>]
+  process.stdout.write(`Usage: walleyboard [--host <host>] [--port <port>] [--no-open]
 
 Starts the WalleyBoard backend and serves the packaged frontend from the same
 process.
@@ -27,6 +34,7 @@ process.
 Options:
   --host <host>     Bind host for the backend server.
   --port <port>     Bind port for the backend server.
+  --no-open         Do not open WalleyBoard in a browser automatically.
   --help            Show this help text.
   --version         Show the package version.
 `);
@@ -34,6 +42,7 @@ Options:
 
 function parseCliOptions(argv: string[]): CliOptions {
   const options: CliOptions = {
+    openBrowser: true,
     showHelp: false,
     showVersion: false,
   };
@@ -76,6 +85,16 @@ function parseCliOptions(argv: string[]): CliOptions {
       continue;
     }
 
+    if (argument === "--no-open") {
+      options.openBrowser = false;
+      continue;
+    }
+
+    if (argument === "--open") {
+      options.openBrowser = true;
+      continue;
+    }
+
     throw new Error(`Unknown option: ${argument}`);
   }
 
@@ -113,9 +132,23 @@ async function main(): Promise<void> {
     process.env.PORT = options.port;
   }
 
+  const host = process.env.HOST ?? "127.0.0.1";
+  const port = process.env.PORT ?? "4000";
+  const appUrl = resolveBrowserUrl({ host, port });
+
   process.env.WALLEYBOARD_STATIC_DIR ??= staticAssetDir;
 
   await import(pathToFileURL(backendEntryPath).href);
+  process.stdout.write(`WalleyBoard is running at ${appUrl}\n`);
+
+  if (options.openBrowser && shouldAutoOpenBrowser(process.env)) {
+    const opened = tryOpenBrowser(appUrl);
+    if (!opened) {
+      process.stderr.write(
+        `Unable to open a browser automatically. Open ${appUrl} manually.\n`,
+      );
+    }
+  }
 }
 
 try {
