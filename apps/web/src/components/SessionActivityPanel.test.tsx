@@ -189,7 +189,7 @@ test("session activity panel defaults to overview and switches to the timeline t
   }
 });
 
-test("timeline copies raw markdown only for implementation prompt entries", async () => {
+test("timeline copies raw markdown for implementation prompt entries", async () => {
   const harness = installDom();
   const root = createRoot(harness.mountNode);
   const session = createSession();
@@ -431,6 +431,110 @@ test("timeline copies raw markdown for AI review prompt entries", async () => {
     });
 
     assert.deepEqual(copiedMarkdown, [reviewPrompt]);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
+test("timeline copies raw markdown for restart prompt entries", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const session = createSession();
+  const copiedMarkdown: string[] = [];
+  const restartPrompt = [
+    "## Fresh restart guidance",
+    "- Reset the worktree",
+    "- Re-run the validation checks",
+  ].join("\n");
+
+  Object.defineProperty(harness.window.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText(value: string) {
+        copiedMarkdown.push(value);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  const attempts: ExecutionAttempt[] = [
+    {
+      id: "attempt-4",
+      session_id: session.id,
+      attempt_number: 4,
+      status: "queued",
+      prompt_kind: "implementation",
+      prompt: "Continue implementation.",
+      pty_pid: null,
+      started_at: "2026-04-04T10:20:00.000Z",
+      ended_at: null,
+      end_reason: null,
+    },
+  ];
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <SessionActivityPanel
+            attempts={attempts}
+            logs={[
+              `Fresh restart guidance recorded:\n${restartPrompt}`,
+              "Starting fresh execution attempt 4.",
+            ]}
+            reviewRuns={[]}
+            session={session}
+            ticketEvents={[]}
+            timelineError={null}
+            timelinePending={false}
+          />
+        </MantineProvider>,
+      );
+    });
+
+    const timelineTab = Array.from(
+      harness.window.document.querySelectorAll<HTMLElement>('[role="tab"]'),
+    ).find((tab) => tab.textContent?.trim() === "Timeline");
+    assert.ok(timelineTab);
+
+    await act(async () => {
+      timelineTab.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+    });
+
+    const bodyText = harness.window.document.body.textContent ?? "";
+    assert.match(bodyText, /Fresh restart guidance/);
+    assert.match(bodyText, /Implementation prompt prepared for attempt 4/);
+
+    const copyButtons = Array.from(
+      harness.window.document.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label="Copy raw prompt markdown"]',
+      ),
+    );
+    assert.equal(copyButtons.length, 2);
+
+    const restartCopyButton = copyButtons.find((button) =>
+      button
+        .closest(".session-timeline-card")
+        ?.textContent?.includes("Fresh restart guidance"),
+    );
+    assert.ok(restartCopyButton);
+
+    await act(async () => {
+      restartCopyButton.dispatchEvent(
+        new harness.window.MouseEvent("click", {
+          bubbles: true,
+        }),
+      );
+    });
+
+    assert.deepEqual(copiedMarkdown, [restartPrompt]);
   } finally {
     await act(async () => {
       root.unmount();

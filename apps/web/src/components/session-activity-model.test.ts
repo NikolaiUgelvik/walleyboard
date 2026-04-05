@@ -214,6 +214,11 @@ test("buildSessionTimeline preserves expanded restart and input prompts from log
     "Reset the branch and retry from scratch.",
   );
   assert.equal(
+    timeline.find((entry) => entry.title === "Fresh restart guidance")
+      ?.copyMarkdown,
+    "Reset the branch and retry from scratch.",
+  );
+  assert.equal(
     timeline.find((entry) => entry.title === "User input recorded")?.detail,
     "Please also update the tests.",
   );

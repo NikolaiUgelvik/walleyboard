@@ -559,6 +559,7 @@ function createLogTimelineEntry(
   switch (activity.label) {
     case "Changes requested":
       return createTimelineEntry({
+        copyMarkdown: activity.detail,
         detail: activity.detail,
         key: `timeline-log-${activity.key}`,
         kicker: "RESTART PROMPT",
@@ -622,6 +623,7 @@ function createLogTimelineEntry(
     case "Fresh restart guidance":
     case "Fresh restart requested":
       return createTimelineEntry({
+        copyMarkdown: activity.detail,
         detail: activity.detail,
         key: `timeline-log-${activity.key}`,
         kicker: "RESTART PROMPT",
