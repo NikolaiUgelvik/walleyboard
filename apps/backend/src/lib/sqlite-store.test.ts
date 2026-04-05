@@ -360,7 +360,7 @@ test("searchProjectTicketReferences filters, ranks, and excludes archived ticket
 
     assert.deepEqual(
       results.map((ticket) => ticket.ticket_id),
-      [exactIdTicket.id, prefixTitleTicket.id, containsTitleTicket.id],
+      [exactIdTicket.id, containsTitleTicket.id, prefixTitleTicket.id],
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
