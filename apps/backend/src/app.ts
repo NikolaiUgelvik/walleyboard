@@ -6,6 +6,14 @@ import type { ClaudeCodeAvailability } from "./lib/agent-adapters/claude-code-ru
 import { CodexCliAdapter } from "./lib/agent-adapters/codex-cli-adapter.js";
 import { AgentAdapterRegistry } from "./lib/agent-adapters/registry.js";
 import { AgentReviewService } from "./lib/agent-review-service.js";
+import {
+  configureBackendObservability,
+  disposeBackendObservability,
+  enterObservedRequestContext,
+  finishObservedRequest,
+  observeNamedMethodsOnInstance,
+  startObservedRequest,
+} from "./lib/backend-observability.js";
 import { createClaudeCodeAvailabilityGetter } from "./lib/claude-code-availability.js";
 import {
   type DockerRuntime,
@@ -59,9 +67,15 @@ export async function createApp(options: CreateAppOptions = {}) {
   const app = Fastify({
     logger: true,
   });
+  configureBackendObservability({
+    logger: app.log,
+  });
 
   const eventHub = options.eventHub ?? new EventHub();
-  const store = options.store ?? new SqliteStore(options.databasePath);
+  const store = observeNamedMethodsOnInstance(
+    "sqlite-store",
+    options.store ?? new SqliteStore(options.databasePath),
+  );
   const dockerRuntime = options.dockerRuntime ?? new DockerRuntimeManager();
   const getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(
     options.probeClaudeCodeAvailability ??
@@ -188,6 +202,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   }
 
   app.addHook("onRequest", async (request, reply) => {
+    startObservedRequest({
+      method: request.method,
+      requestId: request.id,
+      url: request.url,
+    });
+    enterObservedRequestContext(request.id);
     reply.header("access-control-allow-origin", "*");
     reply.header("access-control-allow-methods", "GET,POST,PATCH,OPTIONS");
     reply.header("access-control-allow-headers", "content-type");
@@ -195,6 +215,16 @@ export async function createApp(options: CreateAppOptions = {}) {
     if (request.method === "OPTIONS") {
       reply.code(204).send();
     }
+  });
+  app.addHook("onResponse", async (request, reply) => {
+    finishObservedRequest({
+      requestId: request.id,
+      routeUrl: request.routeOptions.url ?? null,
+      statusCode: reply.statusCode,
+    });
+  });
+  app.addHook("onClose", async () => {
+    disposeBackendObservability();
   });
 
   await app.register(fastifyRateLimit, globalRateLimitOptions());

@@ -11,6 +11,7 @@ import type {
   RepositoryConfig,
   ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
+import { runObservedOperation } from "../backend-observability.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 import type { DraftFeasibilityResult, DraftRefinementResult } from "./types.js";
 
@@ -144,10 +145,18 @@ export function buildProcessEnv(): Record<string, string> {
 }
 
 export function runGit(repoPath: string, args: string[]): string {
-  return execFileSync("git", ["-C", repoPath, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  return runObservedOperation(
+    "execution-runtime.git",
+    {
+      command: args.join(" "),
+      repoPath,
+    },
+    () =>
+      execFileSync("git", ["-C", repoPath, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim(),
+  );
 }
 
 export function writeReviewDiff(

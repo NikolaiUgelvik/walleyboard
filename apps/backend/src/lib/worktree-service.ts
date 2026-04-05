@@ -16,6 +16,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../packages/contracts/src/index.js";
 
+import { runObservedOperation } from "./backend-observability.js";
 import { resolveTargetBranch } from "./execution-runtime/helpers.js";
 import type { PreparedExecutionRuntime } from "./store.js";
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
@@ -113,46 +114,65 @@ export class AutomaticMergeRecoveryError extends Error {
 }
 
 function runGit(repoPath: string, args: string[]): string {
-  try {
-    return execFileSync("git", ["-C", repoPath, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-  } catch (error) {
-    const gitError = error as GitExecError;
-    const stdout =
-      typeof gitError.stdout === "string"
-        ? gitError.stdout.trim()
-        : (gitError.stdout?.toString("utf8").trim() ?? "");
-    const stderr =
-      typeof gitError.stderr === "string"
-        ? gitError.stderr.trim()
-        : (gitError.stderr?.toString("utf8").trim() ?? "");
-    const detail =
-      stderr || stdout || gitError.message || "Unknown git failure";
-    throw new GitCommandError(
-      args,
-      `Git command failed (${args.join(" ")}): ${detail}`,
-      {
-        exitCode: gitError.status ?? null,
-        stdout,
-        stderr,
-      },
-    );
-  }
+  return runObservedOperation(
+    "worktree.git",
+    {
+      command: args.join(" "),
+      repoPath,
+    },
+    () => {
+      try {
+        return execFileSync("git", ["-C", repoPath, ...args], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        }).trim();
+      } catch (error) {
+        const gitError = error as GitExecError;
+        const stdout =
+          typeof gitError.stdout === "string"
+            ? gitError.stdout.trim()
+            : (gitError.stdout?.toString("utf8").trim() ?? "");
+        const stderr =
+          typeof gitError.stderr === "string"
+            ? gitError.stderr.trim()
+            : (gitError.stderr?.toString("utf8").trim() ?? "");
+        const detail =
+          stderr || stdout || gitError.message || "Unknown git failure";
+        throw new GitCommandError(
+          args,
+          `Git command failed (${args.join(" ")}): ${detail}`,
+          {
+            exitCode: gitError.status ?? null,
+            stdout,
+            stderr,
+          },
+        );
+      }
+    },
+  );
 }
 
 function runGitAtRoot(args: string[]): string {
-  try {
-    return execFileSync("git", args, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown git execution failure";
-    throw new Error(`Git command failed (${args.join(" ")}): ${message}`);
-  }
+  return runObservedOperation(
+    "worktree.git-root",
+    {
+      command: args.join(" "),
+    },
+    () => {
+      try {
+        return execFileSync("git", args, {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        }).trim();
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown git execution failure";
+        throw new Error(`Git command failed (${args.join(" ")}): ${message}`);
+      }
+    },
+  );
 }
 
 function normalizeOptionalCommand(

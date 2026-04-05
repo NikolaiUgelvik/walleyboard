@@ -7,6 +7,7 @@ import type {
   TicketWorkspacePreview,
 } from "../../../../packages/contracts/src/index.js";
 
+import { runObservedOperation } from "./backend-observability.js";
 import { type EventHub, makeProtocolEvent } from "./event-hub.js";
 import { nowIso } from "./time.js";
 
@@ -106,27 +107,40 @@ function runGit(
     allowExitCodes?: number[];
   },
 ): string {
-  const allowExitCodes = options?.allowExitCodes ?? [0];
+  return runObservedOperation(
+    "ticket-workspace.git",
+    {
+      allowExitCodes: options?.allowExitCodes ?? [0],
+      command: args.join(" "),
+      repoPath,
+    },
+    () => {
+      const allowExitCodes = options?.allowExitCodes ?? [0];
 
-  try {
-    return execFileSync("git", ["-C", repoPath, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (error) {
-    const gitError = error as GitExecError;
-    const parsed = parseGitOutput(gitError);
-    if (parsed.exitCode !== null && allowExitCodes.includes(parsed.exitCode)) {
-      return parsed.stdout;
-    }
+      try {
+        return execFileSync("git", ["-C", repoPath, ...args], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (error) {
+        const gitError = error as GitExecError;
+        const parsed = parseGitOutput(gitError);
+        if (
+          parsed.exitCode !== null &&
+          allowExitCodes.includes(parsed.exitCode)
+        ) {
+          return parsed.stdout;
+        }
 
-    const detail =
-      parsed.stderr.trim() ||
-      parsed.stdout.trim() ||
-      gitError.message ||
-      "Unknown git failure";
-    throw new Error(`Git command failed (${args.join(" ")}): ${detail}`);
-  }
+        const detail =
+          parsed.stderr.trim() ||
+          parsed.stdout.trim() ||
+          gitError.message ||
+          "Unknown git failure";
+        throw new Error(`Git command failed (${args.join(" ")}): ${detail}`);
+      }
+    },
+  );
 }
 
 function parsePackageScripts(
