@@ -1,5 +1,6 @@
 import type {
   DraftTicketState,
+  ExecutionAttempt,
   ExecutionSession,
   Project,
   ProtocolEvent,
@@ -61,9 +62,17 @@ export type SessionResponse = {
   agent_controls_worktree: boolean;
 };
 
+export type SessionAttemptsResponse = {
+  attempts: ExecutionAttempt[];
+};
+
 export type SessionLogsResponse = {
   session_id: string;
   logs: string[];
+};
+
+export type TicketEventsResponse = {
+  events: StructuredEvent[];
 };
 
 export type TicketWorkspaceDiffResponse = {

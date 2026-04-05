@@ -211,6 +211,8 @@ export type WalleyBoardModalsController = Pick<
   | "selectedSessionTicket"
   | "selectedSessionTicketSession"
   | "session"
+  | "sessionAttempts"
+  | "sessionAttemptsQuery"
   | "sessionLogs"
   | "sessionLogsQuery"
   | "sessionQuery"
@@ -238,6 +240,8 @@ export type WalleyBoardModalsController = Pick<
   | "setRepositoryPath"
   | "setTicketWorkspaceDiffLayout"
   | "setValidationCommandsText"
+  | "ticketEvents"
+  | "ticketEventsQuery"
   | "ticketWorkspaceDiff"
   | "ticketWorkspaceDiffLayout"
   | "ticketWorkspaceDiffQuery"
@@ -483,6 +487,8 @@ export function createWalleyBoardViewState(
     selectedSessionTicket: controller.selectedSessionTicket,
     selectedSessionTicketSession: controller.selectedSessionTicketSession,
     session: controller.session,
+    sessionAttempts: controller.sessionAttempts,
+    sessionAttemptsQuery: controller.sessionAttemptsQuery,
     sessionLogs: controller.sessionLogs,
     sessionLogsQuery: controller.sessionLogsQuery,
     sessionQuery: controller.sessionQuery,
@@ -524,6 +530,8 @@ export function createWalleyBoardViewState(
     setRepositoryPath: controller.setRepositoryPath,
     setTicketWorkspaceDiffLayout: controller.setTicketWorkspaceDiffLayout,
     setValidationCommandsText: controller.setValidationCommandsText,
+    ticketEvents: controller.ticketEvents,
+    ticketEventsQuery: controller.ticketEventsQuery,
     ticketWorkspaceDiff: controller.ticketWorkspaceDiff,
     ticketWorkspaceDiffLayout: controller.ticketWorkspaceDiffLayout,
     ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,

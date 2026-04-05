@@ -6,16 +6,21 @@ import type {
   ReviewPackageResponse,
   ReviewRunResponse,
   ReviewRunsResponse,
+  SessionAttemptsResponse,
+  TicketEventsResponse,
   TicketWorkspaceDiffResponse,
   WorkspaceModalKind,
 } from "./shared-types.js";
 
 export function useTicketReviewQueries(input: {
+  selectedSessionId: string | null;
   selectedSessionTicketId: number | null;
   selectedSessionTicketStatus: TicketFrontmatter["status"] | null;
   selectedWorkspaceTicketId: number | null;
   workspaceModal: WorkspaceModalKind | null;
 }) {
+  const activityModalOpen = input.workspaceModal === "activity";
+
   const reviewPackageQuery = useQuery({
     queryKey: ["tickets", input.selectedSessionTicketId, "review-package"],
     queryFn: () =>
@@ -47,7 +52,25 @@ export function useTicketReviewQueries(input: {
       ),
     enabled:
       input.selectedSessionTicketId !== null &&
-      input.selectedSessionTicketStatus === "review",
+      (input.selectedSessionTicketStatus === "review" || activityModalOpen),
+  });
+
+  const sessionAttemptsQuery = useQuery({
+    queryKey: ["sessions", input.selectedSessionId, "attempts"],
+    queryFn: () =>
+      fetchJson<SessionAttemptsResponse>(
+        `/sessions/${input.selectedSessionId}/attempts`,
+      ),
+    enabled: activityModalOpen && input.selectedSessionId !== null,
+  });
+
+  const ticketEventsQuery = useQuery({
+    queryKey: ["tickets", input.selectedSessionTicketId, "events"],
+    queryFn: () =>
+      fetchJson<TicketEventsResponse>(
+        `/tickets/${input.selectedSessionTicketId}/events`,
+      ),
+    enabled: activityModalOpen && input.selectedSessionTicketId !== null,
   });
 
   const ticketWorkspaceDiffQuery = useQuery({
@@ -66,6 +89,8 @@ export function useTicketReviewQueries(input: {
     latestReviewRunQuery,
     reviewRunsQuery,
     reviewPackageQuery,
+    sessionAttemptsQuery,
     ticketWorkspaceDiffQuery,
+    ticketEventsQuery,
   };
 }

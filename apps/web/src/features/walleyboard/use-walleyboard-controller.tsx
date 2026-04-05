@@ -496,8 +496,11 @@ export function useWalleyBoardController() {
     reviewPackageQuery,
     latestReviewRunQuery,
     reviewRunsQuery,
+    sessionAttemptsQuery,
     ticketWorkspaceDiffQuery,
+    ticketEventsQuery,
   } = useTicketReviewQueries({
+    selectedSessionId,
     selectedSessionTicketId,
     selectedSessionTicketStatus,
     selectedWorkspaceTicketId,
@@ -702,9 +705,11 @@ export function useWalleyBoardController() {
     ? parseDraftQuestionsResult(latestQuestionsEvent.payload.result)
     : null;
   const session = sessionQuery.data?.session ?? null;
+  const sessionAttempts = sessionAttemptsQuery.data?.attempts ?? [];
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
+  const ticketEvents = ticketEventsQuery.data?.events ?? [];
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
   const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
   const reviewRuns = reviewRunsQuery.data?.review_runs ?? [];
@@ -1318,8 +1323,12 @@ export function useWalleyBoardController() {
     selectedSessionTicketId,
     selectedSessionTicketSession,
     session,
+    sessionAttempts,
+    sessionAttemptsQuery,
     sessionById,
     sessionSummaryStateById,
+    ticketEvents,
+    ticketEventsQuery,
     sessionLogs,
     sessionLogsQuery,
     sessionQuery,

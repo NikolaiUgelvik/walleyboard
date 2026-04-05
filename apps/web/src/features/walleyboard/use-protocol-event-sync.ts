@@ -20,13 +20,18 @@ import type {
   ReviewRunsResponse,
   SessionLogsResponse,
   SessionResponse,
+  TicketEventsResponse,
   TicketsResponse,
 } from "./shared-types.js";
 import { parseDraftEventMeta, upsertById } from "./shared-utils.js";
 
 function isRealtimeBackedQueryKey(queryKey: readonly unknown[]): boolean {
   if (queryKey[0] === "sessions") {
-    return true;
+    return (
+      queryKey[2] === undefined ||
+      queryKey[2] === "logs" ||
+      queryKey[2] === "attempts"
+    );
   }
 
   if (queryKey[0] === "drafts" && queryKey[2] === "events") {
@@ -38,6 +43,7 @@ function isRealtimeBackedQueryKey(queryKey: readonly unknown[]): boolean {
       queryKey[2] === "review-package" ||
       queryKey[2] === "review-run" ||
       queryKey[2] === "review-runs" ||
+      queryKey[2] === "events" ||
       (queryKey[2] === "workspace" &&
         (queryKey[3] === "diff" || queryKey[3] === "preview"))
     );
@@ -158,6 +164,9 @@ export function useProtocolEventSync({
           queryKey: ["sessions", ticket.session_id],
         });
       }
+      queryClient.invalidateQueries({
+        queryKey: ["tickets", ticket.id, "events"],
+      });
       return;
     }
 
@@ -252,6 +261,9 @@ export function useProtocolEventSync({
       if (archivedSessionId && selectedSessionId === archivedSessionId) {
         setInspectorState({ kind: "hidden" });
       }
+      queryClient.invalidateQueries({
+        queryKey: ["tickets", ticketId, "events"],
+      });
       return;
     }
 
@@ -267,6 +279,9 @@ export function useProtocolEventSync({
       queryClient.setQueryData<SessionResponse>(["sessions", session.id], {
         session,
         agent_controls_worktree: agentControlsWorktree ?? false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["sessions", session.id, "attempts"],
       });
       return;
     }
@@ -313,7 +328,31 @@ export function useProtocolEventSync({
       const structuredEvent = event.payload.structured_event as
         | StructuredEvent
         | undefined;
-      if (!structuredEvent || structuredEvent.entity_type !== "draft") {
+      if (!structuredEvent) {
+        return;
+      }
+
+      if (structuredEvent.entity_type === "ticket") {
+        const ticketId = Number.parseInt(structuredEvent.entity_id, 10);
+        if (Number.isNaN(ticketId)) {
+          return;
+        }
+
+        queryClient.setQueryData<TicketEventsResponse>(
+          ["tickets", ticketId, "events"],
+          (previous) => ({
+            events: [
+              structuredEvent,
+              ...(previous?.events ?? []).filter(
+                (item) => item.id !== structuredEvent.id,
+              ),
+            ],
+          }),
+        );
+        return;
+      }
+
+      if (structuredEvent.entity_type !== "draft") {
         return;
       }
 
@@ -353,6 +392,9 @@ export function useProtocolEventSync({
           review_package: reviewPackage,
         },
       );
+      queryClient.invalidateQueries({
+        queryKey: ["tickets", reviewPackage.ticket_id, "review-runs"],
+      });
       return;
     }
 
@@ -381,6 +423,9 @@ export function useProtocolEventSync({
               }
             : previous,
       );
+      queryClient.invalidateQueries({
+        queryKey: ["tickets", reviewRun.ticket_id, "review-runs"],
+      });
     }
   };
 

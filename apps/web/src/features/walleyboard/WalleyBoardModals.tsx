@@ -1,7 +1,7 @@
 import { Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
 import { AgentReviewHistoryModal } from "../../components/AgentReviewHistoryModal.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
-import { SessionActivityFeed } from "../../components/SessionActivityFeed.js";
+import { SessionActivityPanel } from "../../components/SessionActivityPanel.js";
 import { TicketWorkspaceDiffPanel } from "../../components/TicketWorkspaceDiffPanel.js";
 import { TicketWorkspaceTerminal } from "../../components/TicketWorkspaceTerminal.js";
 import { ProjectConfigurationModals } from "./ProjectConfigurationModals.js";
@@ -53,9 +53,27 @@ export function WorkspaceModalContent({
             {controller.sessionQuery.error.message}
           </Text>
         ) : controller.session ? (
-          <SessionActivityFeed
+          <SessionActivityPanel
+            key={controller.session.id}
+            attempts={controller.sessionAttempts}
             logs={controller.sessionLogs}
+            reviewRuns={controller.reviewRuns}
             session={controller.session}
+            ticketEvents={controller.ticketEvents}
+            timelineError={
+              controller.sessionAttemptsQuery.isError
+                ? controller.sessionAttemptsQuery.error.message
+                : controller.ticketEventsQuery.isError
+                  ? controller.ticketEventsQuery.error.message
+                  : controller.reviewRunsQuery.isError
+                    ? controller.reviewRunsQuery.error.message
+                    : null
+            }
+            timelinePending={
+              controller.sessionAttemptsQuery.isPending ||
+              controller.ticketEventsQuery.isPending ||
+              controller.reviewRunsQuery.isPending
+            }
           />
         ) : (
           <Text size="sm" c="dimmed">
