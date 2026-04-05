@@ -231,6 +231,7 @@ export function useWalleyBoardController() {
   } = useWalleyBoardServerState({
     archiveModalOpen,
     draftEditorProjectId,
+    projectModalOpen,
     projectOptionsProjectId,
     selectedDraftId,
     selectedProjectId,

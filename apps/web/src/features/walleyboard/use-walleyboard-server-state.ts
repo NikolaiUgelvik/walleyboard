@@ -18,6 +18,7 @@ import type {
 export function useWalleyBoardServerState(input: {
   archiveModalOpen: boolean;
   draftEditorProjectId: string | null;
+  projectModalOpen: boolean;
   projectOptionsProjectId: string | null;
   selectedDraftId: string | null;
   selectedProjectId: string | null;
@@ -87,7 +88,7 @@ export function useWalleyBoardServerState(input: {
       fetchJson<RepositoryBranchesResponse>(
         `/projects/${input.projectOptionsProjectId}/repository-branches`,
       ),
-    enabled: input.projectOptionsProjectId !== null,
+    enabled: input.projectModalOpen && input.projectOptionsProjectId !== null,
     retry: false,
   });
 

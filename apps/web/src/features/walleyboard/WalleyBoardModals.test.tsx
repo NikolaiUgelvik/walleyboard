@@ -22,6 +22,7 @@ import {
   useWalleyBoardController,
   type WalleyBoardController,
 } from "./use-walleyboard-controller.js";
+import { useWalleyBoardServerState } from "./use-walleyboard-server-state.js";
 import { WorkspaceTerminalContent } from "./WorkspaceTerminalContent.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
@@ -454,6 +455,28 @@ function ControllerModalHarness({
   return <ProjectConfigurationModals controller={wrappedController} />;
 }
 
+function ServerStateHarness({
+  projectModalOpen,
+  projectOptionsProjectId,
+  selectedProjectId,
+}: {
+  projectModalOpen: boolean;
+  projectOptionsProjectId: string | null;
+  selectedProjectId: string | null;
+}) {
+  useWalleyBoardServerState({
+    archiveModalOpen: false,
+    draftEditorProjectId: null,
+    projectModalOpen,
+    projectOptionsProjectId,
+    selectedDraftId: null,
+    selectedProjectId,
+    selectedSessionId: null,
+  });
+
+  return null;
+}
+
 async function renderControllerModalHarness(input: {
   harness: ReturnType<typeof installDom>;
   mode: "create" | "edit";
@@ -735,6 +758,145 @@ test("repository terminal tabs preserve each tab instance and resolved path acro
     await act(async () => {
       root.unmount();
     });
+    harness.cleanup();
+  }
+});
+
+test("repository branches are not fetched while the project options modal is closed", async () => {
+  const harness = installDom();
+  const queryClient = createQueryClient();
+  const health = createHealth();
+  const project = createProject();
+  const repository = createRepository();
+  const root = createRoot(harness.mountNode);
+  const originalFetch = globalThis.fetch;
+  let repositoryBranchesFetchCount = 0;
+
+  queryClient.setQueryData(["health"], health);
+  queryClient.setQueryData(["projects"], { projects: [project] });
+  queryClient.setQueryData(["projects", project.id, "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", project.id, "tickets"], {
+    tickets: [],
+  });
+  queryClient.setQueryData(["projects", project.id, "repositories"], {
+    repositories: [repository],
+  });
+
+  globalThis.fetch = (async (request) => {
+    const url = new URL(
+      typeof request === "string"
+        ? request
+        : request instanceof URL
+          ? request.toString()
+          : request.url,
+    );
+
+    if (url.pathname === `/projects/${project.id}/repository-branches`) {
+      repositoryBranchesFetchCount += 1;
+    }
+
+    throw new Error(
+      `Unexpected fetch during server-state test: ${url.pathname}`,
+    );
+  }) as typeof fetch;
+
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ServerStateHarness
+            projectModalOpen={false}
+            projectOptionsProjectId={project.id}
+            selectedProjectId={project.id}
+          />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.equal(repositoryBranchesFetchCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    root.unmount();
+    harness.cleanup();
+  }
+});
+
+test("repository branches are fetched while the project options modal is open", async () => {
+  const harness = installDom();
+  const queryClient = createQueryClient();
+  const health = createHealth();
+  const project = createProject();
+  const repository = createRepository();
+  const root = createRoot(harness.mountNode);
+  const originalFetch = globalThis.fetch;
+  let repositoryBranchesFetchCount = 0;
+
+  queryClient.setQueryData(["health"], health);
+  queryClient.setQueryData(["projects"], { projects: [project] });
+  queryClient.setQueryData(["projects", project.id, "drafts"], {
+    drafts: [],
+  });
+  queryClient.setQueryData(["projects", project.id, "tickets"], {
+    tickets: [],
+  });
+  queryClient.setQueryData(["projects", project.id, "repositories"], {
+    repositories: [repository],
+  });
+
+  globalThis.fetch = (async (request) => {
+    const url = new URL(
+      typeof request === "string"
+        ? request
+        : request instanceof URL
+          ? request.toString()
+          : request.url,
+    );
+
+    if (url.pathname === `/projects/${project.id}/repository-branches`) {
+      repositoryBranchesFetchCount += 1;
+      return Response.json({
+        repository_branches: [
+          {
+            repository_id: repository.id,
+            repository_name: repository.name,
+            current_target_branch: repository.target_branch,
+            branches: ["main"],
+            error: null,
+          },
+        ],
+      });
+    }
+
+    throw new Error(
+      `Unexpected fetch during server-state test: ${url.pathname}`,
+    );
+  }) as typeof fetch;
+
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ServerStateHarness
+            projectModalOpen={true}
+            projectOptionsProjectId={project.id}
+            selectedProjectId={project.id}
+          />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    assert.equal(repositoryBranchesFetchCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    root.unmount();
     harness.cleanup();
   }
 });

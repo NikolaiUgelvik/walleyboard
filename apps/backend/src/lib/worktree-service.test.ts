@@ -143,7 +143,7 @@ async function waitForCondition(
   }
 }
 
-test("fetchRepositoryBranches returns local and remote branch names", () => {
+test("fetchRepositoryBranches returns known local and cached remote branch names without refreshing remotes", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-repo-branches-"));
 
   try {
@@ -184,7 +184,7 @@ test("fetchRepositoryBranches returns local and remote branch names", () => {
 
     assert.deepEqual(
       fetchRepositoryBranches(createRepositoryConfig(repoPath)),
-      ["feature/local", "main", "origin/main", "origin/release/1.0"],
+      ["feature/local", "main", "origin/main"],
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
