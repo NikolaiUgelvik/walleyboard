@@ -13,63 +13,21 @@ Runtime state lives under `~/.walleyboard/`, with `walleyboard.sqlite` as the so
 
 ![WalleyBoard project board with inbox, project list, and ticket columns](./docs/assets/walleyboard-board.png)
 
-## Workspace Layout
+## What It Does
 
-- `apps/backend`: local Fastify backend, WebSocket transport, route scaffolding, and execution service boundaries
-- `apps/web`: React + Mantine frontend shell for the WalleyBoard UI
-- `packages/contracts`: shared Zod schemas and protocol contracts used by backend and frontend
-- `packages/db`: canonical Drizzle schema, checked-in migrations, and SQLite bootstrap for the local WalleyBoard database
-- `docs`: implementation notes that turn the PRD into module-level build guidance
+WalleyBoard gives you a local board for moving work from draft to execution to
+review while keeping the agent session, git worktree, and review context tied
+to the same ticket.
 
-## Current Structure
+Core workflows:
 
-- `apps/backend/src/lib/sqlite-store`: Drizzle-backed persistence services for projects, drafts, tickets, sessions, structured events, and review artifacts
-- `apps/backend/src/lib/execution-runtime`: the `ExecutionRuntime` facade plus focused helpers for prompts, CLI args, validation, event publishing, and process/session coordination
-- `apps/backend/src/routes/tickets`: ticket route registration split by concern so read/workspace, execution, lifecycle, and review flows stay isolated
-- `apps/web/src/features/walleyboard`: single-screen UI composition, feature-scoped controllers, websocket cache syncing, and extracted board, inspector, and modal modules
+- create and refine Markdown ticket drafts
+- start work in isolated git worktrees
+- run Codex or Claude Code in Docker-backed sessions
+- inspect diffs, terminal output, previews, and activity history
+- review changes, open pull requests, and merge completed work
 
-## Current Status
-
-Implemented now:
-
-- local Fastify + React app with shared contracts, SQLite persistence, and websocket-driven board/session updates
-- board workflow with `Draft`, `Ready`, `In progress`, `In review`, and `Done`
-- compact project rail with per-project color tiles, neutral utility tiles, unread notification badges, and selected-project color accents across board actions
-- project options for project color, agent CLI selection, Codex MCP server toggles, automatic agent review defaults, review defaults, preview commands, model overrides, and pre/post-worktree commands
-- draft workflow with persisted Markdown drafts plus `Refine`, `Questions`, `Revert Refine`, and `Create Ready`
-- artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
-- execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, launches the selected Codex or Claude Code CLI inside Docker-backed PTY sessions, and keeps follow-up attempts on the same logical session and worktree
-- adapter-managed execution modes with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
-- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request changes and resume, can launch automatic agent review reruns or one-off manual agent reviews, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row, supports GitHub pull request creation and reconciliation, and merges directly from `review` into the target branch with cleanup
-- ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
-- conservative restart recovery that preserves active managed Docker containers for interrupted sessions and marks active sessions `interrupted` instead of auto-restoring live execution
-
-Not yet implemented:
-
-- automatic restoration of a live execution after an application restart
-- richer validation configuration and review-time override handling beyond the current per-repository profiles
-- remote branch cleanup and broader GitHub workflow automation beyond the current create/track/reconcile flow
-
-## Current Workflow Terms
-
-- Board columns and ticket states use `Draft`/`draft`, `Ready`/`ready`, `In progress`/`in_progress`, `In review`/`review`, and `Done`/`done`
-- The draft-to-ready flow is `edit draft -> Refine or Questions -> optional Revert Refine -> Create Ready`
-- Execution sessions use `queued`, `running`, `paused_checkpoint`, `paused_user_control`, `awaiting_input`, `interrupted`, `failed`, and `completed`
-- The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session and worktree
-- Review tickets default to either `Direct merge` or `Create pull request` from the project setting; once a PR is linked, the review card switches into PR tracking instead of offering duplicate paths
-- Projects can opt into automatic agent review reruns with a per-ticket run limit, and manual `Start agent review` remains available when review work needs another pass
-- The inbox only lists work that currently needs a human action:
-  drafts waiting for confirmation, review tickets that are ready for human review and not still under active AI review, and sessions that are paused or failed for real operator input while the agent is not actively controlling the worktree
-- The inbox alert sound only plays when one of those human-actionable items becomes newly actionable after it was previously absent; initial load, refresh churn, and automatic relaunch transitions do not trigger the sound
-- The compact left rail keeps inbox and create-project utility tiles gray by default; project tiles stay color-coded and the inbox tile only shifts into its attention color when unread actionable work exists
-- Ticket cards expose a compact action group for `Diff`, `Terminal`, `Preview`, and `Activity`; the inspector keeps a single activity summary row that opens the same interpreted stream
-- `Diff`, `Terminal`, and `Preview` require a prepared worktree, while `Activity` stays available whenever the ticket still has a session, even after worktree cleanup
-- The `Terminal` action opens a plain xterm.js shell rooted at the ticket worktree without take-over or restore-agent controls on that surface, and it stays unavailable only while a live agent process still owns that worktree
-- The `Preview` action starts the ticket dev server when needed, opens a browser tab, and switches to a stop control while that dev server is running
-- Completed tickets can be archived out of the active board and restored later
-- Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup
-
-## Required Command Line Tools
+## Requirements
 
 Install these before starting WalleyBoard:
 
@@ -78,13 +36,33 @@ Install these before starting WalleyBoard:
 - `git`
 - `docker`
 
-WalleyBoard uses `git` to verify repositories, create worktrees, diff changes, and merge reviewed work. Ticket execution is Docker-only: the backend prepares an isolated checkout, builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile) on first use, and launches both draft analysis and ticket execution inside that container. The runtime image installs the Codex and Claude Code CLIs itself; on the host, WalleyBoard only requires the matching auth/config directory for the adapter you choose so the container can reuse your existing login state.
+WalleyBoard uses Docker for draft analysis and ticket execution. The backend
+builds the runtime image from
+[`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile)
+on first use and reuses your local agent auth/config from `~/.codex` or
+`~/.claude`, depending on the adapter you choose.
 
-## Packaged CLI
+## Quick Start
 
-WalleyBoard now has a publishable CLI workspace at [`packages/cli`](./packages/cli).
-Once that workspace is published to npm as `walleyboard`, people can launch the
-packaged app with:
+1. Install the required command line tools listed above.
+2. Install dependencies with `npm install`.
+3. Start the backend with `npm run dev:backend`.
+4. Start the frontend with `npm run dev:web`.
+5. Open the Vite URL shown in the frontend terminal, usually `http://127.0.0.1:5173`.
+
+If you want one command to restart both local servers, use `./restart.sh`.
+
+- `./restart.sh`: starts the backend and frontend in the default local dev mode
+- `./restart.sh --no-hot-reload`: starts the backend normally, then builds the frontend and serves it with `vite preview` instead of Vite HMR
+- `./restart.sh --help`: shows the available startup flags
+
+Logs and pid files for this helper live under `~/.walleyboard/dev/`.
+
+## CLI
+
+WalleyBoard also has a publishable CLI workspace at
+[`packages/cli`](./packages/cli). Once published to npm as `walleyboard`, it
+can be launched with:
 
 ```sh
 npx walleyboard
@@ -95,48 +73,26 @@ Optional launcher flags:
 - `npx walleyboard --host 0.0.0.0`
 - `npx walleyboard --port 4310`
 
-To build the publishable package locally from the monorepo:
+To build the package locally from this monorepo:
 
 1. Run `npm install`.
 2. Run `npm run build:cli`.
 3. Publish the workspace with `npm publish --workspace walleyboard --access public`.
 
-## Quick Start
+## Repository Layout
 
-1. Install the required command line tools listed above.
-2. Install dependencies with `npm install`.
-3. Start the backend with `npm run dev:backend`.
-4. Start the frontend with `npm run dev:web`.
-5. Open the Vite URL shown in the frontend terminal, usually `http://127.0.0.1:5173`.
-6. Generate database artifacts later with `npm run db:generate`.
+- `apps/backend`: Fastify backend, WebSocket transport, Docker runtime orchestration, and persistence
+- `apps/web`: React + Mantine frontend for the board UI
+- `packages/cli`: packaged launcher for running WalleyBoard outside the monorepo
+- `packages/contracts`: shared Zod schemas and protocol contracts
+- `packages/db`: Drizzle schema and SQLite migrations
+- `docs`: PRD, implementation notes, and validation writeups
 
-## Dev Startup Script
+## Documentation
 
-If you want one command to restart both local servers, use `./restart.sh`.
-
-- `./restart.sh`: starts the backend and frontend in the default local dev mode
-- `./restart.sh --no-hot-reload`: starts the backend normally, then builds the frontend and serves it with `vite preview` instead of Vite HMR
-- `./restart.sh --help`: shows the available startup flags
-
-Logs and pid files for this helper live under `~/.walleyboard/dev/`.
-
-## Docker Requirement
-
-Docker is a hard requirement for draft analysis and ticket execution. Host execution is no longer supported.
-
-Minimum Docker setup:
-
-1. Install Docker Desktop or Docker Engine.
-2. Start the Docker daemon.
-3. Confirm `docker version` succeeds in the same shell environment where you run `npm run dev:backend`.
-4. Keep enough local Docker permissions to build and run the WalleyBoard runtime image.
-
-On the first draft-analysis or ticket-execution run, WalleyBoard builds the runtime image from [`apps/backend/docker/codex-runtime.Dockerfile`](./apps/backend/docker/codex-runtime.Dockerfile). That image installs Node, Git, ripgrep, the Codex CLI, and the Claude Code CLI. WalleyBoard then mounts the prepared repository checkout at `/workspace` plus the matching host auth/config directory for the selected adapter.
-
-Supported Docker-backed adapters:
-
-1. `codex`: requires a usable host `~/.codex` directory so the container can reuse your existing Codex configuration.
-2. `claude-code`: requires a usable host `~/.claude` directory so the container can reuse your existing Claude Code configuration.
+- Product direction: [ai_walleyboard_prd.md](./ai_walleyboard_prd.md)
+- Current implementation details: [docs/implementation-starter-pack.md](./docs/implementation-starter-pack.md)
+- Validation notes: [docs/validation](./docs/validation)
 
 ## Quality Gates
 
@@ -144,19 +100,6 @@ Supported Docker-backed adapters:
 - `npm run lint`: runs `sizecheck` first, then workspace Biome checks
 - `npm run typecheck`: runs TypeScript checks across all workspaces
 - `npm run test`: runs the backend and web `node:test` suites from the repo root
-
-## Draft Markdown And Screenshots
-
-- Draft descriptions and acceptance criteria are authored as Markdown, stored in SQLite text fields, and previewed before refinement or promotion
-- Ready-ticket Markdown stays in SQLite-backed ticket records too; WalleyBoard does not create standalone ticket Markdown files on disk
-- Pasting a screenshot into the draft description stores the image under the backend's walleyboard-managed artifact path and inserts an artifact-backed Markdown image reference into the draft
-- The image reference stays attached to the same draft through save, reload, refine, revert, and promote-to-ready flows because drafts and ready tickets share a stable `artifact_scope_id`
-
-## Next Milestones
-
-- Add richer validation configuration and override handling
-- Broaden GitHub automation beyond the current gh-backed create/track/reconcile flow
-- Decide whether interrupted sessions should auto-resume or stay manual after restart
 
 ## License
 

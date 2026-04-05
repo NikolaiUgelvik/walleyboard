@@ -44,13 +44,14 @@ Implemented now:
 - artifact-backed Markdown image references for pasted screenshots, preserved by stable `artifact_scope_id` values across save, reload, refine, revert, and draft-to-ready promotion
 - execution workflow that starts a `ready` ticket into a persisted session, prepares a git worktree, supports immediate execution or a planning-first start, launches the selected Codex or Claude Code CLI inside Docker-backed PTY sessions, and keeps follow-up attempts on the same logical session/worktree
 - adapter-managed execution modes with planning-first runs using read-only behavior and implementation runs using workspace-write behavior
-- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request-changes and resume, can launch automatic agent review reruns or one-off manual agent reviews, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row, supports GitHub pull request creation and reconciliation, and merges directly from `review` into the target branch with cleanup
+- review workflow that runs configured validation commands, generates a local review package and diff artifact, supports request-changes and resume, can launch automatic agent review reruns or one-off manual agent reviews, keeps `Create pull request` and `Direct merge` disabled while AI review is still running, exposes card-level diff/terminal/preview/activity actions plus an inspector activity summary row that opens `Overview` and `Timeline` tabs, supports copyable implementation and review prompts from the timeline, supports GitHub pull request creation and reconciliation, and merges directly from `review` into the target branch with cleanup
+- GitHub pull request creation can generate the PR body from the full review timeline context with the configured agent, then fall back to the local template if generation fails
 - ticket lifecycle controls for archive/restore plus interrupted-session restart from scratch
-- conservative restart recovery that preserves active managed Docker containers for interrupted sessions and marks active sessions `interrupted` instead of auto-restoring live execution
+- startup recovery preserves still-live managed Docker containers during cleanup, marks dead active sessions `interrupted` for manual resume on the same worktree, and marks stale agent review runs failed so they can be restarted cleanly
 
 Not yet implemented:
 
-- automatic restoration of a live execution after an application restart
+- automatic UI reattachment to an already-running execution after an application restart
 - richer validation configuration and review-time override handling beyond the current per-repository profiles
 - remote branch cleanup and broader GitHub workflow automation beyond the current create/track/reconcile flow
 
@@ -62,11 +63,14 @@ Not yet implemented:
 - The review flow is `ready -> in_progress -> review -> done`, with request changes or resume moving work back into `in_progress` on the same logical session/worktree.
 - Review tickets default to either `Direct merge` or `Create pull request` from the project setting; once a PR is linked, the review card switches into PR tracking instead of offering duplicate paths.
 - Projects can opt into automatic agent review reruns with a per-ticket run limit, and manual `Start agent review` remains available when review work needs another pass.
+- `Create pull request` and `Direct merge` stay disabled while an AI review run is active for the ticket.
 - The compact left rail keeps inbox and create-project utility tiles gray by default; project tiles stay color-coded and the inbox tile only shifts into its attention color when unread actionable work exists.
-- Tickets expose card-level `Diff`, `Terminal`, `Preview`, and `Activity` actions. The inspector keeps a single clickable activity summary row instead of workspace tabs.
+- Tickets expose card-level `Diff`, `Terminal`, `Preview`, and `Activity` actions. The inspector keeps a single clickable activity summary row that opens an activity modal with `Overview` and `Timeline` tabs.
 - `Diff`, `Terminal`, and `Preview` require a prepared worktree, while `Activity` stays available whenever a ticket still has a session, even after worktree cleanup.
 - The ticket-card `Terminal` action opens a plain xterm.js shell at the worktree root, without take-over or restore-agent controls on that modal surface, and it stays unavailable only while a live agent process still owns the worktree.
 - The `Preview` action starts the ticket dev server when needed, opens a browser tab, and flips to a stop control while that dev server stays running.
+- The activity timeline shows newest items first and lets operators copy raw implementation prompts, AI review prompts, and other prompt-like Markdown entries straight from the UI.
+- Docker-backed prompts and managed artifact paths are translated to in-container mount paths such as `/workspace/...` and `/walleyboard-home/...` before they are passed to the agent runtime.
 - Completed tickets can be archived out of the active board and restored later.
 - Interrupted in-progress work can either resume on the preserved worktree or restart from scratch after cleanup.
 
@@ -179,10 +183,12 @@ Representative current route surface.
 - Planning-first execution pauses in `paused_checkpoint` / awaiting-feedback mode, and approval or requested plan changes resume the same logical session on the prepared worktree.
 - Execution runs through the configured Docker-backed agent CLI with PTY-backed logs, live session input forwarding, explicit stop/resume, requested-changes retries, and a separate plain xterm.js worktree terminal surfaced from the ticket card actions.
 - Successful execution runs validation before review handoff, generates a local review package and persisted diff artifact, can launch automatic agent review reruns or one-off manual agent reviews, surfaces review-ready and waiting action cards, and moves the ticket to `review`.
-- The session workspace UI now uses ticket-card action icons for diff, terminal, preview, and full activity. The inspector keeps only a single activity summary row that opens the same interpreted stream in a modal, and activity remains reachable even after merge cleanup clears worktree state.
+- The session workspace UI now uses ticket-card action icons for diff, terminal, preview, and full activity. The inspector keeps only a single activity summary row that opens an activity modal with `Overview` and `Timeline` tabs, and activity remains reachable even after merge cleanup clears worktree state.
+- The activity timeline renders newest entries first and supports copying raw implementation prompts, AI review prompts, and similar Markdown prompt content directly from the timeline cards.
 - The compact project rail keeps project tiles color-coded, leaves utility tiles gray by default, and surfaces actionable-notification counts plus unread emphasis without turning read-only inbox states into fresh alerts.
 - From `review`, local direct merge to the target branch is implemented, including worktree and local-branch cleanup plus automatic merge-conflict fallback that moves work back to `in_progress` when recovery cannot finish the merge safely.
-- GitHub pull request creation, linked PR tracking, and scheduled/manual reconciliation are implemented through `gh`, including merge completion and changes-requested follow-up handling.
+- GitHub pull request creation, linked PR tracking, and scheduled/manual reconciliation are implemented through `gh`, including merge completion and changes-requested follow-up handling. PR creation now asks the configured agent to draft the PR body from ticket details, patch context, session summaries, review runs, and ticket events before falling back to the local template.
 - Completed tickets can be archived and later restored into the active board, and interrupted sessions can be restarted from scratch after tearing down the preserved workspace.
 - Ticket deletion stops active work when needed, removes persisted ticket/session metadata, and deletes walleyboard-owned local artifacts such as worktrees, local branches, summaries, review outputs, and validation directories.
-- Backend startup marks active sessions and attempts `interrupted`, preserves the existing worktree and branch, keeps matching managed Docker containers from startup cleanup, and leaves resume manual instead of auto-restoring live execution.
+- Backend startup keeps still-live managed Docker containers out of cleanup, marks dead active sessions and attempts `interrupted`, preserves the existing worktree and branch for manual resume, and marks stale running agent reviews failed so they can be restarted cleanly.
+- Docker-backed prompts and persisted artifacts are normalized to container-visible paths before they are handed to agent runs, so review prompts and related artifacts do not leak host absolute paths.
