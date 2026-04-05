@@ -268,6 +268,7 @@ test("runTicketReviewSession streams Docker reviews through a child process", as
 
     assert.equal(spawnProcessCalls, 1);
     assert.equal(activeReviewRuns.size, 1);
+    assert.equal(fakeChild.child.stdin.writableEnded, true);
     fakeChild.emitStdout(
       '{"summary":"Looks good","strengths":["Covers the scene transitions"],',
     );

@@ -26,6 +26,7 @@ import {
   formatMergeRecoveryFailureNote,
   formatMergeRecoveryLaunchLabel,
 } from "./merge-recovery.js";
+import { spawnUnattendedProcessInSession } from "./spawn-unattended-process.js";
 
 export async function runMergeRecovery(input: {
   adapter: AgentCliAdapter;
@@ -128,15 +129,13 @@ export async function runMergeRecovery(input: {
         ticketId: input.ticket.id,
         worktreePath,
       });
-      child = input.dockerRuntime.spawnProcessInSession(
-        input.session.id,
-        run.command,
-        run.args,
-        {
-          cwd: worktreePath,
-          env: ptyEnv,
-        },
-      );
+      child = spawnUnattendedProcessInSession({
+        cwd: worktreePath,
+        dockerRuntime: input.dockerRuntime,
+        env: ptyEnv,
+        run,
+        sessionId: input.session.id,
+      });
     } catch (error) {
       const message =
         error instanceof Error

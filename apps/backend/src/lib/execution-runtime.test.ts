@@ -311,6 +311,7 @@ test("docker-backed execution launches the configured adapter command inside Doc
 
     assert.ok(spawnedArgs);
     const dockerArgs = spawnedArgs as string[];
+    assert.equal(child.stdin.writableEnded, true);
     assert.ok(
       dockerArgs.includes("--dangerously-bypass-approvals-and-sandbox"),
     );
@@ -478,6 +479,7 @@ test("draft refinement launches the configured adapter command inside Docker", (
       ticketId: number;
     };
     const spawnedRun = spawned as { command: string; args: string[] };
+    assert.equal(fakeChild.child.stdin.writableEnded, true);
     assert.equal(capturedContainerInput.worktreePath, repositoryPath);
     assert.equal(capturedContainerInput.ticketId, 0);
     assert.equal(spawnedRun.command, "test-agent");

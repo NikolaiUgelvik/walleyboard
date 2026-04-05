@@ -41,6 +41,14 @@ export function forwardExecutionInput(input: {
     return null;
   }
 
+  if (
+    input.activeSession.stdin.destroyed ||
+    input.activeSession.stdin.writableEnded ||
+    !input.activeSession.stdin.writable
+  ) {
+    return null;
+  }
+
   const attemptId =
     input.store.getSession(input.sessionId)?.current_attempt_id ??
     input.sessionId;

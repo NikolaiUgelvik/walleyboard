@@ -234,6 +234,7 @@ test("runMergeRecovery streams Docker child-process output through the log callb
       ticket: createTicket(),
     });
 
+    assert.equal(child.stdin.writableEnded, true);
     emitStdout(
       '{"summary":"Resolved the conflict and continued the rebase."}\nStill waiting on one more tool check.\n',
     );

@@ -55,6 +55,7 @@ import { buildReferencedTicketContextSections } from "./execution-runtime/refere
 import type { ReviewReadyHandler } from "./execution-runtime/review-ready.js";
 import { runTicketReviewSession } from "./execution-runtime/review-runner.js";
 import { runMergeRecovery } from "./execution-runtime/run-merge-recovery.js";
+import { spawnUnattendedProcessInSession } from "./execution-runtime/spawn-unattended-process.js";
 import {
   closeTrackedWorkspaceTerminals,
   disposeTrackedWorkspaceTerminals,
@@ -610,15 +611,13 @@ export class ExecutionRuntime {
         ticketId: 0,
         worktreePath: repository.path,
       });
-      child = this.#dockerRuntime.spawnProcessInSession(
-        runId,
-        run.command,
-        run.args,
-        {
-          cwd: repository.path,
-          env: processEnv,
-        },
-      );
+      child = spawnUnattendedProcessInSession({
+        cwd: repository.path,
+        dockerRuntime: this.#dockerRuntime,
+        env: processEnv,
+        run,
+        sessionId: runId,
+      });
     } catch (error) {
       this.cleanupExecutionEnvironment(runId);
       clearExecutionActivity(runId);
@@ -958,15 +957,13 @@ export class ExecutionRuntime {
         ticketId: ticket.id,
         worktreePath: session.worktree_path,
       });
-      child = this.#dockerRuntime.spawnProcessInSession(
-        session.id,
-        run.command,
-        run.args,
-        {
-          cwd: session.worktree_path,
-          env: processEnv,
-        },
-      );
+      child = spawnUnattendedProcessInSession({
+        cwd: session.worktree_path,
+        dockerRuntime: this.#dockerRuntime,
+        env: processEnv,
+        run,
+        sessionId: session.id,
+      });
     } catch (error) {
       const message =
         error instanceof Error

@@ -162,6 +162,16 @@ export function runGit(repoPath: string, args: string[]): string {
   );
 }
 
+// Non-TTY Codex treats an open stdin pipe as additional prompt input and waits
+// for EOF before starting. Unattended runs should close stdin immediately.
+export function closeProcessStdin(child: ChildProcessWithoutNullStreams): void {
+  try {
+    child.stdin.end();
+  } catch {
+    // Ignore already-closed stdin streams.
+  }
+}
+
 export function shouldSuppressDockerAdapterLine(
   adapterId: string,
   line: string,

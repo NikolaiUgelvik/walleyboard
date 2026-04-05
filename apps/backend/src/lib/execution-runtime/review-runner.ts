@@ -24,6 +24,7 @@ import {
   hasMeaningfulContent,
   streamChildProcessLines,
 } from "./helpers.js";
+import { spawnUnattendedProcessInSession } from "./spawn-unattended-process.js";
 import { resolveTrackedExit } from "./waiters.js";
 
 export async function runTicketReviewSession(input: {
@@ -93,15 +94,13 @@ export async function runTicketReviewSession(input: {
         ticketId: input.ticket.id,
         worktreePath,
       });
-      child = input.dockerRuntime.spawnProcessInSession(
-        reviewSessionId,
-        run.command,
-        run.args,
-        {
-          cwd: worktreePath,
-          env: buildProcessEnv(),
-        },
-      );
+      child = spawnUnattendedProcessInSession({
+        cwd: worktreePath,
+        dockerRuntime: input.dockerRuntime,
+        env: buildProcessEnv(),
+        run,
+        sessionId: reviewSessionId,
+      });
     } catch (error) {
       reject(
         error instanceof Error
