@@ -1,5 +1,6 @@
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 import { agentLabel as agentLabelForAdapter } from "../features/walleyboard/shared.js";
+import { interpretClaudeActivityLine } from "./SessionActivityFeed.claude.js";
 import {
   describeCommandExecution,
   describeFileChangeActivity,
@@ -552,6 +553,25 @@ export function interpretSessionLog(
     }
     if (isSuppressedCodexEnvelopeEvent(line)) {
       return null;
+    }
+  } else if (session.agent_adapter === "claude-code") {
+    const claudeEvent = interpretClaudeActivityLine(line);
+    if (claudeEvent) {
+      return createActivity(
+        `claude-code-${index}`,
+        claudeEvent.tone,
+        claudeEvent.label,
+        claudeEvent.detail,
+      );
+    }
+
+    const genericAdapterLine = interpretGenericAdapterLine(
+      line,
+      index,
+      session,
+    );
+    if (genericAdapterLine) {
+      return genericAdapterLine;
     }
   } else {
     const genericAdapterLine = interpretGenericAdapterLine(

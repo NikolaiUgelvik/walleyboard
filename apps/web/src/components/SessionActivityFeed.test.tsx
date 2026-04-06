@@ -8,13 +8,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ExecutionSession } from "../../../../packages/contracts/src/index.js";
 import { SessionActivityFeed } from "./SessionActivityFeed.js";
 
-function createSession(): ExecutionSession {
+function createSession(
+  agentAdapter: ExecutionSession["agent_adapter"] = "codex",
+): ExecutionSession {
   return {
     id: "session-1",
     ticket_id: 12,
     project_id: "project-1",
     repo_id: "repo-1",
-    agent_adapter: "codex",
+    agent_adapter: agentAdapter,
     worktree_path: "/tmp/worktree",
     adapter_session_ref: "sess_123",
     status: "running",
@@ -28,7 +30,10 @@ function createSession(): ExecutionSession {
     started_at: "2026-04-01T00:00:00.000Z",
     completed_at: null,
     last_heartbeat_at: "2026-04-01T00:00:00.000Z",
-    last_summary: "Codex is currently working on the ticket.",
+    last_summary:
+      agentAdapter === "claude-code"
+        ? "Claude Code is currently working on the ticket."
+        : "Codex is currently working on the ticket.",
   };
 }
 
@@ -316,6 +321,156 @@ test("renders raw todo list JSON as readable plan activity", () => {
   assert.match(html, /1 more items/);
   assert.match(html, /0\/3 completed/);
   assert.doesNotMatch(html, /&quot;type&quot;:&quot;item\.started&quot;/);
+});
+
+test("renders Claude Bash tool-use JSON as a readable activity row", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          `[claude-code assistant] ${JSON.stringify({
+            type: "assistant",
+            message: {
+              model: "claude-opus-4-6",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "toolu_01SJJ4qygzCgg5oDuM7Q9N4k",
+                  name: "Bash",
+                  input: {
+                    command:
+                      'git add README.md && git commit -m "Add README.md with project documentation template"',
+                  },
+                },
+              ],
+            },
+          })}`,
+        ],
+        session: createSession("claude-code"),
+      }),
+    ),
+  );
+
+  assert.match(html, /Ran command/);
+  assert.match(html, /git add README\.md/);
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;assistant&quot;/);
+  assert.doesNotMatch(html, /tool_use/);
+});
+
+test("renders Claude Write tool-use JSON as a readable file activity row", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          `[claude-code assistant] ${JSON.stringify({
+            type: "assistant",
+            message: {
+              model: "claude-opus-4-6",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "toolu_012kupgTfEX6Wx6Yms4sgVDB",
+                  name: "Write",
+                  input: {
+                    file_path: "/workspace/README.md",
+                    content:
+                      "# claude-test\n\nA brief description of the project.\n\n## Getting Started\n\nProject documentation template",
+                  },
+                },
+              ],
+            },
+          })}`,
+        ],
+        session: createSession("claude-code"),
+      }),
+    ),
+  );
+
+  assert.match(html, /Editing file/);
+  assert.match(html, /README\.md/);
+  assert.doesNotMatch(html, /Project documentation template/);
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;assistant&quot;/);
+});
+
+test("renders Claude file creation tool results as readable activity rows", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          `[claude-code user] ${JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                {
+                  tool_use_id: "toolu_012kupgTfEX6Wx6Yms4sgVDB",
+                  type: "tool_result",
+                  content: "File created successfully at: /workspace/README.md",
+                  is_error: false,
+                },
+              ],
+            },
+            tool_use_result: {
+              type: "create",
+              filePath: "/workspace/README.md",
+              content: "# claude-test",
+            },
+          })}`,
+        ],
+        session: createSession("claude-code"),
+      }),
+    ),
+  );
+
+  assert.match(html, /Created file/);
+  assert.match(html, /README\.md/);
+  assert.doesNotMatch(html, /File created successfully at:/);
+  assert.doesNotMatch(html, /tool_use_result/);
+});
+
+test("renders Claude commit tool results as readable activity rows", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      MantineProvider,
+      null,
+      React.createElement(SessionActivityFeed, {
+        logs: [
+          `[claude-code user] ${JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                {
+                  tool_use_id: "toolu_01SJJ4qygzCgg5oDuM7Q9N4k",
+                  type: "tool_result",
+                  content:
+                    "[claude/ticket-19-create-readme-md-with-pr e3dce4d] Add README.md with project documentation template\n 1 file changed, 37 insertions(+)\n create mode 100644 README.md",
+                  is_error: false,
+                },
+              ],
+            },
+            tool_use_result: {
+              stdout:
+                "[claude/ticket-19-create-readme-md-with-pr e3dce4d] Add README.md with project documentation template\n 1 file changed, 37 insertions(+)\n create mode 100644 README.md",
+            },
+          })}`,
+        ],
+        session: createSession("claude-code"),
+      }),
+    ),
+  );
+
+  assert.match(html, /Created commit/);
+  assert.match(html, /e3dce4d/);
+  assert.match(html, /Add README\.md with project documentation template/);
+  assert.doesNotMatch(html, /tool_use_result/);
+  assert.doesNotMatch(html, /&quot;type&quot;:&quot;user&quot;/);
 });
 
 test("renders summarized todo list events without raw JSON", () => {
