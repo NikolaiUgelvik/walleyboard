@@ -175,7 +175,6 @@ export class ProjectRepository {
       input.color === undefined
         ? normalizeProjectColor(project.color)
         : normalizeProjectColor(input.color);
-    const agentAdapter = project.agent_adapter;
     const draftAnalysisAgentAdapter =
       input.draft_analysis_agent_adapter === undefined
         ? project.draft_analysis_agent_adapter
@@ -260,7 +259,6 @@ export class ProjectRepository {
       .update(projectsTable)
       .set({
         color,
-        agentAdapter,
         draftAnalysisAgentAdapter,
         ticketWorkAgentAdapter,
         executionBackend,

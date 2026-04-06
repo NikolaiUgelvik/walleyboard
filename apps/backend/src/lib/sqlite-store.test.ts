@@ -876,6 +876,44 @@ test("updateProject allows Claude Code on the Docker backend", () => {
   }
 });
 
+test("startTicket uses ticket_work_agent_adapter independently of draft_analysis_agent_adapter", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-scope-routing-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Split Scope Project",
+      repository: { name: "repo", path: join(tempDir, "repo") },
+    });
+
+    store.updateProject(project.id, {
+      draft_analysis_agent_adapter: "codex",
+      ticket_work_agent_adapter: "claude-code",
+    });
+
+    const updated = store.getProject(project.id);
+    assert.equal(updated?.draft_analysis_agent_adapter, "codex");
+    assert.equal(updated?.ticket_work_agent_adapter, "claude-code");
+
+    const ticket = createReadyTicket(store, project.id, repository.id, 1);
+    const started = store.startTicket(ticket.id, false, {
+      workingBranch: "claude/ticket-1",
+      worktreePath: join(tempDir, "worktrees", "ticket-1"),
+      logs: ["Started split-scope session"],
+    });
+
+    assert.equal(
+      started.session.agent_adapter,
+      "claude-code",
+      "session should capture ticket_work_agent_adapter, not draft_analysis_agent_adapter",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("projects persist disabled MCP server selections", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-project-mcps-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");
@@ -969,7 +1007,10 @@ test("started sessions snapshot the project's agent adapter", () => {
       logs: ["Started adapter snapshot session"],
     });
 
-    assert.equal(started.session.agent_adapter, project.agent_adapter);
+    assert.equal(
+      started.session.agent_adapter,
+      project.ticket_work_agent_adapter,
+    );
     assert.equal(started.session.adapter_session_ref, null);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
