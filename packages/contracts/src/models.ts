@@ -28,7 +28,13 @@ export const ticketTypeSchema = z.enum([
   "research",
 ]);
 
-export const reasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
+export const reasoningEffortSchema = z.enum([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
 export const agentAdapterSchema = z.enum(["codex", "claude-code"]);
 export const executionBackendSchema = z.enum(["docker"]);
 export const reviewActionSchema = z.enum(["direct_merge", "pull_request"]);

@@ -76,7 +76,9 @@ const codexModelPresetValues = [
 const claudeCodeModelPresetValues = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
-  "claude-haiku-4-5",
+  "claude-opus-4-5-20251101",
+  "claude-haiku-4-5-20251001",
+  "claude-sonnet-4-5-20250929",
 ] as const;
 
 export function getModelPresetOptions(adapter: AgentAdapter) {
@@ -92,13 +94,30 @@ export function getModelPresetOptions(adapter: AgentAdapter) {
 }
 
 export const projectModelPresetOptions = getModelPresetOptions("codex");
-export const reasoningEffortOptions = [
+
+const codexReasoningEffortOptions = [
   { value: "default", label: "Default" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
   { value: "xhigh", label: "Extra high" },
 ];
+
+const claudeReasoningEffortOptions = [
+  { value: "default", label: "Default" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "max", label: "Max" },
+];
+
+export const reasoningEffortOptions = codexReasoningEffortOptions;
+
+export function getReasoningEffortOptions(adapter: AgentAdapter) {
+  return adapter === "claude-code"
+    ? claudeReasoningEffortOptions
+    : codexReasoningEffortOptions;
+}
 export const reviewActionOptions = [
   { label: "Direct merge", value: "direct_merge" },
   { label: "Create pull request", value: "pull_request" },

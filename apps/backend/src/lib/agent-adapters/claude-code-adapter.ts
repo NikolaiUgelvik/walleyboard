@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 
-import type { Project } from "../../../../../packages/contracts/src/index.js";
+import type {
+  Project,
+  ReasoningEffort,
+} from "../../../../../packages/contracts/src/index.js";
 import { dockerHostAddress } from "../docker-runtime.js";
 import {
   hasMeaningfulContent,
   normalizeOptionalModel,
+  normalizeOptionalReasoningEffort,
   truncate,
 } from "../execution-runtime/helpers.js";
 import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
@@ -123,9 +127,16 @@ export function buildDraftShellCommand(
   };
 }
 
-function appendClaudeCodeModelArgs(args: string[], model: string | null): void {
+function appendClaudeCodeModelArgs(
+  args: string[],
+  model: string | null,
+  reasoningEffort: ReasoningEffort | null,
+): void {
   if (model) {
     args.push("--model", model);
+  }
+  if (reasoningEffort) {
+    args.push("--effort", reasoningEffort);
   }
 }
 
@@ -415,14 +426,20 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
           ? project.draft_analysis_model
           : project.ticket_work_model,
       ),
-      // Claude Code does not support reasoning effort configuration.
-      reasoningEffort: null,
+      reasoningEffort: normalizeOptionalReasoningEffort(
+        scope === "draft"
+          ? project.draft_analysis_reasoning_effort
+          : project.ticket_work_reasoning_effort,
+      ),
     };
   }
 
   buildDraftRun(input: DraftRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
-    const { model } = this.resolveModelSelection(input.project, "draft");
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "draft",
+    );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const basePrompt =
       input.mode === "refine"
@@ -453,7 +470,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       ),
     });
     const claudeArgs = ["-p", prompt];
-    appendClaudeCodeModelArgs(claudeArgs, model);
+    appendClaudeCodeModelArgs(claudeArgs, model, reasoningEffort);
     if (!input.mcpPort) {
       throw new Error("mcpPort is required for Claude Code draft runs.");
     }
@@ -479,7 +496,10 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildExecutionRun(input: ExecutionRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
-    const { model } = this.resolveModelSelection(input.project, "ticket");
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "ticket",
+    );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
@@ -523,7 +543,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       input.executionMode === "plan" ? "plan" : "full-access",
     );
 
-    appendClaudeCodeModelArgs(args, model);
+    appendClaudeCodeModelArgs(args, model, reasoningEffort);
 
     // Execution runs are spawned via PTY (spawnPty). Claude Code has no
     // --output-file or --output-last-message flag, and wrapping in a shell
@@ -546,7 +566,10 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildMergeConflictRun(input: MergeConflictRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
-    const { model } = this.resolveModelSelection(input.project, "ticket");
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "ticket",
+    );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
@@ -582,7 +605,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     args.push("-p", prompt, "--output-format", "stream-json", "--verbose");
     appendClaudePermissionArgs(args, "full-access");
 
-    appendClaudeCodeModelArgs(args, model);
+    appendClaudeCodeModelArgs(args, model, reasoningEffort);
 
     // Merge conflict runs stream through PTY just like the main execution
     // path. We still spawn `claude` directly because wrapping stream-json
@@ -599,7 +622,10 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildReviewRun(input: ReviewRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
-    const { model } = this.resolveModelSelection(input.project, "ticket");
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "ticket",
+    );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
@@ -630,7 +656,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       throw new Error("mcpPort is required for Claude Code review runs.");
     }
     const claudeArgs = ["-p", prompt];
-    appendClaudeCodeModelArgs(claudeArgs, model);
+    appendClaudeCodeModelArgs(claudeArgs, model, reasoningEffort);
     const shellCommand = buildClaudeStructuredOutputRun({
       allowedTools: buildWalleyboardAllowedTools(
         enabledMcpServers,
@@ -653,7 +679,10 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
 
   buildPullRequestBodyRun(input: PullRequestBodyRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
-    const { model } = this.resolveModelSelection(input.project, "draft");
+    const { model, reasoningEffort } = this.resolveModelSelection(
+      input.project,
+      "draft",
+    );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
@@ -696,7 +725,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       );
     }
     const claudeArgs = ["-p", prompt];
-    appendClaudeCodeModelArgs(claudeArgs, model);
+    appendClaudeCodeModelArgs(claudeArgs, model, reasoningEffort);
     const shellCommand = buildClaudeStructuredOutputRun({
       allowedTools: buildWalleyboardAllowedTools(
         enabledMcpServers,

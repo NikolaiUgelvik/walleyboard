@@ -926,6 +926,75 @@ test("ClaudeCodeAdapter.resolveModelSelection: draft scope uses draft_analysis_m
   assert.equal(selection.model, "claude-haiku-3-5-20241022");
 });
 
+test("ClaudeCodeAdapter.resolveModelSelection: reasoning effort is read from project config", () => {
+  const adapter = createAdapter();
+  const project = createProject({ ticket_work_reasoning_effort: "high" });
+  const selection = adapter.resolveModelSelection(project, "ticket");
+  assert.equal(selection.reasoningEffort, "high");
+});
+
+test("ClaudeCodeAdapter.resolveModelSelection: draft scope uses draft reasoning effort", () => {
+  const adapter = createAdapter();
+  const project = createProject({
+    draft_analysis_reasoning_effort: "max",
+    ticket_work_reasoning_effort: "low",
+  });
+  const selection = adapter.resolveModelSelection(project, "draft");
+  assert.equal(selection.reasoningEffort, "max");
+});
+
+test("ClaudeCodeAdapter.buildDraftRun: includes --effort when reasoning effort is set", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildDraftRun({
+    draft: createDraft(),
+    mcpPort: 9999,
+    mode: "refine",
+    outputPath: createWorkspaceOutputPath(),
+    project: createProject({ draft_analysis_reasoning_effort: "max" }),
+    resultSchema: draftResultSchema,
+    repository: createRepository(),
+    useDockerRuntime: true,
+  });
+  const args = run.args.join(" ");
+  assert.ok(args.includes("--effort max"), `Expected --effort max in: ${args}`);
+});
+
+test("ClaudeCodeAdapter.buildDraftRun: omits --effort when reasoning effort is null", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildDraftRun({
+    draft: createDraft(),
+    mcpPort: 9999,
+    mode: "refine",
+    outputPath: createWorkspaceOutputPath(),
+    project: createProject({ draft_analysis_reasoning_effort: null }),
+    resultSchema: draftResultSchema,
+    repository: createRepository(),
+    useDockerRuntime: true,
+  });
+  const args = run.args.join(" ");
+  assert.ok(!args.includes("--effort"), `Expected no --effort in: ${args}`);
+});
+
+test("ClaudeCodeAdapter.buildExecutionRun: includes --effort when reasoning effort is set", () => {
+  const adapter = createAdapter();
+  const run = adapter.buildExecutionRun({
+    executionMode: "implementation",
+    extraInstructions: [],
+    outputPath: createWorkspaceOutputPath(),
+    planSummary: null,
+    project: createProject({ ticket_work_reasoning_effort: "high" }),
+    repository: createRepository(),
+    session: createSession(),
+    ticket: createTicket(),
+    useDockerRuntime: true,
+  });
+  const args = run.args.join(" ");
+  assert.ok(
+    args.includes("--effort high"),
+    `Expected --effort high in: ${args}`,
+  );
+});
+
 test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   const adapter = createAdapter();
   const tool = buildWalleyboardToolDefinition({

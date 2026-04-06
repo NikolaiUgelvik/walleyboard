@@ -8,6 +8,7 @@ import {
   NumberInput,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -17,10 +18,10 @@ import {
 
 import {
   getModelPresetOptions,
+  getReasoningEffortOptions,
   modelPlaceholder,
   ProjectAgentAdapterSelect,
   ProjectColorSwatchPicker,
-  reasoningEffortOptions,
   reviewActionOptions,
 } from "./shared.js";
 import {
@@ -285,60 +286,41 @@ export function ProjectConfigurationModals({
               </Stack>
 
               <Stack gap="sm">
-                <Text fw={600}>Draft Analysis</Text>
-                <Text size="sm" c="dimmed">
-                  Agent and model used for Refine and Questions? draft analysis
-                  runs.
-                </Text>
-                <ProjectAgentAdapterSelect
-                  label="Draft analysis agent CLI"
-                  value={controller.projectOptionsDraftAgentAdapter}
-                  onChange={(value) => {
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsDraftAgentAdapter(value);
-                    controller.setProjectOptionsDraftModelPreset("default");
-                  }}
-                />
-                <Select
-                  label="Draft analysis model"
-                  data={getModelPresetOptions(
-                    controller.projectOptionsDraftAgentAdapter,
-                  )}
-                  value={controller.projectOptionsDraftModelPreset}
-                  onChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
-
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsDraftModelPreset(
-                      value as typeof controller.projectOptionsDraftModelPreset,
-                    );
-                  }}
-                />
-                {controller.projectOptionsDraftModelPreset === "custom" ? (
-                  <TextInput
-                    label="Custom draft model ID"
-                    placeholder={modelPlaceholder(
-                      controller.projectOptionsDraftAgentAdapter,
-                    )}
-                    value={controller.projectOptionsDraftModelCustom}
-                    onChange={(event) => {
+                <Text fw={600}>Draft analysis agent</Text>
+                <SimpleGrid cols={3}>
+                  <ProjectAgentAdapterSelect
+                    label="Agent"
+                    value={controller.projectOptionsDraftAgentAdapter}
+                    onChange={(value) => {
                       controller.setProjectOptionsFormError(null);
                       controller.updateProjectMutation.reset();
-                      controller.setProjectOptionsDraftModelCustom(
-                        event.currentTarget.value,
+                      controller.setProjectOptionsDraftAgentAdapter(value);
+                      controller.setProjectOptionsDraftModelPreset("default");
+                    }}
+                  />
+                  <Select
+                    label="Model"
+                    data={getModelPresetOptions(
+                      controller.projectOptionsDraftAgentAdapter,
+                    )}
+                    value={controller.projectOptionsDraftModelPreset}
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
+
+                      controller.setProjectOptionsFormError(null);
+                      controller.updateProjectMutation.reset();
+                      controller.setProjectOptionsDraftModelPreset(
+                        value as typeof controller.projectOptionsDraftModelPreset,
                       );
                     }}
                   />
-                ) : null}
-                {controller.projectOptionsDraftAgentAdapter !==
-                "claude-code" ? (
                   <Select
-                    label="Draft analysis reasoning effort"
-                    data={reasoningEffortOptions}
+                    label="Reasoning effort"
+                    data={getReasoningEffortOptions(
+                      controller.projectOptionsDraftAgentAdapter,
+                    )}
                     value={controller.projectOptionsDraftReasoningEffort}
                     onChange={(value) => {
                       if (!value) {
@@ -352,64 +334,61 @@ export function ProjectConfigurationModals({
                       );
                     }}
                   />
-                ) : null}
-              </Stack>
-
-              <Stack gap="sm">
-                <Text fw={600}>Ticket Work</Text>
-                <Text size="sm" c="dimmed">
-                  Agent and model used when the agent starts or resumes ticket
-                  implementation work.
-                </Text>
-                <ProjectAgentAdapterSelect
-                  label="Ticket work agent CLI"
-                  value={controller.projectOptionsTicketAgentAdapter}
-                  onChange={(value) => {
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsTicketAgentAdapter(value);
-                    controller.setProjectOptionsTicketModelPreset("default");
-                  }}
-                />
-                <Select
-                  label="Ticket work model"
-                  data={getModelPresetOptions(
-                    controller.projectOptionsTicketAgentAdapter,
-                  )}
-                  value={controller.projectOptionsTicketModelPreset}
-                  onChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
-
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsTicketModelPreset(
-                      value as typeof controller.projectOptionsTicketModelPreset,
-                    );
-                  }}
-                />
-                {controller.projectOptionsTicketModelPreset === "custom" ? (
+                </SimpleGrid>
+                {controller.projectOptionsDraftModelPreset === "custom" ? (
                   <TextInput
-                    label="Custom ticket work model ID"
+                    label="Custom model ID"
                     placeholder={modelPlaceholder(
-                      controller.projectOptionsTicketAgentAdapter,
+                      controller.projectOptionsDraftAgentAdapter,
                     )}
-                    value={controller.projectOptionsTicketModelCustom}
+                    value={controller.projectOptionsDraftModelCustom}
                     onChange={(event) => {
                       controller.setProjectOptionsFormError(null);
                       controller.updateProjectMutation.reset();
-                      controller.setProjectOptionsTicketModelCustom(
+                      controller.setProjectOptionsDraftModelCustom(
                         event.currentTarget.value,
                       );
                     }}
                   />
                 ) : null}
-                {controller.projectOptionsTicketAgentAdapter !==
-                "claude-code" ? (
+              </Stack>
+
+              <Stack gap="sm">
+                <Text fw={600}>Ticket work agent</Text>
+                <SimpleGrid cols={3}>
+                  <ProjectAgentAdapterSelect
+                    label="Agent"
+                    value={controller.projectOptionsTicketAgentAdapter}
+                    onChange={(value) => {
+                      controller.setProjectOptionsFormError(null);
+                      controller.updateProjectMutation.reset();
+                      controller.setProjectOptionsTicketAgentAdapter(value);
+                      controller.setProjectOptionsTicketModelPreset("default");
+                    }}
+                  />
                   <Select
-                    label="Ticket work reasoning effort"
-                    data={reasoningEffortOptions}
+                    label="Model"
+                    data={getModelPresetOptions(
+                      controller.projectOptionsTicketAgentAdapter,
+                    )}
+                    value={controller.projectOptionsTicketModelPreset}
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
+
+                      controller.setProjectOptionsFormError(null);
+                      controller.updateProjectMutation.reset();
+                      controller.setProjectOptionsTicketModelPreset(
+                        value as typeof controller.projectOptionsTicketModelPreset,
+                      );
+                    }}
+                  />
+                  <Select
+                    label="Reasoning effort"
+                    data={getReasoningEffortOptions(
+                      controller.projectOptionsTicketAgentAdapter,
+                    )}
                     value={controller.projectOptionsTicketReasoningEffort}
                     onChange={(value) => {
                       if (!value) {
@@ -420,6 +399,22 @@ export function ProjectConfigurationModals({
                       controller.updateProjectMutation.reset();
                       controller.setProjectOptionsTicketReasoningEffort(
                         value as typeof controller.projectOptionsTicketReasoningEffort,
+                      );
+                    }}
+                  />
+                </SimpleGrid>
+                {controller.projectOptionsTicketModelPreset === "custom" ? (
+                  <TextInput
+                    label="Custom model ID"
+                    placeholder={modelPlaceholder(
+                      controller.projectOptionsTicketAgentAdapter,
+                    )}
+                    value={controller.projectOptionsTicketModelCustom}
+                    onChange={(event) => {
+                      controller.setProjectOptionsFormError(null);
+                      controller.updateProjectMutation.reset();
+                      controller.setProjectOptionsTicketModelCustom(
+                        event.currentTarget.value,
                       );
                     }}
                   />
