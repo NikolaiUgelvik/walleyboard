@@ -599,7 +599,8 @@ test("AgentReviewService does not restart implementation when Claude becomes una
       },
     });
     store.updateProject(project.id, {
-      agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
     const draft = store.createDraft({

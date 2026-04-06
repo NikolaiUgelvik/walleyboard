@@ -134,7 +134,8 @@ test("project updates reject the Claude adapter when Claude is unavailable", asy
         method: "PATCH",
         url: `/projects/${project.id}`,
         payload: {
-          agent_adapter: "claude-code",
+          draft_analysis_agent_adapter: "claude-code",
+          ticket_work_agent_adapter: "claude-code",
         },
       });
 
@@ -143,7 +144,10 @@ test("project updates reject the Claude adapter when Claude is unavailable", asy
         error:
           "Claude Code CLI is unavailable on this machine: config directory /tmp/.claude does not exist.",
       });
-      assert.equal(store.getProject(project.id)?.agent_adapter, "codex");
+      assert.equal(
+        store.getProject(project.id)?.draft_analysis_agent_adapter,
+        "codex",
+      );
     } finally {
       await app.close();
     }

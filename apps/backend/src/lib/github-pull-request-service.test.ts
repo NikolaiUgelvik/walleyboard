@@ -1247,7 +1247,8 @@ test("changes requested does not restart Claude when the execution backend is un
     const fixture = createTicketFixture(tempDir);
     assert.ok(fixture.ticket);
     fixture.store.updateProject(fixture.project.id, {
-      agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
     const originalHead = runGit(fixture.runtime.worktreePath, [

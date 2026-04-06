@@ -727,6 +727,8 @@ test("queued Claude sessions fail before launch when Claude is unavailable", () 
   };
   const project = createProject({
     agent_adapter: "claude-code",
+    draft_analysis_agent_adapter: "claude-code",
+    ticket_work_agent_adapter: "claude-code",
   });
   const dockerRuntime = {
     assertAvailable() {

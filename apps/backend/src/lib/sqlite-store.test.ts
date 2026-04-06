@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import {
+  createMigratedWalleyboardDatabase,
+  projectsTable,
+} from "@walleyboard/db";
+import { eq } from "drizzle-orm";
+
 import { collectTicketReferenceIds } from "../../../../packages/contracts/src/index.js";
 
 import { SqliteStore } from "./sqlite-store.js";
@@ -737,14 +743,108 @@ test("projects preserve persisted Claude adapter records", () => {
     });
 
     store.updateProject(project.id, {
-      agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
     const reloadedStore = new SqliteStore(databasePath);
-    assert.equal(
-      reloadedStore.getProject(project.id)?.agent_adapter,
-      "claude-code",
-    );
+    const reloaded = reloadedStore.getProject(project.id);
+    assert.equal(reloaded?.draft_analysis_agent_adapter, "claude-code");
+    assert.equal(reloaded?.ticket_work_agent_adapter, "claude-code");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("new projects have explicit per-scope adapter defaults", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-scope-defaults-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project } = store.createProject({
+      name: "Scope Defaults",
+      repository: { name: "repo", path: join(tempDir, "repo") },
+    });
+
+    assert.equal(project.draft_analysis_agent_adapter, "codex");
+    assert.equal(project.ticket_work_agent_adapter, "codex");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("mapProject falls back per-scope adapters to legacy agent_adapter when columns are null", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-scope-fallback-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Fallback Project",
+      repository: { name: "repo", path: join(tempDir, "repo") },
+    });
+
+    // Simulate a pre-migration project: set agent_adapter to claude-code
+    // and null out both per-scope columns as they would be before migration.
+    const handle = createMigratedWalleyboardDatabase(databasePath);
+    handle.db
+      .update(projectsTable)
+      .set({
+        agentAdapter: "claude-code",
+        draftAnalysisAgentAdapter: null,
+        ticketWorkAgentAdapter: null,
+      })
+      .where(eq(projectsTable.id, project.id))
+      .run();
+    handle.close();
+
+    const reloaded = new SqliteStore(databasePath);
+    const loaded = reloaded.getProject(project.id);
+    assert.equal(loaded?.agent_adapter, "claude-code");
+    assert.equal(loaded?.draft_analysis_agent_adapter, "claude-code");
+    assert.equal(loaded?.ticket_work_agent_adapter, "claude-code");
+    reloaded.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("explicit per-scope adapter values override legacy agent_adapter fallback", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-project-scope-override-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Override Project",
+      repository: { name: "repo", path: join(tempDir, "repo") },
+    });
+
+    // Set legacy to claude-code but per-scope columns to codex explicitly.
+    const handle = createMigratedWalleyboardDatabase(databasePath);
+    handle.db
+      .update(projectsTable)
+      .set({
+        agentAdapter: "claude-code",
+        draftAnalysisAgentAdapter: "codex",
+        ticketWorkAgentAdapter: "codex",
+      })
+      .where(eq(projectsTable.id, project.id))
+      .run();
+    handle.close();
+
+    const reloaded = new SqliteStore(databasePath);
+    const loaded = reloaded.getProject(project.id);
+    assert.equal(loaded?.agent_adapter, "claude-code");
+    assert.equal(loaded?.draft_analysis_agent_adapter, "codex");
+    assert.equal(loaded?.ticket_work_agent_adapter, "codex");
+    reloaded.close();
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -765,11 +865,12 @@ test("updateProject allows Claude Code on the Docker backend", () => {
     });
 
     const updatedProject = store.updateProject(project.id, {
-      agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
-    assert.equal(updatedProject.agent_adapter, "claude-code");
-    assert.equal(store.getProject(project.id)?.agent_adapter, "claude-code");
+    assert.equal(updatedProject.draft_analysis_agent_adapter, "claude-code");
+    assert.equal(updatedProject.ticket_work_agent_adapter, "claude-code");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

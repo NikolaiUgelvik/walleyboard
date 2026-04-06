@@ -1122,7 +1122,6 @@ test("start route blocks Claude projects when Claude is unavailable", async () =
     const ticket = createReadyTicket(store, project.id, repository.id);
 
     store.updateProject(project.id, {
-      agent_adapter: "claude-code",
       draft_analysis_agent_adapter: "claude-code",
       ticket_work_agent_adapter: "claude-code",
     });
@@ -1224,7 +1223,6 @@ test("resume route blocks Claude projects when Claude is unavailable", async () 
     });
 
     store.updateProject(project.id, {
-      agent_adapter: "claude-code",
       draft_analysis_agent_adapter: "claude-code",
       ticket_work_agent_adapter: "claude-code",
     });
@@ -1336,7 +1334,6 @@ test("request-changes blocks Claude relaunch when Claude is unavailable", async 
     });
 
     store.updateProject(project.id, {
-      agent_adapter: "claude-code",
       draft_analysis_agent_adapter: "claude-code",
       ticket_work_agent_adapter: "claude-code",
     });

@@ -84,7 +84,7 @@ test("draft analysis routes return 409 when Claude is unavailable", async () => 
       },
     });
     store.updateProject(project.id, {
-      agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
     });
     const draft = store.createDraft({
       project_id: project.id,

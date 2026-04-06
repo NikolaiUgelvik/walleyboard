@@ -37,7 +37,6 @@ export const createProjectInputSchema = z.object({
 
 export const updateProjectInputSchema = z.object({
   color: projectColorSchema.optional(),
-  agent_adapter: agentAdapterSchema.optional(),
   draft_analysis_agent_adapter: agentAdapterSchema.optional(),
   ticket_work_agent_adapter: agentAdapterSchema.optional(),
   execution_backend: executionBackendSchema.optional(),

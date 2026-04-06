@@ -101,8 +101,8 @@ export class ProjectRepository {
         name: input.name.trim(),
         color,
         agentAdapter: "codex",
-        draftAnalysisAgentAdapter: null,
-        ticketWorkAgentAdapter: null,
+        draftAnalysisAgentAdapter: "codex",
+        ticketWorkAgentAdapter: "codex",
         executionBackend: "docker",
         disabledMcpServers: [],
         automaticAgentReview: false,
@@ -175,10 +175,7 @@ export class ProjectRepository {
       input.color === undefined
         ? normalizeProjectColor(project.color)
         : normalizeProjectColor(input.color);
-    const agentAdapter =
-      input.agent_adapter === undefined
-        ? project.agent_adapter
-        : input.agent_adapter;
+    const agentAdapter = project.agent_adapter;
     const draftAnalysisAgentAdapter =
       input.draft_analysis_agent_adapter === undefined
         ? project.draft_analysis_agent_adapter
