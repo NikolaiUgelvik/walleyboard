@@ -12,6 +12,7 @@ import {
 } from "../execution-runtime/helpers.js";
 import { listEnabledProjectCodexMcpServers } from "./codex-config.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
+import { augmentPromptForAgent } from "./prompt-augmentation.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -437,7 +438,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       useDockerRuntime: input.useDockerRuntime,
       worktreePath: input.repository.path,
     });
-    const prompt =
+    const basePrompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
             input.draft,
@@ -451,6 +452,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
             enabledMcpServers,
             input.instruction,
           );
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: input.mode === "refine" ? "draft_refine" : "draft_questions",
+      basePrompt,
+    });
     const args = ["exec", "--json", "--output-last-message", outputPath];
 
     if (input.useDockerRuntime) {
@@ -490,7 +496,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       useDockerRuntime: input.useDockerRuntime,
       worktreePath: input.session.worktree_path,
     });
-    const prompt =
+    const basePrompt =
       input.executionMode === "plan"
         ? buildPlanPrompt(
             input.ticket,
@@ -505,6 +511,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
             input.extraInstructions,
             input.planSummary,
           );
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: input.executionMode === "plan" ? "plan" : "implementation",
+      basePrompt,
+    });
     const args = resumeSessionRef
       ? ["exec", "resume", "--json"]
       : ["exec", "--json"];
@@ -542,7 +553,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       "ticket",
     );
     const enabledMcpServers = listEnabledProjectCodexMcpServers(input.project);
-    const prompt = buildMergeConflictPrompt({
+    const basePrompt = buildMergeConflictPrompt({
       ticket: input.ticket,
       repository: input.repository,
       enabledMcpServers,
@@ -551,6 +562,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       stage: input.stage,
       conflictedFiles: input.conflictedFiles,
       failureMessage: input.failureMessage,
+    });
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: "merge_conflict",
+      basePrompt,
     });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
@@ -597,12 +613,17 @@ export class CodexCliAdapter implements AgentCliAdapter {
       "ticket",
     );
     const worktreePath = input.session.worktree_path;
-    const prompt = buildReviewPrompt({
+    const basePrompt = buildReviewPrompt({
       repository: input.repository,
       reviewPackage: input.reviewPackage,
       ticket: input.ticket,
       useDockerRuntime: input.useDockerRuntime,
       worktreePath,
+    });
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: "review",
+      basePrompt,
     });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
@@ -637,7 +658,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       input.project,
       "draft",
     );
-    const prompt = buildPullRequestBodyPrompt({
+    const basePrompt = buildPullRequestBodyPrompt({
       attempts: input.attempts,
       baseBranch: input.baseBranch,
       headBranch: input.headBranch,
@@ -653,6 +674,11 @@ export class CodexCliAdapter implements AgentCliAdapter {
       sessionLogs: input.sessionLogs,
       ticket: input.ticket,
       ticketEvents: input.ticketEvents,
+    });
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: "pull_request_body",
+      basePrompt,
     });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,

@@ -9,6 +9,7 @@ import {
 import { claudeCodeDockerSpec } from "./claude-code-runtime.js";
 import { listEnabledProjectClaudeMcpServers } from "./claude-config.js";
 import { resolveDockerManagedOutputPath } from "./docker-paths.js";
+import { augmentPromptForAgent } from "./prompt-augmentation.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
@@ -455,7 +456,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       input.outputPath,
       input.repository.path,
     );
-    const prompt =
+    const basePrompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
             input.draft,
@@ -469,6 +470,11 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
             enabledMcpServers,
             input.instruction,
           );
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: input.mode === "refine" ? "draft_refine" : "draft_questions",
+      basePrompt,
+    });
     const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");
 
@@ -503,7 +509,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       );
     }
     const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
-    const prompt =
+    const basePrompt =
       input.executionMode === "plan"
         ? buildPlanPrompt(
             input.ticket,
@@ -518,6 +524,11 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
             input.extraInstructions,
             input.planSummary,
           );
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: input.executionMode === "plan" ? "plan" : "implementation",
+      basePrompt,
+    });
 
     const resumeRef = hasMeaningfulContent(input.session.adapter_session_ref)
       ? input.session.adapter_session_ref
@@ -565,7 +576,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       );
     }
     const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
-    const prompt = buildMergeConflictPrompt({
+    const basePrompt = buildMergeConflictPrompt({
       ticket: input.ticket,
       repository: input.repository,
       enabledMcpServers,
@@ -574,6 +585,11 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       stage: input.stage,
       conflictedFiles: input.conflictedFiles,
       failureMessage: input.failureMessage,
+    });
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: "merge_conflict",
+      basePrompt,
     });
 
     const resumeRef = hasMeaningfulContent(input.session.adapter_session_ref)
@@ -612,12 +628,17 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       );
     }
     const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
-    const prompt = buildReviewPrompt({
+    const basePrompt = buildReviewPrompt({
       repository: input.repository,
       reviewPackage: input.reviewPackage,
       ticket: input.ticket,
       useDockerRuntime: input.useDockerRuntime,
       worktreePath,
+    });
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: "review",
+      basePrompt,
     });
     const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");
@@ -648,7 +669,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       );
     }
     const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
-    const prompt = buildPullRequestBodyPrompt({
+    const basePrompt = buildPullRequestBodyPrompt({
       attempts: input.attempts,
       baseBranch: input.baseBranch,
       headBranch: input.headBranch,
@@ -664,6 +685,11 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       sessionLogs: input.sessionLogs,
       ticket: input.ticket,
       ticketEvents: input.ticketEvents,
+    });
+    const prompt = augmentPromptForAgent({
+      adapterId: this.id,
+      promptKind: "pull_request_body",
+      basePrompt,
     });
     const claudeArgs = ["-p", prompt, "--output-format", "json"];
     appendClaudePermissionArgs(claudeArgs, "read-only");

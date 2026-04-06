@@ -193,6 +193,10 @@ function resolveWalleyBoardHomeForTest(): string {
   return process.env.WALLEYBOARD_HOME ?? join(homedir(), ".walleyboard");
 }
 
+function assertNoAgentSpecificGuardrails(prompt: string): void {
+  assert.doesNotMatch(prompt, /## Agent-Specific Guardrails/);
+}
+
 test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspace", () => {
   const adapter = new CodexCliAdapter();
   const session = createSession();
@@ -224,6 +228,7 @@ test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspac
     run.outputPath,
     "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1.txt",
   );
+  assertNoAgentSpecificGuardrails(run.prompt);
 });
 
 test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", () => {
@@ -255,6 +260,7 @@ test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", (
   );
   assert.ok(run.args.includes("--dangerously-bypass-approvals-and-sandbox"));
   assert.equal(run.args.includes("--full-auto"), false);
+  assertNoAgentSpecificGuardrails(run.prompt);
   assert.ok(run.dockerSpec);
 });
 
@@ -275,6 +281,7 @@ test("CodexCliAdapter.buildDraftRun uses full-auto outside Docker", () => {
     run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
     false,
   );
+  assertNoAgentSpecificGuardrails(run.prompt);
   assert.equal(run.dockerSpec, null);
 });
 
@@ -329,6 +336,7 @@ test("CodexCliAdapter.buildMergeConflictRun resumes an existing adapter session 
     run.args[outputFlagIndex + 1],
     "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1-merge-conflict.txt",
   );
+  assertNoAgentSpecificGuardrails(run.prompt);
 });
 
 test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is disabled", () => {
@@ -350,6 +358,7 @@ test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is 
   assert.match(run.prompt, /## Review Goal/);
   assert.match(run.prompt, /## Output JSON/);
   assert.match(run.prompt, /- Diff patch: `\/tmp\/ticket-5\.patch`/);
+  assertNoAgentSpecificGuardrails(run.prompt);
   assert.equal(
     run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
     false,
@@ -400,6 +409,7 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
     run.prompt,
     /- Diff patch: `Persisted patch artifact is not available inside Docker\.`/,
   );
+  assertNoAgentSpecificGuardrails(run.prompt);
   assert.ok(run.dockerSpec);
 });
 
@@ -469,6 +479,7 @@ test("CodexCliAdapter.buildPullRequestBodyRun uses the draft model with read-onl
   assert.ok(run.args.includes('model_reasoning_effort="medium"'));
   assert.match(run.prompt, /## Pull Request Goal/);
   assert.match(run.prompt, /## Output JSON/);
+  assertNoAgentSpecificGuardrails(run.prompt);
   assert.equal(run.dockerSpec, null);
 });
 

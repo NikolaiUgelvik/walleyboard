@@ -246,6 +246,20 @@ function assertClaudeDockerSpec(
   });
 }
 
+function assertClaudeJsonOnlyGuardrails(prompt: string): void {
+  assert.match(prompt, /## Agent-Specific Guardrails/);
+  assert.match(prompt, /You must output ONLY valid JSON\./);
+  assert.match(prompt, /- Do not include any explanations/);
+  assert.match(prompt, /- Do not include markdown fences \(no ```json\)/);
+  assert.match(prompt, /- Do not include any text before or after the JSON/);
+  assert.match(prompt, /- Output must be parseable with JSON\.parse/);
+  assert.match(prompt, /If you cannot comply, output: \{"error": "invalid"\}/);
+}
+
+function assertNoAgentSpecificGuardrails(prompt: string): void {
+  assert.doesNotMatch(prompt, /## Agent-Specific Guardrails/);
+}
+
 // ---------------------------------------------------------------------------
 // shellEscape
 // ---------------------------------------------------------------------------
@@ -920,6 +934,7 @@ test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
     run.outputPath,
     "/walleyboard-home/agent-summaries/project-1/output.json",
   );
+  assertClaudeJsonOnlyGuardrails(run.prompt);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -935,6 +950,7 @@ test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
   });
   assert.equal(run.command, "bash");
   assert.ok((run.args[1] ?? "").includes("claude"));
+  assertClaudeJsonOnlyGuardrails(run.prompt);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -956,6 +972,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "plan");
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
+  assertNoAgentSpecificGuardrails(run.prompt);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -977,6 +994,7 @@ test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
+  assertNoAgentSpecificGuardrails(run.prompt);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -1095,6 +1113,7 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
+  assertNoAgentSpecificGuardrails(run.prompt);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -1299,6 +1318,7 @@ test("ClaudeCodeAdapter.buildReviewRun uses read-only permissions and the shared
   assert.match(run.prompt, /## Review Goal/);
   assert.match(run.prompt, /## Evidence/);
   assert.match(run.prompt, /## Output JSON/);
+  assertClaudeJsonOnlyGuardrails(run.prompt);
 });
 
 test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and read-only permissions", () => {
@@ -1328,6 +1348,7 @@ test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and read-on
   assert.match(run.args[1] ?? "", /'--permission-mode' 'plan'/);
   assert.match(run.prompt, /## Pull Request Goal/);
   assert.match(run.prompt, /## Output JSON/);
+  assertClaudeJsonOnlyGuardrails(run.prompt);
   assert.equal(
     run.outputPath,
     "/walleyboard-home/agent-summaries/project-1/pr-body.json",
