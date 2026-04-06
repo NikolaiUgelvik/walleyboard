@@ -2,7 +2,6 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="${WALLEYBOARD_HOME:-$HOME/.walleyboard}"
 RUN_DIR="$STATE_DIR/dev"
 BACKEND_PID_FILE="$RUN_DIR/backend.pid"
@@ -10,28 +9,38 @@ FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 BACKEND_PORT=4000
 FRONTEND_PORT=5173
 
-stop_managed_process() {
+# Stop a service by finding the actual process listening on its port (most
+# reliable), falling back to the PID file.  Waits up to 10 seconds for a
+# graceful shutdown before force-killing.
+stop_service() {
   local name="$1"
   local pid_file="$2"
+  local port="$3"
 
-  if [[ ! -f "$pid_file" ]]; then
+  local saved_pid=""
+  if [[ -f "$pid_file" ]]; then
+    saved_pid="$(cat "$pid_file")"
+    rm -f "$pid_file"
+  fi
+
+  # The process that actually owns the port is the one we need to signal.
+  # The PID file may point at a setsid/nohup wrapper that already exited.
+  local listener_pid
+  listener_pid="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
+
+  local target_pid="${listener_pid:-$saved_pid}"
+
+  if [[ -z "$target_pid" ]] || ! kill -0 "$target_pid" 2>/dev/null; then
     return 0
   fi
 
-  local pid
-  pid="$(cat "$pid_file")"
-  rm -f "$pid_file"
+  echo "Stopping $name (pid $target_pid)..."
+  kill "$target_pid" 2>/dev/null || true
 
-  if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
-    echo "$name is not running (stale pid file removed)."
-    return 0
-  fi
-
-  echo "Stopping $name (pid $pid)..."
-  kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
-
-  for _ in $(seq 1 20); do
-    if ! kill -0 "$pid" 2>/dev/null; then
+  # Wait up to 10 seconds for the process to exit and the port to free up.
+  for _ in $(seq 1 40); do
+    if ! kill -0 "$target_pid" 2>/dev/null &&
+       ! lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "$name stopped."
       return 0
     fi
@@ -39,48 +48,20 @@ stop_managed_process() {
   done
 
   echo "$name did not exit after SIGTERM, forcing stop."
-  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-}
+  kill -KILL "$target_pid" 2>/dev/null || true
 
-stop_listener_on_port() {
-  local name="$1"
-  local port="$2"
-  local listener_pids
-
-  listener_pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-  if [[ -z "$listener_pids" ]]; then
-    return 0
+  # Also force-kill any remaining listeners on the port (e.g. children that
+  # inherited the socket).
+  local remaining
+  remaining="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$remaining" ]]; then
+    echo "$remaining" | xargs kill -KILL 2>/dev/null || true
   fi
-
-  while IFS= read -r pid; do
-    [[ -z "$pid" ]] && continue
-    if ! kill -0 "$pid" 2>/dev/null; then
-      continue
-    fi
-
-    echo "Stopping $name listener on port $port (pid $pid)..."
-    kill "$pid" 2>/dev/null || true
-
-    for _ in $(seq 1 20); do
-      if ! kill -0 "$pid" 2>/dev/null; then
-        break
-      fi
-      sleep 0.25
-    done
-
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "$name listener on port $port did not exit after SIGTERM, forcing stop."
-      kill -KILL "$pid" 2>/dev/null || true
-    fi
-  done <<<"$listener_pids"
 }
 
 mkdir -p "$RUN_DIR"
 
-stop_managed_process "backend" "$BACKEND_PID_FILE"
-stop_managed_process "frontend" "$FRONTEND_PID_FILE"
-
-stop_listener_on_port "backend" "$BACKEND_PORT"
-stop_listener_on_port "frontend" "$FRONTEND_PORT"
+stop_service "backend" "$BACKEND_PID_FILE" "$BACKEND_PORT"
+stop_service "frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT"
 
 echo "All managed dev servers are stopped."

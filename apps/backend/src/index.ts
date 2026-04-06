@@ -21,15 +21,17 @@ const closeApp = async (signal: string) => {
     app.log.error(error);
     process.exitCode = 1;
   }
+
+  // Force exit so lingering handles (timers, sockets) don't keep the process
+  // alive after cleanup has finished.
+  process.exit();
 };
 
-process.on("SIGINT", () => {
-  void closeApp("SIGINT");
-});
-
-process.on("SIGTERM", () => {
-  void closeApp("SIGTERM");
-});
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => {
+    void closeApp(signal);
+  });
+}
 
 try {
   await app.listen({ host, port });
