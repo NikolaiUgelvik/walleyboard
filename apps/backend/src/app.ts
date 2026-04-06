@@ -247,7 +247,6 @@ export async function createApp(options: CreateAppOptions = {}) {
     store,
     executionRuntime,
     ticketWorkspaceService,
-    getClaudeCodeAvailability,
   });
   await app.register(draftRoutes, { eventHub, store, executionRuntime });
   await app.register(ticketRoutes, {

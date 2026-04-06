@@ -2,17 +2,14 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 
 import {
   createProjectInputSchema,
+  type Project,
   updateProjectInputSchema,
 } from "../../../../packages/contracts/src/index.js";
 
-import {
-  assertAgentAdapterAvailable,
-  createClaudeCodeAvailabilityGetter,
-  type GetClaudeCodeAvailability,
-} from "../lib/claude-code-availability.js";
 import { makeCommandAck } from "../lib/command-ack.js";
 import type { ExecutionRuntime } from "../lib/execution-runtime.js";
 import { parseBody, parsePositiveInt } from "../lib/http.js";
+import { assertProjectAgentAdapterSaveAvailable } from "../lib/project-agent-adapter-save-validation.js";
 import {
   commandRouteRateLimit,
   repositoryRouteRateLimit,
@@ -37,10 +34,12 @@ import {
 } from "./workspace-terminal-socket.js";
 
 type ProjectRouteOptions = {
+  assertProjectAgentAdapterSaveAvailable?: (
+    agentAdapter: Project["agent_adapter"],
+  ) => void;
   store: ProjectRoutePersistence;
   executionRuntime: ExecutionRuntime;
   ticketWorkspaceService: TicketWorkspaceService;
-  getClaudeCodeAvailability?: GetClaudeCodeAvailability;
 };
 
 export function handleRepositoryWorkspaceTerminalConnection(
@@ -85,10 +84,11 @@ const maxTicketReferenceSearchResults = 20;
 export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
   app,
   {
+    assertProjectAgentAdapterSaveAvailable:
+      assertProjectAgentAdapterSaveAvailableImpl = assertProjectAgentAdapterSaveAvailable,
     store,
     executionRuntime,
     ticketWorkspaceService,
-    getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(),
   },
 ) => {
   const getProjectRepositoryPair = (
@@ -140,9 +140,8 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
         throw new Error("Project not found");
       }
 
-      assertAgentAdapterAvailable(
+      assertProjectAgentAdapterSaveAvailableImpl(
         input.agent_adapter ?? existingProject.agent_adapter,
-        getClaudeCodeAvailability,
       );
 
       const project = store.updateProject(projectId, input);

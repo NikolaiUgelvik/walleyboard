@@ -93,10 +93,14 @@ export function ProjectConfigurationModals({
                   ticket sessions inside the managed runtime container.
                 </Text>
                 <Text size="sm" c="dimmed">
-                  Codex and Claude Code both run inside that Docker runtime.
-                  Adapter availability is validated when you save project
-                  options or start work, rather than through background health
-                  polling.
+                  Codex and Claude Code both run inside that Docker runtime when
+                  work starts.
+                </Text>
+                <Text size="sm" c="dimmed">
+                  Saving project options only checks that the matching host
+                  config directory and CLI binary are present. Ticket start and
+                  resume still require Docker because the actual agent session
+                  runs inside the managed container.
                 </Text>
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (

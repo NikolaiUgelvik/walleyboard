@@ -9,7 +9,11 @@ import {
   selectEnabledMcpServers,
 } from "./mcp-server-config.js";
 
-const codexConfigPath = join(homedir(), ".codex", "config.toml");
+export function resolveCodexConfigHome(): string {
+  return join(homedir(), ".codex");
+}
+
+const codexConfigPath = join(resolveCodexConfigHome(), "config.toml");
 const mcpServerHeaderPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)\]\s*$/;
 const mcpServerSectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)(?:[.\]])/;
 

@@ -120,13 +120,12 @@ test("project updates reject the Claude adapter when Claude is unavailable", asy
     try {
       await app.register(fastifyRateLimit, { global: false });
       await app.register(projectRoutes, {
+        assertProjectAgentAdapterSaveAvailable: () => {
+          throw new Error(
+            "Claude Code CLI is unavailable on this machine: config directory /tmp/.claude does not exist.",
+          );
+        },
         executionRuntime: {} as never,
-        getClaudeCodeAvailability: () => ({
-          available: false,
-          detected_path: "/usr/local/bin/claude",
-          error:
-            "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
-        }),
         store,
         ticketWorkspaceService: {} as never,
       });
@@ -142,7 +141,7 @@ test("project updates reject the Claude adapter when Claude is unavailable", asy
       assert.equal(response.statusCode, 409);
       assert.deepEqual(response.json(), {
         error:
-          "Claude Code CLI is unavailable: Claude config directory /tmp/.claude is empty.",
+          "Claude Code CLI is unavailable on this machine: config directory /tmp/.claude does not exist.",
       });
       assert.equal(store.getProject(project.id)?.agent_adapter, "codex");
     } finally {
