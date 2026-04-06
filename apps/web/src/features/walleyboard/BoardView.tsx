@@ -924,7 +924,9 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                       </Group>
                                       <MarkdownContent
                                         className="markdown-muted markdown-small"
-                                        content={draft.description_draft}
+                                        content={getBoardTicketDescriptionPreview(
+                                          draft.description_draft,
+                                        )}
                                         onTicketReferenceNavigate={
                                           controller.navigateToTicketReference
                                         }
