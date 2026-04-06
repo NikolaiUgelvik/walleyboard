@@ -283,12 +283,22 @@ test("disposeTicket waits for watcher initialization before cleanup", async () =
       "main",
     ]);
 
+    let resolveDeferral!: () => void;
+    const deferralPromise = new Promise<void>((resolve) => {
+      resolveDeferral = resolve;
+    });
+
+    workspaceService.deferWatcher(51, deferralPromise);
+
     await workspaceService.getSummary({
       targetBranch: "main",
       ticketId: 51,
       workingBranch: "race-branch",
       worktreePath,
     });
+
+    resolveDeferral();
+    await new Promise((r) => setTimeout(r, 50));
 
     await workspaceService.disposeTicket(51);
 

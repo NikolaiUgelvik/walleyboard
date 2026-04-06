@@ -811,17 +811,28 @@ export class TicketWorkspaceService {
       }),
     );
 
-    const unsubscribes: Promise<void>[] = [];
+    const cleanups: Promise<void>[] = [];
     for (const registration of this.#watchRegistrations.values()) {
       if (registration.debounceTimer) {
         clearTimeout(registration.debounceTimer);
       }
 
-      if (registration.subscription) {
-        unsubscribes.push(registration.subscription.unsubscribe());
-      }
+      cleanups.push(
+        (async () => {
+          if (registration.startPromise) {
+            await registration.startPromise;
+          }
+          if (registration.subscription) {
+            try {
+              await registration.subscription.unsubscribe();
+            } catch {
+              // Watcher path may already be removed
+            }
+          }
+        })(),
+      );
     }
-    await Promise.all(unsubscribes);
+    await Promise.all(cleanups);
 
     this.#watchRegistrations.clear();
     this.#summaryCache.clear();
