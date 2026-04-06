@@ -835,6 +835,7 @@ export class TicketWorkspaceService {
     await Promise.all(cleanups);
 
     this.#watchRegistrations.clear();
+    this.#watcherDeferrals.clear();
     this.#summaryCache.clear();
   }
 

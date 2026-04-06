@@ -298,7 +298,6 @@ test("disposeTicket waits for watcher initialization before cleanup", async () =
     });
 
     resolveDeferral();
-    await new Promise((r) => setTimeout(r, 50));
 
     await workspaceService.disposeTicket(51);
 
