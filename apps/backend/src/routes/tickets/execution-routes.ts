@@ -116,10 +116,13 @@ export function registerTicketExecutionRoutes(
           ticket,
           session,
         });
-        runPreWorktreeCommand(
+        const preWorktree = runPreWorktreeCommand(
           runtime.worktreePath,
           project.pre_worktree_command,
         );
+        if (preWorktree.started) {
+          ticketWorkspaceService.deferWatcher(ticket.id, preWorktree.done);
+        }
 
         reply.send(
           makeCommandAck(
@@ -466,10 +469,16 @@ export function registerTicketExecutionRoutes(
             ? { additionalInstruction: input.reason }
             : {}),
         });
-        runPreWorktreeCommand(
+        const preWorktree = runPreWorktreeCommand(
           runtime.worktreePath,
           project.pre_worktree_command,
         );
+        if (preWorktree.started) {
+          ticketWorkspaceService.deferWatcher(
+            restartResult.ticket.id,
+            preWorktree.done,
+          );
+        }
 
         reply.send(
           makeCommandAck(true, "Execution session restarted from scratch", {

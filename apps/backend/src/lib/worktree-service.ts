@@ -386,10 +386,10 @@ function addWorkspaceExclude(workspacePath: string, pattern: string): void {
 export function runPreWorktreeCommand(
   worktreePath: string,
   command: string | null | undefined,
-): boolean {
+): { started: boolean; done: Promise<void> } {
   const normalizedCommand = normalizeOptionalCommand(command);
   if (!normalizedCommand || !existsSync(worktreePath)) {
-    return false;
+    return { started: false, done: Promise.resolve() };
   }
 
   const child = spawn(worktreeCommandShell, ["-lc", normalizedCommand], {
@@ -399,7 +399,13 @@ export function runPreWorktreeCommand(
     stdio: "ignore",
   });
   child.unref();
-  return true;
+
+  const done = new Promise<void>((resolve) => {
+    child.on("exit", () => resolve());
+    child.on("error", () => resolve());
+  });
+
+  return { started: true, done };
 }
 
 export type PreparedWorktreeRemovalResult = {

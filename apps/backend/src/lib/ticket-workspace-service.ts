@@ -20,6 +20,7 @@ type GitExecError = Error & {
 
 type WatchRegistration = {
   debounceTimer: NodeJS.Timeout | null;
+  ignoredPrefixes: Set<string>;
   pendingRerun: boolean;
   recomputePromise: Promise<void> | null;
   summaryContext: {
@@ -238,6 +239,48 @@ function isGitInternalPath(filename: string | null): boolean {
   }
 
   return filename === ".git" || filename.startsWith(".git/");
+}
+
+/**
+ * Parse the worktree's .gitignore for directory patterns so the fs.watch
+ * callback can cheaply skip paths under ignored directories (e.g.
+ * node_modules).  Only top-level directory patterns are collected — this
+ * is a best-effort filter to avoid inotify storms, not a full gitignore
+ * implementation.
+ */
+function collectIgnoredDirectoryPrefixes(worktreePath: string): Set<string> {
+  const prefixes = new Set<string>();
+  try {
+    const content = readFileSync(`${worktreePath}/.gitignore`, "utf8");
+    for (const raw of content.split("\n")) {
+      const line = raw.trim();
+      if (line.length === 0 || line.startsWith("#")) {
+        continue;
+      }
+      // Skip negation patterns.
+      if (line.startsWith("!")) {
+        continue;
+      }
+      // Strip trailing slash and leading slash — we only care about the
+      // directory name as a path prefix.
+      const name = line.replace(/\/+$/, "").replace(/^\/+/, "");
+      if (name.length > 0 && !name.includes("*")) {
+        prefixes.add(`${name}/`);
+      }
+    }
+  } catch {
+    // No .gitignore or unreadable — return empty set.
+  }
+  return prefixes;
+}
+
+function isIgnoredPath(filename: string, prefixes: Set<string>): boolean {
+  for (const prefix of prefixes) {
+    if (filename.startsWith(prefix) || filename === prefix.slice(0, -1)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function getTicketPreviewKey(ticketId: number): string {
@@ -532,6 +575,7 @@ export class TicketWorkspaceService {
   readonly #previews = new Map<string, PreviewRuntime>();
   readonly #summaryCache = new Map<string, TicketWorkspaceSummary>();
   readonly #watchRegistrations = new Map<number, WatchRegistration>();
+  readonly #watcherDeferrals = new Map<number, Promise<void>>();
   readonly #previewRuntimeDependencies: PreviewRuntimeDependencies;
 
   constructor(options: {
@@ -558,6 +602,17 @@ export class TicketWorkspaceService {
       waitForPort,
       ...options.previewRuntimeDependencies,
     };
+  }
+
+  deferWatcher(ticketId: number, readyPromise: Promise<void>): void {
+    this.#watcherDeferrals.set(
+      ticketId,
+      readyPromise
+        .catch(() => {})
+        .finally(() => {
+          this.#watcherDeferrals.delete(ticketId);
+        }),
+    );
   }
 
   async getDiff(input: {
@@ -1224,29 +1279,78 @@ export class TicketWorkspaceService {
       return;
     }
 
+    const deferral = this.#watcherDeferrals.get(input.ticketId);
+    if (deferral) {
+      // Pre-worktree command is still running (e.g. npm install).
+      // Create a placeholder registration so repeated calls are no-ops,
+      // then start the real watcher once the deferral resolves.
+      this.#watchRegistrations.set(input.ticketId, {
+        debounceTimer: null,
+        ignoredPrefixes: new Set(),
+        pendingRerun: false,
+        recomputePromise: null,
+        summaryContext: input,
+        watchers: [],
+      });
+      void deferral.then(() => {
+        const reg = this.#watchRegistrations.get(input.ticketId);
+        if (reg && reg.watchers.length === 0) {
+          this.#startWatchers(input, reg);
+        }
+      });
+      return;
+    }
+
+    const registration: WatchRegistration = {
+      debounceTimer: null,
+      ignoredPrefixes: new Set(),
+      pendingRerun: false,
+      recomputePromise: null,
+      summaryContext: input,
+      watchers: [],
+    };
+    this.#watchRegistrations.set(input.ticketId, registration);
+    this.#startWatchers(input, registration);
+  }
+
+  #startWatchers(
+    input: {
+      ticketId: number;
+      worktreePath: string;
+    },
+    registration: WatchRegistration,
+  ): void {
+    // Build ignored prefixes from .gitignore so the watcher callback can
+    // cheaply skip paths under directories like node_modules.
+    registration.ignoredPrefixes = collectIgnoredDirectoryPrefixes(
+      input.worktreePath,
+    );
+
     const scheduleUpdate = (filename: string | null) => {
       if (isGitInternalPath(filename)) {
         return;
       }
-
-      const registration = this.#watchRegistrations.get(input.ticketId);
-      if (!registration) {
+      if (filename && isIgnoredPath(filename, registration.ignoredPrefixes)) {
         return;
       }
 
-      if (registration.debounceTimer) {
-        clearTimeout(registration.debounceTimer);
+      const reg = this.#watchRegistrations.get(input.ticketId);
+      if (!reg) {
+        return;
       }
 
-      registration.debounceTimer = setTimeout(() => {
-        registration.debounceTimer = null;
+      if (reg.debounceTimer) {
+        clearTimeout(reg.debounceTimer);
+      }
+
+      reg.debounceTimer = setTimeout(() => {
+        reg.debounceTimer = null;
         void this.#recomputeSummary(input.ticketId);
       }, 300);
     };
 
-    const watchers: FSWatcher[] = [];
     try {
-      watchers.push(
+      registration.watchers.push(
         watch(
           input.worktreePath,
           { recursive: true },
@@ -1256,20 +1360,12 @@ export class TicketWorkspaceService {
         ),
       );
     } catch {
-      watchers.push(
+      registration.watchers.push(
         watch(input.worktreePath, (_eventType, filename) => {
           scheduleUpdate(filename ?? null);
         }),
       );
     }
-
-    this.#watchRegistrations.set(input.ticketId, {
-      debounceTimer: null,
-      pendingRerun: false,
-      recomputePromise: null,
-      summaryContext: input,
-      watchers,
-    });
   }
 
   #publishWorkspaceUpdate(
