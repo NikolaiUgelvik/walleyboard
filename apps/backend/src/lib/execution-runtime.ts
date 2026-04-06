@@ -576,7 +576,6 @@ export class ExecutionRuntime {
     if (session.status === "queued") {
       return;
     }
-    this.assertProjectExecutionBackendAvailable(project);
     if (!session.worktree_path) {
       throw new Error("Execution session has no worktree path");
     }
@@ -685,6 +684,7 @@ export class ExecutionRuntime {
           `${adapter.label} does not provide a Docker execution configuration.`,
         );
       }
+      const t0 = performance.now();
       this.#dockerRuntime.ensureSessionContainer({
         configFileOverrides: resolveProjectAgentConfigFileOverrides(
           adapter.id,
@@ -696,6 +696,12 @@ export class ExecutionRuntime {
         ticketId: ticket.id,
         worktreePath: session.worktree_path,
       });
+      const t1 = performance.now();
+      if (t1 - t0 > 500) {
+        console.warn(
+          `[startExecution] ensureSessionContainer took ${Math.round(t1 - t0)}ms`,
+        );
+      }
       child = spawnUnattendedProcessInSession({
         cwd: session.worktree_path,
         dockerRuntime: this.#dockerRuntime,
@@ -888,6 +894,10 @@ export class ExecutionRuntime {
         resolveTrackedExit(this.#exitWaiters, session.id, true);
       },
       onExit: async ({ exitCode }) => {
+        console.warn(
+          `[onExit] session=${session.id} exitCode=${exitCode} ticketId=${ticket.id}`,
+        );
+        const _tExit0 = performance.now();
         const stopReason = this.#stoppingSessions.get(session.id);
         if (stopReason) {
           this.#stoppingSessions.delete(session.id);
@@ -910,7 +920,14 @@ export class ExecutionRuntime {
           writeFileSync(outputSummaryPath, bestOutputContent, "utf8");
           finalSummary = bestOutputContent.trim();
         }
+        const tCleanup0 = performance.now();
         this.cleanupExecutionEnvironment(session.id);
+        const tCleanup1 = performance.now();
+        if (tCleanup1 - tCleanup0 > 500) {
+          console.warn(
+            `[onExit] cleanupExecutionEnvironment took ${Math.round(tCleanup1 - tCleanup0)}ms`,
+          );
+        }
 
         if (exitCode === 0) {
           const summary =
@@ -1011,6 +1028,7 @@ export class ExecutionRuntime {
     let diffRef = "";
 
     try {
+      const tGit0 = performance.now();
       commitRefs = runGit(worktreePath, [
         "log",
         "--format=%H",
@@ -1019,6 +1037,7 @@ export class ExecutionRuntime {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
+      const tGit1 = performance.now();
 
       if (commitRefs.length === 0) {
         throw new Error(
@@ -1030,6 +1049,10 @@ export class ExecutionRuntime {
         "diff",
         `${input.targetBranch}...HEAD`,
       ]);
+      const tGit2 = performance.now();
+      console.warn(
+        `[#finishSuccess] ticketId=${input.ticketId} git-log=${Math.round(tGit1 - tGit0)}ms git-diff=${Math.round(tGit2 - tGit1)}ms diffLength=${diff.length}`,
+      );
       diffRef = writeReviewDiff(input.project, input.ticketId, diff);
     } catch (error) {
       const reason =

@@ -448,8 +448,11 @@ export class DockerRuntimeManager implements DockerRuntime {
     ticketId: number;
     worktreePath: string;
   }): SessionContainer {
+    const tsc0 = performance.now();
     this.assertAvailable();
+    const tsc1 = performance.now();
     this.#ensureRuntimeImage(input.dockerSpec);
+    const tsc2 = performance.now();
     const configHomePath = this.#resolveConfigHomePath(
       input.dockerSpec.configMountPath,
     );
@@ -466,8 +469,11 @@ export class DockerRuntimeManager implements DockerRuntime {
     });
 
     const name = buildContainerName(this.#repoRootHash, input.sessionId);
+    const tsc3 = performance.now();
     this.#removeContainerIfPresent(name);
+    const tsc4 = performance.now();
     this.#ensureNetwork();
+    const tsc5 = performance.now();
 
     const containerId = this.#runDocker([
       "run",
@@ -503,6 +509,10 @@ export class DockerRuntimeManager implements DockerRuntime {
       "-f",
       "/dev/null",
     ]);
+    const tsc6 = performance.now();
+    console.warn(
+      `[ensureSessionContainer] assertAvailable=${Math.round(tsc1 - tsc0)}ms ensureImage=${Math.round(tsc2 - tsc1)}ms removeOld=${Math.round(tsc4 - tsc3)}ms ensureNetwork=${Math.round(tsc5 - tsc4)}ms dockerRun=${Math.round(tsc6 - tsc5)}ms total=${Math.round(tsc6 - tsc0)}ms`,
+    );
 
     const container = {
       dockerSpec: input.dockerSpec,
