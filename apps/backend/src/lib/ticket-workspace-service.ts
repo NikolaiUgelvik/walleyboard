@@ -811,6 +811,8 @@ export class TicketWorkspaceService {
       }),
     );
 
+    await Promise.all(this.#watcherDeferrals.values());
+
     const cleanups: Promise<void>[] = [];
     for (const registration of this.#watchRegistrations.values()) {
       if (registration.debounceTimer) {
@@ -873,6 +875,7 @@ export class TicketWorkspaceService {
     }
 
     this.#watchRegistrations.delete(ticketId);
+    this.#watcherDeferrals.delete(ticketId);
   }
 
   #getSummaryCacheKey(ticketId: number, worktreePath: string): string {
