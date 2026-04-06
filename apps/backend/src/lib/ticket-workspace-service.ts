@@ -827,9 +827,7 @@ export class TicketWorkspaceService {
           if (registration.subscription) {
             try {
               await registration.subscription.unsubscribe();
-            } catch {
-              // Watcher path may already be removed
-            }
+            } catch {}
           }
         })(),
       );
@@ -869,9 +867,7 @@ export class TicketWorkspaceService {
     if (watchRegistration.subscription) {
       try {
         await watchRegistration.subscription.unsubscribe();
-      } catch {
-        // Watcher path may already be removed (e.g. worktree deleted during merge)
-      }
+      } catch {}
     }
 
     this.#watchRegistrations.delete(ticketId);
