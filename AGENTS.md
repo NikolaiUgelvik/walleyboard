@@ -5,6 +5,12 @@
 - Use Conventional Commits for commit messages, for example `feat: ...`, `fix: ...`, or `chore: ...`.
 
 
+## Backend changes
+
+- Be very careful when modifying backend code. Never introduce blocking calls, long-running synchronous operations, or unbounded loops that can block the API or the main event loop.
+- Prefer non-blocking, asynchronous patterns for I/O, network requests, and any potentially slow operations.
+- If a new feature requires heavy computation or waiting, offload it so it does not starve other requests.
+
 ## Testing approach
 
 - Never create throwaway test scripts or ad hoc verification files
