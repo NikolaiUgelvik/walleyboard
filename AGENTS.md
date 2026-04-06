@@ -2,6 +2,7 @@
 
 - If the line-count limit in `scripts/check-production-file-sizes.mjs` is hit, refactor the code into smaller units instead of trying to squeeze under the limit by removing whitespace or otherwise making the file harder to read.
 - Never leak host absolute paths into Docker-backed agent prompts, commands, or artifacts. If a Docker run needs a file path, translate it to the mounted in-container path such as `/workspace/...` or `/walleyboard-home/...` before passing it along.
+- Use Conventional Commits for commit messages, for example `feat: ...`, `fix: ...`, or `chore: ...`.
 
 
 ## Testing approach
