@@ -220,7 +220,10 @@ test("restart route recreates the worktree and launches a fresh attempt", async 
       additionalInstruction?: string;
     }> = [];
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       closeWorkspaceTerminals() {},
       cleanupExecutionEnvironment() {},
       hasActiveExecution() {
@@ -350,7 +353,10 @@ test("edit route reopens a ready ticket as a draft without losing its content", 
     });
 
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       cleanupExecutionEnvironment() {},
       closeWorkspaceTerminals() {},
       hasActiveExecution() {
@@ -1117,6 +1123,8 @@ test("start route blocks Claude projects when Claude is unavailable", async () =
 
     store.updateProject(project.id, {
       agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
     let startExecutionCalls = 0;
@@ -1132,7 +1140,10 @@ test("start route blocks Claude projects when Claude is unavailable", async () =
         } as never,
         eventHub: new EventHub(),
         executionRuntime: {
-          assertProjectExecutionBackendAvailable() {},
+          assertProjectExecutionBackendAvailable(
+            _project: unknown,
+            _agentAdapter: unknown,
+          ) {},
           hasActiveExecution() {
             return false;
           },
@@ -1214,6 +1225,8 @@ test("resume route blocks Claude projects when Claude is unavailable", async () 
 
     store.updateProject(project.id, {
       agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
     let startExecutionCalls = 0;
@@ -1229,7 +1242,10 @@ test("resume route blocks Claude projects when Claude is unavailable", async () 
         } as never,
         eventHub: new EventHub(),
         executionRuntime: {
-          assertProjectExecutionBackendAvailable() {},
+          assertProjectExecutionBackendAvailable(
+            _project: unknown,
+            _agentAdapter: unknown,
+          ) {},
           hasActiveExecution() {
             return false;
           },
@@ -1321,6 +1337,8 @@ test("request-changes blocks Claude relaunch when Claude is unavailable", async 
 
     store.updateProject(project.id, {
       agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
 
     let startExecutionCalls = 0;
@@ -1336,7 +1354,10 @@ test("request-changes blocks Claude relaunch when Claude is unavailable", async 
         } as never,
         eventHub: new EventHub(),
         executionRuntime: {
-          assertProjectExecutionBackendAvailable() {
+          assertProjectExecutionBackendAvailable(
+            _project: unknown,
+            _agentAdapter: unknown,
+          ) {
             throw new Error(claudeUnavailableError);
           },
           hasActiveExecution() {

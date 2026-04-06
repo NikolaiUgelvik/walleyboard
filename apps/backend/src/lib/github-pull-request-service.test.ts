@@ -177,7 +177,10 @@ function createService(
   const previewStops: number[] = [];
   const disposedTickets: number[] = [];
   const executionRuntime = {
-    assertProjectExecutionBackendAvailable() {
+    assertProjectExecutionBackendAvailable(
+      _project: unknown,
+      _agentAdapter: unknown,
+    ) {
       options?.onAssertProjectExecutionBackendAvailable?.();
     },
     closeWorkspaceTerminals(sessionId: string, exitMessage: string) {

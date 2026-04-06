@@ -99,7 +99,10 @@ test("AgentReviewService reruns automatic review until no actionable findings re
     let reviewInvocationCount = 0;
     let resumedReviewPackageCount = 0;
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       hasActiveExecution() {
         return false;
       },
@@ -242,7 +245,10 @@ test("AgentReviewService runs manual review only once even when it finds issues"
     let reviewInvocationCount = 0;
     let resumedReviewPackageCount = 0;
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       hasActiveExecution() {
         return false;
       },
@@ -366,7 +372,10 @@ test("AgentReviewService stops automatic reruns at the configured limit without 
     let reviewInvocationCount = 0;
     let resumedReviewPackageCount = 0;
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       hasActiveExecution() {
         return false;
       },
@@ -508,7 +517,10 @@ test("AgentReviewService stops a running review without restarting implementatio
     let startExecutionCalls = 0;
     const stopReviewRunCalls: string[] = [];
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       hasActiveExecution() {
         return false;
       },
@@ -628,7 +640,10 @@ test("AgentReviewService does not restart implementation when Claude becomes una
     let availabilityChecks = 0;
     let startExecutionCalls = 0;
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {
         availabilityChecks += 1;
         if (availabilityChecks > 1) {
           throw new Error(claudeUnavailableError);
@@ -734,7 +749,10 @@ test("AgentReviewService stops a stale persisted running review without an activ
 
     const stopReviewRunCalls: string[] = [];
     const executionRuntime = {
-      assertProjectExecutionBackendAvailable() {},
+      assertProjectExecutionBackendAvailable(
+        _project: unknown,
+        _agentAdapter: unknown,
+      ) {},
       hasActiveExecution() {
         return false;
       },

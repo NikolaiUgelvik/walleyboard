@@ -241,7 +241,8 @@ export async function saveProjectOptionsRequest(
   projectId: string,
   body: {
     color: string;
-    agent_adapter: AgentAdapter;
+    draft_analysis_agent_adapter: AgentAdapter;
+    ticket_work_agent_adapter: AgentAdapter;
     disabled_mcp_servers: string[];
     automatic_agent_review: boolean;
     automatic_agent_review_run_limit: number;

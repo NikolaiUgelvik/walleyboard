@@ -152,6 +152,8 @@ function createController(input?: {
     name: "Project One",
     color: "#2563EB",
     agent_adapter: "codex",
+    draft_analysis_agent_adapter: "codex",
+    ticket_work_agent_adapter: "codex",
     execution_backend: "docker",
     disabled_mcp_servers: [],
     automatic_agent_review: false,

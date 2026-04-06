@@ -18,6 +18,8 @@ export const projectsTable = sqliteTable(
     name: text("name").notNull(),
     color: text("color"),
     agentAdapter: text("agent_adapter").notNull().default("codex"),
+    draftAnalysisAgentAdapter: text("draft_analysis_agent_adapter"),
+    ticketWorkAgentAdapter: text("ticket_work_agent_adapter"),
     executionBackend: text("execution_backend").notNull().default("docker"),
     disabledMcpServers: jsonText<string[]>("disabled_mcp_servers")
       .notNull()

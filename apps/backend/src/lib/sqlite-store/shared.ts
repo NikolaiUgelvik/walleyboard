@@ -253,6 +253,16 @@ export function deriveWorkingBranch(
 export function mapProject(row: SqliteRow): Project {
   const color = readRowValue(row, "color");
   const agentAdapter = readRowValue(row, "agent_adapter", "agentAdapter");
+  const draftAnalysisAgentAdapter = readRowValue(
+    row,
+    "draft_analysis_agent_adapter",
+    "draftAnalysisAgentAdapter",
+  );
+  const ticketWorkAgentAdapter = readRowValue(
+    row,
+    "ticket_work_agent_adapter",
+    "ticketWorkAgentAdapter",
+  );
   const disabledMcpServers = readRowValue(
     row,
     "disabled_mcp_servers",
@@ -327,6 +337,22 @@ export function mapProject(row: SqliteRow): Project {
     name: String(readRowValue(row, "name")),
     color: normalizeProjectColor(color as string | null | undefined),
     agent_adapter: agentAdapter === "claude-code" ? "claude-code" : "codex",
+    draft_analysis_agent_adapter:
+      draftAnalysisAgentAdapter === "claude-code"
+        ? "claude-code"
+        : draftAnalysisAgentAdapter === "codex"
+          ? "codex"
+          : agentAdapter === "claude-code"
+            ? "claude-code"
+            : "codex",
+    ticket_work_agent_adapter:
+      ticketWorkAgentAdapter === "claude-code"
+        ? "claude-code"
+        : ticketWorkAgentAdapter === "codex"
+          ? "codex"
+          : agentAdapter === "claude-code"
+            ? "claude-code"
+            : "codex",
     execution_backend: "docker",
     disabled_mcp_servers: parseJson<unknown[]>(disabledMcpServers, [])
       .filter((server): server is string => typeof server === "string")

@@ -63,28 +63,16 @@ export function ProjectConfigurationModals({
                 on its normal model selection path for this project.
               </Text>
 
-              <Stack gap="xs">
-                <ProjectColorSwatchPicker
-                  description="Used for the compact rail tile accent."
-                  label="Project color"
-                  value={controller.projectOptionsColor}
-                  onChange={(value) => {
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsColor(value);
-                  }}
-                />
-                <ProjectAgentAdapterSelect
-                  value={controller.projectOptionsAgentAdapter}
-                  onChange={(value) => {
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsAgentAdapter(value);
-                    controller.setProjectOptionsDraftModelPreset("default");
-                    controller.setProjectOptionsTicketModelPreset("default");
-                  }}
-                />
-              </Stack>
+              <ProjectColorSwatchPicker
+                description="Used for the compact rail tile accent."
+                label="Project color"
+                value={controller.projectOptionsColor}
+                onChange={(value) => {
+                  controller.setProjectOptionsFormError(null);
+                  controller.updateProjectMutation.reset();
+                  controller.setProjectOptionsColor(value);
+                }}
+              />
 
               <Stack gap="xs">
                 <Text size="sm" c="dimmed">
@@ -134,7 +122,8 @@ export function ProjectConfigurationModals({
 
               <Stack gap="sm">
                 <Text fw={600}>Codex MCP servers</Text>
-                {controller.projectOptionsAgentAdapter === "codex" ? (
+                {controller.projectOptionsDraftAgentAdapter === "codex" ||
+                controller.projectOptionsTicketAgentAdapter === "codex" ? (
                   controller.codexMcpServers.length === 0 ? (
                     <Text size="sm" c="dimmed">
                       No Codex MCP servers are configured in
@@ -296,11 +285,25 @@ export function ProjectConfigurationModals({
               </Stack>
 
               <Stack gap="sm">
+                <Text fw={600}>Draft Analysis</Text>
+                <Text size="sm" c="dimmed">
+                  Agent and model used for Refine and Questions? draft analysis
+                  runs.
+                </Text>
+                <ProjectAgentAdapterSelect
+                  label="Draft analysis agent CLI"
+                  value={controller.projectOptionsDraftAgentAdapter}
+                  onChange={(value) => {
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsDraftAgentAdapter(value);
+                    controller.setProjectOptionsDraftModelPreset("default");
+                  }}
+                />
                 <Select
-                  label="Draft refining model"
-                  description="Used for both Refine and Questions? draft analysis runs."
+                  label="Draft analysis model"
                   data={getModelPresetOptions(
-                    controller.projectOptionsAgentAdapter,
+                    controller.projectOptionsDraftAgentAdapter,
                   )}
                   value={controller.projectOptionsDraftModelPreset}
                   onChange={(value) => {
@@ -319,7 +322,7 @@ export function ProjectConfigurationModals({
                   <TextInput
                     label="Custom draft model ID"
                     placeholder={modelPlaceholder(
-                      controller.projectOptionsAgentAdapter,
+                      controller.projectOptionsDraftAgentAdapter,
                     )}
                     value={controller.projectOptionsDraftModelCustom}
                     onChange={(event) => {
@@ -331,30 +334,47 @@ export function ProjectConfigurationModals({
                     }}
                   />
                 ) : null}
-                <Select
-                  label="Draft refining reasoning effort"
-                  data={reasoningEffortOptions}
-                  value={controller.projectOptionsDraftReasoningEffort}
-                  onChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
+                {controller.projectOptionsDraftAgentAdapter !==
+                "claude-code" ? (
+                  <Select
+                    label="Draft analysis reasoning effort"
+                    data={reasoningEffortOptions}
+                    value={controller.projectOptionsDraftReasoningEffort}
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
 
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsDraftReasoningEffort(
-                      value as typeof controller.projectOptionsDraftReasoningEffort,
-                    );
-                  }}
-                />
+                      controller.setProjectOptionsFormError(null);
+                      controller.updateProjectMutation.reset();
+                      controller.setProjectOptionsDraftReasoningEffort(
+                        value as typeof controller.projectOptionsDraftReasoningEffort,
+                      );
+                    }}
+                  />
+                ) : null}
               </Stack>
 
               <Stack gap="sm">
+                <Text fw={600}>Ticket Work</Text>
+                <Text size="sm" c="dimmed">
+                  Agent and model used when the agent starts or resumes ticket
+                  implementation work.
+                </Text>
+                <ProjectAgentAdapterSelect
+                  label="Ticket work agent CLI"
+                  value={controller.projectOptionsTicketAgentAdapter}
+                  onChange={(value) => {
+                    controller.setProjectOptionsFormError(null);
+                    controller.updateProjectMutation.reset();
+                    controller.setProjectOptionsTicketAgentAdapter(value);
+                    controller.setProjectOptionsTicketModelPreset("default");
+                  }}
+                />
                 <Select
-                  label="General ticket work model"
-                  description="Used when the selected agent starts or resumes ticket implementation work."
+                  label="Ticket work model"
                   data={getModelPresetOptions(
-                    controller.projectOptionsAgentAdapter,
+                    controller.projectOptionsTicketAgentAdapter,
                   )}
                   value={controller.projectOptionsTicketModelPreset}
                   onChange={(value) => {
@@ -373,7 +393,7 @@ export function ProjectConfigurationModals({
                   <TextInput
                     label="Custom ticket work model ID"
                     placeholder={modelPlaceholder(
-                      controller.projectOptionsAgentAdapter,
+                      controller.projectOptionsTicketAgentAdapter,
                     )}
                     value={controller.projectOptionsTicketModelCustom}
                     onChange={(event) => {
@@ -385,22 +405,25 @@ export function ProjectConfigurationModals({
                     }}
                   />
                 ) : null}
-                <Select
-                  label="General ticket work reasoning effort"
-                  data={reasoningEffortOptions}
-                  value={controller.projectOptionsTicketReasoningEffort}
-                  onChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
+                {controller.projectOptionsTicketAgentAdapter !==
+                "claude-code" ? (
+                  <Select
+                    label="Ticket work reasoning effort"
+                    data={reasoningEffortOptions}
+                    value={controller.projectOptionsTicketReasoningEffort}
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
 
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsTicketReasoningEffort(
-                      value as typeof controller.projectOptionsTicketReasoningEffort,
-                    );
-                  }}
-                />
+                      controller.setProjectOptionsFormError(null);
+                      controller.updateProjectMutation.reset();
+                      controller.setProjectOptionsTicketReasoningEffort(
+                        value as typeof controller.projectOptionsTicketReasoningEffort,
+                      );
+                    }}
+                  />
+                ) : null}
               </Stack>
 
               <Stack gap="sm">

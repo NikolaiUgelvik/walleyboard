@@ -219,10 +219,13 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
       }
 
       assertAgentAdapterAvailable(
-        project.agent_adapter,
+        project.ticket_work_agent_adapter,
         getClaudeCodeAvailability,
       );
-      executionRuntime.assertProjectExecutionBackendAvailable(project);
+      executionRuntime.assertProjectExecutionBackendAvailable(
+        project,
+        project.ticket_work_agent_adapter,
+      );
 
       try {
         await executionRuntime.stopManualTerminal(session.id);
@@ -330,7 +333,10 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
             return;
           }
 
-          executionRuntime.assertProjectExecutionBackendAvailable(project);
+          executionRuntime.assertProjectExecutionBackendAvailable(
+            project,
+            project.ticket_work_agent_adapter,
+          );
 
           const approved = input.approved === true;
           const feedbackBody =

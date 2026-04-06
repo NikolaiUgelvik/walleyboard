@@ -98,7 +98,8 @@ export function useWalleyBoardController() {
   });
   const {
     projectModalOpen,
-    projectOptionsAgentAdapter,
+    projectOptionsDraftAgentAdapter,
+    projectOptionsTicketAgentAdapter,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsColor,
@@ -118,7 +119,8 @@ export function useWalleyBoardController() {
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
     setProjectModalOpen,
-    setProjectOptionsAgentAdapter,
+    setProjectOptionsDraftAgentAdapter,
+    setProjectOptionsTicketAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsColor,
@@ -611,7 +613,8 @@ export function useWalleyBoardController() {
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsDefaultReviewAction,
     repositoryBranchesDirty: projectOptionsRepositoryBranchesDirty,
-    selectedAgentAdapter: projectOptionsAgentAdapter,
+    selectedDraftAgentAdapter: projectOptionsDraftAgentAdapter,
+    selectedTicketAgentAdapter: projectOptionsTicketAgentAdapter,
     ticketModelValue: projectOptionsTicketModelValue,
     ticketReasoningEffortValue: projectOptionsTicketReasoningEffortValue,
   });
@@ -862,7 +865,8 @@ export function useWalleyBoardController() {
       resetDeleteProjectMutation: mutations.deleteProjectMutation.reset,
       resetUpdateProjectMutation: mutations.updateProjectMutation.reset,
       setProjectDeleteConfirmText,
-      setProjectOptionsAgentAdapter,
+      setProjectOptionsDraftAgentAdapter,
+      setProjectOptionsTicketAgentAdapter,
       setProjectOptionsAutomaticAgentReview,
       setProjectOptionsAutomaticAgentReviewRunLimit,
       setProjectOptionsColor,
@@ -912,7 +916,8 @@ export function useWalleyBoardController() {
       resetDeleteProjectMutation: mutations.deleteProjectMutation.reset,
       resetUpdateProjectMutation: mutations.updateProjectMutation.reset,
       setProjectDeleteConfirmText,
-      setProjectOptionsAgentAdapter,
+      setProjectOptionsDraftAgentAdapter,
+      setProjectOptionsTicketAgentAdapter,
       setProjectOptionsAutomaticAgentReview,
       setProjectOptionsAutomaticAgentReviewRunLimit,
       setProjectOptionsColor,
@@ -974,7 +979,8 @@ export function useWalleyBoardController() {
     });
     setProjectOptionsFormError(null);
     mutations.updateProjectMutation.mutate({
-      agentAdapter: projectOptionsAgentAdapter,
+      draftAgentAdapter: projectOptionsDraftAgentAdapter,
+      ticketAgentAdapter: projectOptionsTicketAgentAdapter,
       projectId: projectOptionsProject.id,
       color: projectOptionsPersistedColor,
       disabledMcpServers: [...projectOptionsDisabledMcpServers].sort(
@@ -1227,7 +1233,8 @@ export function useWalleyBoardController() {
     projectOptionsDefaultReviewAction,
     projectOptionsDisabledMcpServers,
     projectOptionsDirty,
-    projectOptionsAgentAdapter,
+    projectOptionsDraftAgentAdapter,
+    projectOptionsTicketAgentAdapter,
     projectOptionsDraftModelCustom,
     projectOptionsDraftModelPreset,
     projectOptionsDraftModelValue,
@@ -1330,7 +1337,8 @@ export function useWalleyBoardController() {
       setProjectOptionsColorManuallySelected(true);
       setProjectOptionsColor(value);
     },
-    setProjectOptionsAgentAdapter,
+    setProjectOptionsDraftAgentAdapter,
+    setProjectOptionsTicketAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsDefaultReviewAction,

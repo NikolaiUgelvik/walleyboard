@@ -141,7 +141,12 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (
       }
 
       assertProjectAgentAdapterSaveAvailableImpl(
-        input.agent_adapter ?? existingProject.agent_adapter,
+        input.draft_analysis_agent_adapter ??
+          existingProject.draft_analysis_agent_adapter,
+      );
+      assertProjectAgentAdapterSaveAvailableImpl(
+        input.ticket_work_agent_adapter ??
+          existingProject.ticket_work_agent_adapter,
       );
 
       const project = store.updateProject(projectId, input);

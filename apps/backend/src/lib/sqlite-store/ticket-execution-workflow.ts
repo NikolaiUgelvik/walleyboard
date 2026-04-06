@@ -93,7 +93,7 @@ export class TicketExecutionWorkflowService {
         ticketId: ticket.id,
         projectId: ticket.project,
         repoId: ticket.repo,
-        agentAdapter: project.agent_adapter,
+        agentAdapter: project.ticket_work_agent_adapter,
         worktreePath: runtime.worktreePath,
         adapterSessionRef: null,
         status: shouldQueue ? "queued" : "awaiting_input",
@@ -379,7 +379,7 @@ export class TicketExecutionWorkflowService {
     const logs = [
       formatMarkdownLog("Requested changes recorded", body),
       `Reusing worktree at: ${session.worktree_path}`,
-      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.agent_adapter)}`,
+      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.ticket_work_agent_adapter)}`,
       shouldQueue
         ? `Queued execution attempt ${attemptNumber} until a project running slot opens.`
         : `Starting execution attempt ${attemptNumber}.`,
@@ -499,7 +499,7 @@ export class TicketExecutionWorkflowService {
     const logs = [
       formatMarkdownLog("Merge conflict note recorded", body),
       `Worktree preserved at: ${session.worktree_path}`,
-      `Working branch preserved: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.agent_adapter)}`,
+      `Working branch preserved: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.ticket_work_agent_adapter)}`,
       "Ticket returned to in-progress so the merge conflict can be resolved on the existing branch.",
     ];
 
@@ -635,7 +635,7 @@ export class TicketExecutionWorkflowService {
         ? formatMarkdownLog("Resume instruction recorded", reasonBody)
         : "Resume requested without additional instruction.",
       `Reusing worktree at: ${session.worktree_path}`,
-      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.agent_adapter)}`,
+      `Reusing working branch: ${ticket.working_branch ?? deriveWorkingBranch(ticket.id, ticket.title, project.ticket_work_agent_adapter)}`,
       shouldQueue
         ? `Queued execution attempt ${attemptNumber} until a project running slot opens.`
         : `Starting execution attempt ${attemptNumber}.`,

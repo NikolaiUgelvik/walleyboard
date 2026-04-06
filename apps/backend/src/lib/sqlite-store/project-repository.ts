@@ -101,6 +101,8 @@ export class ProjectRepository {
         name: input.name.trim(),
         color,
         agentAdapter: "codex",
+        draftAnalysisAgentAdapter: null,
+        ticketWorkAgentAdapter: null,
         executionBackend: "docker",
         disabledMcpServers: [],
         automaticAgentReview: false,
@@ -177,6 +179,14 @@ export class ProjectRepository {
       input.agent_adapter === undefined
         ? project.agent_adapter
         : input.agent_adapter;
+    const draftAnalysisAgentAdapter =
+      input.draft_analysis_agent_adapter === undefined
+        ? project.draft_analysis_agent_adapter
+        : input.draft_analysis_agent_adapter;
+    const ticketWorkAgentAdapter =
+      input.ticket_work_agent_adapter === undefined
+        ? project.ticket_work_agent_adapter
+        : input.ticket_work_agent_adapter;
     const executionBackend =
       input.execution_backend === undefined
         ? project.execution_backend
@@ -234,7 +244,11 @@ export class ProjectRepository {
     const timestamp = nowIso();
 
     this.#assertSupportedExecutionConfiguration({
-      agentAdapter,
+      agentAdapter: draftAnalysisAgentAdapter,
+      executionBackend,
+    });
+    this.#assertSupportedExecutionConfiguration({
+      agentAdapter: ticketWorkAgentAdapter,
       executionBackend,
     });
 
@@ -250,6 +264,8 @@ export class ProjectRepository {
       .set({
         color,
         agentAdapter,
+        draftAnalysisAgentAdapter,
+        ticketWorkAgentAdapter,
         executionBackend,
         disabledMcpServers,
         automaticAgentReview,

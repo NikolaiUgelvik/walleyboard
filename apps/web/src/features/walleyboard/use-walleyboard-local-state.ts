@@ -91,8 +91,12 @@ export function useProjectOptionsState() {
   const [projectOptionsProjectId, setProjectOptionsProjectId] = useState<
     string | null
   >(null);
-  const [projectOptionsAgentAdapter, setProjectOptionsAgentAdapter] =
+  const [projectOptionsDraftAgentAdapter, setProjectOptionsDraftAgentAdapter] =
     useState<AgentAdapter>("codex");
+  const [
+    projectOptionsTicketAgentAdapter,
+    setProjectOptionsTicketAgentAdapter,
+  ] = useState<AgentAdapter>("codex");
   const [
     projectOptionsDisabledMcpServers,
     setProjectOptionsDisabledMcpServers,
@@ -147,7 +151,8 @@ export function useProjectOptionsState() {
 
   return {
     projectModalOpen,
-    projectOptionsAgentAdapter,
+    projectOptionsDraftAgentAdapter,
+    projectOptionsTicketAgentAdapter,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsColor,
@@ -167,7 +172,8 @@ export function useProjectOptionsState() {
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
     setProjectModalOpen,
-    setProjectOptionsAgentAdapter,
+    setProjectOptionsDraftAgentAdapter,
+    setProjectOptionsTicketAgentAdapter,
     setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit,
     setProjectOptionsColor,

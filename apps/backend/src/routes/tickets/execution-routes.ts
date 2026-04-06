@@ -72,10 +72,13 @@ export function registerTicketExecutionRoutes(
         }
 
         assertAgentAdapterAvailable(
-          project.agent_adapter,
+          project.ticket_work_agent_adapter,
           getClaudeCodeAvailability,
         );
-        executionRuntime.assertProjectExecutionBackendAvailable(project);
+        executionRuntime.assertProjectExecutionBackendAvailable(
+          project,
+          project.ticket_work_agent_adapter,
+        );
 
         const runtime = await prepareWorktreeAsync(
           project,
@@ -256,10 +259,13 @@ export function registerTicketExecutionRoutes(
         }
 
         assertAgentAdapterAvailable(
-          project.agent_adapter,
+          project.ticket_work_agent_adapter,
           getClaudeCodeAvailability,
         );
-        executionRuntime.assertProjectExecutionBackendAvailable(project);
+        executionRuntime.assertProjectExecutionBackendAvailable(
+          project,
+          project.ticket_work_agent_adapter,
+        );
 
         const resumeResult = store.resumeTicket(ticketId, input.reason);
 
@@ -380,10 +386,13 @@ export function registerTicketExecutionRoutes(
       }
 
       assertAgentAdapterAvailable(
-        project.agent_adapter,
+        project.ticket_work_agent_adapter,
         getClaudeCodeAvailability,
       );
-      executionRuntime.assertProjectExecutionBackendAvailable(project);
+      executionRuntime.assertProjectExecutionBackendAvailable(
+        project,
+        project.ticket_work_agent_adapter,
+      );
 
       try {
         appendSessionOutput(

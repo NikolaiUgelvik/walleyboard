@@ -183,6 +183,8 @@ export const projectSchema = z.object({
   name: z.string().min(1),
   color: projectColorSchema,
   agent_adapter: agentAdapterSchema,
+  draft_analysis_agent_adapter: agentAdapterSchema,
+  ticket_work_agent_adapter: agentAdapterSchema,
   execution_backend: executionBackendSchema,
   disabled_mcp_servers: z.array(z.string().min(1)),
   automatic_agent_review: z.boolean(),

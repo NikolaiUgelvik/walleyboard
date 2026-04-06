@@ -180,7 +180,8 @@ export type WalleyBoardModalsController = Pick<
   | "projectDeleteConfirmText"
   | "projectModalOpen"
   | "projectName"
-  | "projectOptionsAgentAdapter"
+  | "projectOptionsDraftAgentAdapter"
+  | "projectOptionsTicketAgentAdapter"
   | "projectOptionsAutomaticAgentReview"
   | "projectOptionsAutomaticAgentReviewRunLimit"
   | "projectOptionsBranchesByRepositoryId"
@@ -221,7 +222,8 @@ export type WalleyBoardModalsController = Pick<
   | "setProjectColor"
   | "setProjectDeleteConfirmText"
   | "setProjectName"
-  | "setProjectOptionsAgentAdapter"
+  | "setProjectOptionsDraftAgentAdapter"
+  | "setProjectOptionsTicketAgentAdapter"
   | "setProjectOptionsAutomaticAgentReview"
   | "setProjectOptionsAutomaticAgentReviewRunLimit"
   | "setProjectOptionsColor"
@@ -446,7 +448,9 @@ export function createWalleyBoardViewState(
     projectDeleteConfirmText: controller.projectDeleteConfirmText,
     projectModalOpen: controller.projectModalOpen,
     projectName: controller.projectName,
-    projectOptionsAgentAdapter: controller.projectOptionsAgentAdapter,
+    projectOptionsDraftAgentAdapter: controller.projectOptionsDraftAgentAdapter,
+    projectOptionsTicketAgentAdapter:
+      controller.projectOptionsTicketAgentAdapter,
     projectOptionsAutomaticAgentReview:
       controller.projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit:
@@ -498,7 +502,10 @@ export function createWalleyBoardViewState(
     setProjectColor: controller.setProjectColor,
     setProjectDeleteConfirmText: controller.setProjectDeleteConfirmText,
     setProjectName: controller.setProjectName,
-    setProjectOptionsAgentAdapter: controller.setProjectOptionsAgentAdapter,
+    setProjectOptionsDraftAgentAdapter:
+      controller.setProjectOptionsDraftAgentAdapter,
+    setProjectOptionsTicketAgentAdapter:
+      controller.setProjectOptionsTicketAgentAdapter,
     setProjectOptionsAutomaticAgentReview:
       controller.setProjectOptionsAutomaticAgentReview,
     setProjectOptionsAutomaticAgentReviewRunLimit:

@@ -250,6 +250,8 @@ function createProject(overrides: Partial<Project> = {}): Project {
     name: "Project One",
     color: "#2563EB",
     agent_adapter: "codex",
+    draft_analysis_agent_adapter: "codex",
+    ticket_work_agent_adapter: "codex",
     execution_backend: "docker",
     disabled_mcp_servers: [],
     automatic_agent_review: false,
@@ -425,7 +427,8 @@ function ControllerModalHarness({
       }
 
       onUpdateProject?.({
-        agentAdapter: controller.projectOptionsAgentAdapter,
+        draftAgentAdapter: controller.projectOptionsDraftAgentAdapter,
+        ticketAgentAdapter: controller.projectOptionsTicketAgentAdapter,
         projectId: project.id,
         color: controller.projectOptionsPersistedColor,
         disabledMcpServers: controller.projectOptionsDisabledMcpServers,
@@ -1273,11 +1276,16 @@ test("edit project modal renders Codex MCP server settings", async () => {
 
 test("edit project modal preserves the selected Claude Code adapter without health overrides", async () => {
   const harness = installDom();
-  let updatePayload: { agentAdapter: Project["agent_adapter"] } | null = null;
+  let updatePayload: {
+    draftAgentAdapter: Project["draft_analysis_agent_adapter"];
+    ticketAgentAdapter: Project["ticket_work_agent_adapter"];
+  } | null = null;
 
   try {
     const project = createProject({
       agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
     const repository = createRepository({
       project_id: project.id,
@@ -1323,9 +1331,11 @@ test("edit project modal preserves the selected Claude Code adapter without heal
 
       assert.ok(updatePayload, "Expected the modal save to emit an update");
       const emittedPayload = updatePayload as {
-        agentAdapter: Project["agent_adapter"];
+        draftAgentAdapter: Project["draft_analysis_agent_adapter"];
+        ticketAgentAdapter: Project["ticket_work_agent_adapter"];
       };
-      assert.equal(emittedPayload.agentAdapter, "claude-code");
+      assert.equal(emittedPayload.draftAgentAdapter, "claude-code");
+      assert.equal(emittedPayload.ticketAgentAdapter, "claude-code");
     } finally {
       await act(async () => {
         root.unmount();
@@ -1339,11 +1349,16 @@ test("edit project modal preserves the selected Claude Code adapter without heal
 
 test("edit project modal no longer shows Claude-specific health status", async () => {
   const harness = installDom();
-  let updatePayload: { agentAdapter: Project["agent_adapter"] } | null = null;
+  let updatePayload: {
+    draftAgentAdapter: Project["draft_analysis_agent_adapter"];
+    ticketAgentAdapter: Project["ticket_work_agent_adapter"];
+  } | null = null;
 
   try {
     const project = createProject({
       agent_adapter: "claude-code",
+      draft_analysis_agent_adapter: "claude-code",
+      ticket_work_agent_adapter: "claude-code",
     });
     const repository = createRepository({
       project_id: project.id,
@@ -1389,9 +1404,11 @@ test("edit project modal no longer shows Claude-specific health status", async (
 
       assert.ok(updatePayload, "Expected the modal save to emit an update");
       const emittedPayload = updatePayload as {
-        agentAdapter: Project["agent_adapter"];
+        draftAgentAdapter: Project["draft_analysis_agent_adapter"];
+        ticketAgentAdapter: Project["ticket_work_agent_adapter"];
       };
-      assert.equal(emittedPayload.agentAdapter, "claude-code");
+      assert.equal(emittedPayload.draftAgentAdapter, "claude-code");
+      assert.equal(emittedPayload.ticketAgentAdapter, "claude-code");
     } finally {
       await act(async () => {
         root.unmount();

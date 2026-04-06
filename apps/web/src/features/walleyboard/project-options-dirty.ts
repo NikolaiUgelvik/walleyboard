@@ -19,7 +19,8 @@ type ProjectOptionsDirtyInput = {
   projectOptionsAutomaticAgentReviewRunLimit: number;
   projectOptionsDefaultReviewAction: ReviewAction;
   repositoryBranchesDirty: boolean;
-  selectedAgentAdapter: AgentAdapter;
+  selectedDraftAgentAdapter: AgentAdapter;
+  selectedTicketAgentAdapter: AgentAdapter;
   ticketModelValue: string | null;
   ticketReasoningEffortValue: string | null;
 };
@@ -34,7 +35,8 @@ export function hasProjectOptionsDirty(
 
   return (
     input.color !== normalizeProjectColor(project.color) ||
-    input.selectedAgentAdapter !== project.agent_adapter ||
+    input.selectedDraftAgentAdapter !== project.draft_analysis_agent_adapter ||
+    input.selectedTicketAgentAdapter !== project.ticket_work_agent_adapter ||
     !(
       input.disabledMcpServers.length === project.disabled_mcp_servers.length &&
       input.disabledMcpServers.every(

@@ -66,7 +66,10 @@ export function registerTicketReviewRoutes(
           return;
         }
 
-        executionRuntime.assertProjectExecutionBackendAvailable(project);
+        executionRuntime.assertProjectExecutionBackendAvailable(
+          project,
+          project.ticket_work_agent_adapter,
+        );
 
         const restartResult = store.requestTicketChanges(ticketId, input.body);
         const repository = store.getRepository(restartResult.ticket.repo);

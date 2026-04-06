@@ -157,16 +157,17 @@ export function AgentAdapterOptionLabel({
 }
 
 export function ProjectAgentAdapterSelect({
+  label = "Agent CLI",
   value,
   onChange,
 }: {
+  label?: string;
   value: AgentAdapter;
   onChange: (value: AgentAdapter) => void;
 }) {
   return (
     <Select
-      label="Agent CLI"
-      description="Choose the CLI WalleyBoard will run inside the Docker runtime for draft analysis and ticket work."
+      label={label}
       data={getProjectAgentAdapterOptions()}
       leftSection={<AgentAdapterIcon adapter={value} />}
       renderOption={({ option }) => (

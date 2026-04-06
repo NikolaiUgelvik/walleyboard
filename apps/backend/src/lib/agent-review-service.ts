@@ -96,6 +96,7 @@ export class AgentReviewService {
     const context = this.#loadReviewLoopContext(ticketId);
     this.#executionRuntime.assertProjectExecutionBackendAvailable(
       context.project,
+      context.project.ticket_work_agent_adapter,
     );
     const trigger = options?.trigger ?? "manual";
     const reviewRun = this.#createReviewRun(context, trigger);
@@ -236,6 +237,7 @@ export class AgentReviewService {
 
         this.#executionRuntime.assertProjectExecutionBackendAvailable(
           context.project,
+          context.project.ticket_work_agent_adapter,
         );
         const restartResult = this.#store.requestTicketChanges(
           ticketId,

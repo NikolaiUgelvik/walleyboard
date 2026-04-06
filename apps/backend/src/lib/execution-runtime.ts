@@ -122,22 +122,25 @@ export class ExecutionRuntime {
     this.#store = store;
   }
 
-  #getProjectAdapter(project: Project): AgentCliAdapter {
-    return this.#adapterRegistry.get(project.agent_adapter);
+  #getProjectDraftAdapter(project: Project): AgentCliAdapter {
+    return this.#adapterRegistry.get(project.draft_analysis_agent_adapter);
   }
 
   #getSessionAdapter(session: ExecutionSession): AgentCliAdapter {
     return this.#adapterRegistry.get(session.agent_adapter);
   }
 
-  assertProjectExecutionBackendAvailable(project: Project): void {
+  assertProjectExecutionBackendAvailable(
+    project: Project,
+    agentAdapter: Project["agent_adapter"],
+  ): void {
     if (project.execution_backend !== "docker") {
       throw new Error(
         "Host execution is no longer supported. Configure the project to use Docker.",
       );
     }
     this.#dockerRuntime.assertAvailable();
-    if (project.agent_adapter === "claude-code") {
+    if (agentAdapter === "claude-code") {
       this.#dockerRuntime.assertClaudeCodeAvailable();
     }
   }
@@ -310,7 +313,10 @@ export class ExecutionRuntime {
       }
 
       try {
-        this.assertProjectExecutionBackendAvailable(project);
+        this.assertProjectExecutionBackendAvailable(
+          project,
+          project.ticket_work_agent_adapter,
+        );
         publishSessionOutput(
           this.#eventHub,
           this.#store,
@@ -400,7 +406,10 @@ export class ExecutionRuntime {
     adapterSessionRef: string | null;
     report: ReviewReport;
   }> {
-    this.assertProjectExecutionBackendAvailable(input.project);
+    this.assertProjectExecutionBackendAvailable(
+      input.project,
+      input.project.ticket_work_agent_adapter,
+    );
 
     return runTicketReviewSession({
       activeReviewRuns: this.#activeReviewRuns,
@@ -546,12 +555,15 @@ export class ExecutionRuntime {
     repository,
     instruction,
   }: DraftAnalysisInput & { mode: DraftAnalysisMode }): Promise<void> {
-    this.assertProjectExecutionBackendAvailable(project);
+    this.assertProjectExecutionBackendAvailable(
+      project,
+      project.draft_analysis_agent_adapter,
+    );
 
     return startDraftAnalysis(
       {
         activeDraftRuns: this.#activeDraftRuns,
-        adapter: this.#getProjectAdapter(project),
+        adapter: this.#getProjectDraftAdapter(project),
         cleanupExecutionEnvironment: (sessionId) => {
           this.cleanupExecutionEnvironment(sessionId);
         },

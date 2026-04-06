@@ -425,7 +425,10 @@ export function prepareWorktree(
     throw new Error("Ticket already has a working branch");
   }
 
-  const workingBranch = deriveWorkingBranch(ticket, project.agent_adapter);
+  const workingBranch = deriveWorkingBranch(
+    ticket,
+    project.ticket_work_agent_adapter,
+  );
   const projectWorktreeRoot = resolveWalleyBoardPath("worktrees", project.slug);
   const worktreeRoot = join(projectWorktreeRoot, `ticket-${ticket.id}`);
   mkdirSync(projectWorktreeRoot, { recursive: true });
@@ -487,7 +490,10 @@ export async function prepareWorktreeAsync(
     throw new Error("Ticket already has a working branch");
   }
 
-  const workingBranch = deriveWorkingBranch(ticket, project.agent_adapter);
+  const workingBranch = deriveWorkingBranch(
+    ticket,
+    project.ticket_work_agent_adapter,
+  );
   const projectWorktreeRoot = resolveWalleyBoardPath("worktrees", project.slug);
   const worktreeRoot = join(projectWorktreeRoot, `ticket-${ticket.id}`);
   mkdirSync(projectWorktreeRoot, { recursive: true });

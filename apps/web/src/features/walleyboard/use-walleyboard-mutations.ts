@@ -238,7 +238,8 @@ export function useWalleyBoardMutations({
 
   const updateProjectMutation = useMutation({
     mutationFn: (input: {
-      agentAdapter: AgentAdapter;
+      draftAgentAdapter: AgentAdapter;
+      ticketAgentAdapter: AgentAdapter;
       projectId: string;
       color: string;
       disabledMcpServers: string[];
@@ -259,7 +260,8 @@ export function useWalleyBoardMutations({
     }) =>
       saveProjectOptionsRequest(input.projectId, {
         color: input.color,
-        agent_adapter: input.agentAdapter,
+        draft_analysis_agent_adapter: input.draftAgentAdapter,
+        ticket_work_agent_adapter: input.ticketAgentAdapter,
         disabled_mcp_servers: input.disabledMcpServers,
         automatic_agent_review: input.automaticAgentReview,
         automatic_agent_review_run_limit: input.automaticAgentReviewRunLimit,

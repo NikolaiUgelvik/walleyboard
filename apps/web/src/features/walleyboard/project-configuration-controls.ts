@@ -55,7 +55,8 @@ export function resetProjectOptionsModal(input: {
   resetDeleteProjectMutation: () => void;
   resetUpdateProjectMutation: () => void;
   setProjectDeleteConfirmText: StateSetter<string>;
-  setProjectOptionsAgentAdapter: StateSetter<AgentAdapter>;
+  setProjectOptionsDraftAgentAdapter: StateSetter<AgentAdapter>;
+  setProjectOptionsTicketAgentAdapter: StateSetter<AgentAdapter>;
   setProjectOptionsAutomaticAgentReview: StateSetter<boolean>;
   setProjectOptionsAutomaticAgentReviewRunLimit: StateSetter<number>;
   setProjectOptionsColor: StateSetter<string>;
@@ -72,7 +73,8 @@ export function resetProjectOptionsModal(input: {
   input.setProjectOptionsProjectId(null);
   input.setProjectOptionsColor(defaultProjectColor);
   input.setProjectOptionsColorManuallySelected(false);
-  input.setProjectOptionsAgentAdapter("codex");
+  input.setProjectOptionsDraftAgentAdapter("codex");
+  input.setProjectOptionsTicketAgentAdapter("codex");
   input.setProjectOptionsDisabledMcpServers([]);
   input.setProjectOptionsAutomaticAgentReview(false);
   input.setProjectOptionsAutomaticAgentReviewRunLimit(1);
@@ -91,7 +93,8 @@ export function populateProjectOptionsModal(input: {
   resetDeleteProjectMutation: () => void;
   resetUpdateProjectMutation: () => void;
   setProjectDeleteConfirmText: StateSetter<string>;
-  setProjectOptionsAgentAdapter: StateSetter<AgentAdapter>;
+  setProjectOptionsDraftAgentAdapter: StateSetter<AgentAdapter>;
+  setProjectOptionsTicketAgentAdapter: StateSetter<AgentAdapter>;
   setProjectOptionsAutomaticAgentReview: StateSetter<boolean>;
   setProjectOptionsAutomaticAgentReviewRunLimit: StateSetter<number>;
   setProjectOptionsColor: StateSetter<string>;
@@ -116,7 +119,12 @@ export function populateProjectOptionsModal(input: {
   input.setProjectOptionsProjectId(input.project.id);
   input.setProjectOptionsColor(input.project.color);
   input.setProjectOptionsColorManuallySelected(false);
-  input.setProjectOptionsAgentAdapter(input.project.agent_adapter);
+  input.setProjectOptionsDraftAgentAdapter(
+    input.project.draft_analysis_agent_adapter,
+  );
+  input.setProjectOptionsTicketAgentAdapter(
+    input.project.ticket_work_agent_adapter,
+  );
   input.setProjectOptionsDisabledMcpServers(
     [...input.project.disabled_mcp_servers].sort((left, right) =>
       left.localeCompare(right),

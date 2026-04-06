@@ -54,7 +54,6 @@ type PullRequestSyncInput = {
 };
 
 type RunGhCommand = (args: string[], cwd: string) => Promise<string> | string;
-
 type GeneratePullRequestBody = (
   input: PullRequestBodyGenerationContext,
 ) => Promise<{ body: string }>;
@@ -528,7 +527,7 @@ export class GitHubPullRequestService {
       (async (input) =>
         await runPullRequestBodyGeneration({
           adapter: this.#dependencies.adapterRegistry.get(
-            input.project.agent_adapter,
+            input.project.ticket_work_agent_adapter,
           ),
           context: input,
           dockerRuntime: this.#dependencies.dockerRuntime,
@@ -608,7 +607,7 @@ export class GitHubPullRequestService {
     this.#publishSessionOutput(
       session.id,
       session.current_attempt_id ?? session.id,
-      `Generating GitHub pull request body with ${project.agent_adapter} using the draft refining model context`,
+      `Generating GitHub pull request body with ${project.ticket_work_agent_adapter} using the draft refining model context`,
     );
     try {
       const timelineContext = collectPullRequestTimelineContext(
@@ -1111,6 +1110,7 @@ export class GitHubPullRequestService {
     const repository = this.#requireRepository(ticket.repo);
     this.#dependencies.executionRuntime.assertProjectExecutionBackendAvailable(
       project,
+      project.ticket_work_agent_adapter,
     );
     const githubRepository = await resolveGitHubRepositoryIdentity(
       session.worktree_path ?? repository.path,
