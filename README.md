@@ -51,6 +51,17 @@ Some especially handy bits:
 - live activity history and worktree summaries attached to the ticket that
   produced them
 
+## Why WalleyBoard
+
+WalleyBoard is for when the work is messy, the context keeps moving, and you
+need the board to help you keep the plot.
+
+- it helps turn vague ideas into clearer tickets before they hit execution
+- it keeps agent runs, worktrees, previews, and review state attached to the
+  ticket that produced them
+- it gives you a board and inbox that are easier to scan when your brain is
+  already juggling too much
+
 ## Requirements
 
 Install these before starting WalleyBoard:
@@ -97,61 +108,11 @@ Optional launcher flags:
 - `npx walleyboard --port 4310`
 - `npx walleyboard --no-open`
 
-## Releasing The CLI
-
-The `walleyboard` npm package is released from GitHub Actions with npm trusted
-publishing, so the publish job uses OIDC instead of a stored `NPM_TOKEN` and
-npm attaches provenance automatically for public releases.
-
-The committed workspace version stays at `0.0.0`. For each release, the
-workflow temporarily sets `packages/cli/package.json` to match the pushed tag
-before publishing to npm.
-
-One-time setup on npm:
-
-1. Open the `walleyboard` package settings on npm.
-2. Add a trusted publisher for owner `NikolaiUgelvik`, repository
-   `walleyboard`, and workflow file `publish.yml`.
-3. Leave the environment name empty unless you later add a protected GitHub
-   environment for releases.
-4. Remove any old npm automation token after trusted publishing is confirmed to
-   work.
-
-After that, every stable release is tag-driven:
-
-1. Make sure `main` is green in CI.
-2. Create the next stable tag from the current `main` head, for example
-   `git tag v0.1.3`.
-3. Push the tag with `git push origin v0.1.3`.
-4. The `publish.yml` workflow validates the tag, runs linting, typechecking,
-   tests, and the CLI build, temporarily sets the CLI package version to
-   `0.1.3`, publishes `walleyboard` to npm, and creates the matching GitHub
-   Release.
-
-If the release succeeds, the npm package page should show provenance details for
-that version.
-
-## Repository Layout
-
-- `apps/backend`: Fastify backend, WebSocket transport, Docker runtime orchestration, and persistence
-- `apps/web`: React + Mantine frontend for the board UI
-- `packages/cli`: packaged launcher for running WalleyBoard outside the monorepo
-- `packages/contracts`: shared Zod schemas and protocol contracts
-- `packages/db`: Drizzle schema and SQLite migrations
-- `docs`: PRD, implementation notes, and validation writeups
-
 ## Documentation
 
 - Product direction: [ai_walleyboard_prd.md](./ai_walleyboard_prd.md)
 - Current implementation details: [docs/implementation-starter-pack.md](./docs/implementation-starter-pack.md)
 - Validation notes: [docs/validation](./docs/validation)
-
-## Quality Gates
-
-- `npm run sizecheck`: fails if any production source file under `apps/**/src` or `packages/**/src` exceeds 1500 lines
-- `npm run lint`: runs `sizecheck` first, then workspace Biome checks
-- `npm run typecheck`: runs TypeScript checks across all workspaces
-- `npm run test`: runs the backend and web `node:test` suites from the repo root
 
 ## License
 
