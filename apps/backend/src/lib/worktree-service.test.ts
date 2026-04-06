@@ -348,13 +348,12 @@ test("runPreWorktreeCommand runs project hooks with bash", async () => {
     configureGitIdentity(repoPath);
 
     const outputPath = join(tempDir, "pre-worktree.log");
-    assert.equal(
-      runPreWorktreeCommand(
-        repoPath,
-        `[[ "bash" == "bash" ]] && printf 'pre hook ran\\n' > "${outputPath}"`,
-      ),
-      true,
+    const result = runPreWorktreeCommand(
+      repoPath,
+      `[[ "bash" == "bash" ]] && printf 'pre hook ran\\n' > "${outputPath}"`,
     );
+    assert.equal(result.started, true);
+    await result.done;
 
     await waitForCondition(() => existsSync(outputPath));
     assert.equal(readFileSync(outputPath, "utf8"), "pre hook ran\n");

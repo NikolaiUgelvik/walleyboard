@@ -94,6 +94,8 @@ function installDom() {
     installGlobal("ResizeObserver", ResizeObserverStub),
     installGlobal("ShadowRoot", window.ShadowRoot),
     installGlobal("SVGElement", window.SVGElement),
+    installGlobal("Event", window.Event),
+    installGlobal("CustomEvent", window.CustomEvent),
     installGlobal(
       "__WALLEYBOARD_SOCKET_IO_FACTORY__",
       createSocketFactoryStub(),

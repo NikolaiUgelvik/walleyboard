@@ -30,7 +30,7 @@ type WalleyboardMcpModule = {
   };
   createWalleyboardInitializeResult: (protocolVersion: unknown) => {
     capabilities: {
-      tools: {};
+      tools: object;
     };
     protocolVersion: string;
     serverInfo: {
@@ -301,6 +301,20 @@ test("WalleyBoard MCP HTTP helpers build loopback-only Claude config and sidecar
   assert.equal(serverConfig.args[4], "secret-token");
 });
 
+async function parseMcpResponse(response: Response): Promise<unknown> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  const text = await response.text();
+  for (const line of text.split("\n")) {
+    if (line.startsWith("data:")) {
+      return JSON.parse(line.slice(5).trim());
+    }
+  }
+  throw new Error(`Unexpected MCP response: ${text}`);
+}
+
 test("WalleyBoard MCP HTTP sidecar serves tools and records tool input", async (t) => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-mcp-http-"));
   const outputPath = join(tempDir, "result.json");
@@ -349,13 +363,16 @@ test("WalleyBoard MCP HTTP sidecar serves tools and records tool input", async (
   try {
     await waitForHealthcheck(`http://127.0.0.1:${port}/health/${token}`);
 
+    const mcpHeaders = {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    };
+
     const initializeResponse = await fetch(
       `http://127.0.0.1:${port}/mcp/${token}`,
       {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: mcpHeaders,
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
@@ -371,17 +388,14 @@ test("WalleyBoard MCP HTTP sidecar serves tools and records tool input", async (
         }),
       },
     );
-    const initializePayload = (await initializeResponse.json()) as Record<
-      string,
-      any
-    >;
+    const initializePayload = (await parseMcpResponse(initializeResponse)) as {
+      result: { serverInfo: { name: string } };
+    };
     assert.equal(initializePayload.result.serverInfo.name, "walleyboard-mcp");
 
     const listResponse = await fetch(`http://127.0.0.1:${port}/mcp/${token}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: mcpHeaders,
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: 2,
@@ -389,14 +403,14 @@ test("WalleyBoard MCP HTTP sidecar serves tools and records tool input", async (
         params: {},
       }),
     });
-    const listPayload = (await listResponse.json()) as Record<string, any>;
-    assert.equal(listPayload.result.tools[0].name, "submit_refined_draft");
+    const listPayload = (await parseMcpResponse(listResponse)) as {
+      result: { tools: Array<{ name: string }> };
+    };
+    assert.equal(listPayload.result.tools[0]?.name, "submit_refined_draft");
 
     const callResponse = await fetch(`http://127.0.0.1:${port}/mcp/${token}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: mcpHeaders,
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: 3,
@@ -409,9 +423,11 @@ test("WalleyBoard MCP HTTP sidecar serves tools and records tool input", async (
         },
       }),
     });
-    const callPayload = (await callResponse.json()) as Record<string, any>;
+    const callPayload = (await parseMcpResponse(callResponse)) as {
+      result: { content: Array<{ text: string }> };
+    };
     assert.equal(
-      callPayload.result.content[0].text,
+      callPayload.result.content[0]?.text,
       walleyboardMcpToolCallSuccessText,
     );
     assert.equal(

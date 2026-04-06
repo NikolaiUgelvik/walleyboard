@@ -112,6 +112,8 @@ function installDom() {
     installGlobal("ResizeObserver", ResizeObserverStub),
     installGlobal("ShadowRoot", window.ShadowRoot),
     installGlobal("SVGElement", window.SVGElement),
+    installGlobal("Event", window.Event),
+    installGlobal("CustomEvent", window.CustomEvent),
     installGlobal(
       "__WALLEYBOARD_SOCKET_IO_FACTORY__",
       createSocketFactoryStub(),
@@ -1138,7 +1140,8 @@ test("edit project modal submits the updated color through the controller workfl
       });
 
       assert.deepEqual(updatePayload, {
-        agentAdapter: "codex",
+        draftAgentAdapter: "codex",
+        ticketAgentAdapter: "codex",
         automaticAgentReview: false,
         automaticAgentReviewRunLimit: 1,
         color: "#F97316",
