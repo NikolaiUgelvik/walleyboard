@@ -395,10 +395,8 @@ export function runPreWorktreeCommand(
   const child = spawn(worktreeCommandShell, ["-lc", normalizedCommand], {
     cwd: worktreePath,
     env: process.env,
-    detached: true,
     stdio: "ignore",
   });
-  child.unref();
 
   const done = new Promise<void>((resolve) => {
     child.on("exit", () => resolve());
