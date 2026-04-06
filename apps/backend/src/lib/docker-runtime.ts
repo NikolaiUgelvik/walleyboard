@@ -19,6 +19,15 @@ import { resolveWalleyBoardHome } from "./walleyboard-paths.js";
 export const dockerWorkspacePath = "/workspace";
 export const dockerWalleyBoardHomePath = "/walleyboard-home";
 
+const walleyboardNetworkSubnet = "172.30.99.0/24";
+const walleyboardNetworkGateway = "172.30.99.1";
+
+/**
+ * The IP address where the host-side MCP sidecar listens, reachable
+ * only from containers on the walleyboard Docker network.
+ */
+export const dockerHostAddress = walleyboardNetworkGateway;
+
 const dockerManagedLabel = "com.walleyboard.managed";
 const dockerRepoRootHashLabel = "com.walleyboard.repo_root_hash";
 const dockerProjectIdLabel = "com.walleyboard.project_id";
@@ -188,6 +197,7 @@ function buildConfigMountSpecs(input: {
     | ReadonlyArray<{ hostPath: string; relativePath: string }>
     | null
     | undefined;
+  includeSiblingJsonFile?: boolean;
 }): string[] {
   const mounts = [
     `type=bind,src=${input.configHomePath},dst=${input.configMountPath}`,
@@ -205,6 +215,20 @@ function buildConfigMountSpecs(input: {
   // look stale unless the original host path is also reachable in-container.
   if (hostPathAlias) {
     mounts.push(`type=bind,src=${input.configHomePath},dst=${hostPathAlias}`);
+  }
+
+  if (input.includeSiblingJsonFile) {
+    const siblingJsonPath = `${input.configHomePath}.json`;
+    if (existsSync(siblingJsonPath)) {
+      mounts.push(
+        `type=bind,src=${siblingJsonPath},dst=${input.configMountPath}.json`,
+      );
+      if (hostPathAlias) {
+        mounts.push(
+          `type=bind,src=${siblingJsonPath},dst=${hostPathAlias}.json`,
+        );
+      }
+    }
   }
 
   for (const override of input.configFileOverrides ?? []) {
@@ -231,6 +255,7 @@ export class DockerRuntimeManager implements DockerRuntime {
   readonly #uid: number;
   readonly #gid: number;
   readonly #sessionContainers = new Map<string, SessionContainer>();
+  #networkCreated = false;
 
   constructor(dependencies: DockerRuntimeDependencies = {}) {
     this.#execFileSyncImpl = dependencies.execFileSyncImpl ?? execFileSync;
@@ -342,6 +367,7 @@ export class DockerRuntimeManager implements DockerRuntime {
         ...buildConfigMountSpecs({
           configHomePath,
           configMountPath: claudeCodeDockerSpec.configMountPath,
+          includeSiblingJsonFile: true,
         }).flatMap((mountSpec) => ["--mount", mountSpec]),
         "-e",
         `HOME=${claudeCodeDockerSpec.homePath}`,
@@ -434,10 +460,14 @@ export class DockerRuntimeManager implements DockerRuntime {
       configHomePath,
       configMountPath: input.dockerSpec.configMountPath,
       configFileOverrides: input.configFileOverrides,
+      includeSiblingJsonFile:
+        input.dockerSpec.configMountPath ===
+        claudeCodeDockerSpec.configMountPath,
     });
 
     const name = buildContainerName(this.#repoRootHash, input.sessionId);
     this.#removeContainerIfPresent(name);
+    this.#ensureNetwork();
 
     const containerId = this.#runDocker([
       "run",
@@ -445,6 +475,8 @@ export class DockerRuntimeManager implements DockerRuntime {
       "--rm",
       "--name",
       name,
+      "--network",
+      this.#networkName,
       "--label",
       `${dockerManagedLabel}=true`,
       "--label",
@@ -578,6 +610,55 @@ export class DockerRuntimeManager implements DockerRuntime {
     for (const sessionId of [...this.#sessionContainers.keys()]) {
       this.cleanupSessionContainer(sessionId);
     }
+    this.#removeNetworkIfCreated();
+  }
+
+  get #networkName(): string {
+    return `walleyboard-${this.#repoRootHash.slice(0, 12)}`;
+  }
+
+  #ensureNetwork(): void {
+    if (this.#networkCreated) {
+      return;
+    }
+
+    // Check if the network already exists (e.g. from a previous run that
+    // didn't shut down cleanly).
+    try {
+      this.#runDocker(["network", "inspect", this.#networkName]);
+      this.#networkCreated = true;
+      return;
+    } catch {
+      // Network doesn't exist yet — create it below.
+    }
+
+    this.#runDocker([
+      "network",
+      "create",
+      "--driver",
+      "bridge",
+      "--subnet",
+      walleyboardNetworkSubnet,
+      "--gateway",
+      walleyboardNetworkGateway,
+      "--label",
+      `${dockerManagedLabel}=true`,
+      this.#networkName,
+    ]);
+    this.#networkCreated = true;
+  }
+
+  #removeNetworkIfCreated(): void {
+    if (!this.#networkCreated) {
+      return;
+    }
+
+    try {
+      this.#runDocker(["network", "rm", this.#networkName]);
+    } catch {
+      // Network may already be removed or have active endpoints.
+    }
+    this.#networkCreated = false;
   }
 
   #requireSessionContainer(sessionId: string): SessionContainer {

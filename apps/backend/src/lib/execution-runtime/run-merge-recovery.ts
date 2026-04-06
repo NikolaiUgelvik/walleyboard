@@ -17,6 +17,7 @@ import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildMergeConflictSummaryPath,
   buildProcessEnv,
+  formatPreparedRunCommand,
   hasMeaningfulContent,
   streamChildProcessLines,
   truncate,
@@ -77,7 +78,7 @@ export async function runMergeRecovery(input: {
 
   const logs = [
     `Launching ${input.adapter.label} ${formatMergeRecoveryLaunchLabel(input.recoveryKind)} in ${input.session.worktree_path}`,
-    `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
+    `Command: ${formatPreparedRunCommand(run)}`,
   ];
   if (model) {
     logs.push(`Model override: ${model}`);

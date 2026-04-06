@@ -350,7 +350,7 @@ test("docker-backed execution launches the configured adapter command inside Doc
   }
 });
 
-test("draft refinement launches the configured adapter command inside Docker", () => {
+test("draft refinement launches the configured adapter command inside Docker", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-draft-runtime-"));
   const repositoryPath = join(tempDir, "repository");
   const walleyBoardHome = join(tempDir, ".walleyboard-home");
@@ -420,6 +420,21 @@ test("draft refinement launches the configured adapter command inside Docker", (
           assert.equal(input.useDockerRuntime, true);
           assert.equal(input.outputPath.startsWith(walleyBoardHome), true);
           assert.match(input.outputPath, /draft-analyses\/project-1\//);
+          assert.equal(
+            input.resultSchema.safeParse({
+              title: "Refined title",
+              description: "Refined description",
+              ticket_type: "feature",
+              acceptance_criteria: ["criterion"],
+            }).success,
+            true,
+          );
+          assert.equal(
+            input.resultSchema.safeParse({
+              verdict: "feasible",
+            }).success,
+            false,
+          );
           return {
             command: "test-agent",
             args: ["exec", "--json", "--output-last-message", input.outputPath],
@@ -477,6 +492,10 @@ test("draft refinement launches the configured adapter command inside Docker", (
       repository: createRepository(repositoryPath),
     });
 
+    // runDraftRefinement is fire-and-forget async; flush microtasks so
+    // the port allocation and spawn complete before we check results.
+    await new Promise((r) => setTimeout(r, 50));
+
     if (!ensureSessionContainerInput || !spawned) {
       throw new Error("Expected draft refinement to start in Docker");
     }
@@ -490,6 +509,190 @@ test("draft refinement launches the configured adapter command inside Docker", (
     assert.equal(capturedContainerInput.ticketId, 0);
     assert.equal(spawnedRun.command, "test-agent");
     fakeChild.emitExit({ exitCode: 1 });
+  } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("draft refinement maps agent-facing fields into the stored draft shape", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-draft-runtime-"));
+  const repositoryPath = join(tempDir, "repository");
+  const walleyBoardHome = join(tempDir, ".walleyboard-home");
+  mkdirSync(repositoryPath, { recursive: true });
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+
+  const fakeChild = createFakeChildProcess();
+  let updatedDraftInput: Record<string, unknown> | null = null;
+  const recordedEvents: Array<{
+    eventType: string;
+    payload: Record<string, unknown>;
+  }> = [];
+
+  const dockerRuntime = {
+    assertAvailable() {
+      return {
+        installed: true,
+        available: true,
+        client_version: "29.3.1",
+        server_version: "29.3.1",
+        error: null,
+      };
+    },
+    cleanupSessionContainer() {},
+    dispose() {},
+    ensureSessionContainer() {
+      return undefined;
+    },
+    getSessionContainerInfo() {
+      return {
+        id: "container-draft-run",
+        name: "test-container-draft-run",
+        projectId: "project-1",
+        ticketId: 0,
+        worktreePath: repositoryPath,
+      };
+    },
+    spawnProcessInSession() {
+      return fakeChild.child;
+    },
+  };
+  const store = {
+    getDraft() {
+      return createDraft();
+    },
+    recordDraftEvent(
+      _draftId: string,
+      eventType: string,
+      payload: Record<string, unknown>,
+    ) {
+      recordedEvents.push({ eventType, payload });
+      return {
+        id: `event-${recordedEvents.length}`,
+        occurred_at: "2026-04-01T00:00:00.000Z",
+        entity_type: "draft",
+        entity_id: "draft-1",
+        event_type: eventType,
+        payload,
+      };
+    },
+    updateDraft(_draftId: string, input: Record<string, unknown>) {
+      updatedDraftInput = input;
+      return {
+        ...createDraft(),
+        ...input,
+      };
+    },
+  };
+  const eventHub = {
+    publish() {},
+  };
+
+  try {
+    process.env.WALLEYBOARD_HOME = walleyBoardHome;
+    const adapterRegistry = new AgentAdapterRegistry([
+      {
+        id: "codex",
+        label: "Fake Agent",
+        buildDraftRun(input) {
+          assert.equal(
+            input.resultSchema.safeParse({
+              title: "Refined title",
+              description: "Refined description",
+              ticket_type: "feature",
+              acceptance_criteria: ["criterion"],
+            }).success,
+            true,
+          );
+          return {
+            command: "test-agent",
+            args: ["exec", "--json", "--output-last-message", input.outputPath],
+            prompt: "fake prompt",
+            outputPath: input.outputPath,
+            dockerSpec: {
+              imageTag: "example/test-agent:latest",
+              dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+              homePath: "/home/test-agent",
+              configMountPath: "/home/test-agent/.fake-agent",
+            },
+          };
+        },
+        buildExecutionRun() {
+          throw new Error("execution runs are not used in this test");
+        },
+        buildMergeConflictRun() {
+          throw new Error("merge-conflict runs are not used in this test");
+        },
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
+        },
+        buildPullRequestBodyRun() {
+          throw new Error("pull request body runs are not used in this test");
+        },
+        interpretOutputLine(line) {
+          return {
+            logLine: line,
+          };
+        },
+        parseDraftResult(rawOutput, schema) {
+          assert.equal(rawOutput, "");
+          return schema.parse({
+            title: "Refined title",
+            description: "Refined description",
+            ticket_type: "feature",
+            acceptance_criteria: ["criterion"],
+            split_proposal_summary: null,
+          });
+        },
+        formatExitReason() {
+          return "fake exit";
+        },
+        resolveModelSelection() {
+          return {
+            model: null,
+            reasoningEffort: null,
+          };
+        },
+      },
+    ]);
+    const runtime = new ExecutionRuntime({
+      adapterRegistry,
+      dockerRuntime: dockerRuntime as never,
+      eventHub: eventHub as never,
+      store: store as never,
+    });
+
+    runtime.runDraftRefinement({
+      draft: createDraft(),
+      project: createProject(),
+      repository: createRepository(repositoryPath),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    fakeChild.emitExit({ exitCode: 0 });
+
+    assert.deepEqual(updatedDraftInput, {
+      title_draft: "Refined title",
+      description_draft: "Refined description",
+      proposed_ticket_type: "feature",
+      proposed_acceptance_criteria: ["criterion"],
+      split_proposal_summary: null,
+      wizard_status: "awaiting_confirmation",
+    });
+    assert.equal(
+      recordedEvents.some(
+        ({ eventType, payload }) =>
+          eventType === "draft.refine.completed" &&
+          (payload.result as Record<string, unknown>).title_draft ===
+            "Refined title",
+      ),
+      true,
+    );
   } finally {
     if (previousWalleyBoardHome === undefined) {
       delete process.env.WALLEYBOARD_HOME;

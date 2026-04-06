@@ -532,13 +532,14 @@ export class GitHubPullRequestService {
           ),
           context: input,
           dockerRuntime: this.#dependencies.dockerRuntime,
-          onLogLine: (line) => {
+          onLogLine: (line) =>
             this.#publishSessionOutput(
               input.session.id,
               input.session.current_attempt_id ?? input.session.id,
               line,
-            );
-          },
+            ),
+          registerHostSidecar: (sid, sc) =>
+            this.#dependencies.executionRuntime.registerHostSidecar(sid, sc),
         }));
     this.#runGhCommand = options?.runGhCommand ?? defaultRunGhCommand;
   }

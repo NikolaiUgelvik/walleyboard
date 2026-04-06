@@ -23,9 +23,14 @@ import type { DockerRuntime } from "./docker-runtime.js";
 import {
   buildProcessEnv,
   buildPullRequestBodyOutputPath,
+  formatPreparedRunCommand,
   hasMeaningfulContent,
   streamChildProcessLines,
 } from "./execution-runtime/helpers.js";
+import {
+  allocatePort,
+  startHostSidecar,
+} from "./execution-runtime/host-sidecar.js";
 import { spawnUnattendedProcessInSession } from "./execution-runtime/spawn-unattended-process.js";
 
 const pullRequestBodyResultSchema = z
@@ -38,6 +43,7 @@ export type PullRequestBodyGenerationContext = Omit<
   PullRequestBodyRunInput,
   | "outputPath"
   | "project"
+  | "resultSchema"
   | "repository"
   | "session"
   | "ticket"
@@ -55,6 +61,10 @@ export async function generatePullRequestBody(input: {
   dockerRuntime: DockerRuntime;
   onLogLine?: (line: string) => void;
   onPreparedRun?: (run: { prompt: string }) => void;
+  registerHostSidecar: (
+    sessionId: string,
+    sidecar: { kill: () => void },
+  ) => void;
 }): Promise<PullRequestBodyResult> {
   const worktreePath = input.context.session.worktree_path;
   if (!worktreePath) {
@@ -66,9 +76,12 @@ export async function generatePullRequestBody(input: {
     input.context.ticket.id,
     input.context.session.id,
   );
+  const mcpPort = await allocatePort();
   const run = input.adapter.buildPullRequestBodyRun({
     ...input.context,
+    mcpPort,
     outputPath,
+    resultSchema: pullRequestBodyResultSchema,
     useDockerRuntime: true,
   });
   input.onPreparedRun?.({ prompt: run.prompt });
@@ -76,10 +89,15 @@ export async function generatePullRequestBody(input: {
   const activityId = `pr-body-${input.context.ticket.id}-${input.context.session.id}`;
   const launchLines = [
     `Launching ${input.adapter.label} pull request body generation in Docker for ${worktreePath}`,
-    `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
+    `Command: ${formatPreparedRunCommand(run)}`,
   ];
   for (const line of launchLines) {
     input.onLogLine?.(line);
+  }
+
+  if (run.hostSidecar) {
+    const sidecar = await startHostSidecar(run.hostSidecar);
+    input.registerHostSidecar(activityId, sidecar);
   }
 
   return await new Promise((resolve, reject) => {

@@ -52,6 +52,14 @@ export type PromptContextSection = {
   content: string;
 };
 
+export const draftRefinementAgentResultSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  ticket_type: ticketTypeSchema,
+  acceptance_criteria: z.array(z.string().min(1)),
+  split_proposal_summary: z.string().nullable().optional(),
+});
+
 export const draftRefinementResultSchema = z.object({
   title_draft: z.string().min(1),
   description_draft: z.string().min(1),
@@ -69,10 +77,25 @@ export const draftFeasibilityResultSchema = z.object({
   suggested_draft_edits: z.array(z.string().min(1)).default([]),
 });
 
+export type DraftRefinementAgentResult = z.infer<
+  typeof draftRefinementAgentResultSchema
+>;
 export type DraftRefinementResult = z.infer<typeof draftRefinementResultSchema>;
 export type DraftFeasibilityResult = z.infer<
   typeof draftFeasibilityResultSchema
 >;
+
+export function mapDraftRefinementAgentResult(
+  result: DraftRefinementAgentResult,
+): DraftRefinementResult {
+  return {
+    title_draft: result.title,
+    description_draft: result.description,
+    proposed_ticket_type: result.ticket_type,
+    proposed_acceptance_criteria: result.acceptance_criteria,
+    split_proposal_summary: result.split_proposal_summary,
+  };
+}
 
 export const draftAnalysisTimeoutMs = 180_000;
 

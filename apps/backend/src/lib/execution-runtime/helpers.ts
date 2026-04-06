@@ -14,6 +14,7 @@ import type {
   RepositoryConfig,
   ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
+import type { PreparedAgentRun } from "../agent-adapters/types.js";
 import { runObservedOperation } from "../backend-observability.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 import type { DraftFeasibilityResult, DraftRefinementResult } from "./types.js";
@@ -145,6 +146,45 @@ export function buildProcessEnv(): Record<string, string> {
       return typeof entry[1] === "string";
     }),
   );
+}
+
+export function formatPreparedRunCommand(run: PreparedAgentRun): string {
+  if (run.command === "bash" && run.args[0] === "-c") {
+    return "bash -c <prompt>";
+  }
+
+  const previewArgs: string[] = [];
+  for (let index = 0; index < run.args.length; index += 1) {
+    const arg = run.args[index];
+    const nextArg = run.args[index + 1];
+    if (typeof arg !== "string") {
+      continue;
+    }
+
+    if (arg === run.prompt) {
+      previewArgs.push("<prompt>");
+      continue;
+    }
+
+    if (arg === "--mcp-config") {
+      previewArgs.push(arg, "<mcp-config>");
+      index += 1;
+      continue;
+    }
+
+    if (
+      arg === "--config" &&
+      typeof nextArg === "string" &&
+      nextArg.startsWith("mcp_servers.walleyboard.")
+    ) {
+      previewArgs.push(arg, "<walleyboard-mcp-config>");
+      index += 1;
+      continue;
+    }
+
+    previewArgs.push(arg);
+  }
+  return [run.command, ...previewArgs].join(" ");
 }
 
 export function runGit(repoPath: string, args: string[]): string {

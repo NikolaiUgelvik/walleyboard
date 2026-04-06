@@ -234,8 +234,7 @@ test("buildImplementationPrompt states when no MCPs are enabled", () => {
     null,
   );
 
-  assert.match(prompt, /## Available MCPs/);
-  assert.match(prompt, /No MCP servers are enabled for this project\./);
+  assert.doesNotMatch(prompt, /## Available MCPs/);
 });
 
 test("buildMergeConflictPrompt separates facts from completion criteria", () => {
@@ -272,11 +271,10 @@ test("buildMergeConflictPrompt states when no MCPs are enabled", () => {
     failureMessage: "Target branch moved forward during the final merge.",
   });
 
-  assert.match(prompt, /## Available MCPs/);
-  assert.match(prompt, /No MCP servers are enabled for this project\./);
+  assert.doesNotMatch(prompt, /## Available MCPs/);
 });
 
-test("buildReviewPrompt includes evidence blocks and fenced JSON output", () => {
+test("buildReviewPrompt includes evidence blocks without adapter-specific JSON sections", () => {
   const prompt = buildReviewPrompt({
     repository: createRepository(),
     reviewPackage: createReviewPackage(),
@@ -292,8 +290,11 @@ test("buildReviewPrompt includes evidence blocks and fenced JSON output", () => 
   assert.match(prompt, /### Validation Results/);
   assert.match(prompt, /### Known Risks/);
   assert.match(prompt, /trust the repository state and git diff/i);
-  assert.match(prompt, /## Output JSON/);
-  assert.match(prompt, /```json/);
+  assert.doesNotMatch(prompt, /chat response/);
+  assert.doesNotMatch(prompt, /output files/);
+  assert.doesNotMatch(prompt, /## Output JSON/);
+  assert.doesNotMatch(prompt, /```json/);
+  assert.doesNotMatch(prompt, /Return JSON only/);
 });
 
 test("buildReviewPrompt rewrites mounted patch paths for Docker review runs", () => {
@@ -350,7 +351,7 @@ test("buildReviewPrompt omits empty validation and risk sections", () => {
   assert.doesNotMatch(prompt, /### Known Risks/);
 });
 
-test("buildPullRequestBodyPrompt includes the full canonical timeline context and strict JSON contract", () => {
+test("buildPullRequestBodyPrompt includes the full canonical timeline context without adapter-specific JSON sections", () => {
   const prompt = buildPullRequestBodyPrompt({
     attempts: [createExecutionAttempt()],
     baseBranch: "main",
@@ -374,6 +375,8 @@ test("buildPullRequestBodyPrompt includes the full canonical timeline context an
   });
 
   assert.match(prompt, /## Pull Request Goal/);
+  assert.doesNotMatch(prompt, /chat response/);
+  assert.doesNotMatch(prompt, /output files/);
   assert.match(prompt, /- Base branch: main/);
   assert.match(prompt, /- Head branch: codex\/ticket-5/);
   assert.match(prompt, /## Review Package/);
@@ -392,6 +395,7 @@ test("buildPullRequestBodyPrompt includes the full canonical timeline context an
   assert.match(prompt, /Prepared pull request metadata/);
   assert.match(prompt, /## Diff Patch/);
   assert.match(prompt, /\+console\.log\('hi'\);/);
-  assert.match(prompt, /## Output JSON/);
-  assert.match(prompt, /"body": "## Summary\\n- \.\.\."/);
+  assert.doesNotMatch(prompt, /## Output JSON/);
+  assert.doesNotMatch(prompt, /"body": "## Summary\\n- \.\.\."/);
+  assert.doesNotMatch(prompt, /required JSON shape/);
 });

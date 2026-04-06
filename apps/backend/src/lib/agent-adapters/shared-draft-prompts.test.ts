@@ -65,16 +65,18 @@ test("buildDraftRefinementPrompt uses human-readable Markdown sections", () => {
   assert.match(prompt, /## Available MCPs/);
   assert.match(prompt, /- `context7` - enabled/);
   assert.match(prompt, /- `sentry` - enabled/);
+  assert.doesNotMatch(prompt, /chat response/);
+  assert.doesNotMatch(prompt, /output files/);
   assert.match(prompt, /## Context/);
   assert.match(prompt, /### Additional Instruction/);
   assert.match(prompt, /## Guardrails/);
-  assert.match(prompt, /## Output JSON/);
-  assert.match(prompt, /```json/);
+  assert.doesNotMatch(prompt, /## Output JSON/);
+  assert.doesNotMatch(prompt, /```json/);
   assert.doesNotMatch(prompt, /title_draft:/);
   assert.doesNotMatch(prompt, /criterion_1:/);
 });
 
-test("buildDraftQuestionsPrompt keeps the JSON contract in a fenced block", () => {
+test("buildDraftQuestionsPrompt keeps the shared prompt focused on task context", () => {
   const prompt = buildDraftQuestionsPrompt(
     createDraft(),
     createRepository(),
@@ -84,14 +86,12 @@ test("buildDraftQuestionsPrompt keeps the JSON contract in a fenced block", () =
   assert.match(prompt, /## Objective/);
   assert.match(prompt, /## Draft/);
   assert.match(prompt, /## Proposed Acceptance Checklist/);
-  assert.match(prompt, /## Available MCPs/);
-  assert.match(prompt, /No MCP servers are enabled for this project\./);
+  assert.doesNotMatch(prompt, /## Available MCPs/);
+  assert.doesNotMatch(prompt, /chat response/);
+  assert.doesNotMatch(prompt, /output files/);
   assert.match(prompt, /1\. Escape returns the player to the main menu\./);
   assert.match(prompt, /## Guardrails/);
-  assert.match(prompt, /## Output JSON/);
-  assert.match(prompt, /"open_questions":\["string"\]/);
-  assert.match(
-    prompt,
-    /Return JSON only with no markdown fences or commentary\./,
-  );
+  assert.doesNotMatch(prompt, /## Output JSON/);
+  assert.doesNotMatch(prompt, /"open_questions":\["string"\]/);
+  assert.doesNotMatch(prompt, /Return JSON only/);
 });

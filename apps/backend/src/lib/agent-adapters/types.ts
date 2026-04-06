@@ -21,6 +21,19 @@ import type {
 
 export type AgentAdapterId = AgentAdapter;
 
+export type HostSidecar = {
+  command: string;
+  args: string[];
+  /** Extra environment variables for the sidecar process. */
+  env?: Record<string, string>;
+  /** Host to health-check (defaults to 127.0.0.1). */
+  healthCheckHost?: string;
+  /** Port to health-check before running the main command. */
+  healthCheckPort: number;
+  /** Max time in ms to wait for the health-check port to open. */
+  healthCheckTimeoutMs?: number;
+};
+
 export type PreparedAgentRun = {
   command: string;
   args: string[];
@@ -32,6 +45,8 @@ export type PreparedAgentRun = {
     homePath: string;
     configMountPath: string;
   };
+  /** Optional sidecar process to run on the host before executing the main command in Docker. */
+  hostSidecar?: HostSidecar;
 };
 
 export type InterpretedAdapterLine = {
@@ -48,8 +63,11 @@ export type DraftRunInput = {
   draft: DraftTicketState;
   mode: DraftAnalysisMode;
   instruction?: string;
+  /** Port for the host-side MCP sidecar (when using structured output). */
+  mcpPort?: number;
   outputPath: string;
   project: Project;
+  resultSchema: z.ZodType<unknown>;
   repository: RepositoryConfig;
   useDockerRuntime: boolean;
 };
@@ -81,9 +99,12 @@ export type MergeConflictRunInput = {
 };
 
 export type ReviewRunInput = {
+  /** Port for the host-side MCP sidecar (when using structured output). */
+  mcpPort?: number;
   outputPath: string;
   project: Project;
   repository: RepositoryConfig;
+  resultSchema: z.ZodType<unknown>;
   reviewPackage: ReviewPackage;
   session: ExecutionSession;
   ticket: TicketFrontmatter;
@@ -94,10 +115,13 @@ export type PullRequestBodyRunInput = {
   attempts: ExecutionAttempt[];
   baseBranch: string;
   headBranch: string;
+  /** Port for the host-side MCP sidecar (when using structured output). */
+  mcpPort?: number;
   outputPath: string;
   patch: string;
   project: Project;
   repository: RepositoryConfig;
+  resultSchema: z.ZodType<unknown>;
   reviewPackage: ReviewPackage;
   reviewRuns: ReviewRun[];
   session: ExecutionSession;

@@ -1,0 +1,364 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { nanoid } from "nanoid";
+
+import type {
+  DraftTicketState,
+  Project,
+  RepositoryConfig,
+} from "../../../../../packages/contracts/src/index.js";
+
+import { resolveProjectAgentConfigFileOverrides } from "../agent-adapters/agent-config-overrides.js";
+import type { AgentCliAdapter } from "../agent-adapters/types.js";
+import type { DockerRuntime } from "../docker-runtime.js";
+import { preserveDraftArtifactImages } from "../draft-artifact-images.js";
+import type { EventHub } from "../event-hub.js";
+import type { ExecutionRuntimePersistence } from "../store.js";
+import {
+  clearExecutionActivity,
+  updateExecutionActivity,
+} from "./activity-observability.js";
+import {
+  buildDraftAnalysisOutputPath,
+  buildProcessEnv,
+  hasMeaningfulContent,
+  streamChildProcessLines,
+  summarizeDraftQuestions,
+  summarizeDraftRefinement,
+  truncate,
+} from "./helpers.js";
+import { allocatePort, startHostSidecar } from "./host-sidecar.js";
+import { publishDraftUpdated, publishStructuredEvent } from "./publishers.js";
+import { spawnUnattendedProcessInSession } from "./spawn-unattended-process.js";
+import {
+  type DraftAnalysisMode,
+  type DraftRefinementResult,
+  draftAnalysisTimeoutMs,
+  draftFeasibilityResultSchema,
+  draftRefinementAgentResultSchema,
+  mapDraftRefinementAgentResult,
+} from "./types.js";
+
+export type DraftAnalysisDeps = {
+  activeDraftRuns: Map<string, { kill(signal?: NodeJS.Signals): unknown }>;
+  adapter: AgentCliAdapter;
+  cleanupExecutionEnvironment: (sessionId: string) => void;
+  dockerRuntime: DockerRuntime;
+  eventHub: EventHub;
+  registerHostSidecar: (
+    sessionId: string,
+    sidecar: { kill: () => void },
+  ) => void;
+  store: ExecutionRuntimePersistence;
+};
+
+export async function startDraftAnalysis(
+  deps: DraftAnalysisDeps,
+  input: {
+    mode: DraftAnalysisMode;
+    draft: DraftTicketState;
+    project: Project;
+    repository: RepositoryConfig;
+    instruction?: string | undefined;
+  },
+): Promise<void> {
+  const { mode, draft, project, repository, instruction } = input;
+  const {
+    activeDraftRuns,
+    adapter,
+    cleanupExecutionEnvironment,
+    dockerRuntime,
+    eventHub,
+    registerHostSidecar: registerSidecar,
+    store,
+  } = deps;
+
+  if (activeDraftRuns.has(draft.id)) {
+    throw new Error("Draft analysis already running");
+  }
+
+  const runId = nanoid();
+  const startedEvent = store.recordDraftEvent(
+    draft.id,
+    `draft.${mode}.started`,
+    {
+      run_id: runId,
+      operation: mode,
+      status: "started",
+      repository_id: repository.id,
+      repository_name: repository.name,
+      instruction: hasMeaningfulContent(instruction) ? instruction : null,
+      summary:
+        mode === "refine"
+          ? `${adapter.label} is refining this draft in ${repository.name}.`
+          : `${adapter.label} is checking draft feasibility in ${repository.name}.`,
+    },
+  );
+  publishStructuredEvent(eventHub, startedEvent);
+
+  const outputPath = buildDraftAnalysisOutputPath(
+    project,
+    draft.id,
+    runId,
+    mode,
+  );
+  const mcpPort = await allocatePort();
+  const run = adapter.buildDraftRun({
+    draft,
+    mcpPort,
+    mode,
+    outputPath,
+    project,
+    resultSchema:
+      mode === "refine"
+        ? draftRefinementAgentResultSchema
+        : draftFeasibilityResultSchema,
+    repository,
+    useDockerRuntime: true,
+    ...(hasMeaningfulContent(instruction) ? { instruction } : {}),
+  });
+  const processEnv = buildProcessEnv();
+  let child: ChildProcessWithoutNullStreams;
+  const startedAt = new Date().toISOString();
+
+  const failEarly = (message: string): void => {
+    cleanupExecutionEnvironment(runId);
+    clearExecutionActivity(runId);
+    const failedEvent = store.recordDraftEvent(
+      draft.id,
+      `draft.${mode}.failed`,
+      {
+        run_id: runId,
+        operation: mode,
+        status: "failed",
+        repository_id: repository.id,
+        repository_name: repository.name,
+        summary: message,
+        error: message,
+        captured_output: [],
+      },
+    );
+    publishStructuredEvent(eventHub, failedEvent);
+  };
+
+  try {
+    if (!run.dockerSpec) {
+      throw new Error(
+        `${adapter.label} does not provide a Docker execution configuration.`,
+      );
+    }
+    dockerRuntime.ensureSessionContainer({
+      configFileOverrides: resolveProjectAgentConfigFileOverrides(
+        adapter.id,
+        project,
+      ),
+      dockerSpec: run.dockerSpec,
+      sessionId: runId,
+      projectId: project.id,
+      ticketId: 0,
+      worktreePath: repository.path,
+    });
+    if (run.hostSidecar) {
+      const sidecar = await startHostSidecar(run.hostSidecar);
+      registerSidecar(runId, sidecar);
+    }
+    child = spawnUnattendedProcessInSession({
+      cwd: repository.path,
+      dockerRuntime,
+      env: processEnv,
+      run,
+      sessionId: runId,
+    });
+  } catch (error) {
+    failEarly(
+      error instanceof Error
+        ? error.message
+        : `${adapter.label} failed to start`,
+    );
+    return;
+  }
+
+  activeDraftRuns.set(draft.id, child);
+  updateExecutionActivity(dockerRuntime, {
+    activityId: runId,
+    activityType: "draft",
+    adapter: adapter.id,
+    startedAt,
+    ticketId: 0,
+  });
+
+  let finalized = false;
+  const capturedOutput: string[] = [];
+  const captureLine = (line: string) => {
+    const normalized = line.trim();
+    if (normalized.length === 0) {
+      return;
+    }
+
+    capturedOutput.push(truncate(normalized, 400));
+    if (capturedOutput.length > 40) {
+      capturedOutput.shift();
+    }
+  };
+
+  const failRun = (reason: string): void => {
+    if (finalized) {
+      return;
+    }
+
+    finalized = true;
+    activeDraftRuns.delete(draft.id);
+    clearExecutionActivity(runId);
+    cleanupExecutionEnvironment(runId);
+    const failedEvent = store.recordDraftEvent(
+      draft.id,
+      `draft.${mode}.failed`,
+      {
+        run_id: runId,
+        operation: mode,
+        status: "failed",
+        repository_id: repository.id,
+        repository_name: repository.name,
+        summary: reason,
+        error: reason,
+        captured_output: capturedOutput,
+      },
+    );
+    publishStructuredEvent(eventHub, failedEvent);
+  };
+
+  const timeoutId = setTimeout(() => {
+    child.kill("SIGTERM");
+    setTimeout(() => {
+      if (!finalized) {
+        child.kill("SIGKILL");
+      }
+    }, 1_000);
+    failRun(
+      `${adapter.label} ${mode === "refine" ? "refinement" : "feasibility"} timed out after ${Math.round(
+        draftAnalysisTimeoutMs / 1_000,
+      )} seconds.`,
+    );
+  }, draftAnalysisTimeoutMs);
+
+  const completeRun = (exitCode: number): void => {
+    clearTimeout(timeoutId);
+    if (finalized) {
+      return;
+    }
+
+    clearExecutionActivity(runId);
+
+    const rawOutput = existsSync(outputPath)
+      ? readFileSync(outputPath, "utf8").trim()
+      : "";
+
+    if (exitCode !== 0) {
+      failRun(adapter.formatExitReason(exitCode, null, rawOutput));
+      return;
+    }
+
+    try {
+      if (mode === "refine") {
+        const beforeDraft = store.getDraft(draft.id);
+        const agentResult = adapter.parseDraftResult(
+          rawOutput,
+          draftRefinementAgentResultSchema,
+        );
+        const result = mapDraftRefinementAgentResult(agentResult);
+        const refinedDescription = preserveDraftArtifactImages({
+          projectId: project.id,
+          artifactScopeId: draft.artifact_scope_id,
+          originalDescription: draft.description_draft,
+          refinedDescription: result.description_draft,
+        });
+        const finalResult: DraftRefinementResult = {
+          ...result,
+          description_draft: refinedDescription,
+        };
+        const updatedDraft = store.updateDraft(draft.id, {
+          title_draft: finalResult.title_draft,
+          description_draft: finalResult.description_draft,
+          proposed_ticket_type: finalResult.proposed_ticket_type,
+          proposed_acceptance_criteria:
+            finalResult.proposed_acceptance_criteria,
+          split_proposal_summary: finalResult.split_proposal_summary ?? null,
+          wizard_status: "awaiting_confirmation",
+        });
+
+        finalized = true;
+        activeDraftRuns.delete(draft.id);
+        clearExecutionActivity(runId);
+        cleanupExecutionEnvironment(runId);
+        const completedEvent = store.recordDraftEvent(
+          draft.id,
+          "draft.refine.completed",
+          {
+            run_id: runId,
+            operation: mode,
+            status: "completed",
+            repository_id: repository.id,
+            repository_name: repository.name,
+            summary: summarizeDraftRefinement(finalResult),
+            before_draft: beforeDraft ?? null,
+            after_draft: updatedDraft,
+            result: finalResult,
+          },
+        );
+        publishStructuredEvent(eventHub, completedEvent);
+        publishDraftUpdated(eventHub, updatedDraft);
+        return;
+      }
+
+      const result = adapter.parseDraftResult(
+        rawOutput,
+        draftFeasibilityResultSchema,
+      );
+      finalized = true;
+      activeDraftRuns.delete(draft.id);
+      clearExecutionActivity(runId);
+      cleanupExecutionEnvironment(runId);
+      const completedEvent = store.recordDraftEvent(
+        draft.id,
+        "draft.questions.completed",
+        {
+          run_id: runId,
+          operation: mode,
+          status: "completed",
+          repository_id: repository.id,
+          repository_name: repository.name,
+          summary: summarizeDraftQuestions(result),
+          result,
+        },
+      );
+      publishStructuredEvent(eventHub, completedEvent);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Unable to process ${adapter.label} output`;
+      failRun(message);
+    }
+  };
+
+  streamChildProcessLines(child, {
+    onError: (error) => {
+      clearTimeout(timeoutId);
+      failRun(error.message || `${adapter.label} failed to start`);
+    },
+    onExit: ({ exitCode }) => {
+      completeRun(exitCode ?? -1);
+    },
+    onLine: (line) => {
+      captureLine(adapter.interpretOutputLine(line).logLine);
+      updateExecutionActivity(dockerRuntime, {
+        activityId: runId,
+        activityType: "draft",
+        adapter: adapter.id,
+        lastOutputAt: new Date().toISOString(),
+        startedAt,
+        ticketId: 0,
+      });
+    },
+  });
+}

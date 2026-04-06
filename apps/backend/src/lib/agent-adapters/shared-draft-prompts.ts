@@ -54,14 +54,6 @@ function appendNumberedList(
   }
 }
 
-function appendCodeBlock(
-  sections: string[],
-  language: string,
-  content: string,
-): void {
-  sections.push(`\`\`\`${language}`, content, "```");
-}
-
 function appendSubsection(
   sections: string[],
   title: string,
@@ -87,12 +79,11 @@ function appendAvailableMcpSection(
   sections: string[],
   enabledMcpServers: readonly string[],
 ): void {
-  appendHeading(sections, "Available MCPs");
-
   if (enabledMcpServers.length === 0) {
-    sections.push("No MCP servers are enabled for this project.");
     return;
   }
+
+  appendHeading(sections, "Available MCPs");
 
   appendBullets(
     sections,
@@ -136,14 +127,6 @@ export function buildDraftRefinementPrompt(
     "Make acceptance criteria concrete, testable, and concise without expanding scope.",
     'Set `"split_proposal_summary"` to `null` unless the draft already clearly describes multiple separate tickets.',
   ]);
-
-  appendHeading(sections, "Output JSON");
-  sections.push("Return JSON only with no markdown fences or commentary.");
-  appendCodeBlock(
-    sections,
-    "json",
-    '{"title_draft":"string","description_draft":"string","proposed_ticket_type":"feature|bugfix|chore|research","proposed_acceptance_criteria":["string"],"split_proposal_summary":"string|null"}',
-  );
   return sections.join("\n");
 }
 
@@ -178,13 +161,5 @@ export function buildDraftQuestionsPrompt(
     "Call out missing information, risky assumptions, and likely blockers.",
     "Keep suggested edits concrete and short.",
   ]);
-
-  appendHeading(sections, "Output JSON");
-  sections.push("Return JSON only with no markdown fences or commentary.");
-  appendCodeBlock(
-    sections,
-    "json",
-    '{"verdict":"string","summary":"string","assumptions":["string"],"open_questions":["string"],"risks":["string"],"suggested_draft_edits":["string"]}',
-  );
   return sections.join("\n");
 }

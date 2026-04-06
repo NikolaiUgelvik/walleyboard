@@ -19,15 +19,20 @@ import type {
 
 import { hasMeaningfulContent } from "../execution-runtime/helpers.js";
 import {
+  buildClaudeStructuredOutputRun,
   buildDraftShellCommand,
   ClaudeCodeAdapter,
-  findLastTopLevelJsonStart,
   formatClaudeCodeExitReason,
   interpretClaudeCodeStreamJsonLine,
   parseClaudeCodeJsonResult,
   shellEscape,
   stripAnsi,
 } from "./claude-code-adapter.js";
+import { buildStructuredOutputToolInstruction } from "./prompt-augmentation.js";
+import {
+  buildWalleyboardToolDefinition,
+  buildWalleyboardToolRef,
+} from "./walleyboard-mcp.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -246,18 +251,64 @@ function assertClaudeDockerSpec(
   });
 }
 
-function assertClaudeJsonOnlyGuardrails(prompt: string): void {
-  assert.match(prompt, /## Agent-Specific Guardrails/);
-  assert.match(prompt, /You must output ONLY valid JSON\./);
-  assert.match(prompt, /- Do not include any explanations/);
-  assert.match(prompt, /- Do not include markdown fences \(no ```json\)/);
-  assert.match(prompt, /- Do not include any text before or after the JSON/);
-  assert.match(prompt, /- Output must be parseable with JSON\.parse/);
-  assert.match(prompt, /If you cannot comply, output: \{"error": "invalid"\}/);
+function assertLegacyClaudeGuardrailsRemoved(prompt: string): void {
+  assert.doesNotMatch(prompt, /## Agent-Specific Guardrails/);
 }
 
-function assertNoAgentSpecificGuardrails(prompt: string): void {
-  assert.doesNotMatch(prompt, /## Agent-Specific Guardrails/);
+function assertClaudeStructuredOutputPromptGuardrail(
+  prompt: string,
+  toolRef: string,
+): void {
+  assert.match(prompt, /## Response Format/);
+  assert.ok(prompt.includes(buildStructuredOutputToolInstruction(toolRef)));
+}
+
+function assertClaudeStructuredOutputArgs(input: {
+  command: string;
+  args: string[];
+  outputPath: string | null;
+  tool: ReturnType<typeof buildWalleyboardToolDefinition>;
+  hostSidecar?: unknown;
+  model?: string | null;
+}): void {
+  assert.ok(input.outputPath);
+  assert.equal(input.command, "claude");
+  assert.ok(input.args.includes("--mcp-config"));
+  assert.ok(input.args.includes("--strict-mcp-config"));
+  assert.ok(input.args.includes("--permission-mode"));
+  assert.ok(input.args.includes("dontAsk"));
+  assert.ok(input.args.includes("--allowedTools"));
+
+  const toolRef = buildWalleyboardToolRef(input.tool.name);
+  const allowedToolsIndex = input.args.indexOf("--allowedTools");
+  const allowedToolsValue = input.args[allowedToolsIndex + 1] ?? "";
+  assert.ok(
+    allowedToolsValue.includes(toolRef),
+    `Expected allowedTools to include ${toolRef}`,
+  );
+
+  // MCP config should point to host.docker.internal
+  const mcpConfigIndex = input.args.indexOf("--mcp-config");
+  const mcpConfigJson = input.args[mcpConfigIndex + 1] ?? "";
+  assert.match(mcpConfigJson, /172\.30\.99\.1/);
+
+  assert.ok(!input.args.includes("--tools"));
+  assert.ok(!input.args.includes("--json-schema"));
+  assert.ok(!input.args.includes("--append-system-prompt"));
+  assert.ok(!input.args.includes("--output-format"));
+
+  // Host sidecar should be present
+  assert.ok(input.hostSidecar, "Expected hostSidecar to be set");
+
+  if (input.model) {
+    assert.ok(input.args.includes(input.model));
+  }
+}
+
+function assertClaudeStructuredOutputToolsAreNotExplicitlyRestricted(
+  args: string[],
+): void {
+  assert.ok(!args.includes("--tools"));
 }
 
 // ---------------------------------------------------------------------------
@@ -369,11 +420,74 @@ test("buildDraftShellCommand: special characters in prompt are escaped", () => {
   assert.ok(shellString.includes("'it'\\''s a $test'"));
 });
 
+test("buildClaudeStructuredOutputRun: returns claude command with MCP config and a host sidecar spec", () => {
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "draft_refine",
+    schema: draftResultSchema,
+  });
+  const result = buildClaudeStructuredOutputRun({
+    allowedTools: "Read,Glob,Grep,mcp__walleyboard__submit_refined_draft",
+    claudeCommand: "/usr/local/bin/claude",
+    claudeArgs: ["-p", "Refine this ticket."],
+    hostOutputPath:
+      "/home/test/.walleyboard/agent-summaries/project-1/output.json",
+    port: 9999,
+    tool,
+  });
+
+  assert.equal(result.command, "/usr/local/bin/claude");
+  assert.ok(result.args.includes("-p"));
+  assert.ok(result.args.includes("Refine this ticket."));
+  assert.ok(result.args.includes("--mcp-config"));
+  assert.ok(result.args.includes("--strict-mcp-config"));
+  assert.ok(result.args.includes("--permission-mode"));
+  assert.ok(result.args.includes("dontAsk"));
+  assert.ok(result.args.includes("--allowedTools"));
+  assert.ok(
+    result.args.includes(
+      "Read,Glob,Grep,mcp__walleyboard__submit_refined_draft",
+    ),
+  );
+
+  // MCP config should point to host.docker.internal
+  const mcpConfigIndex = result.args.indexOf("--mcp-config");
+  const mcpConfigJson = result.args[mcpConfigIndex + 1];
+  assert.ok(mcpConfigJson);
+  assert.match(mcpConfigJson, /172\.30\.99\.1/);
+  assert.match(mcpConfigJson, /9999/);
+  assert.match(mcpConfigJson, /\/mcp\//);
+
+  // Host sidecar spec
+  assert.ok(result.hostSidecar);
+  assert.equal(result.hostSidecar.healthCheckPort, 9999);
+  assert.equal(result.hostSidecar.command, "node");
+  assert.ok(
+    result.hostSidecar.args.some((a) => a.includes("walleyboard-mcp-http.mjs")),
+  );
+});
+
 // ---------------------------------------------------------------------------
 // parseClaudeCodeJsonResult
 // ---------------------------------------------------------------------------
 
 const simpleSchema = z.object({ answer: z.string() });
+const draftResultSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  ticket_type: z.enum(["feature", "bugfix", "chore", "research"]),
+  acceptance_criteria: z.array(z.string()),
+});
+const reviewResultSchema = z.object({
+  summary: z.string(),
+  strengths: z.array(z.string()),
+  actionable_findings: z.array(
+    z.object({
+      severity: z.enum(["high", "medium", "low"]),
+      title: z.string(),
+    }),
+  ),
+});
+const pullRequestBodySchema = z.object({ body: z.string() }).strict();
 
 test("parseClaudeCodeJsonResult: raw JSON string", () => {
   const result = parseClaudeCodeJsonResult('{"answer":"hello"}', simpleSchema);
@@ -388,35 +502,26 @@ test("parseClaudeCodeJsonResult: wrapper object with result key", () => {
   assert.equal(result.answer, "from wrapper");
 });
 
-test("parseClaudeCodeJsonResult: wrapper with markdown-fenced result", () => {
+test("parseClaudeCodeJsonResult: wrapper object with result object", () => {
   const wrapper = JSON.stringify({
-    result: '```json\n{"answer":"fenced"}\n```',
+    result: {
+      answer: "from object",
+    },
   });
   const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
-  assert.equal(result.answer, "fenced");
+  assert.equal(result.answer, "from object");
 });
 
-test("parseClaudeCodeJsonResult: stream-json NDJSON with result line", () => {
-  const ndjson = [
-    '{"type":"system","message":"starting"}',
-    '{"type":"assistant","message":"working"}',
-    '{"type":"result","result":"{\\"answer\\":\\"ndjson\\"}","cost_usd":0.01}',
-  ].join("\n");
-  const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
-  assert.equal(result.answer, "ndjson");
-});
-
-test("parseClaudeCodeJsonResult: NDJSON result with markdown fences", () => {
-  const innerJson = '{"answer":"fenced-ndjson"}';
-  const ndjson = [
-    '{"type":"system","message":"starting"}',
-    JSON.stringify({
-      type: "result",
-      result: `\`\`\`json\n${innerJson}\n\`\`\``,
-    }),
-  ].join("\n");
-  const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
-  assert.equal(result.answer, "fenced-ndjson");
+test("parseClaudeCodeJsonResult: wrapper object with structured_output", () => {
+  const wrapper = JSON.stringify({
+    type: "result",
+    result: "",
+    structured_output: {
+      answer: "from structured output",
+    },
+  });
+  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
+  assert.equal(result.answer, "from structured output");
 });
 
 test("parseClaudeCodeJsonResult: empty input throws", () => {
@@ -438,128 +543,35 @@ test("parseClaudeCodeJsonResult: invalid JSON throws", () => {
   );
 });
 
-test("parseClaudeCodeJsonResult: outer markdown fences are stripped", () => {
-  const result = parseClaudeCodeJsonResult(
-    '```json\n{"answer":"outer-fenced"}\n```',
-    simpleSchema,
+test("parseClaudeCodeJsonResult: fenced output is rejected", () => {
+  assert.throws(
+    () =>
+      parseClaudeCodeJsonResult(
+        '```json\n{"answer":"outer-fenced"}\n```',
+        simpleSchema,
+      ),
+    { message: "Claude Code did not return valid JSON output." },
   );
-  assert.equal(result.answer, "outer-fenced");
 });
 
-test("parseClaudeCodeJsonResult: hyphenated language tag in markdown fences is stripped", () => {
-  const wrapper = JSON.stringify({
-    result: '```objective-c\n{"answer":"hyphenated"}\n```',
-  });
-  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
-  assert.equal(result.answer, "hyphenated");
-});
-
-// ---------------------------------------------------------------------------
-// findLastTopLevelJsonStart
-// ---------------------------------------------------------------------------
-
-test("findLastTopLevelJsonStart: returns -1 for text with no braces", () => {
-  assert.equal(findLastTopLevelJsonStart("no braces here"), -1);
-});
-
-test("findLastTopLevelJsonStart: returns 0 for a single JSON object", () => {
-  assert.equal(findLastTopLevelJsonStart('{"a":1}'), 0);
-});
-
-test("findLastTopLevelJsonStart: finds start of last top-level object after text", () => {
-  const text = 'Some reasoning text {"answer":"correct"}';
-  const idx = findLastTopLevelJsonStart(text);
-  assert.equal(idx, 20);
-  assert.equal(text.slice(idx), '{"answer":"correct"}');
-});
-
-test("findLastTopLevelJsonStart: handles nested braces correctly", () => {
-  const text = '{"outer":{"inner":1}}';
-  const idx = findLastTopLevelJsonStart(text);
-  // Should find the outermost {, not the nested one.
-  assert.equal(idx, 0);
-});
-
-test("findLastTopLevelJsonStart: with reasoning text containing nested JSON", () => {
-  // Reasoning text includes a nested object reference, then the actual JSON.
-  const text =
-    'The config has {"nested":true} as a field. Here is the result: {"answer":"final"}';
-  const idx = findLastTopLevelJsonStart(text);
-  // Should find the last top-level JSON object.
-  assert.equal(text.slice(idx), '{"answer":"final"}');
-});
-
-test("findLastTopLevelJsonStart: returns -1 for unbalanced braces", () => {
-  assert.equal(findLastTopLevelJsonStart("{ unclosed"), -1);
-});
-
-test("findLastTopLevelJsonStart: known limitation - braces inside JSON string values cause fail-safe -1", () => {
-  // The brace scanner does not track JSON string contexts, so a closing brace
-  // inside a string value (e.g. "has } brace") causes the brace count to
-  // become unbalanced. This is fail-safe: returning -1 means the caller falls
-  // back to other parsing strategies rather than extracting corrupt JSON.
-  assert.equal(findLastTopLevelJsonStart('text {"answer":"has } brace"}'), -1);
-});
-
-// ---------------------------------------------------------------------------
-// parseClaudeCodeJsonResult: reasoning text + embedded JSON (F-2 tests)
-// ---------------------------------------------------------------------------
-
-test("parseClaudeCodeJsonResult: wrapper result with reasoning text before JSON", () => {
-  const wrapper = JSON.stringify({
-    result:
-      'Let me analyze the requirements. Here is the result:\n\n{"answer":"from-reasoning"}',
-  });
-  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
-  assert.equal(result.answer, "from-reasoning");
-});
-
-test("parseClaudeCodeJsonResult: wrapper result with multiple JSON fragments in reasoning", () => {
-  // The model mentions a JSON snippet in reasoning, then provides the actual answer.
-  // The balanced-brace scan should find the last top-level object.
-  const wrapper = JSON.stringify({
-    result:
-      'I considered {"answer":"wrong"} but decided on {"answer":"correct"}',
-  });
-  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
-  assert.equal(result.answer, "correct");
-});
-
-test("parseClaudeCodeJsonResult: wrapper result with nested JSON in reasoning does not extract sub-object", () => {
-  // If the reasoning mentions an object with nested braces, the balanced scan
-  // should not extract just the inner sub-object.
-  const wrapper = JSON.stringify({
-    result:
-      'The config is {"outer":{"sub":"value"}} and then {"answer":"real"}',
-  });
-  const result = parseClaudeCodeJsonResult(wrapper, simpleSchema);
-  assert.equal(result.answer, "real");
-});
-
-test("parseClaudeCodeJsonResult: NDJSON with reasoning text before embedded JSON", () => {
+test("parseClaudeCodeJsonResult: NDJSON output is rejected", () => {
   const ndjson = [
     '{"type":"system","message":"starting"}',
-    JSON.stringify({
-      type: "result",
-      result:
-        'After analysis, here is the answer:\n{"answer":"ndjson-reasoning"}',
-    }),
+    '{"type":"assistant","message":"working"}',
+    '{"type":"result","result":"{\\"answer\\":\\"ndjson\\"}","cost_usd":0.01}',
   ].join("\n");
-  const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
-  assert.equal(result.answer, "ndjson-reasoning");
+  assert.throws(() => parseClaudeCodeJsonResult(ndjson, simpleSchema), {
+    message: "Claude Code did not return valid JSON output.",
+  });
 });
 
-test("parseClaudeCodeJsonResult: NDJSON with multiple JSON fragments in reasoning", () => {
-  const ndjson = [
-    '{"type":"system","message":"starting"}',
-    JSON.stringify({
-      type: "result",
-      result:
-        'I tried {"answer":"attempt1"} but the correct one is {"answer":"attempt2"}',
-    }),
-  ].join("\n");
-  const result = parseClaudeCodeJsonResult(ndjson, simpleSchema);
-  assert.equal(result.answer, "attempt2");
+test("parseClaudeCodeJsonResult: wrapper with fenced result is rejected", () => {
+  const wrapper = JSON.stringify({
+    result: '```json\n{"answer":"fenced"}\n```',
+  });
+  assert.throws(() => parseClaudeCodeJsonResult(wrapper, simpleSchema), {
+    message: "Claude Code did not return valid JSON output.",
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -914,43 +926,64 @@ test("ClaudeCodeAdapter.resolveModelSelection: draft scope uses draft_analysis_m
 
 test("ClaudeCodeAdapter.buildDraftRun: refine mode structure", () => {
   const adapter = createAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "draft_refine",
+    schema: draftResultSchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
   const run = adapter.buildDraftRun({
     draft: createDraft(),
+    mcpPort: 9999,
     mode: "refine",
     outputPath: createWorkspaceOutputPath(),
     project: createProject(),
+    resultSchema: draftResultSchema,
     repository: createRepository(),
     useDockerRuntime: true,
   });
-  assert.equal(run.command, "bash");
-  assert.equal(run.args[0], "-c");
-  const shellCmd = run.args[1] ?? "";
-  assert.ok(shellCmd.includes("claude"));
-  assert.ok(shellCmd.includes("--output-format"));
-  assert.ok(shellCmd.includes("--permission-mode"));
-  assert.ok(shellCmd.includes("plan"));
-  assert.ok(!shellCmd.includes("dangerously-skip-permissions"));
-  assert.equal(
-    run.outputPath,
-    "/walleyboard-home/agent-summaries/project-1/output.json",
-  );
-  assertClaudeJsonOnlyGuardrails(run.prompt);
+  assert.equal(run.command, "claude");
+  assertClaudeStructuredOutputArgs({
+    command: run.command,
+    args: run.args,
+    outputPath: run.outputPath,
+    hostSidecar: run.hostSidecar,
+    tool,
+  });
+  assertClaudeStructuredOutputToolsAreNotExplicitlyRestricted(run.args);
+  assert.equal(run.outputPath, createWorkspaceOutputPath());
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
+  assertClaudeStructuredOutputPromptGuardrail(run.prompt, toolRef);
+  assert.doesNotMatch(run.prompt, /## Output JSON/);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
 test("ClaudeCodeAdapter.buildDraftRun: questions mode structure", () => {
   const adapter = createAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "draft_questions",
+    schema: draftResultSchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
   const run = adapter.buildDraftRun({
     draft: createDraft(),
+    mcpPort: 9999,
     mode: "questions",
     outputPath: createWorkspaceOutputPath(),
     project: createProject(),
+    resultSchema: draftResultSchema,
     repository: createRepository(),
     useDockerRuntime: true,
   });
-  assert.equal(run.command, "bash");
-  assert.ok((run.args[1] ?? "").includes("claude"));
-  assertClaudeJsonOnlyGuardrails(run.prompt);
+  assertClaudeStructuredOutputArgs({
+    command: run.command,
+    args: run.args,
+    outputPath: run.outputPath,
+    hostSidecar: run.hostSidecar,
+    tool,
+  });
+  assertClaudeStructuredOutputToolsAreNotExplicitlyRestricted(run.args);
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
+  assertClaudeStructuredOutputPromptGuardrail(run.prompt, toolRef);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -972,7 +1005,10 @@ test("ClaudeCodeAdapter.buildExecutionRun: plan mode", () => {
   assert.ok(run.args.includes("--permission-mode"));
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "plan");
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
-  assertNoAgentSpecificGuardrails(run.prompt);
+  assert.equal(run.args.includes("--json-schema"), false);
+  assert.equal(run.args.includes("--append-system-prompt"), false);
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
+  assert.doesNotMatch(run.prompt, /## Response Format/);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -994,7 +1030,10 @@ test("ClaudeCodeAdapter.buildExecutionRun: implementation mode", () => {
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
-  assertNoAgentSpecificGuardrails(run.prompt);
+  assert.equal(run.args.includes("--json-schema"), false);
+  assert.equal(run.args.includes("--append-system-prompt"), false);
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
+  assert.doesNotMatch(run.prompt, /## Response Format/);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -1113,7 +1152,9 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: structure", () => {
   assert.equal(run.args[run.args.indexOf("--permission-mode") + 1], "dontAsk");
   assert.ok(run.args.includes("--allowedTools"));
   assert.ok(!run.args.includes("--dangerously-skip-permissions"));
-  assertNoAgentSpecificGuardrails(run.prompt);
+  assert.equal(run.args.includes("--json-schema"), false);
+  assert.equal(run.args.includes("--append-system-prompt"), false);
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
   assertClaudeDockerSpec(run.dockerSpec);
 });
 
@@ -1187,9 +1228,11 @@ test("ClaudeCodeAdapter: all run builders return Docker specs", () => {
   const adapter = createAdapter();
   const draftRun = adapter.buildDraftRun({
     draft: createDraft(),
+    mcpPort: 9999,
     mode: "refine",
     outputPath: createWorkspaceOutputPath("o.json"),
     project: createProject(),
+    resultSchema: draftResultSchema,
     repository: createRepository(),
     useDockerRuntime: true,
   });
@@ -1301,32 +1344,52 @@ test("ClaudeCodeAdapter.buildMergeConflictRun: includes --verbose with stream-js
   );
 });
 
-test("ClaudeCodeAdapter.buildReviewRun uses read-only permissions and the shared review prompt", () => {
+test("ClaudeCodeAdapter.buildReviewRun uses inspect-only permissions and the shared review prompt", () => {
   const adapter = createAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "review",
+    schema: reviewResultSchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
   const run = adapter.buildReviewRun({
+    mcpPort: 9999,
     outputPath: createWorkspaceOutputPath("review.json"),
     project: createProject(),
     repository: createRepository(),
+    resultSchema: reviewResultSchema,
     reviewPackage: createReviewPackage(),
     session: createSession(),
     ticket: createTicket(),
     useDockerRuntime: true,
   });
 
-  assert.equal(run.command, "bash");
-  assert.match(run.args[1] ?? "", /'--permission-mode' 'plan'/);
+  assert.equal(run.command, "claude");
+  assertClaudeStructuredOutputArgs({
+    command: run.command,
+    args: run.args,
+    outputPath: run.outputPath,
+    hostSidecar: run.hostSidecar,
+    tool,
+  });
+  assertClaudeStructuredOutputToolsAreNotExplicitlyRestricted(run.args);
   assert.match(run.prompt, /## Review Goal/);
   assert.match(run.prompt, /## Evidence/);
-  assert.match(run.prompt, /## Output JSON/);
-  assertClaudeJsonOnlyGuardrails(run.prompt);
+  assertClaudeStructuredOutputPromptGuardrail(run.prompt, toolRef);
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
 });
 
-test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and read-only permissions", () => {
+test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and inspect-only permissions", () => {
   const adapter = createAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "pull_request_body",
+    schema: pullRequestBodySchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
   const run = adapter.buildPullRequestBodyRun({
     attempts: [createExecutionAttempt()],
     baseBranch: "main",
     headBranch: "claude-code/ticket-42",
+    mcpPort: 9999,
     outputPath: createWorkspaceOutputPath("pr-body.json"),
     patch: "diff --git a/file b/file",
     project: createProject({
@@ -1334,6 +1397,7 @@ test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and read-on
       ticket_work_model: "claude-sonnet-4-5-20250514",
     }),
     repository: createRepository(),
+    resultSchema: pullRequestBodySchema,
     reviewPackage: createReviewPackage(),
     reviewRuns: [createReviewRun()],
     session: createSession(),
@@ -1343,16 +1407,20 @@ test("ClaudeCodeAdapter.buildPullRequestBodyRun uses the draft model and read-on
     useDockerRuntime: true,
   });
 
-  assert.equal(run.command, "bash");
-  assert.match(run.args[1] ?? "", /claude-haiku-3-5-20241022/);
-  assert.match(run.args[1] ?? "", /'--permission-mode' 'plan'/);
+  assert.equal(run.command, "claude");
+  assertClaudeStructuredOutputArgs({
+    command: run.command,
+    args: run.args,
+    outputPath: run.outputPath,
+    hostSidecar: run.hostSidecar,
+    tool,
+    model: "claude-haiku-3-5-20241022",
+  });
+  assertClaudeStructuredOutputToolsAreNotExplicitlyRestricted(run.args);
   assert.match(run.prompt, /## Pull Request Goal/);
-  assert.match(run.prompt, /## Output JSON/);
-  assertClaudeJsonOnlyGuardrails(run.prompt);
-  assert.equal(
-    run.outputPath,
-    "/walleyboard-home/agent-summaries/project-1/pr-body.json",
-  );
+  assertClaudeStructuredOutputPromptGuardrail(run.prompt, toolRef);
+  assertLegacyClaudeGuardrailsRemoved(run.prompt);
+  assert.equal(run.outputPath, createWorkspaceOutputPath("pr-body.json"));
 });
 
 // ---------------------------------------------------------------------------

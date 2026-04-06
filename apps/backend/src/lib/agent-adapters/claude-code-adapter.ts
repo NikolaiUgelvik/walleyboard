@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
+import { dockerHostAddress } from "../docker-runtime.js";
 import {
   hasMeaningfulContent,
   normalizeOptionalModel,
@@ -25,17 +27,25 @@ import type {
   AgentCliAdapter,
   DraftRunInput,
   ExecutionRunInput,
+  HostSidecar,
   InterpretedAdapterLine,
   MergeConflictRunInput,
   PreparedAgentRun,
   PullRequestBodyRunInput,
   ReviewRunInput,
 } from "./types.js";
+import {
+  buildClaudeWalleyboardHttpMcpConfig,
+  buildWalleyboardAllowedTools,
+  buildWalleyboardHttpServerConfig,
+  buildWalleyboardToolDefinition,
+  buildWalleyboardToolRef,
+} from "./walleyboard-mcp.js";
 
 // Claude Code permission modes. Every run builder must use one of these to
 // set permission args. This is the single place where permission policy is
 // decided, so a new run type cannot accidentally omit it.
-type ClaudePermissionMode = "read-only" | "full-access";
+type ClaudePermissionMode = "inspect-only" | "plan" | "full-access";
 
 const fullAccessAllowedTools =
   "Read,Write,Edit,Glob,Grep,Bash,Agent,NotebookEdit";
@@ -43,9 +53,22 @@ const fullAccessAllowedTools =
 function appendClaudePermissionArgs(
   args: string[],
   mode: ClaudePermissionMode,
+  options?: {
+    allowedTools?: string;
+    tools?: string;
+  },
 ): void {
   switch (mode) {
-    case "read-only":
+    case "inspect-only":
+      args.push("--permission-mode", "dontAsk");
+      if (options?.tools) {
+        args.push("--tools", options.tools);
+      }
+      if (options?.allowedTools) {
+        args.push("--allowedTools", options.allowedTools);
+      }
+      break;
+    case "plan":
       args.push("--permission-mode", "plan");
       break;
     case "full-access":
@@ -82,14 +105,7 @@ export function shellEscape(value: string): string {
 
 /**
  * Build a shell command that invokes `claude` and redirects stdout to
- * `outputPath`. Used for Claude JSON-result flows where the runtime reads
- * the output file after exit and passes its contents to `parseDraftResult`.
- *
- * Using `>` redirect (instead of `tee`) avoids PTY ANSI escape sequences
- * and prevents capturing the full transcript when we only want the final
- * JSON result.
- *
- * Uses `bash` for broad compatibility across Linux distributions.
+ * `outputPath`.
  */
 export function buildDraftShellCommand(
   command: string,
@@ -113,6 +129,51 @@ function appendClaudeCodeModelArgs(args: string[], model: string | null): void {
   }
 }
 
+export function buildClaudeStructuredOutputRun(input: {
+  allowedTools: string;
+  claudeArgs: string[];
+  claudeCommand: string;
+  /** Host-side path where the sidecar writes the structured output. */
+  hostOutputPath: string;
+  /** Port for the MCP HTTP sidecar to listen on. */
+  port: number;
+  tool: ReturnType<typeof buildWalleyboardToolDefinition>;
+}): { command: string; args: string[]; hostSidecar: HostSidecar } {
+  const token = randomUUID();
+  const sidecar = buildWalleyboardHttpServerConfig({
+    outputPath: input.hostOutputPath,
+    port: input.port,
+    token,
+    tool: input.tool,
+  });
+  const args = [
+    ...input.claudeArgs,
+    "--mcp-config",
+    buildClaudeWalleyboardHttpMcpConfig({
+      host: dockerHostAddress,
+      port: input.port,
+      token,
+    }),
+    "--strict-mcp-config",
+    "--permission-mode",
+    "dontAsk",
+    "--allowedTools",
+    input.allowedTools,
+  ];
+
+  return {
+    command: input.claudeCommand,
+    args,
+    hostSidecar: {
+      command: sidecar.command,
+      args: sidecar.args,
+      env: { WALLEYBOARD_MCP_BIND_HOST: dockerHostAddress },
+      healthCheckHost: dockerHostAddress,
+      healthCheckPort: input.port,
+    },
+  };
+}
+
 function assertDockerRuntimeEnabled(useDockerRuntime: boolean): void {
   if (!useDockerRuntime) {
     throw new Error(
@@ -132,48 +193,6 @@ function resolveDockerOutputPath(
   });
 }
 
-/**
- * Strip leading/trailing markdown code fences from a string, if present.
- * Returns the inner content trimmed.
- */
-function stripMarkdownFences(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("```")) {
-    return trimmed;
-  }
-  return trimmed
-    .replace(/^```[\w-]*\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
-
-/**
- * Find the start of the last top-level JSON object in a string. Scans
- * backwards from the last `}` and counts balanced braces to locate
- * the matching `{`. Returns -1 if no balanced pair is found.
- *
- * This avoids the bug where `lastIndexOf("{")` would match a nested
- * sub-object instead of the intended top-level JSON.
- */
-export function findLastTopLevelJsonStart(text: string): number {
-  const lastClose = text.lastIndexOf("}");
-  if (lastClose < 0) {
-    return -1;
-  }
-  let depth = 0;
-  for (let i = lastClose; i >= 0; i--) {
-    if (text[i] === "}") {
-      depth++;
-    } else if (text[i] === "{") {
-      depth--;
-      if (depth === 0) {
-        return i;
-      }
-    }
-  }
-  return -1;
-}
-
 export function parseClaudeCodeJsonResult<T>(
   rawOutput: string,
   schema: z.ZodType<T>,
@@ -183,75 +202,28 @@ export function parseClaudeCodeJsonResult<T>(
     throw new Error("Claude Code returned no JSON output.");
   }
 
-  // Claude Code json output can be a JSON object with a "result" key,
-  // or the stream-json output file may contain multiple JSON lines.
-  const candidates: string[] = [trimmed];
-
-  // Try extracting the "result" field from a wrapper object.
   try {
-    const wrapper = JSON.parse(trimmed) as Record<string, unknown>;
-    if (typeof wrapper.result === "string") {
-      const resultText = wrapper.result.trim();
-      candidates.push(resultText);
-      // Also try stripping markdown fences from the result field.
-      const unfenced = stripMarkdownFences(resultText);
-      if (unfenced !== resultText) {
-        candidates.push(unfenced);
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (typeof parsed === "object" && parsed !== null) {
+      const record = parsed as Record<string, unknown>;
+
+      if ("structured_output" in record) {
+        return schema.parse(record.structured_output);
       }
-      // The model may emit reasoning text before the JSON object.
-      // Use balanced-brace scanning to find the last complete top-level
-      // JSON object, avoiding accidental extraction of nested sub-objects.
-      const braceIndex = findLastTopLevelJsonStart(resultText);
-      if (braceIndex > 0) {
-        candidates.push(resultText.slice(braceIndex));
+
+      if ("result" in record) {
+        const result = record.result;
+        if (typeof result === "string") {
+          return schema.parse(JSON.parse(result));
+        }
+
+        return schema.parse(result);
       }
     }
+
+    return schema.parse(parsed);
   } catch {
-    // Not a wrapper object - try other candidates.
-  }
-
-  // Strip markdown code fences if present on the outer input.
-  if (trimmed.startsWith("```")) {
-    candidates.push(stripMarkdownFences(trimmed));
-  }
-
-  // For stream-json output, try extracting the last result line.
-  // This is a defensive fallback in case output is captured from a
-  // mixed source that includes stream-json NDJSON lines.
-  const lines = trimmed.split("\n");
-  for (const line of lines) {
-    const lineTrimmed = line.trim();
-    if (lineTrimmed.length === 0) {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(lineTrimmed) as Record<string, unknown>;
-      if (parsed.type === "result" && typeof parsed.result === "string") {
-        const resultText = parsed.result.trim();
-        candidates.push(resultText);
-        // Also try stripping markdown fences from the NDJSON result.
-        const unfenced = stripMarkdownFences(resultText);
-        if (unfenced !== resultText) {
-          candidates.push(unfenced);
-        }
-        // Try extracting embedded JSON from reasoning text.
-        const braceIndex = findLastTopLevelJsonStart(resultText);
-        if (braceIndex > 0) {
-          candidates.push(resultText.slice(braceIndex));
-        }
-      }
-    } catch {
-      // Not a JSON line - skip.
-    }
-  }
-
-  for (const candidate of candidates) {
-    try {
-      return schema.parse(JSON.parse(candidate));
-    } catch {
-      // Try the next candidate shape.
-    }
+    // Invalid JSON - handled below.
   }
 
   throw new Error("Claude Code did not return valid JSON output.");
@@ -452,10 +424,6 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "draft");
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
-    const outputPath = resolveDockerOutputPath(
-      input.outputPath,
-      input.repository.path,
-    );
     const basePrompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
@@ -470,30 +438,41 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
             enabledMcpServers,
             input.instruction,
           );
+    const promptKind =
+      input.mode === "refine" ? "draft_refine" : "draft_questions";
+    const structuredOutputTool = buildWalleyboardToolDefinition({
+      promptKind,
+      schema: input.resultSchema,
+    });
     const prompt = augmentPromptForAgent({
       adapterId: this.id,
-      promptKind: input.mode === "refine" ? "draft_refine" : "draft_questions",
+      promptKind,
       basePrompt,
+      structuredOutputToolRef: buildWalleyboardToolRef(
+        structuredOutputTool.name,
+      ),
     });
-    const claudeArgs = ["-p", prompt, "--output-format", "json"];
-    appendClaudePermissionArgs(claudeArgs, "read-only");
-
+    const claudeArgs = ["-p", prompt];
     appendClaudeCodeModelArgs(claudeArgs, model);
-
-    // Claude Code CLI has no --output-file flag, so wrap draft runs in a
-    // shell command that redirects stdout to the output file. The runtime
-    // reads this file after exit and passes its contents to parseDraftResult.
-    const { command, args } = buildDraftShellCommand(
-      this.#resolveCommand(),
+    if (!input.mcpPort) {
+      throw new Error("mcpPort is required for Claude Code draft runs.");
+    }
+    const shellCommand = buildClaudeStructuredOutputRun({
+      allowedTools: buildWalleyboardAllowedTools(
+        enabledMcpServers,
+        structuredOutputTool.name,
+      ),
       claudeArgs,
-      outputPath,
-    );
+      claudeCommand: this.#resolveCommand(),
+      hostOutputPath: input.outputPath,
+      port: input.mcpPort,
+      tool: structuredOutputTool,
+    });
 
     return {
-      command,
-      args,
+      ...shellCommand,
       prompt,
-      outputPath,
+      outputPath: input.outputPath,
       dockerSpec: claudeCodeDockerSpec,
     };
   }
@@ -541,7 +520,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
     args.push("-p", prompt, "--output-format", "stream-json", "--verbose");
     appendClaudePermissionArgs(
       args,
-      input.executionMode === "plan" ? "read-only" : "full-access",
+      input.executionMode === "plan" ? "plan" : "full-access",
     );
 
     appendClaudeCodeModelArgs(args, model);
@@ -621,13 +600,13 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildReviewRun(input: ReviewRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "ticket");
+    const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
       throw new Error(
         "Docker-backed Claude Code runs require a prepared worktree path.",
       );
     }
-    const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
     const basePrompt = buildReviewPrompt({
       repository: input.repository,
       reviewPackage: input.reviewPackage,
@@ -635,26 +614,39 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       useDockerRuntime: input.useDockerRuntime,
       worktreePath,
     });
+    const structuredOutputTool = buildWalleyboardToolDefinition({
+      promptKind: "review",
+      schema: input.resultSchema,
+    });
     const prompt = augmentPromptForAgent({
       adapterId: this.id,
       promptKind: "review",
       basePrompt,
+      structuredOutputToolRef: buildWalleyboardToolRef(
+        structuredOutputTool.name,
+      ),
     });
-    const claudeArgs = ["-p", prompt, "--output-format", "json"];
-    appendClaudePermissionArgs(claudeArgs, "read-only");
+    if (!input.mcpPort) {
+      throw new Error("mcpPort is required for Claude Code review runs.");
+    }
+    const claudeArgs = ["-p", prompt];
     appendClaudeCodeModelArgs(claudeArgs, model);
-
-    const { command, args } = buildDraftShellCommand(
-      this.#resolveCommand(),
+    const shellCommand = buildClaudeStructuredOutputRun({
+      allowedTools: buildWalleyboardAllowedTools(
+        enabledMcpServers,
+        structuredOutputTool.name,
+      ),
       claudeArgs,
-      outputPath,
-    );
+      claudeCommand: this.#resolveCommand(),
+      hostOutputPath: input.outputPath,
+      port: input.mcpPort,
+      tool: structuredOutputTool,
+    });
 
     return {
-      command,
-      args,
+      ...shellCommand,
       prompt,
-      outputPath,
+      outputPath: input.outputPath,
       dockerSpec: claudeCodeDockerSpec,
     };
   }
@@ -662,13 +654,13 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
   buildPullRequestBodyRun(input: PullRequestBodyRunInput): PreparedAgentRun {
     assertDockerRuntimeEnabled(input.useDockerRuntime);
     const { model } = this.resolveModelSelection(input.project, "draft");
+    const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
     const worktreePath = input.session.worktree_path;
     if (!worktreePath) {
       throw new Error(
         "Docker-backed Claude Code runs require a prepared worktree path.",
       );
     }
-    const outputPath = resolveDockerOutputPath(input.outputPath, worktreePath);
     const basePrompt = buildPullRequestBodyPrompt({
       attempts: input.attempts,
       baseBranch: input.baseBranch,
@@ -686,26 +678,41 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       ticket: input.ticket,
       ticketEvents: input.ticketEvents,
     });
+    const structuredOutputTool = buildWalleyboardToolDefinition({
+      promptKind: "pull_request_body",
+      schema: input.resultSchema,
+    });
     const prompt = augmentPromptForAgent({
       adapterId: this.id,
       promptKind: "pull_request_body",
       basePrompt,
+      structuredOutputToolRef: buildWalleyboardToolRef(
+        structuredOutputTool.name,
+      ),
     });
-    const claudeArgs = ["-p", prompt, "--output-format", "json"];
-    appendClaudePermissionArgs(claudeArgs, "read-only");
+    if (!input.mcpPort) {
+      throw new Error(
+        "mcpPort is required for Claude Code pull request body runs.",
+      );
+    }
+    const claudeArgs = ["-p", prompt];
     appendClaudeCodeModelArgs(claudeArgs, model);
-
-    const { command, args } = buildDraftShellCommand(
-      this.#resolveCommand(),
+    const shellCommand = buildClaudeStructuredOutputRun({
+      allowedTools: buildWalleyboardAllowedTools(
+        enabledMcpServers,
+        structuredOutputTool.name,
+      ),
       claudeArgs,
-      outputPath,
-    );
+      claudeCommand: this.#resolveCommand(),
+      hostOutputPath: input.outputPath,
+      port: input.mcpPort,
+      tool: structuredOutputTool,
+    });
 
     return {
-      command,
-      args,
+      ...shellCommand,
       prompt,
-      outputPath,
+      outputPath: input.outputPath,
       dockerSpec: claudeCodeDockerSpec,
     };
   }

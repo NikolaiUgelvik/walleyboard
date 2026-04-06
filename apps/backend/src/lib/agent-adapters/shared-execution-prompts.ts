@@ -125,12 +125,11 @@ function appendAvailableMcpSection(
   sections: string[],
   enabledMcpServers: readonly string[],
 ): void {
-  appendHeading(sections, "Available MCPs");
-
   if (enabledMcpServers.length === 0) {
-    sections.push("No MCP servers are enabled for this project.");
     return;
   }
+
+  appendHeading(sections, "Available MCPs");
 
   appendBullets(
     sections,
@@ -478,7 +477,6 @@ export function buildReviewPrompt(input: {
   appendBullets(sections, [
     "Inspect the current worktree and compare it against the target branch.",
     "Do not modify files or create commits.",
-    "Return JSON only with no markdown fences or commentary.",
   ]);
 
   appendHeading(sections, "Ticket Intent");
@@ -524,16 +522,6 @@ export function buildReviewPrompt(input: {
     "Only report findings that are actionable and should be fixed before merge.",
     "If the implementation summary conflicts with the repository state or git diff, trust the repository state and git diff.",
     "If there are no actionable findings, return an empty actionable_findings array.",
-  ]);
-
-  appendHeading(sections, "Output JSON");
-  sections.push("Return strict JSON with this shape:");
-  appendCodeBlock(
-    sections,
-    "json",
-    '{"summary":"string","strengths":["string"],"actionable_findings":[{"severity":"high|medium|low","category":"first_principles|code_smell|separation_of_concerns|correctness|testing|maintainability","title":"string","details":"string","suggested_fix":"string"}]}',
-  );
-  appendBullets(sections, [
     "Use the repository context, ticket intent, validation output, and git diff to justify your conclusions.",
   ]);
 
@@ -562,7 +550,8 @@ export function buildPullRequestBodyPrompt(input: {
   appendHeading(sections, "Pull Request Goal");
   sections.push(
     `Write the GitHub pull request body for ticket #${input.ticket.id} in repository \`${input.repository.name}\`.`,
-    "Do not write a title. Return only the PR body content in the required JSON shape.",
+    "Do not write a title. Write only the pull request body content itself.",
+    "The pull request body should be polished GitHub Markdown that summarizes the change, includes acceptance criteria, validation, and any remaining risks when present.",
   );
 
   appendHeading(sections, "Ticket");
@@ -626,23 +615,6 @@ export function buildPullRequestBodyPrompt(input: {
 
   appendHeading(sections, "Diff Patch");
   appendCodeBlock(sections, "diff", input.patch);
-
-  appendHeading(sections, "Output JSON");
-  sections.push(
-    "Return strict JSON with exactly one key: `body`.",
-    "The `body` should be polished GitHub Markdown that summarizes the change, includes acceptance criteria, validation, and any remaining risks when present.",
-  );
-  appendCodeBlock(
-    sections,
-    "json",
-    JSON.stringify(
-      {
-        body: "## Summary\n- ...",
-      },
-      null,
-      2,
-    ),
-  );
 
   return sections.join("\n");
 }

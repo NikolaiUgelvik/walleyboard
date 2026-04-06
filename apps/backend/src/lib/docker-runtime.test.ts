@@ -59,6 +59,15 @@ test("getClaudeCodeAvailability reports Claude available from the Docker runtime
           return "/usr/local/bin/claude\n";
         }
 
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
+        }
+
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
       }) as never,
       repoRoot: tempDir,
@@ -102,6 +111,15 @@ test("getClaudeCodeAvailability reports a useful error when Claude is unavailabl
             stdout: Buffer.from("/usr/local/bin/claude\n"),
             stderr: Buffer.from("permission denied"),
           });
+        }
+
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
         }
 
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
@@ -185,6 +203,15 @@ test("ensureSessionContainer uses the adapter docker spec for image and config m
 
         if (args[0] === "run") {
           return "container-id";
+        }
+
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
         }
 
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
@@ -274,6 +301,15 @@ test("ensureSessionContainer rebuilds the runtime image when the Dockerfile is n
           return "container-id";
         }
 
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
+        }
+
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
       }) as never,
       repoRoot: tempDir,
@@ -338,6 +374,15 @@ test("ensureSessionContainer mounts a config override when provided", () => {
           return "container-id";
         }
 
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
+        }
+
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
       }) as never,
       gid: 1001,
@@ -385,6 +430,94 @@ test("ensureSessionContainer mounts a config override when provided", () => {
   }
 });
 
+test("ensureSessionContainer mounts Claude sibling config files when present", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-docker-claude-config-"),
+  );
+  const worktreePath = join(tempDir, "workspace");
+  const configHomePath = join(tempDir, ".claude");
+  const configJsonPath = `${configHomePath}.json`;
+  const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
+  const commands: Array<{ command: string; args: string[] }> = [];
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+
+  try {
+    mkdirSync(configHomePath, { recursive: true });
+    writeFileSync(join(configHomePath, "settings.json"), "{}\n", "utf8");
+    writeFileSync(configJsonPath, '{\n  "theme": "dark"\n}\n', "utf8");
+    process.env.WALLEYBOARD_HOME = walleyBoardHomePath;
+
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => configHomePath,
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        commands.push({ command, args });
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "{}";
+        }
+
+        if (args[0] === "rm") {
+          return "";
+        }
+
+        if (args[0] === "run") {
+          return "container-id";
+        }
+
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      gid: 1001,
+      repoRoot: tempDir,
+      uid: 1000,
+    });
+
+    runtime.ensureSessionContainer({
+      dockerSpec: {
+        imageTag: "example/claude-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/walley",
+        configMountPath: "/home/walley/.claude",
+      },
+      sessionId: "session-1",
+      projectId: "project-1",
+      ticketId: 42,
+      worktreePath,
+    });
+
+    const runCommand = commands.find((entry) => entry.args[0] === "run");
+    assert.ok(runCommand);
+    const mountArgs = runCommand.args.filter((arg) =>
+      arg.startsWith("type=bind,"),
+    );
+    assert.deepEqual(mountArgs, [
+      `type=bind,src=${configHomePath},dst=/home/walley/.claude`,
+      `type=bind,src=${configJsonPath},dst=/home/walley/.claude.json`,
+      `type=bind,src=${worktreePath},dst=/workspace`,
+      `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
+    ]);
+  } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("ensureSessionContainer mounts host-home config paths at both container and host locations", () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-docker-config-alias-"),
@@ -417,6 +550,15 @@ test("ensureSessionContainer mounts host-home config paths at both container and
 
         if (args[0] === "run") {
           return "container-id";
+        }
+
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
         }
 
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
@@ -495,6 +637,15 @@ test("spawnPtyInSession runs docker exec in the workspace", () => {
 
         if (args[0] === "run") {
           return "container-id";
+        }
+
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
         }
 
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
@@ -584,6 +735,15 @@ test("spawnProcessInSession wraps unattended commands in script for live flushin
 
         if (args[0] === "run") {
           return "container-id";
+        }
+
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
         }
 
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
@@ -770,6 +930,15 @@ test("dispose only cleans up tracked session containers", () => {
           return "container-1|com.walleyboard.session_id=session-1";
         }
 
+        if (args[0] === "network") {
+          if (args[1] === "inspect") {
+            throw Object.assign(new Error("no such network"), {
+              stderr: Buffer.from("Error: No such network"),
+            });
+          }
+          return "";
+        }
+
         throw new Error(`Unexpected docker command: ${args.join(" ")}`);
       }) as never,
       repoRoot: tempDir,
@@ -791,7 +960,8 @@ test("dispose only cleans up tracked session containers", () => {
     commands.length = 0;
     runtime.dispose();
 
-    assert.equal(commands.length, 1);
+    // dispose removes tracked containers then the network
+    assert.equal(commands.length, 2);
     assert.equal(commands[0]?.command, "docker");
     assert.equal(commands[0]?.args[0], "rm");
     assert.equal(commands[0]?.args[1], "-f");
@@ -799,6 +969,8 @@ test("dispose only cleans up tracked session containers", () => {
       commands[0]?.args[2] ?? "",
       /^walleyboard-[a-f0-9]{12}-session-1$/,
     );
+    assert.equal(commands[1]?.args[0], "network");
+    assert.equal(commands[1]?.args[1], "rm");
   } finally {
     if (previousWalleyBoardHome === undefined) {
       delete process.env.WALLEYBOARD_HOME;

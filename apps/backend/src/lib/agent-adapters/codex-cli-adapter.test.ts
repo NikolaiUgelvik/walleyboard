@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { z } from "zod";
+
 import type {
   DraftTicketState,
   ExecutionAttempt,
@@ -16,6 +18,12 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { CodexCliAdapter } from "./codex-cli-adapter.js";
+import { buildStructuredOutputToolInstruction } from "./prompt-augmentation.js";
+import {
+  buildCodexWalleyboardConfigOverrides,
+  buildWalleyboardToolDefinition,
+  buildWalleyboardToolRef,
+} from "./walleyboard-mcp.js";
 
 function createProject(): Project {
   return {
@@ -193,8 +201,47 @@ function resolveWalleyBoardHomeForTest(): string {
   return process.env.WALLEYBOARD_HOME ?? join(homedir(), ".walleyboard");
 }
 
-function assertNoAgentSpecificGuardrails(prompt: string): void {
-  assert.doesNotMatch(prompt, /## Agent-Specific Guardrails/);
+const draftResultSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  ticket_type: z.enum(["feature", "bugfix", "chore", "research"]),
+  acceptance_criteria: z.array(z.string()),
+});
+
+const reviewResultSchema = z.object({
+  summary: z.string(),
+  actionable_findings: z.array(z.string()),
+});
+
+const pullRequestBodyResultSchema = z.object({
+  body: z.string(),
+});
+
+function assertStructuredOutputConfigArgs(input: {
+  args: string[];
+  outputPath: string | null;
+  tool: ReturnType<typeof buildWalleyboardToolDefinition>;
+}): void {
+  assert.ok(input.outputPath);
+  const configValues: string[] = [];
+  for (let index = 0; index < input.args.length; index += 1) {
+    if (input.args[index] === "--config") {
+      const value = input.args[index + 1];
+      if (value) {
+        configValues.push(value);
+      }
+    }
+  }
+
+  for (const expected of buildCodexWalleyboardConfigOverrides({
+    outputPath: input.outputPath,
+    tool: input.tool,
+  })) {
+    assert.ok(
+      configValues.includes(expected),
+      `Missing config override: ${expected}`,
+    );
+  }
 }
 
 test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspace", () => {
@@ -228,11 +275,15 @@ test("CodexCliAdapter.buildExecutionRun maps Docker summary paths into /workspac
     run.outputPath,
     "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1.txt",
   );
-  assertNoAgentSpecificGuardrails(run.prompt);
 });
 
 test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", () => {
   const adapter = new CodexCliAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "draft_refine",
+    schema: draftResultSchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
 
   const run = adapter.buildDraftRun({
     draft: createDraft(),
@@ -244,23 +295,26 @@ test("CodexCliAdapter.buildDraftRun maps Docker output paths into /workspace", (
       "draft-1-refine-run-1.json",
     ),
     project: createProject(),
+    resultSchema: draftResultSchema,
     repository: createRepository(),
     useDockerRuntime: true,
   });
 
-  const outputFlagIndex = run.args.indexOf("--output-last-message");
-  assert.notEqual(outputFlagIndex, -1);
-  assert.equal(
-    run.args[outputFlagIndex + 1],
-    "/walleyboard-home/draft-analyses/spacegame/draft-1-refine-run-1.json",
-  );
+  assert.equal(run.args.includes("--output-last-message"), false);
   assert.equal(
     run.outputPath,
     "/walleyboard-home/draft-analyses/spacegame/draft-1-refine-run-1.json",
   );
   assert.ok(run.args.includes("--dangerously-bypass-approvals-and-sandbox"));
   assert.equal(run.args.includes("--full-auto"), false);
-  assertNoAgentSpecificGuardrails(run.prompt);
+  assertStructuredOutputConfigArgs({
+    args: run.args,
+    outputPath: run.outputPath,
+    tool,
+  });
+  assert.match(run.prompt, /## Response Format/);
+  assert.ok(run.prompt.includes(buildStructuredOutputToolInstruction(toolRef)));
+  assert.match(run.prompt, new RegExp(toolRef));
   assert.ok(run.dockerSpec);
 });
 
@@ -272,6 +326,7 @@ test("CodexCliAdapter.buildDraftRun uses full-auto outside Docker", () => {
     mode: "refine",
     outputPath: "/tmp/draft-1-refine-run-1.json",
     project: createProject(),
+    resultSchema: draftResultSchema,
     repository: createRepository(),
     useDockerRuntime: false,
   });
@@ -281,7 +336,6 @@ test("CodexCliAdapter.buildDraftRun uses full-auto outside Docker", () => {
     run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
     false,
   );
-  assertNoAgentSpecificGuardrails(run.prompt);
   assert.equal(run.dockerSpec, null);
 });
 
@@ -336,16 +390,21 @@ test("CodexCliAdapter.buildMergeConflictRun resumes an existing adapter session 
     run.args[outputFlagIndex + 1],
     "/walleyboard-home/agent-summaries/spacegame/ticket-5-session-1-merge-conflict.txt",
   );
-  assertNoAgentSpecificGuardrails(run.prompt);
 });
 
 test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is disabled", () => {
   const adapter = new CodexCliAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "review",
+    schema: reviewResultSchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
 
   const run = adapter.buildReviewRun({
     outputPath: "/tmp/review.json",
     project: createProject(),
     repository: createRepository(),
+    resultSchema: reviewResultSchema,
     reviewPackage: createReviewPackage(),
     session: createSession(),
     ticket: createTicket(),
@@ -356,9 +415,15 @@ test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is 
   assert.ok(run.args.includes('approval_policy="on-request"'));
   assert.ok(run.args.includes('sandbox_mode="read-only"'));
   assert.match(run.prompt, /## Review Goal/);
-  assert.match(run.prompt, /## Output JSON/);
+  assert.match(run.prompt, /## Response Format/);
+  assert.ok(run.prompt.includes(buildStructuredOutputToolInstruction(toolRef)));
+  assert.equal(run.args.includes("--output-last-message"), false);
+  assertStructuredOutputConfigArgs({
+    args: run.args,
+    outputPath: run.outputPath,
+    tool,
+  });
   assert.match(run.prompt, /- Diff patch: `\/tmp\/ticket-5\.patch`/);
-  assertNoAgentSpecificGuardrails(run.prompt);
   assert.equal(
     run.args.includes("--dangerously-bypass-approvals-and-sandbox"),
     false,
@@ -369,6 +434,10 @@ test("CodexCliAdapter.buildReviewRun uses read-only sandbox when Docker mode is 
 test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () => {
   const adapter = new CodexCliAdapter();
   const session = createSession();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "review",
+    schema: reviewResultSchema,
+  });
 
   const run = adapter.buildReviewRun({
     outputPath: join(
@@ -379,6 +448,7 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
     ),
     project: createProject(),
     repository: createRepository(),
+    resultSchema: reviewResultSchema,
     reviewPackage: createReviewPackage(),
     session,
     ticket: createTicket(),
@@ -395,21 +465,20 @@ test("CodexCliAdapter.buildReviewRun bypasses Codex sandbox inside Docker", () =
     run.args.some((value) => value.includes('sandbox_mode="')),
     false,
   );
-  const outputFlagIndex = run.args.indexOf("--output-last-message");
-  assert.notEqual(outputFlagIndex, -1);
-  assert.equal(
-    run.args[outputFlagIndex + 1],
-    "/walleyboard-home/agent-reviews/spacegame/ticket-5-review-run-1.json",
-  );
+  assert.equal(run.args.includes("--output-last-message"), false);
   assert.equal(
     run.outputPath,
     "/walleyboard-home/agent-reviews/spacegame/ticket-5-review-run-1.json",
   );
+  assertStructuredOutputConfigArgs({
+    args: run.args,
+    outputPath: run.outputPath,
+    tool,
+  });
   assert.match(
     run.prompt,
     /- Diff patch: `Persisted patch artifact is not available inside Docker\.`/,
   );
-  assertNoAgentSpecificGuardrails(run.prompt);
   assert.ok(run.dockerSpec);
 });
 
@@ -426,6 +495,7 @@ test("CodexCliAdapter.buildReviewRun uses mounted WalleyBoard patch paths in Doc
     ),
     project: createProject(),
     repository: createRepository(),
+    resultSchema: reviewResultSchema,
     reviewPackage: {
       ...createReviewPackage(),
       diff_ref: join(
@@ -448,6 +518,11 @@ test("CodexCliAdapter.buildReviewRun uses mounted WalleyBoard patch paths in Doc
 
 test("CodexCliAdapter.buildPullRequestBodyRun uses the draft model with read-only host permissions", () => {
   const adapter = new CodexCliAdapter();
+  const tool = buildWalleyboardToolDefinition({
+    promptKind: "pull_request_body",
+    schema: pullRequestBodyResultSchema,
+  });
+  const toolRef = buildWalleyboardToolRef(tool.name);
   const project = {
     ...createProject(),
     draft_analysis_model: "gpt-5.4-mini",
@@ -462,6 +537,7 @@ test("CodexCliAdapter.buildPullRequestBodyRun uses the draft model with read-onl
     patch: "diff --git a/file b/file",
     project,
     repository: createRepository(),
+    resultSchema: pullRequestBodyResultSchema,
     reviewPackage: createReviewPackage(),
     reviewRuns: [createReviewRun()],
     session: createSession(),
@@ -478,8 +554,14 @@ test("CodexCliAdapter.buildPullRequestBodyRun uses the draft model with read-onl
   assert.ok(run.args.includes("gpt-5.4-mini"));
   assert.ok(run.args.includes('model_reasoning_effort="medium"'));
   assert.match(run.prompt, /## Pull Request Goal/);
-  assert.match(run.prompt, /## Output JSON/);
-  assertNoAgentSpecificGuardrails(run.prompt);
+  assert.match(run.prompt, /## Response Format/);
+  assert.ok(run.prompt.includes(buildStructuredOutputToolInstruction(toolRef)));
+  assert.equal(run.args.includes("--output-last-message"), false);
+  assertStructuredOutputConfigArgs({
+    args: run.args,
+    outputPath: run.outputPath,
+    tool,
+  });
   assert.equal(run.dockerSpec, null);
 });
 

@@ -21,9 +21,11 @@ import type { DockerRuntime } from "../docker-runtime.js";
 import {
   buildProcessEnv,
   buildReviewRunOutputPath,
+  formatPreparedRunCommand,
   hasMeaningfulContent,
   streamChildProcessLines,
 } from "./helpers.js";
+import { allocatePort, startHostSidecar } from "./host-sidecar.js";
 import { spawnUnattendedProcessInSession } from "./spawn-unattended-process.js";
 import { resolveTrackedExit } from "./waiters.js";
 
@@ -32,6 +34,10 @@ export async function runTicketReviewSession(input: {
   adapter: AgentCliAdapter;
   cleanupExecutionEnvironment: (sessionId: string) => void;
   dockerRuntime: DockerRuntime;
+  registerHostSidecar: (
+    sessionId: string,
+    sidecar: { kill: () => void },
+  ) => void;
   onLogLine?: (line: string) => void;
   onPreparedRun?: (run: { prompt: string }) => void;
   project: Project;
@@ -55,10 +61,13 @@ export async function runTicketReviewSession(input: {
     input.ticket.id,
     input.reviewRunId,
   );
+  const mcpPort = await allocatePort();
   const run = input.adapter.buildReviewRun({
+    mcpPort,
     outputPath,
     project: input.project,
     repository: input.repository,
+    resultSchema: reviewReportSchema,
     reviewPackage: input.reviewPackage,
     session: input.session,
     ticket: input.ticket,
@@ -68,10 +77,15 @@ export async function runTicketReviewSession(input: {
   const reviewSessionId = `review-${input.reviewRunId}`;
   const launchLines = [
     `Launching ${input.adapter.label} review run in Docker for ${worktreePath}`,
-    `Command: ${run.command} ${run.args.slice(0, -1).join(" ")} <prompt>`,
+    `Command: ${formatPreparedRunCommand(run)}`,
   ];
   for (const line of launchLines) {
     input.onLogLine?.(line);
+  }
+
+  if (run.hostSidecar) {
+    const sidecar = await startHostSidecar(run.hostSidecar);
+    input.registerHostSidecar(reviewSessionId, sidecar);
   }
 
   return await new Promise((resolve, reject) => {

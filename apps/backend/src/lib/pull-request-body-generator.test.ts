@@ -8,14 +8,17 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import type {
+  ExecutionAttempt,
   ExecutionSession,
   Project,
   RepositoryConfig,
   ReviewPackage,
+  ReviewRun,
+  StructuredEvent,
   TicketFrontmatter,
-} from "../../../../../packages/contracts/src/index.js";
+} from "../../../../packages/contracts/src/index.js";
 
-import { runTicketReviewSession } from "./review-runner.js";
+import { generatePullRequestBody } from "./pull-request-body-generator.js";
 
 function createProject(): Project {
   return {
@@ -23,7 +26,7 @@ function createProject(): Project {
     slug: "spacegame",
     name: "spacegame",
     color: "#2563EB",
-    agent_adapter: "codex",
+    agent_adapter: "claude-code",
     execution_backend: "docker",
     disabled_mcp_servers: [],
     automatic_agent_review: false,
@@ -33,10 +36,10 @@ function createProject(): Project {
     preview_start_command: null,
     pre_worktree_command: null,
     post_worktree_command: null,
-    draft_analysis_model: null,
+    draft_analysis_model: "claude-haiku-4-5",
     draft_analysis_reasoning_effort: null,
-    ticket_work_model: "gpt-5.4",
-    ticket_work_reasoning_effort: "high",
+    ticket_work_model: "claude-sonnet-4-6",
+    ticket_work_reasoning_effort: null,
     max_concurrent_sessions: 1,
     created_at: "2026-04-01T00:00:00.000Z",
     updated_at: "2026-04-01T00:00:00.000Z",
@@ -74,7 +77,7 @@ function createTicket(): TicketFrontmatter {
       "Ship and dungeon scenes return to the main menu.",
       "Escape and the gamepad cancel button share the same path.",
     ],
-    working_branch: "codex/ticket-5",
+    working_branch: "claude/ticket-5",
     target_branch: "origin/main",
     linked_pr: null,
     session_id: "session-1",
@@ -89,13 +92,13 @@ function createSession(worktreePath: string): ExecutionSession {
     ticket_id: 5,
     project_id: "project-1",
     repo_id: "repo-1",
-    agent_adapter: "codex",
+    agent_adapter: "claude-code",
     worktree_path: worktreePath,
     adapter_session_ref: null,
     status: "completed",
     planning_enabled: false,
     plan_status: "not_requested",
-    plan_summary: null,
+    plan_summary: "Implement the return-to-menu flow.",
     current_attempt_id: "attempt-1",
     latest_requested_change_note_id: null,
     latest_review_package_id: "review-package-1",
@@ -104,6 +107,21 @@ function createSession(worktreePath: string): ExecutionSession {
     completed_at: "2026-04-01T00:10:00.000Z",
     last_heartbeat_at: "2026-04-01T00:10:00.000Z",
     last_summary: "Implementation finished.",
+  };
+}
+
+function createExecutionAttempt(): ExecutionAttempt {
+  return {
+    id: "attempt-1",
+    session_id: "session-1",
+    attempt_number: 1,
+    status: "completed",
+    prompt_kind: "implementation",
+    prompt: "Implement the PR body generator.",
+    pty_pid: null,
+    started_at: "2026-04-01T00:00:00.000Z",
+    ended_at: "2026-04-01T00:05:00.000Z",
+    end_reason: null,
   };
 }
 
@@ -118,6 +136,41 @@ function createReviewPackage(): ReviewPackage {
     validation_results: [],
     remaining_risks: [],
     created_at: "2026-04-01T00:10:00.000Z",
+  };
+}
+
+function createReviewRun(): ReviewRun {
+  return {
+    id: "review-run-1",
+    ticket_id: 5,
+    review_package_id: "review-package-1",
+    implementation_session_id: "session-1",
+    status: "completed",
+    adapter_session_ref: null,
+    prompt: "Review the implementation.",
+    report: {
+      summary: "Looks good.",
+      strengths: [],
+      actionable_findings: [],
+    },
+    failure_message: null,
+    created_at: "2026-04-01T00:06:00.000Z",
+    updated_at: "2026-04-01T00:07:00.000Z",
+    completed_at: "2026-04-01T00:07:00.000Z",
+  };
+}
+
+function createTicketEvent(): StructuredEvent {
+  return {
+    id: "event-1",
+    occurred_at: "2026-04-01T00:08:00.000Z",
+    entity_type: "ticket",
+    entity_id: "5",
+    event_type: "pull_request.created",
+    payload: {
+      number: 12,
+      url: "https://github.com/acme/repo/pull/12",
+    },
   };
 }
 
@@ -136,7 +189,7 @@ function createFakeChildProcess(): {
       kill() {
         return true;
       },
-      pid: 321,
+      pid: 654,
       stderr,
       stdin,
       stdout,
@@ -150,33 +203,21 @@ function createFakeChildProcess(): {
   };
 }
 
-test("runTicketReviewSession streams Docker reviews through a child process", async () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-runner-"));
+test("generatePullRequestBody passes the local schema into the adapter and trims the result", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-pr-body-"));
   const worktreePath = join(tempDir, "workspace");
-  const walleyBoardHome = join(tempDir, ".walleyboard-home");
   mkdirSync(worktreePath, { recursive: true });
-  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
 
   const fakeChild = createFakeChildProcess();
-  let spawnProcessCalls = 0;
-  let cleanedSessionId: string | null = null;
+  let forwardedSchemaAcceptsBody = false;
+  let forwardedSchemaRejectsExtra = true;
   const loggedLines: string[] = [];
-  const activeReviewRuns = new Map<
-    string,
-    { kill(signal?: NodeJS.Signals): unknown }
-  >();
-  const reviewRunExitWaiters = new Map<
-    string,
-    Set<(didExit: boolean) => void>
-  >();
 
   try {
-    process.env.WALLEYBOARD_HOME = walleyBoardHome;
-    const reviewPromise = runTicketReviewSession({
-      activeReviewRuns,
+    const bodyPromise = generatePullRequestBody({
       adapter: {
-        id: "codex",
-        label: "Codex",
+        id: "claude-code",
+        label: "Claude Code",
         buildDraftRun() {
           throw new Error("draft runs are not used in this test");
         },
@@ -186,43 +227,29 @@ test("runTicketReviewSession streams Docker reviews through a child process", as
         buildMergeConflictRun() {
           throw new Error("merge-conflict runs are not used in this test");
         },
-        buildReviewRun(input) {
-          assert.equal(
-            input.resultSchema.safeParse({
-              summary: "Looks good",
-              strengths: ["Covers the scene transitions"],
-              actionable_findings: [],
-            }).success,
-            true,
-          );
-          assert.equal(
-            input.resultSchema.safeParse({
-              strengths: [],
-              actionable_findings: [],
-            }).success,
-            false,
-          );
+        buildReviewRun() {
+          throw new Error("review runs are not used in this test");
+        },
+        buildPullRequestBodyRun(input) {
+          forwardedSchemaAcceptsBody = input.resultSchema.safeParse({
+            body: "Hello",
+          }).success;
+          forwardedSchemaRejectsExtra = input.resultSchema.safeParse({
+            body: "Hello",
+            extra: true,
+          }).success;
           return {
-            command: "codex",
-            args: [
-              "exec",
-              "--json",
-              "--output-last-message",
-              input.outputPath,
-              "fake review prompt",
-            ],
-            prompt: "fake review prompt",
+            command: "claude",
+            args: ["-p", "fake PR body prompt"],
+            prompt: "fake PR body prompt",
             outputPath: input.outputPath,
             dockerSpec: {
-              imageTag: "example/codex:latest",
+              imageTag: "example/claude:latest",
               dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
               homePath: "/home/walley",
-              configMountPath: "/home/walley/.codex",
+              configMountPath: "/home/walley/.claude",
             },
           };
-        },
-        buildPullRequestBodyRun() {
-          throw new Error("pull request body runs are not used in this test");
         },
         interpretOutputLine(line) {
           return {
@@ -234,91 +261,64 @@ test("runTicketReviewSession streams Docker reviews through a child process", as
           return schema.parse(JSON.parse(rawOutput));
         },
         formatExitReason(exitCode, _signal, rawOutput) {
-          return `Codex exited with code ${exitCode}. Final output: ${rawOutput}`;
+          return `Claude Code exited with code ${exitCode}. Final output: ${rawOutput}`;
         },
         resolveModelSelection() {
           return {
-            model: null,
+            model: "claude-haiku-4-5",
             reasoningEffort: null,
           };
         },
       },
-      cleanupExecutionEnvironment(sessionId) {
-        cleanedSessionId = sessionId;
+      context: {
+        attempts: [createExecutionAttempt()],
+        baseBranch: "main",
+        headBranch: "claude/ticket-5",
+        patch: "diff --git a/file b/file",
+        project: createProject(),
+        repository: createRepository(worktreePath),
+        reviewPackage: createReviewPackage(),
+        reviewRuns: [createReviewRun()],
+        session: createSession(worktreePath),
+        sessionLogs: ["Prepared pull request metadata from the timeline."],
+        ticket: createTicket(),
+        ticketEvents: [createTicketEvent()],
       },
-      registerHostSidecar() {},
       dockerRuntime: {
         ensureSessionContainer() {},
         getSessionContainerInfo() {
           return {
-            id: "container-review-review-run-1",
-            name: "test-container-review-review-run-1",
+            id: "container-pr-body",
+            name: "test-container-pr-body",
             projectId: "project-1",
             ticketId: 5,
             worktreePath,
           };
         },
-        spawnProcessInSession(
-          _sessionId: string,
-          command: string,
-          args: string[],
-        ) {
-          spawnProcessCalls += 1;
-          assert.equal(command, "codex");
-          assert.deepEqual(args.slice(0, 3), [
-            "exec",
-            "--json",
-            "--output-last-message",
-          ]);
+        cleanupSessionContainer() {},
+        spawnProcessInSession(_sessionId: string, command: string) {
+          assert.equal(command, "claude");
           return fakeChild.child;
         },
       } as never,
       onLogLine(line) {
         loggedLines.push(line);
       },
-      project: createProject(),
-      repository: createRepository(worktreePath),
-      reviewPackage: createReviewPackage(),
-      reviewRunExitWaiters,
-      reviewRunId: "review-run-1",
-      session: createSession(worktreePath),
-      ticket: createTicket(),
+      registerHostSidecar() {},
     });
 
-    // allocatePort is async; wait for the spawn to happen.
+    // allocatePort is async; wait for the spawn before emitting events.
     await new Promise((r) => setTimeout(r, 50));
 
-    assert.equal(spawnProcessCalls, 1);
-    assert.equal(activeReviewRuns.size, 1);
-    assert.equal(fakeChild.child.stdin.writableEnded, true);
-    fakeChild.emitStdout(
-      '{"summary":"Looks good","strengths":["Covers the scene transitions"],',
-    );
-    fakeChild.emitStdout('"actionable_findings":[]}\n');
+    fakeChild.emitStdout('{"body":"  ## Summary\\n- Generated body  "}\n');
     fakeChild.emitExit({ exitCode: 0 });
 
-    const result = await reviewPromise;
-    assert.equal(result.adapterSessionRef, null);
-    assert.equal(result.report.summary, "Looks good");
-    assert.deepEqual(result.report.actionable_findings, []);
-    assert.equal(cleanedSessionId, "review-review-run-1");
-    assert.equal(activeReviewRuns.size, 0);
-    assert.match(loggedLines[0] ?? "", /Launching Codex review run in Docker/);
-    assert.match(
-      loggedLines[1] ?? "",
-      /Command: codex exec --json --output-last-message/,
-    );
-    assert.ok(
-      loggedLines.includes(
-        '{"summary":"Looks good","strengths":["Covers the scene transitions"],"actionable_findings":[]}',
-      ),
-    );
+    const result = await bodyPromise;
+    assert.equal(result.body, "## Summary\n- Generated body");
+    assert.equal(forwardedSchemaAcceptsBody, true);
+    assert.equal(forwardedSchemaRejectsExtra, false);
+    assert.match(loggedLines[1] ?? "", /Command: claude/);
   } finally {
-    if (previousWalleyBoardHome === undefined) {
-      delete process.env.WALLEYBOARD_HOME;
-    } else {
-      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
-    }
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

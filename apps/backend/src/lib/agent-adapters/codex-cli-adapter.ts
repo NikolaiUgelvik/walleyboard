@@ -34,6 +34,11 @@ import type {
   PullRequestBodyRunInput,
   ReviewRunInput,
 } from "./types.js";
+import {
+  buildCodexWalleyboardConfigOverrides,
+  buildWalleyboardToolDefinition,
+  buildWalleyboardToolRef,
+} from "./walleyboard-mcp.js";
 
 const codexDockerSpec = {
   imageTag: "walleyboard/codex-runtime:ubuntu-24.04-node-24",
@@ -71,6 +76,18 @@ function appendCodexExecutionModeArgs(
 
 function appendDangerousDockerArgs(args: string[]): void {
   args.push("--dangerously-bypass-approvals-and-sandbox");
+}
+
+function appendCodexStructuredOutputArgs(
+  args: string[],
+  input: {
+    outputPath: string;
+    tool: ReturnType<typeof buildWalleyboardToolDefinition>;
+  },
+): void {
+  for (const override of buildCodexWalleyboardConfigOverrides(input)) {
+    args.push("--config", override);
+  }
 }
 
 function resolveDockerOutputPath(
@@ -452,12 +469,21 @@ export class CodexCliAdapter implements AgentCliAdapter {
             enabledMcpServers,
             input.instruction,
           );
+    const promptKind =
+      input.mode === "refine" ? "draft_refine" : "draft_questions";
+    const structuredOutputTool = buildWalleyboardToolDefinition({
+      promptKind,
+      schema: input.resultSchema,
+    });
     const prompt = augmentPromptForAgent({
       adapterId: this.id,
-      promptKind: input.mode === "refine" ? "draft_refine" : "draft_questions",
+      promptKind,
       basePrompt,
+      structuredOutputToolRef: buildWalleyboardToolRef(
+        structuredOutputTool.name,
+      ),
     });
-    const args = ["exec", "--json", "--output-last-message", outputPath];
+    const args = ["exec", "--json"];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
@@ -468,6 +494,10 @@ export class CodexCliAdapter implements AgentCliAdapter {
     appendCodexModelArgs(args, {
       model,
       reasoningEffort,
+    });
+    appendCodexStructuredOutputArgs(args, {
+      outputPath,
+      tool: structuredOutputTool,
     });
     args.push(prompt);
 
@@ -620,17 +650,24 @@ export class CodexCliAdapter implements AgentCliAdapter {
       useDockerRuntime: input.useDockerRuntime,
       worktreePath,
     });
+    const structuredOutputTool = buildWalleyboardToolDefinition({
+      promptKind: "review",
+      schema: input.resultSchema,
+    });
     const prompt = augmentPromptForAgent({
       adapterId: this.id,
       promptKind: "review",
       basePrompt,
+      structuredOutputToolRef: buildWalleyboardToolRef(
+        structuredOutputTool.name,
+      ),
     });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
       worktreePath,
     });
-    const args = ["exec", "--json", "--output-last-message", outputPath];
+    const args = ["exec", "--json"];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
@@ -641,6 +678,10 @@ export class CodexCliAdapter implements AgentCliAdapter {
     appendCodexModelArgs(args, {
       model,
       reasoningEffort,
+    });
+    appendCodexStructuredOutputArgs(args, {
+      outputPath,
+      tool: structuredOutputTool,
     });
     args.push(prompt);
 
@@ -675,17 +716,24 @@ export class CodexCliAdapter implements AgentCliAdapter {
       ticket: input.ticket,
       ticketEvents: input.ticketEvents,
     });
+    const structuredOutputTool = buildWalleyboardToolDefinition({
+      promptKind: "pull_request_body",
+      schema: input.resultSchema,
+    });
     const prompt = augmentPromptForAgent({
       adapterId: this.id,
       promptKind: "pull_request_body",
       basePrompt,
+      structuredOutputToolRef: buildWalleyboardToolRef(
+        structuredOutputTool.name,
+      ),
     });
     const outputPath = resolveAgentOutputPath({
       outputPath: input.outputPath,
       useDockerRuntime: input.useDockerRuntime,
       worktreePath: input.session.worktree_path,
     });
-    const args = ["exec", "--json", "--output-last-message", outputPath];
+    const args = ["exec", "--json"];
 
     if (input.useDockerRuntime) {
       appendDangerousDockerArgs(args);
@@ -697,6 +745,10 @@ export class CodexCliAdapter implements AgentCliAdapter {
     appendCodexModelArgs(args, {
       model,
       reasoningEffort,
+    });
+    appendCodexStructuredOutputArgs(args, {
+      outputPath,
+      tool: structuredOutputTool,
     });
     args.push(prompt);
 
