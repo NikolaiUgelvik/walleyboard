@@ -70,6 +70,7 @@ test("buildDraftRefinementPrompt uses human-readable Markdown sections", () => {
   assert.match(prompt, /## Context/);
   assert.match(prompt, /### Additional Instruction/);
   assert.match(prompt, /## Guardrails/);
+  assert.match(prompt, /## Description Structure/);
   assert.doesNotMatch(prompt, /## Output JSON/);
   assert.doesNotMatch(prompt, /```json/);
   assert.doesNotMatch(prompt, /title_draft:/);

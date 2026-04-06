@@ -101,13 +101,32 @@ export function buildDraftRefinementPrompt(
 
   appendHeading(sections, "Objective");
   sections.push(
-    `Refine the draft ticket for repository \`${repository.name}\`.`,
+    `Refine the draft ticket for repository \`${repository.name}\` and produce a structured implementation plan.`,
+  );
+  sections.push(
+    "Inspect the repository to gather context. Submit the result only via the MCP tool — no commentary, no inline output.",
   );
 
   appendDraftSection(sections, draft);
 
   appendHeading(sections, "Proposed Acceptance Checklist");
   appendNumberedList(sections, draft.proposed_acceptance_criteria);
+
+  appendHeading(sections, "Description Structure");
+  sections.push(
+    "Write the description as structured Markdown using these sections (omit any section where the repository provides no relevant evidence):",
+  );
+  appendBullets(sections, [
+    "`## Goal` — explicit task definition; what the system should do after this change",
+    "`## Current Behavior` — what happens today (use repository evidence, not assumption)",
+    "`## Desired Behavior` — what should happen after the change",
+    "`## Constraints` — what must not change (API contracts, DB schema, external interfaces)",
+    "`## Relevant Files` — file paths gathered from the repository; include line numbers (e.g. `src/foo.ts:42-51`) only when the exact location matters",
+    "`## Code Context` — short, targeted snippets only; include only when a snippet clarifies the exact change point; do not paste full files",
+    '`## Implementation Steps` — numbered; concrete and ordered (e.g. "1. Add interface to X, 2. Implement in Y")',
+    "`## Requirements` — language, framework, library, or pattern constraints that apply to this change",
+  ]);
+
   appendAvailableMcpSection(sections, enabledMcpServers);
 
   if (hasMeaningfulContent(instruction)) {
@@ -117,12 +136,12 @@ export function buildDraftRefinementPrompt(
 
   appendHeading(sections, "Guardrails");
   appendBullets(sections, [
-    "Inspect repository context as needed, but do not modify any files.",
-    "Scan relevant Markdown (`.md`) files when they help infer the user's intent.",
-    "Correct grammar, wording, clarity, and readability.",
+    "Inspect repository source files, documentation, and configuration as needed to resolve ambiguity; do not modify any files.",
+    "Do not explain your reasoning; produce only the refined ticket via the MCP tool call.",
+    "Do not invent implementation steps, constraints, or file references that cannot be verified in the repository.",
     "Preserve the original intent and overall scope unless the wording is clearly contradictory or confusing.",
     "Keep any existing draft artifact Markdown image references as Markdown images in the description; do not remove them or convert them to plain links.",
-    "Use repository context, especially Markdown documentation, to infer domain terms, existing workflows, and user intent.",
+    "Use repository context to infer domain terms, existing patterns, and user intent.",
     "Keep the existing ticket type unless the draft text makes it obviously incorrect.",
     "Make acceptance criteria concrete, testable, and concise without expanding scope.",
     'Set `"split_proposal_summary"` to `null` unless the draft already clearly describes multiple separate tickets.',
