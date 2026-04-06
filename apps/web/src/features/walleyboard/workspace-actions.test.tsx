@@ -386,7 +386,7 @@ test("ticket workspace actions keep diff and activity available after worktree c
   const tree = TicketWorkspaceActions({
     controller,
     ticket,
-    diffLineSummary: { additions: 5, deletions: 2, files: 1 },
+    diffLineSummary: { additions: 5, deletions: 2 },
   });
   const diffAction = findElementByProp(
     tree,
@@ -423,8 +423,24 @@ test("ticket workspace actions disable diff button when diff summary reports no 
   const tree = TicketWorkspaceActions({
     controller,
     ticket,
-    diffLineSummary: { additions: 0, deletions: 0, files: 0 },
+    diffLineSummary: { additions: 0, deletions: 0 },
   });
+  const diffAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open worktree diff",
+  );
+  assert.ok(diffAction);
+  assert.equal((diffAction.props as { disabled?: boolean }).disabled, true);
+});
+
+test("ticket workspace actions disable diff button when diff summary is not yet loaded", () => {
+  const { controller, ticket } = createController({
+    selectedTicket: createTicket({ status: "in_progress" }),
+    session: { status: "awaiting_input", worktree_path: "/tmp/worktree-0" },
+  });
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
   const diffAction = findElementByProp(
     tree,
     "aria-label",

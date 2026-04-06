@@ -293,7 +293,6 @@ export function TicketWorkspaceActions({
   diffLineSummary?: {
     additions: number;
     deletions: number;
-    files: number;
   } | null;
 }): React.JSX.Element {
   const ticketSession = resolveTicketSession(controller, ticket);
