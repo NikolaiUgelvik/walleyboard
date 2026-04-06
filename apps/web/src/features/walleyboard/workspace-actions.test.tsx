@@ -383,7 +383,11 @@ test("ticket workspace actions keep diff and activity available after worktree c
     session: { status: "completed", worktree_path: null },
   });
 
-  const tree = TicketWorkspaceActions({ controller, ticket });
+  const tree = TicketWorkspaceActions({
+    controller,
+    ticket,
+    diffLineSummary: { additions: 5, deletions: 2, files: 1 },
+  });
   const diffAction = findElementByProp(
     tree,
     "aria-label",

@@ -286,9 +286,15 @@ function BoardColumnScrollArea({
 export function TicketWorkspaceActions({
   controller,
   ticket,
+  diffLineSummary,
 }: {
   controller: BoardViewController;
   ticket: TicketFrontmatter;
+  diffLineSummary?: {
+    additions: number;
+    deletions: number;
+    files: number;
+  } | null;
 }): React.JSX.Element {
   const ticketSession = resolveTicketSession(controller, ticket);
   const ticketSessionSummaryState = ticket.session_id
@@ -305,9 +311,13 @@ export function TicketWorkspaceActions({
   const previewError =
     controller.previewActionErrorByTicketId[ticket.id] ?? preview?.error;
   const hasPreparedWorktree = ticketSession?.worktree_path != null;
+  const hasChanges =
+    diffLineSummary != null &&
+    (diffLineSummary.additions > 0 || diffLineSummary.deletions > 0);
   const diffDisabled =
     ticket.session_id === null ||
-    (!hasPreparedWorktree && ticket.status !== "done");
+    (!hasPreparedWorktree && ticket.status !== "done") ||
+    !hasChanges;
   const terminalWorktreeUnavailable =
     ticket.session_id === null ||
     (!hasPreparedWorktree &&
@@ -1090,6 +1100,7 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                         <TicketWorkspaceActions
                                           controller={controller}
                                           ticket={ticket}
+                                          diffLineSummary={diffLineSummary}
                                         />
                                       </Stack>
                                       <Box
