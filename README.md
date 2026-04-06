@@ -1,5 +1,8 @@
 # WalleyBoard
 
+[![CI](https://github.com/NikolaiUgelvik/walleyboard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NikolaiUgelvik/walleyboard/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/NikolaiUgelvik/walleyboard?label=license)](./LICENSE)
+
 > [!WARNING]
 > Run it at your own peril.
 
@@ -73,11 +76,39 @@ Optional launcher flags:
 - `npx walleyboard --port 4310`
 - `npx walleyboard --no-open`
 
-To build or republish the package from this monorepo:
+## Releasing The CLI
 
-1. Run `npm install`.
-2. Run `npm run build:cli`.
-3. Publish the workspace with `npm publish --workspace walleyboard --access public`.
+The `walleyboard` npm package is released from GitHub Actions with npm trusted
+publishing, so the publish job uses OIDC instead of a stored `NPM_TOKEN` and
+npm attaches provenance automatically for public releases.
+
+The committed workspace version stays at `0.0.0`. For each release, the
+workflow temporarily sets `packages/cli/package.json` to match the pushed tag
+before publishing to npm.
+
+One-time setup on npm:
+
+1. Open the `walleyboard` package settings on npm.
+2. Add a trusted publisher for owner `NikolaiUgelvik`, repository
+   `walleyboard`, and workflow file `publish.yml`.
+3. Leave the environment name empty unless you later add a protected GitHub
+   environment for releases.
+4. Remove any old npm automation token after trusted publishing is confirmed to
+   work.
+
+After that, every stable release is tag-driven:
+
+1. Make sure `main` is green in CI.
+2. Create the next stable tag from the current `main` head, for example
+   `git tag v0.1.3`.
+3. Push the tag with `git push origin v0.1.3`.
+4. The `publish.yml` workflow validates the tag, runs linting, typechecking,
+   tests, and the CLI build, temporarily sets the CLI package version to
+   `0.1.3`, publishes `walleyboard` to npm, and creates the matching GitHub
+   Release.
+
+If the release succeeds, the npm package page should show provenance details for
+that version.
 
 ## Repository Layout
 
