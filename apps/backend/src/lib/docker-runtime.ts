@@ -4,7 +4,7 @@ import {
   spawn,
 } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -115,6 +115,7 @@ type DockerRuntimeDependencies = {
   execFileSyncImpl?: typeof execFileSync;
   spawnImpl?: typeof spawn;
   spawnPtyImpl?: typeof spawnPty;
+  statSyncImpl?: typeof statSync;
   repoRoot?: string;
   uid?: number;
   gid?: number;
@@ -223,6 +224,7 @@ export class DockerRuntimeManager implements DockerRuntime {
   readonly #execFileSyncImpl: typeof execFileSync;
   readonly #spawnImpl: typeof spawn;
   readonly #spawnPtyImpl: typeof spawnPty;
+  readonly #statSyncImpl: typeof statSync;
   readonly #repoRoot: string;
   readonly #repoRootHash: string;
   readonly #configHomeResolver: (configMountPath: string) => string;
@@ -234,6 +236,7 @@ export class DockerRuntimeManager implements DockerRuntime {
     this.#execFileSyncImpl = dependencies.execFileSyncImpl ?? execFileSync;
     this.#spawnImpl = dependencies.spawnImpl ?? spawn;
     this.#spawnPtyImpl = dependencies.spawnPtyImpl ?? spawnPty;
+    this.#statSyncImpl = dependencies.statSyncImpl ?? statSync;
     this.#repoRoot = dependencies.repoRoot ?? process.cwd();
     this.#repoRootHash = createHash("sha256")
       .update(this.#repoRoot)
@@ -591,19 +594,74 @@ export class DockerRuntimeManager implements DockerRuntime {
   #ensureRuntimeImage(
     dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>,
   ): void {
-    try {
-      this.#runDocker(["image", "inspect", dockerSpec.imageTag]);
+    if (!this.#runtimeImageNeedsBuild(dockerSpec)) {
       return;
-    } catch {
-      this.#runDocker([
-        "build",
-        "--pull",
-        "--tag",
-        dockerSpec.imageTag,
-        "--file",
-        join(this.#repoRoot, dockerSpec.dockerfilePath),
-        this.#repoRoot,
+    }
+
+    this.#runDocker([
+      "build",
+      "--pull",
+      "--tag",
+      dockerSpec.imageTag,
+      "--file",
+      join(this.#repoRoot, dockerSpec.dockerfilePath),
+      this.#repoRoot,
+    ]);
+  }
+
+  #runtimeImageNeedsBuild(
+    dockerSpec: NonNullable<PreparedAgentRun["dockerSpec"]>,
+  ): boolean {
+    const imageMetadata = this.#inspectRuntimeImage(dockerSpec.imageTag);
+    if (!imageMetadata.exists) {
+      return true;
+    }
+
+    if (imageMetadata.createdAtMs === null) {
+      return false;
+    }
+
+    const dockerfileUpdatedAtMs = this.#getDockerfileUpdatedAtMs(
+      dockerSpec.dockerfilePath,
+    );
+    if (dockerfileUpdatedAtMs === null) {
+      return false;
+    }
+
+    return dockerfileUpdatedAtMs > imageMetadata.createdAtMs;
+  }
+
+  #inspectRuntimeImage(imageTag: string): {
+    exists: boolean;
+    createdAtMs: number | null;
+  } {
+    try {
+      const createdAt = this.#runDocker([
+        "image",
+        "inspect",
+        "--format",
+        "{{.Created}}",
+        imageTag,
       ]);
+      const createdAtMs = Date.parse(createdAt);
+
+      return {
+        exists: true,
+        createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
+      };
+    } catch {
+      return {
+        exists: false,
+        createdAtMs: null,
+      };
+    }
+  }
+
+  #getDockerfileUpdatedAtMs(dockerfilePath: string): number | null {
+    try {
+      return this.#statSyncImpl(join(this.#repoRoot, dockerfilePath)).mtimeMs;
+    } catch {
+      return null;
     }
   }
 

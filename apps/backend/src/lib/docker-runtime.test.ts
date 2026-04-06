@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -214,6 +220,80 @@ test("ensureSessionContainer uses the adapter docker spec for image and config m
       `type=bind,src=${worktreePath},dst=/workspace`,
       `type=bind,src=${walleyBoardHomePath},dst=/walleyboard-home`,
     ]);
+  } finally {
+    if (previousWalleyBoardHome === undefined) {
+      delete process.env.WALLEYBOARD_HOME;
+    } else {
+      process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("ensureSessionContainer rebuilds the runtime image when the Dockerfile is newer than the image", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-docker-runtime-"));
+  const worktreePath = join(tempDir, "workspace");
+  const configHomePath = join(tempDir, ".test-agent");
+  const dockerfilePath = join(
+    tempDir,
+    "apps/backend/docker/codex-runtime.Dockerfile",
+  );
+  const walleyBoardHomePath = join(tempDir, ".walleyboard-home");
+  const commands: Array<{ command: string; args: string[] }> = [];
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+
+  try {
+    mkdirSync(join(tempDir, "apps/backend/docker"), { recursive: true });
+    writeFileSync(dockerfilePath, "FROM scratch\n", "utf8");
+    const newerTimestamp = new Date("2026-04-05T21:20:27.595Z");
+    utimesSync(dockerfilePath, newerTimestamp, newerTimestamp);
+
+    process.env.WALLEYBOARD_HOME = walleyBoardHomePath;
+    const runtime = new DockerRuntimeManager({
+      configHomeResolver: () => configHomePath,
+      execFileSyncImpl: ((command: string, args: string[]) => {
+        commands.push({ command, args });
+
+        if (args[0] === "version") {
+          return "29.3.1|29.3.1";
+        }
+
+        if (args[0] === "image" && args[1] === "inspect") {
+          return "2026-04-02T15:41:21.70306071+02:00";
+        }
+
+        if (args[0] === "build") {
+          return "built-image";
+        }
+
+        if (args[0] === "rm") {
+          return "";
+        }
+
+        if (args[0] === "run") {
+          return "container-id";
+        }
+
+        throw new Error(`Unexpected docker command: ${args.join(" ")}`);
+      }) as never,
+      repoRoot: tempDir,
+    });
+
+    runtime.ensureSessionContainer({
+      dockerSpec: {
+        imageTag: "example/test-agent:latest",
+        dockerfilePath: "apps/backend/docker/codex-runtime.Dockerfile",
+        homePath: "/home/test-agent",
+        configMountPath: "/home/test-agent/.test-agent",
+      },
+      sessionId: "session-1",
+      projectId: "project-1",
+      ticketId: 42,
+      worktreePath,
+    });
+
+    const buildCommand = commands.find((entry) => entry.args[0] === "build");
+    assert.ok(buildCommand);
   } finally {
     if (previousWalleyBoardHome === undefined) {
       delete process.env.WALLEYBOARD_HOME;
