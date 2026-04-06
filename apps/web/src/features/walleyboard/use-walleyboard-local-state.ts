@@ -1,3 +1,4 @@
+import { useLocalStorage } from "@mantine/hooks";
 import { useState } from "react";
 import type {
   AgentAdapter,
@@ -7,9 +8,10 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
-import { readDiffLayoutPreference } from "./shared-api.js";
+import { diffLayoutStorageKey } from "./shared-api.js";
 import type {
   ArchiveActionFeedback,
+  DiffLayout,
   InspectorState,
   NewDraftAction,
   ProjectModelPreset,
@@ -274,9 +276,14 @@ export function useWorkspaceState() {
     useState<TicketFrontmatter | null>(null);
   const [workspaceTerminalContext, setWorkspaceTerminalContext] =
     useState<WorkspaceTerminalContext | null>(null);
-  const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] = useState<
-    "split" | "stacked"
-  >(() => readDiffLayoutPreference());
+  const [ticketWorkspaceDiffLayout, setTicketWorkspaceDiffLayout] =
+    useLocalStorage<DiffLayout>({
+      key: diffLayoutStorageKey,
+      defaultValue: "split",
+      getInitialValueInEffect: false,
+      serialize: (value) => value,
+      deserialize: (value) => (value === "stacked" ? "stacked" : "split"),
+    });
 
   return {
     setTicketWorkspaceDiffLayout,

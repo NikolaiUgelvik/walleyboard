@@ -28,7 +28,13 @@ export function WorkspaceModalContent({
   });
 
   return (
-    <Box className="ticket-workspace-modal-body">
+    <Box
+      className={
+        controller.workspaceModal === "diff"
+          ? "ticket-workspace-modal-body ticket-workspace-modal-body--diff"
+          : "ticket-workspace-modal-body"
+      }
+    >
       {controller.workspaceModal === "diff" ? (
         <TicketWorkspaceDiffPanel
           diff={controller.ticketWorkspaceDiff}

@@ -7,7 +7,6 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { apiBaseUrl } from "../../lib/api-base-url.js";
-import type { DiffLayout } from "./shared-types.js";
 
 const lastOpenProjectStorageKey = "walleyboard:last-open-project-id";
 export const diffLayoutStorageKey = "walleyboard.ticket-workspace.diff-layout";
@@ -40,31 +39,6 @@ export function writeLastOpenProjectId(projectId: string | null): void {
     window.localStorage.setItem(lastOpenProjectStorageKey, projectId);
   } catch {
     // Ignore storage failures and keep the in-memory selection working.
-  }
-}
-
-export function readDiffLayoutPreference(): DiffLayout {
-  if (typeof window === "undefined") {
-    return "split";
-  }
-
-  try {
-    const storedValue = window.localStorage.getItem(diffLayoutStorageKey);
-    return storedValue === "stacked" ? "stacked" : "split";
-  } catch {
-    return "split";
-  }
-}
-
-export function writeDiffLayoutPreference(value: DiffLayout): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(diffLayoutStorageKey, value);
-  } catch {
-    // Ignore storage failures and keep the in-memory layout preference working.
   }
 }
 

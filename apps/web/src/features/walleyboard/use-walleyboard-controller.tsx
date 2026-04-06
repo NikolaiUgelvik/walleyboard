@@ -33,7 +33,6 @@ import {
   fetchJson,
   readInboxReadState,
   readLastOpenProjectId,
-  writeDiffLayoutPreference,
   writeInboxReadState,
   writeLastOpenProjectId,
 } from "./shared-api.js";
@@ -418,10 +417,6 @@ export function useWalleyBoardController() {
     ticketsLoaded,
     setInspectorState,
   ]);
-
-  useEffect(() => {
-    writeDiffLayoutPreference(ticketWorkspaceDiffLayout);
-  }, [ticketWorkspaceDiffLayout]);
 
   useProtocolEventSync({
     queryClient,

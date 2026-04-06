@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  readDiffLayoutPreference,
-  readInboxReadState,
-  writeDiffLayoutPreference,
-  writeInboxReadState,
-} from "./shared-api.js";
+import { readInboxReadState, writeInboxReadState } from "./shared-api.js";
 
 function installWindow(localStorage: {
   getItem(key: string): string | null;
@@ -35,42 +30,6 @@ function installWindow(localStorage: {
     Reflect.deleteProperty(globalThis, "window");
   };
 }
-
-test("readDiffLayoutPreference falls back to split when localStorage access throws", () => {
-  const restoreWindow = installWindow({
-    getItem() {
-      throw new Error("storage disabled");
-    },
-    setItem() {
-      throw new Error("unused");
-    },
-  });
-
-  try {
-    assert.equal(readDiffLayoutPreference(), "split");
-  } finally {
-    restoreWindow();
-  }
-});
-
-test("writeDiffLayoutPreference ignores localStorage failures", () => {
-  const restoreWindow = installWindow({
-    getItem() {
-      return null;
-    },
-    setItem() {
-      throw new Error("storage disabled");
-    },
-  });
-
-  try {
-    assert.doesNotThrow(() => {
-      writeDiffLayoutPreference("stacked");
-    });
-  } finally {
-    restoreWindow();
-  }
-});
 
 test("readInboxReadState falls back to an empty object when storage is invalid", () => {
   const restoreWindow = installWindow({
