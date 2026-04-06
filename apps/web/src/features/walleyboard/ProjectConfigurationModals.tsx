@@ -76,21 +76,6 @@ export function ProjectConfigurationModals({
               />
 
               <Stack gap="xs">
-                <Text size="sm" c="dimmed">
-                  Docker is always used for ticket execution. WalleyBoard
-                  prepares an isolated checkout and runs draft analysis plus
-                  ticket sessions inside the managed runtime container.
-                </Text>
-                <Text size="sm" c="dimmed">
-                  Codex and Claude Code both run inside that Docker runtime when
-                  work starts.
-                </Text>
-                <Text size="sm" c="dimmed">
-                  Saving project options only checks that the matching host
-                  config directory and CLI binary are present. Ticket start and
-                  resume still require Docker because the actual agent session
-                  runs inside the managed container.
-                </Text>
                 {controller.dockerHealth ? (
                   controller.dockerHealth.available ? (
                     <Text size="sm" c="dimmed">
