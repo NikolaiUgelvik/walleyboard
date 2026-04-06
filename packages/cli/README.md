@@ -1,8 +1,10 @@
 # walleyboard
 
-`walleyboard` is the packaged CLI launcher for WalleyBoard, a local-first board
-for managing AI-assisted software work across drafts, execution sessions, git
-worktrees, and review.
+`walleyboard` is the packaged CLI launcher for WalleyBoard, a vibe-coded board
+for brains with too many tabs open. Each ticket gets its own worktree and
+Dockerized agent, so you can keep the overview and turn fuzzy ideas into
+better tickets. It is about handing the fiddly stuff to a tireless little
+helper while you stay planted in your chair and run the show from the board.
 
 ## Usage
 
@@ -21,6 +23,14 @@ Optional flags:
 - `npx walleyboard --host 0.0.0.0`
 - `npx walleyboard --port 4310`
 - `npx walleyboard --no-open`
+
+## Highlights
+
+- each ticket gets its own git worktree and Dockerized agent session
+- ticket cards include direct actions for preview, activity, diff, and terminal
+- the board inbox surfaces refined drafts, review-ready work, and sessions that
+  need operator input
+- review flows cover AI review, pull request creation, PR tracking, and merges
 
 ## Requirements
 

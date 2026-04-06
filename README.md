@@ -8,7 +8,13 @@
 
 Pronounced `/ˈwɑːli bɔːrd/`.
 
-WalleyBoard is a vibe-coded workbench for handing the fiddly stuff to a tireless little helper while you stay planted in your chair and run the show from the board. This repo contains the current MVP plus the starter product documentation in [ai_walleyboard_prd.md](./ai_walleyboard_prd.md).
+WalleyBoard is a vibe-coded board for brains with too many tabs open. Each
+ticket gets its own worktree and Dockerized agent, so you can keep the
+overview and turn fuzzy ideas into better tickets. It is about handing
+the fiddly stuff to a tireless little helper while you stay planted in your
+chair and run the show from the board. This repo contains the current MVP plus
+the starter product documentation in
+[ai_walleyboard_prd.md](./ai_walleyboard_prd.md).
 
 Runtime state lives under `~/.walleyboard/`, with `walleyboard.sqlite` as the source of truth for drafts, tickets, sessions, and review metadata so the repo checkout stays focused on code instead of accumulating local app data.
 
@@ -24,11 +30,26 @@ to the same ticket.
 
 Core workflows:
 
-- create and refine Markdown ticket drafts
-- start work in isolated git worktrees
-- run Codex or Claude Code in Docker-backed sessions
-- inspect diffs, terminal output, previews, and activity history
-- review changes, open pull requests, and merge completed work
+- draft and refine tickets with Markdown, acceptance criteria, and AI-assisted
+  cleanup before work starts
+- turn each ticket into its own isolated git worktree and Dockerized Codex or
+  Claude Code session
+- use the action group on every ticket card to jump straight into preview,
+  activity, diff, or terminal without leaving the board
+- keep a readable overview with an inbox for refined drafts, review-ready
+  tickets, and sessions waiting on operator input
+- run previews for tickets and repositories directly from the board to check a
+  branch without extra terminal juggling
+- review completed work, launch AI review, open pull requests, track linked PRs,
+  and merge from the same flow
+
+Some especially handy bits:
+
+- project settings for preview commands plus optional pre-worktree and
+  post-worktree commands
+- review actions that adapt between direct merge and pull-request workflows
+- live activity history and worktree summaries attached to the ticket that
+  produced them
 
 ## Requirements
 
