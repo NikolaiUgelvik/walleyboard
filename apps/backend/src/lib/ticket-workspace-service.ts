@@ -1,6 +1,9 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { existsSync, type FSWatcher, readFileSync, watch } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import net from "node:net";
+import { relative } from "node:path";
+
+import type { AsyncSubscription } from "@parcel/watcher";
 
 import type {
   TicketWorkspaceDiff,
@@ -29,7 +32,7 @@ type WatchRegistration = {
     workingBranch: string;
     worktreePath: string;
   } | null;
-  watchers: FSWatcher[];
+  subscription: AsyncSubscription | null;
 };
 
 type WorkspaceSummaryStats = {
@@ -803,15 +806,17 @@ export class TicketWorkspaceService {
       }),
     );
 
+    const unsubscribes: Promise<void>[] = [];
     for (const registration of this.#watchRegistrations.values()) {
       if (registration.debounceTimer) {
         clearTimeout(registration.debounceTimer);
       }
 
-      for (const watcher of registration.watchers) {
-        watcher.close();
+      if (registration.subscription) {
+        unsubscribes.push(registration.subscription.unsubscribe());
       }
     }
+    await Promise.all(unsubscribes);
 
     this.#watchRegistrations.clear();
     this.#summaryCache.clear();
@@ -838,8 +843,8 @@ export class TicketWorkspaceService {
       clearTimeout(watchRegistration.debounceTimer);
     }
 
-    for (const watcher of watchRegistration.watchers) {
-      watcher.close();
+    if (watchRegistration.subscription) {
+      await watchRegistration.subscription.unsubscribe();
     }
 
     this.#watchRegistrations.delete(ticketId);
@@ -1290,12 +1295,12 @@ export class TicketWorkspaceService {
         pendingRerun: false,
         recomputePromise: null,
         summaryContext: input,
-        watchers: [],
+        subscription: null,
       });
       void deferral.then(() => {
         const reg = this.#watchRegistrations.get(input.ticketId);
-        if (reg && reg.watchers.length === 0) {
-          this.#startWatchers(input, reg);
+        if (reg && reg.subscription === null) {
+          void this.#startWatcher(input, reg);
         }
       });
       return;
@@ -1307,65 +1312,63 @@ export class TicketWorkspaceService {
       pendingRerun: false,
       recomputePromise: null,
       summaryContext: input,
-      watchers: [],
+      subscription: null,
     };
     this.#watchRegistrations.set(input.ticketId, registration);
-    this.#startWatchers(input, registration);
+    void this.#startWatcher(input, registration);
   }
 
-  #startWatchers(
+  async #startWatcher(
     input: {
       ticketId: number;
       worktreePath: string;
     },
     registration: WatchRegistration,
-  ): void {
-    // Build ignored prefixes from .gitignore so the watcher callback can
-    // cheaply skip paths under directories like node_modules.
+  ): Promise<void> {
     registration.ignoredPrefixes = collectIgnoredDirectoryPrefixes(
       input.worktreePath,
     );
 
-    const scheduleUpdate = (filename: string | null) => {
-      if (isGitInternalPath(filename)) {
-        return;
-      }
-      if (filename && isIgnoredPath(filename, registration.ignoredPrefixes)) {
-        return;
-      }
+    const ignoreGlobs = [...registration.ignoredPrefixes].map(
+      (prefix) => `${input.worktreePath}/${prefix}**`,
+    );
 
-      const reg = this.#watchRegistrations.get(input.ticketId);
-      if (!reg) {
-        return;
-      }
+    const watcher = await import("@parcel/watcher");
+    registration.subscription = await watcher.subscribe(
+      input.worktreePath,
+      (error, events) => {
+        if (error) {
+          return;
+        }
 
-      if (reg.debounceTimer) {
-        clearTimeout(reg.debounceTimer);
-      }
+        const hasRelevantChange = events.some((event) => {
+          const rel = relative(input.worktreePath, event.path);
+          return (
+            !isGitInternalPath(rel) &&
+            !isIgnoredPath(rel, registration.ignoredPrefixes)
+          );
+        });
 
-      reg.debounceTimer = setTimeout(() => {
-        reg.debounceTimer = null;
-        void this.#recomputeSummary(input.ticketId);
-      }, 300);
-    };
+        if (!hasRelevantChange) {
+          return;
+        }
 
-    try {
-      registration.watchers.push(
-        watch(
-          input.worktreePath,
-          { recursive: true },
-          (_eventType, filename) => {
-            scheduleUpdate(filename ?? null);
-          },
-        ),
-      );
-    } catch {
-      registration.watchers.push(
-        watch(input.worktreePath, (_eventType, filename) => {
-          scheduleUpdate(filename ?? null);
-        }),
-      );
-    }
+        const reg = this.#watchRegistrations.get(input.ticketId);
+        if (!reg) {
+          return;
+        }
+
+        if (reg.debounceTimer) {
+          clearTimeout(reg.debounceTimer);
+        }
+
+        reg.debounceTimer = setTimeout(() => {
+          reg.debounceTimer = null;
+          void this.#recomputeSummary(input.ticketId);
+        }, 300);
+      },
+      { ignore: ignoreGlobs },
+    );
   }
 
   #publishWorkspaceUpdate(
