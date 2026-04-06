@@ -203,6 +203,182 @@ test("TicketWorkspaceService diffs the worktree and publishes live summary updat
   }
 });
 
+test("disposeTicket succeeds after worktree is already removed", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-dispose-"));
+  const repoPath = join(tempDir, "repo");
+  const worktreePath = join(tempDir, "ticket-worktree");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  try {
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "dispose-branch",
+      worktreePath,
+      "main",
+    ]);
+
+    await workspaceService.getSummary({
+      targetBranch: "main",
+      ticketId: 50,
+      workingBranch: "dispose-branch",
+      worktreePath,
+    });
+
+    assert.ok(workspaceService.hasWatcher(50));
+
+    rmSync(worktreePath, { recursive: true, force: true });
+    runGit(repoPath, ["worktree", "prune"]);
+
+    await workspaceService.disposeTicket(50);
+
+    assert.ok(!workspaceService.hasWatcher(50));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("disposeTicket waits for watcher initialization before cleanup", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-dispose-race-"));
+  const repoPath = join(tempDir, "repo");
+  const worktreePath = join(tempDir, "ticket-worktree");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  try {
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "race-branch",
+      worktreePath,
+      "main",
+    ]);
+
+    await workspaceService.getSummary({
+      targetBranch: "main",
+      ticketId: 51,
+      workingBranch: "race-branch",
+      worktreePath,
+    });
+
+    await workspaceService.disposeTicket(51);
+
+    assert.ok(!workspaceService.hasWatcher(51));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("deferred watcher starts after deferral resolves and publishes summary updates", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-deferred-"));
+  const repoPath = join(tempDir, "repo");
+  const worktreePath = join(tempDir, "ticket-worktree");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  try {
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "base.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "base.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "deferred-branch",
+      worktreePath,
+      "main",
+    ]);
+
+    let resolveDeferral!: () => void;
+    const deferralPromise = new Promise<void>((resolve) => {
+      resolveDeferral = resolve;
+    });
+
+    workspaceService.deferWatcher(52, deferralPromise);
+
+    const summary = await workspaceService.getSummary({
+      targetBranch: "main",
+      ticketId: 52,
+      workingBranch: "deferred-branch",
+      worktreePath,
+    });
+
+    assert.equal(summary.has_changes, false);
+
+    resolveDeferral();
+    await new Promise((r) => setTimeout(r, 200));
+
+    const workspaceUpdate = await new Promise<unknown>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for deferred watcher update"));
+      }, 5_000);
+
+      const unsubscribe = eventHub.subscribe((event) => {
+        if (
+          event.event_type === "ticket.workspace.updated" &&
+          event.payload.ticket_id === 52 &&
+          event.payload.kind === "summary"
+        ) {
+          clearTimeout(timeout);
+          unsubscribe();
+          resolve(event);
+        }
+      });
+
+      writeFileSync(join(worktreePath, "base.txt"), "changed\n", "utf8");
+    });
+
+    assert.ok(workspaceUpdate);
+    const payload = (
+      workspaceUpdate as { payload: { summary: { has_changes: boolean } } }
+    ).payload;
+    assert.equal(payload.summary.has_changes, true);
+  } finally {
+    await workspaceService.disposeTicket(52);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("TicketWorkspaceService starts and stops previews for ticket worktrees", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-preview-"));
   const worktreePath = join(tempDir, "preview-app");

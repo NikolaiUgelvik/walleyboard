@@ -26,6 +26,7 @@ type WatchRegistration = {
   ignoredPrefixes: Set<string>;
   pendingRerun: boolean;
   recomputePromise: Promise<void> | null;
+  startPromise: Promise<void> | null;
   summaryContext: {
     targetBranch: string;
     ticketId: number;
@@ -607,6 +608,10 @@ export class TicketWorkspaceService {
     };
   }
 
+  hasWatcher(ticketId: number): boolean {
+    return this.#watchRegistrations.has(ticketId);
+  }
+
   deferWatcher(ticketId: number, readyPromise: Promise<void>): void {
     this.#watcherDeferrals.set(
       ticketId,
@@ -843,8 +848,16 @@ export class TicketWorkspaceService {
       clearTimeout(watchRegistration.debounceTimer);
     }
 
+    if (watchRegistration.startPromise) {
+      await watchRegistration.startPromise;
+    }
+
     if (watchRegistration.subscription) {
-      await watchRegistration.subscription.unsubscribe();
+      try {
+        await watchRegistration.subscription.unsubscribe();
+      } catch {
+        // Watcher path may already be removed (e.g. worktree deleted during merge)
+      }
     }
 
     this.#watchRegistrations.delete(ticketId);
@@ -1294,13 +1307,14 @@ export class TicketWorkspaceService {
         ignoredPrefixes: new Set(),
         pendingRerun: false,
         recomputePromise: null,
+        startPromise: null,
         summaryContext: input,
         subscription: null,
       });
       void deferral.then(() => {
         const reg = this.#watchRegistrations.get(input.ticketId);
         if (reg && reg.subscription === null) {
-          void this.#startWatcher(input, reg);
+          reg.startPromise = this.#startWatcher(input, reg).catch(() => {});
         }
       });
       return;
@@ -1311,11 +1325,14 @@ export class TicketWorkspaceService {
       ignoredPrefixes: new Set(),
       pendingRerun: false,
       recomputePromise: null,
+      startPromise: null,
       summaryContext: input,
       subscription: null,
     };
     this.#watchRegistrations.set(input.ticketId, registration);
-    void this.#startWatcher(input, registration);
+    registration.startPromise = this.#startWatcher(input, registration).catch(
+      () => {},
+    );
   }
 
   async #startWatcher(
