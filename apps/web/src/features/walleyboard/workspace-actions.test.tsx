@@ -137,7 +137,7 @@ function createController(input?: {
   selectedSessionTicketSession?: Partial<ExecutionSession> | null;
   sessionQueryPending?: boolean;
   selectedTicket?: TicketFrontmatter;
-  workspaceModal?: "activity" | "diff" | "terminal" | null;
+  workspaceModal?: "activity" | "diff" | "terminal" | "timeline" | null;
 }) {
   const openCalls: Array<{ kind: string; ticketId: number }> = [];
   const previewActionCalls: number[] = [];
@@ -365,6 +365,7 @@ test("ticket workspace actions render preview first with the play icon by defaul
   assert.deepEqual(collectActionLabels(tree), [
     "Preview",
     "Open activity stream",
+    "Open activity timeline",
     "Open worktree diff",
     "Open worktree terminal",
   ]);
@@ -592,6 +593,49 @@ test("ticket workspace activity action opens the activity modal from the card", 
 
   assert.equal(stopPropagationCalled, true);
   assert.deepEqual(openCalls, [{ kind: "activity", ticketId: ticket.id }]);
+});
+
+test("ticket workspace timeline action opens the timeline modal from the card", () => {
+  const { controller, openCalls, ticket } = createController();
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+  const timelineAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open activity timeline",
+  );
+
+  assert.ok(timelineAction);
+  let stopPropagationCalled = false;
+  (
+    timelineAction.props as {
+      onClick: (event: { stopPropagation: () => void }) => void;
+    }
+  ).onClick({
+    stopPropagation() {
+      stopPropagationCalled = true;
+    },
+  });
+
+  assert.equal(stopPropagationCalled, true);
+  assert.deepEqual(openCalls, [{ kind: "timeline", ticketId: ticket.id }]);
+});
+
+test("ticket workspace timeline action is disabled when there is no session", () => {
+  const { controller, ticket } = createController({
+    selectedTicket: createTicket({ session_id: null }),
+    session: null,
+  });
+
+  const tree = TicketWorkspaceActions({ controller, ticket });
+  const timelineAction = findElementByProp(
+    tree,
+    "aria-label",
+    "Open activity timeline",
+  );
+
+  assert.ok(timelineAction);
+  assert.equal((timelineAction.props as { disabled?: boolean }).disabled, true);
 });
 
 test("project workspace actions mirror ticket preview play and stop states", () => {

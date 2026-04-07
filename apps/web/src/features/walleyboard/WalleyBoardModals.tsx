@@ -63,9 +63,9 @@ export function WorkspaceModalContent({
           <SessionActivityPanel
             key={controller.session.id}
             attempts={controller.sessionAttempts}
-            {...(controller.workspaceModal === "timeline"
-              ? { defaultTab: "timeline" as const }
-              : {})}
+            defaultTab={
+              controller.workspaceModal === "timeline" ? "timeline" : undefined
+            }
             logs={controller.sessionLogs}
             reviewRuns={controller.reviewRuns}
             session={controller.session}

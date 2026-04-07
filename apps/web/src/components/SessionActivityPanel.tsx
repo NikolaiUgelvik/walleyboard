@@ -28,7 +28,7 @@ export function SessionActivityPanel({
   ticketEvents: StructuredEvent[];
   timelineError: string | null;
   timelinePending: boolean;
-  defaultTab?: ActivityTab;
+  defaultTab?: ActivityTab | undefined;
 }) {
   const [activeTab, setActiveTab] = useState<ActivityTab>(
     defaultTab ?? "overview",
