@@ -16,6 +16,7 @@ import type {
 import { ProjectConfigurationModals } from "./ProjectConfigurationModals.js";
 import {
   collectRepositoryTargetBranchUpdates,
+  collectRepositoryValidationCommandUpdates,
   projectColorPalette,
 } from "./shared-utils.js";
 import {
@@ -453,6 +454,13 @@ function ControllerModalHarness({
           repositoryTargetBranches:
             controller.projectOptionsRepositoryTargetBranches,
         }),
+        repositoryValidationCommands: collectRepositoryValidationCommandUpdates(
+          {
+            repositories: controller.projectOptionsRepositories,
+            repositoryValidationCommands:
+              controller.projectOptionsRepositoryValidationCommands,
+          },
+        ),
       });
     },
   } satisfies WalleyBoardController;
@@ -1154,6 +1162,7 @@ test("edit project modal submits the updated color through the controller workfl
         previewStartCommand: null,
         projectId: project.id,
         repositoryTargetBranches: [],
+        repositoryValidationCommands: [],
         ticketWorkModel: null,
         ticketWorkReasoningEffort: null,
       });

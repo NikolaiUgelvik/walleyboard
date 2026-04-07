@@ -5,6 +5,7 @@ import type {
   DraftTicketState,
   ReviewAction,
   TicketFrontmatter,
+  ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
 
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
@@ -145,6 +146,10 @@ export function useProjectOptionsState() {
     projectOptionsRepositoryTargetBranches,
     setProjectOptionsRepositoryTargetBranches,
   ] = useState<Record<string, string>>({});
+  const [
+    projectOptionsRepositoryValidationCommands,
+    setProjectOptionsRepositoryValidationCommands,
+  ] = useState<Record<string, ValidationCommand[]>>({});
   const [projectOptionsFormError, setProjectOptionsFormError] = useState<
     string | null
   >(null);
@@ -168,6 +173,7 @@ export function useProjectOptionsState() {
     projectOptionsPreviewStartCommand,
     projectOptionsProjectId,
     projectOptionsRepositoryTargetBranches,
+    projectOptionsRepositoryValidationCommands,
     projectOptionsTicketModelCustom,
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
@@ -189,6 +195,7 @@ export function useProjectOptionsState() {
     setProjectOptionsPreviewStartCommand,
     setProjectOptionsProjectId,
     setProjectOptionsRepositoryTargetBranches,
+    setProjectOptionsRepositoryValidationCommands,
     setProjectOptionsTicketModelCustom,
     setProjectOptionsTicketModelPreset,
     setProjectOptionsTicketReasoningEffort,

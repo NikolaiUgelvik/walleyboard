@@ -4,6 +4,7 @@ import type {
   Project,
   RepositoryConfig,
   ReviewAction,
+  ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
 import type {
   ProjectModelPreset,
@@ -12,6 +13,7 @@ import type {
 import {
   defaultProjectColor,
   mapRepositoryTargetBranches,
+  mapRepositoryValidationCommands,
   pickProjectColor,
   resolveProjectCustomModelValue,
   resolveProjectModelPreset,
@@ -69,6 +71,9 @@ export function resetProjectOptionsModal(input: {
   setProjectOptionsRepositoryTargetBranches: StateSetter<
     Record<string, string>
   >;
+  setProjectOptionsRepositoryValidationCommands: StateSetter<
+    Record<string, ValidationCommand[]>
+  >;
 }): void {
   input.setProjectOptionsProjectId(null);
   input.setProjectOptionsColor(defaultProjectColor);
@@ -81,6 +86,7 @@ export function resetProjectOptionsModal(input: {
   input.setProjectOptionsDefaultReviewAction("direct_merge");
   input.setProjectOptionsPreviewStartCommand("");
   input.setProjectOptionsRepositoryTargetBranches({});
+  input.setProjectOptionsRepositoryValidationCommands({});
   input.setProjectOptionsFormError(null);
   input.setProjectDeleteConfirmText("");
   input.resetUpdateProjectMutation();
@@ -111,6 +117,9 @@ export function populateProjectOptionsModal(input: {
   setProjectOptionsProjectId: StateSetter<string | null>;
   setProjectOptionsRepositoryTargetBranches: StateSetter<
     Record<string, string>
+  >;
+  setProjectOptionsRepositoryValidationCommands: StateSetter<
+    Record<string, ValidationCommand[]>
   >;
   setProjectOptionsTicketModelCustom: StateSetter<string>;
   setProjectOptionsTicketModelPreset: StateSetter<ProjectModelPreset>;
@@ -175,6 +184,9 @@ export function populateProjectOptionsModal(input: {
       input.cachedRepositories,
       input.project.default_target_branch,
     ),
+  );
+  input.setProjectOptionsRepositoryValidationCommands(
+    mapRepositoryValidationCommands(input.cachedRepositories),
   );
   input.setProjectOptionsFormError(null);
   input.setProjectDeleteConfirmText("");

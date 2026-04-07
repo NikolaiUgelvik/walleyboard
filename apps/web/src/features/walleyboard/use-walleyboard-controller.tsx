@@ -40,9 +40,12 @@ import type { RepositoriesResponse, SessionResponse } from "./shared-types.js";
 import {
   arraysEqual,
   collectRepositoryTargetBranchUpdates,
+  collectRepositoryValidationCommandUpdates,
   defaultProjectColor,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
+  hasRepositoryValidationCommandChanges,
+  mapRepositoryValidationCommands,
   mergeRepositoryTargetBranches,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
@@ -115,6 +118,7 @@ export function useWalleyBoardController() {
     projectOptionsPreviewStartCommand,
     projectOptionsProjectId,
     projectOptionsRepositoryTargetBranches,
+    projectOptionsRepositoryValidationCommands,
     projectOptionsTicketModelCustom,
     projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort,
@@ -136,6 +140,7 @@ export function useWalleyBoardController() {
     setProjectOptionsPreviewStartCommand,
     setProjectOptionsProjectId,
     setProjectOptionsRepositoryTargetBranches,
+    setProjectOptionsRepositoryValidationCommands,
     setProjectOptionsTicketModelCustom,
     setProjectOptionsTicketModelPreset,
     setProjectOptionsTicketReasoningEffort,
@@ -336,6 +341,7 @@ export function useWalleyBoardController() {
     setProjectOptionsColor(defaultProjectColor);
     setProjectOptionsColorManuallySelected(false);
     setProjectOptionsRepositoryTargetBranches({});
+    setProjectOptionsRepositoryValidationCommands({});
     setProjectOptionsFormError(null);
     setProjectDeleteConfirmText("");
   }, [
@@ -348,6 +354,7 @@ export function useWalleyBoardController() {
     setProjectOptionsProjectId,
     setProjectOptionsFormError,
     setProjectOptionsRepositoryTargetBranches,
+    setProjectOptionsRepositoryValidationCommands,
   ]);
 
   useEffect(() => {
@@ -396,6 +403,37 @@ export function useWalleyBoardController() {
     projectOptionsProjectId,
     projectOptionsRepositoriesQuery.data,
     setProjectOptionsRepositoryTargetBranches,
+  ]);
+
+  useEffect(() => {
+    if (projectOptionsRepositoriesQuery.data === undefined) {
+      return;
+    }
+
+    setProjectOptionsRepositoryValidationCommands((current) => {
+      const next = mapRepositoryValidationCommands(
+        projectOptionsRepositoriesQuery.data.repositories,
+      );
+      const keys = Object.keys(next);
+      if (
+        keys.length === Object.keys(current).length &&
+        keys.every((key) => {
+          const currentList = current[key];
+          const nextList = next[key];
+          return (
+            currentList !== undefined &&
+            nextList !== undefined &&
+            currentList.length === nextList.length
+          );
+        })
+      ) {
+        return current;
+      }
+      return next;
+    });
+  }, [
+    projectOptionsRepositoriesQuery.data,
+    setProjectOptionsRepositoryValidationCommands,
   ]);
 
   useEffect(() => {
@@ -594,6 +632,11 @@ export function useWalleyBoardController() {
       repositories: projectOptionsRepositories,
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
+  const projectOptionsValidationCommandsDirty =
+    hasRepositoryValidationCommandChanges({
+      repositories: projectOptionsRepositories,
+      repositoryValidationCommands: projectOptionsRepositoryValidationCommands,
+    });
   const { persistedColor: projectOptionsPersistedColor, swatchColor } =
     resolveProjectOptionsColors({
       color: projectOptionsColor,
@@ -613,6 +656,7 @@ export function useWalleyBoardController() {
     projectOptionsAutomaticAgentReviewRunLimit,
     projectOptionsDefaultReviewAction,
     repositoryBranchesDirty: projectOptionsRepositoryBranchesDirty,
+    validationCommandsDirty: projectOptionsValidationCommandsDirty,
     selectedDraftAgentAdapter: projectOptionsDraftAgentAdapter,
     selectedTicketAgentAdapter: projectOptionsTicketAgentAdapter,
     ticketModelValue: projectOptionsTicketModelValue,
@@ -877,6 +921,7 @@ export function useWalleyBoardController() {
       setProjectOptionsPreviewStartCommand,
       setProjectOptionsProjectId,
       setProjectOptionsRepositoryTargetBranches,
+      setProjectOptionsRepositoryValidationCommands,
     });
   };
 
@@ -933,6 +978,7 @@ export function useWalleyBoardController() {
       setProjectOptionsPreviewStartCommand,
       setProjectOptionsProjectId,
       setProjectOptionsRepositoryTargetBranches,
+      setProjectOptionsRepositoryValidationCommands,
       setProjectOptionsTicketModelCustom,
       setProjectOptionsTicketModelPreset,
       setProjectOptionsTicketReasoningEffort,
@@ -977,6 +1023,12 @@ export function useWalleyBoardController() {
       repositories: projectOptionsRepositories,
       repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
     });
+    const repositoryValidationCommands =
+      collectRepositoryValidationCommandUpdates({
+        repositories: projectOptionsRepositories,
+        repositoryValidationCommands:
+          projectOptionsRepositoryValidationCommands,
+      });
     setProjectOptionsFormError(null);
     mutations.updateProjectMutation.mutate({
       draftAgentAdapter: projectOptionsDraftAgentAdapter,
@@ -997,6 +1049,7 @@ export function useWalleyBoardController() {
       ticketWorkModel: projectOptionsTicketModelValue,
       ticketWorkReasoningEffort: projectOptionsTicketReasoningEffortValue,
       repositoryTargetBranches,
+      repositoryValidationCommands,
     });
   };
 
@@ -1254,6 +1307,7 @@ export function useWalleyBoardController() {
     projectOptionsRepositoriesQuery,
     projectOptionsRepositoryBranchesDirty,
     projectOptionsRepositoryTargetBranches,
+    projectOptionsRepositoryValidationCommands,
     projectOptionsTicketModelCustom,
     projectOptionsTicketModelPreset,
     projectOptionsTicketModelValue,
@@ -1351,6 +1405,7 @@ export function useWalleyBoardController() {
     setProjectOptionsPreWorktreeCommand,
     setProjectOptionsPreviewStartCommand,
     setProjectOptionsRepositoryTargetBranches,
+    setProjectOptionsRepositoryValidationCommands,
     setProjectOptionsTicketModelCustom,
     setProjectOptionsTicketModelPreset,
     setProjectOptionsTicketReasoningEffort,

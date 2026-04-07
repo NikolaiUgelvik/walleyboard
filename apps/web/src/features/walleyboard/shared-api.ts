@@ -4,6 +4,7 @@ import type {
   ReasoningEffort,
   ReviewAction,
   UploadDraftArtifactResponse,
+  ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
 
 import { apiBaseUrl } from "../../lib/api-base-url.js";
@@ -257,6 +258,10 @@ export async function saveProjectOptionsRequest(
     repository_target_branches?: Array<{
       repository_id: string;
       target_branch: string;
+    }>;
+    repository_validation_commands?: Array<{
+      repository_id: string;
+      validation_profile: ValidationCommand[];
     }>;
   },
 ): Promise<CommandAck> {

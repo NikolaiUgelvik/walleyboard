@@ -201,6 +201,7 @@ export type WalleyBoardModalsController = Pick<
   | "projectOptionsRepositories"
   | "projectOptionsRepositoriesQuery"
   | "projectOptionsRepositoryTargetBranches"
+  | "projectOptionsRepositoryValidationCommands"
   | "projectOptionsTicketModelCustom"
   | "projectOptionsTicketModelPreset"
   | "projectOptionsTicketReasoningEffort"
@@ -237,6 +238,7 @@ export type WalleyBoardModalsController = Pick<
   | "setProjectOptionsPreWorktreeCommand"
   | "setProjectOptionsPreviewStartCommand"
   | "setProjectOptionsRepositoryTargetBranches"
+  | "setProjectOptionsRepositoryValidationCommands"
   | "setProjectOptionsTicketModelCustom"
   | "setProjectOptionsTicketModelPreset"
   | "setProjectOptionsTicketReasoningEffort"
@@ -480,6 +482,8 @@ export function createWalleyBoardViewState(
     projectOptionsRepositoriesQuery: controller.projectOptionsRepositoriesQuery,
     projectOptionsRepositoryTargetBranches:
       controller.projectOptionsRepositoryTargetBranches,
+    projectOptionsRepositoryValidationCommands:
+      controller.projectOptionsRepositoryValidationCommands,
     projectOptionsTicketModelCustom: controller.projectOptionsTicketModelCustom,
     projectOptionsTicketModelPreset: controller.projectOptionsTicketModelPreset,
     projectOptionsTicketReasoningEffort:
@@ -530,6 +534,8 @@ export function createWalleyBoardViewState(
       controller.setProjectOptionsPreviewStartCommand,
     setProjectOptionsRepositoryTargetBranches:
       controller.setProjectOptionsRepositoryTargetBranches,
+    setProjectOptionsRepositoryValidationCommands:
+      controller.setProjectOptionsRepositoryValidationCommands,
     setProjectOptionsTicketModelCustom:
       controller.setProjectOptionsTicketModelCustom,
     setProjectOptionsTicketModelPreset:

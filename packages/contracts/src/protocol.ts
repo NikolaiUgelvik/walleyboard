@@ -20,6 +20,7 @@ import {
   ticketFrontmatterSchema,
   ticketTypeSchema,
   timestampSchema,
+  validationCommandSchema,
 } from "./models.js";
 
 export const createProjectInputSchema = z.object({
@@ -56,6 +57,14 @@ export const updateProjectInputSchema = z.object({
       z.object({
         repository_id: opaqueIdSchema,
         target_branch: z.string().min(1),
+      }),
+    )
+    .optional(),
+  repository_validation_commands: z
+    .array(
+      z.object({
+        repository_id: opaqueIdSchema,
+        validation_profile: z.array(validationCommandSchema),
       }),
     )
     .optional(),
