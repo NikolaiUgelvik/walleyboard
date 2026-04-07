@@ -14,7 +14,7 @@ import {
   upsertObservedExecutionActivity,
 } from "../backend-observability.js";
 import type { DockerRuntime } from "../docker-runtime.js";
-import { getAgentEnvOverridesCached } from "../walleyboard-conf.js";
+import { getAgentEnvOverrides } from "../walleyboard-conf.js";
 import {
   buildMergeConflictSummaryPath,
   buildProcessEnv,
@@ -91,7 +91,8 @@ export async function runMergeRecovery(input: {
     input.onLogLine?.(line);
   }
 
-  const ptyEnv = buildProcessEnv(getAgentEnvOverridesCached(input.adapter.id));
+  const agentEnvOverrides = await getAgentEnvOverrides(input.adapter.id);
+  const ptyEnv = buildProcessEnv(agentEnvOverrides);
   writeFileSync(outputSummaryPath, "", "utf8");
 
   return await new Promise((resolve) => {

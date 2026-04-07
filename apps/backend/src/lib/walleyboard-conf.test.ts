@@ -146,6 +146,35 @@ MY_VAR = "cached"
   }
 });
 
+test("loadAgentEnvOverrides warns on unrecognized section names", async () => {
+  const home = makeTmpHome();
+  process.env.WALLEYBOARD_HOME = home;
+  resetConfCache();
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (msg: string) => warnings.push(msg);
+  writeFileSync(
+    join(home, "walleyboard.conf"),
+    `[claude-code]
+FOO = "bar"
+
+[claude_code]
+BAZ = "qux"
+`,
+    "utf8",
+  );
+  try {
+    await loadAgentEnvOverrides();
+    assert.equal(warnings.length, 1);
+    assert.ok(typeof warnings[0] === "string");
+    assert.match(warnings[0], /Unrecognized section \[claude_code\]/);
+  } finally {
+    console.warn = originalWarn;
+    delete process.env.WALLEYBOARD_HOME;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("loadAgentEnvOverrides ignores non-string values in sections", async () => {
   const home = makeTmpHome();
   process.env.WALLEYBOARD_HOME = home;

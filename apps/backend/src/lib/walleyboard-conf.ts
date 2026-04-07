@@ -2,7 +2,10 @@ import { readFile } from "node:fs/promises";
 
 import { parse } from "smol-toml";
 
-import type { AgentAdapter } from "../../../../packages/contracts/src/index.js";
+import {
+  type AgentAdapter,
+  agentAdapterSchema,
+} from "../../../../packages/contracts/src/index.js";
 import { resolveWalleyBoardPath } from "./walleyboard-paths.js";
 
 let cachedEnvOverrides: Record<string, Record<string, string>> | null = null;
@@ -30,6 +33,11 @@ function applyParsedConf(content: string): void {
     const parsed = parse(content);
     const overrides: Record<string, Record<string, string>> = {};
     for (const key of Object.keys(parsed)) {
+      if (!agentAdapterSchema.safeParse(key).success) {
+        console.warn(
+          `[walleyboard-conf] Unrecognized section [${key}] in walleyboard.conf — expected one of: ${agentAdapterSchema.options.join(", ")}`,
+        );
+      }
       overrides[key] = extractStringEntries(parsed[key]);
     }
     cachedEnvOverrides = overrides;
@@ -75,6 +83,10 @@ export function getAgentEnvOverridesCached(
 ): Record<string, string> {
   if (cachedEnvOverrides === null) {
     return {};
+  }
+  const now = Date.now();
+  if (now - cacheTimestamp >= CACHE_TTL_MS) {
+    void loadAgentEnvOverrides();
   }
   return cachedEnvOverrides[agentType] ?? {};
 }

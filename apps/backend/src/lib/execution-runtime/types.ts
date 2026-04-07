@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  AgentAdapter,
   DraftTicketState,
   ExecutionSession,
   Project,
@@ -40,6 +41,7 @@ export type DraftAnalysisInput = {
 export type DraftAnalysisMode = "refine" | "questions";
 
 export type ManualTerminalStartInput = {
+  agentType?: AgentAdapter;
   sessionId: string;
   worktreePath: string;
   attemptId: string | null;
