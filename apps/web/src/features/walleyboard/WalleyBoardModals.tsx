@@ -229,6 +229,29 @@ export function WalleyBoardModals({
       />
 
       <ProjectConfigurationModals controller={controller} />
+
+      <Modal
+        opened={controller.discardDraftConfirmOpen}
+        onClose={controller.cancelDiscardDraft}
+        title="Discard unsaved changes?"
+        centered
+        size="sm"
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            You have unsaved changes in your draft. Are you sure you want to
+            discard them?
+          </Text>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={controller.cancelDiscardDraft}>
+              Keep Editing
+            </Button>
+            <Button color="red" onClick={controller.confirmDiscardDraft}>
+              Discard
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </>
   );
 }

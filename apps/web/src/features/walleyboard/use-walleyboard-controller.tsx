@@ -1,5 +1,5 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { type SetStateAction, useEffect } from "react";
+import { type SetStateAction, useEffect, useState } from "react";
 import type {
   ExecutionSession,
   Project,
@@ -1097,9 +1097,11 @@ export function useWalleyBoardController() {
     setArchiveModalVisibility(false);
   };
 
+  const [discardDraftConfirmOpen, setDiscardDraftConfirmOpen] = useState(false);
+
   const {
     closeWorkspaceModal,
-    hideInspector,
+    hideInspector: forceHideInspector,
     openDraft,
     openNewDraft,
     openTicketSession,
@@ -1114,6 +1116,27 @@ export function useWalleyBoardController() {
     setWorkspaceTerminalContext,
     setWorkspaceTicket,
   });
+
+  const hideInspector = (): void => {
+    if (
+      (inspectorState.kind === "draft" ||
+        inspectorState.kind === "new_draft") &&
+      draftFormDirty
+    ) {
+      setDiscardDraftConfirmOpen(true);
+      return;
+    }
+    forceHideInspector();
+  };
+
+  const confirmDiscardDraft = (): void => {
+    setDiscardDraftConfirmOpen(false);
+    forceHideInspector();
+  };
+
+  const cancelDiscardDraft = (): void => {
+    setDiscardDraftConfirmOpen(false);
+  };
 
   const openArchivedTicketDiff = (ticket: TicketFrontmatter): void => {
     setArchiveActionFeedback(null);
@@ -1160,12 +1183,15 @@ export function useWalleyBoardController() {
     boardError,
     boardLoading,
     boardSearch,
+    cancelDiscardDraft,
     canDeleteProject,
     closeArchiveModal,
     closeAgentReviewHistoryModal,
     closeProjectOptionsModal,
+    confirmDiscardDraft,
     defaultBranch,
     deleteTicket,
+    discardDraftConfirmOpen,
     editReadyTicket,
     codexMcpServers,
     dockerHealth,
