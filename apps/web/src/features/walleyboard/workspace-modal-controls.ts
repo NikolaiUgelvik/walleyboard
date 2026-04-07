@@ -40,6 +40,9 @@ export function createWorkspaceModalControls(input: {
   };
 
   const openTicket = (ticket: TicketFrontmatter): void => {
+    input.setWorkspaceModal(null);
+    input.setWorkspaceTicket(null);
+    input.setWorkspaceTerminalContext(null);
     input.setInspectorState({ kind: "ticket", ticketId: ticket.id });
   };
 

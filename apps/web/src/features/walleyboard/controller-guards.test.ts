@@ -136,6 +136,39 @@ test("resolveNextInspectorState hides a session inspector after the session disa
   );
 });
 
+test("resolveNextInspectorState keeps a ticket inspector open while tickets are still loading", () => {
+  const inspectorState: InspectorState = {
+    kind: "ticket",
+    ticketId: 1,
+  };
+
+  assert.equal(
+    resolveNextInspectorState({
+      drafts: [],
+      draftsLoaded: true,
+      inspectorState,
+      selectedProjectId: "project-1",
+      tickets: [],
+      ticketsLoaded: false,
+    }),
+    null,
+  );
+});
+
+test("resolveNextInspectorState hides a ticket inspector after the ticket disappears", () => {
+  assert.deepEqual(
+    resolveNextInspectorState({
+      drafts: [],
+      draftsLoaded: true,
+      inspectorState: { kind: "ticket", ticketId: 99 },
+      selectedProjectId: "project-1",
+      tickets: [createTicket(null)],
+      ticketsLoaded: true,
+    }),
+    { kind: "hidden" },
+  );
+});
+
 test("resolveNextInspectorState hides the new draft inspector when no project remains selected", () => {
   assert.deepEqual(
     resolveNextInspectorState({
