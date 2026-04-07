@@ -400,8 +400,14 @@ export function runWorktreeInitCommand(
     stdio: "ignore",
   });
 
-  const done = new Promise<void>((resolve) => {
-    child.on("exit", () => resolve());
+  const done = new Promise<void>((resolve, reject) => {
+    child.on("exit", (code) => {
+      if (code === 0 || code === null) {
+        resolve();
+      } else {
+        reject(new Error(`Worktree init command exited with code ${code}`));
+      }
+    });
     child.on("error", () => resolve());
   });
 

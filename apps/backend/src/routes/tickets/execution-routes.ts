@@ -29,7 +29,7 @@ import {
 } from "../../lib/worktree-service.js";
 import type { TicketRouteDependencies } from "./shared.js";
 
-function runInitCommandAndStartExecution(input: {
+export function runInitCommandAndStartExecution(input: {
   project: Project;
   runtime: PreparedExecutionRuntime;
   executionRuntime: TicketRouteDependencies["executionRuntime"];
