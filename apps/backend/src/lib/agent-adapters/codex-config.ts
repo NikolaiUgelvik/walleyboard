@@ -38,9 +38,15 @@ export function listConfiguredCodexMcpServersInConfig(
     if (!mcpServers || typeof mcpServers !== "object") {
       return [];
     }
-    return Object.keys(mcpServers).sort((left, right) =>
-      left.localeCompare(right),
-    );
+    const servers = mcpServers as Record<string, unknown>;
+    return Object.keys(servers)
+      .filter(
+        (k) =>
+          servers[k] != null &&
+          typeof servers[k] === "object" &&
+          !Array.isArray(servers[k]),
+      )
+      .sort((left, right) => left.localeCompare(right));
   } catch {
     return [];
   }
