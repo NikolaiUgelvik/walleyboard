@@ -40,7 +40,7 @@ function createProject(): Project {
     post_worktree_command: null,
     draft_analysis_model: "claude-haiku-4-5",
     draft_analysis_reasoning_effort: null,
-    ticket_work_model: "claude-sonnet-4-6",
+    ticket_work_model: "sonnet",
     ticket_work_reasoning_effort: null,
     max_concurrent_sessions: 1,
     created_at: "2026-04-01T00:00:00.000Z",

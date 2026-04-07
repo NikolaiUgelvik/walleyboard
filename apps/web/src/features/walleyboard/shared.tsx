@@ -73,13 +73,7 @@ const codexModelPresetValues = [
   "gpt-5.3-codex",
   "gpt-5.3-codex-spark",
 ] as const;
-const claudeCodeModelPresetValues = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-opus-4-5-20251101",
-  "claude-haiku-4-5-20251001",
-  "claude-sonnet-4-5-20250929",
-] as const;
+const claudeCodeModelPresetValues = ["opus", "sonnet", "haiku"] as const;
 
 export function getModelPresetOptions(adapter: AgentAdapter) {
   const values =
@@ -277,7 +271,7 @@ export function agentLabel(adapter: AgentAdapter): string {
 }
 
 export function modelPlaceholder(adapter: AgentAdapter): string {
-  return adapter === "claude-code" ? "claude-sonnet-4-6" : "gpt-5.3-spark";
+  return adapter === "claude-code" ? "sonnet" : "gpt-5.3-spark";
 }
 
 export function MarkdownListItems({ items }: { items: string[] }) {
