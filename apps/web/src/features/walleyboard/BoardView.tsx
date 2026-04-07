@@ -622,8 +622,9 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                               column={column}
                               controller={controller}
                               onVisibleTicketIdsChange={
-                                controller.setVisibleTicketIds
+                                controller.updateVisibleTicketIds
                               }
+                              scrollRoot={boardScrollerRef.current}
                             />
                           )}
                         </BoardColumnScrollArea>

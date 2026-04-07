@@ -69,7 +69,7 @@ export type BoardViewController = Pick<
   | "sessionById"
   | "sessionSummaryStateById"
   | "setBoardSearch"
-  | "setVisibleTicketIds"
+  | "updateVisibleTicketIds"
   | "startAgentReviewMutation"
   | "startTicketMutation"
   | "startTicketWorkspacePreviewMutation"
@@ -347,7 +347,7 @@ export function createWalleyBoardViewState(
     sessionById: controller.sessionById,
     sessionSummaryStateById: controller.sessionSummaryStateById,
     setBoardSearch: controller.setBoardSearch,
-    setVisibleTicketIds: controller.setVisibleTicketIds,
+    updateVisibleTicketIds: controller.updateVisibleTicketIds,
     startAgentReviewMutation: controller.startAgentReviewMutation,
     startTicketMutation: controller.startTicketMutation,
     startTicketWorkspacePreviewMutation:

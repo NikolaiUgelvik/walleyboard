@@ -475,7 +475,7 @@ export function useWalleyBoardController() {
     setWorkspaceModal,
   ]);
 
-  const { ticketDiffLineSummaryByTicketId, setVisibleTicketIds } =
+  const { ticketDiffLineSummaryByTicketId, updateVisibleTicketIds } =
     useVisibleTicketDiffSummary(ticketRecords);
   const { ticketAiReviewActiveById, ticketAiReviewResolvedById } =
     useTicketAiReviewStatus(globalTickets, projectRecords);
@@ -1489,7 +1489,7 @@ export function useWalleyBoardController() {
     ticketWorkspacePreviewByTicketId,
     tickets: ticketRecords,
     ticketsQuery,
-    setVisibleTicketIds,
+    updateVisibleTicketIds,
     validationCommandsText,
     visibleDrafts,
     visibleTickets,

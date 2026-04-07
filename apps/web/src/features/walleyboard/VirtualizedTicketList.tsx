@@ -715,13 +715,17 @@ export function VirtualizedTicketList({
   column,
   controller,
   onVisibleTicketIdsChange,
+  scrollRoot,
 }: {
   tickets: TicketFrontmatter[];
   column: string;
   controller: BoardViewController;
-  onVisibleTicketIdsChange: (visibleIds: Set<number>) => void;
+  onVisibleTicketIdsChange: (column: string, visibleIds: Set<number>) => void;
+  scrollRoot?: Element | null;
 }) {
-  const [visibleSet, setVisibleSet] = useState<Set<number>>(() => new Set());
+  const [visibleSet, setVisibleSet] = useState<Set<number>>(
+    () => new Set(tickets.map((t) => t.id)),
+  );
   const sentinelRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const heightCache = useRef<Map<number, number>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -731,33 +735,37 @@ export function VirtualizedTicketList({
   useEffect(() => {
     if (!HAS_INTERSECTION_OBSERVER) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        setVisibleSet((prev) => {
-          const next = new Set(prev);
-          let changed = false;
-          for (const entry of entries) {
-            const ticketId = Number(
-              (entry.target as HTMLElement).dataset.ticketVirtual,
-            );
-            if (Number.isNaN(ticketId)) continue;
-            if (entry.isIntersecting) {
-              if (!next.has(ticketId)) {
-                next.add(ticketId);
-                changed = true;
-              }
-            } else {
-              if (next.has(ticketId)) {
-                next.delete(ticketId);
-                changed = true;
-              }
+    const observerOptions: IntersectionObserverInit = {
+      rootMargin: "200px 0px",
+    };
+    if (scrollRoot) {
+      observerOptions.root = scrollRoot;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      setVisibleSet((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const entry of entries) {
+          const ticketId = Number(
+            (entry.target as HTMLElement).dataset.ticketVirtual,
+          );
+          if (Number.isNaN(ticketId)) continue;
+          if (entry.isIntersecting) {
+            if (!next.has(ticketId)) {
+              next.add(ticketId);
+              changed = true;
+            }
+          } else {
+            if (next.has(ticketId)) {
+              next.delete(ticketId);
+              changed = true;
             }
           }
-          return changed ? next : prev;
-        });
-      },
-      { rootMargin: "200px 0px" },
-    );
+        }
+        return changed ? next : prev;
+      });
+    }, observerOptions);
     observerRef.current = observer;
 
     for (const [, element] of sentinelRefs.current) {
@@ -768,11 +776,17 @@ export function VirtualizedTicketList({
       observer.disconnect();
       observerRef.current = null;
     };
-  }, []);
+  }, [scrollRoot]);
 
   useEffect(() => {
-    onChangeRef.current(visibleSet);
-  }, [visibleSet]);
+    onChangeRef.current(column, visibleSet);
+  }, [column, visibleSet]);
+
+  useEffect(() => {
+    return () => {
+      onChangeRef.current(column, new Set());
+    };
+  }, [column]);
 
   const registerSentinel = useCallback(
     (ticketId: number, element: HTMLDivElement | null) => {
