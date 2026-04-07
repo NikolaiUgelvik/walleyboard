@@ -15,9 +15,9 @@ function mergeColumnSets(columnMap: Map<string, Set<number>>): Set<number> {
 
 export function useVisibleTicketDiffSummary(tickets: TicketFrontmatter[]) {
   const columnMapRef = useRef<Map<string, Set<number>>>(new Map());
-  const [visibleTicketIds, setVisibleTicketIds] = useState<Set<number>>(
-    new Set(),
-  );
+  const [visibleTicketIds, setVisibleTicketIds] = useState<
+    Set<number> | undefined
+  >(undefined);
   const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(
     tickets,
     visibleTicketIds,

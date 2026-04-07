@@ -430,8 +430,6 @@ function TicketCard({
 
   return (
     <Box
-      id={`ticket-${ticket.id}`}
-      tabIndex={-1}
       className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id || ticket.status === "ready" ? " board-card-clickable" : ""}`}
       onClick={(event) => {
         event.stopPropagation();
@@ -818,12 +816,13 @@ export function VirtualizedTicketList({
     return (
       <>
         {tickets.map((ticket) => (
-          <TicketCard
-            key={ticket.id}
-            controller={controller}
-            ticket={ticket}
-            column={column}
-          />
+          <div key={ticket.id} id={`ticket-${ticket.id}`} tabIndex={-1}>
+            <TicketCard
+              controller={controller}
+              ticket={ticket}
+              column={column}
+            />
+          </div>
         ))}
       </>
     );
@@ -839,6 +838,8 @@ export function VirtualizedTicketList({
         return (
           <div
             key={ticket.id}
+            id={`ticket-${ticket.id}`}
+            tabIndex={-1}
             data-ticket-virtual={ticket.id}
             ref={(el) => registerSentinel(ticket.id, el)}
             style={isVisible ? undefined : { minHeight: cachedHeight }}
