@@ -31,12 +31,133 @@ import {
 } from "./shared-utils.js";
 import type { WalleyBoardModalsController } from "./walleyboard-view-state.js";
 
-function updateValidationCommand(
-  list: ValidationCommand[],
-  index: number,
-  patch: Partial<ValidationCommand>,
-): ValidationCommand[] {
-  return list.map((item, i) => (i === index ? { ...item, ...patch } : item));
+function ValidationCommandEditor({
+  commands,
+  repositoryPath,
+  onChange,
+  onClearFormState,
+}: {
+  commands: ValidationCommand[];
+  repositoryPath: string;
+  onChange: (next: ValidationCommand[]) => void;
+  onClearFormState: () => void;
+}) {
+  const update = (index: number, patch: Partial<ValidationCommand>) => {
+    onClearFormState();
+    onChange(
+      commands.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    );
+  };
+
+  const add = () => {
+    onClearFormState();
+    onChange([
+      ...commands,
+      {
+        id: crypto.randomUUID(),
+        label: "",
+        command: "",
+        working_directory: repositoryPath,
+        timeout_ms: 300_000,
+        required_for_review: false,
+        shell: true,
+      },
+    ]);
+  };
+
+  const remove = (index: number) => {
+    onClearFormState();
+    onChange(commands.filter((_, i) => i !== index));
+  };
+
+  return (
+    <Stack gap="xs">
+      {commands.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          No validation commands configured.
+        </Text>
+      ) : (
+        <Stack gap="xs">
+          {commands.map((cmd, index) => (
+            <Box
+              key={cmd.id}
+              style={{
+                border: "1px solid var(--mantine-color-default-border)",
+                borderRadius: "var(--mantine-radius-sm)",
+                padding: "var(--mantine-spacing-xs)",
+              }}
+            >
+              <Stack gap="xs">
+                <Group gap="xs" grow>
+                  <TextInput
+                    label="Label"
+                    placeholder="e.g. Type check"
+                    value={cmd.label}
+                    onChange={(event) =>
+                      update(index, { label: event.currentTarget.value })
+                    }
+                  />
+                  <TextInput
+                    label="Command"
+                    placeholder="e.g. npm run typecheck"
+                    value={cmd.command}
+                    onChange={(event) =>
+                      update(index, { command: event.currentTarget.value })
+                    }
+                  />
+                </Group>
+                <Group justify="space-between" align="flex-end">
+                  <Group gap="sm">
+                    <NumberInput
+                      label="Timeout (seconds)"
+                      value={Math.round(cmd.timeout_ms / 1000)}
+                      min={1}
+                      step={1}
+                      w={140}
+                      onChange={(value) => {
+                        const seconds =
+                          typeof value === "number"
+                            ? value
+                            : parseInt(String(value), 10);
+                        if (Number.isNaN(seconds) || seconds < 1) {
+                          return;
+                        }
+                        update(index, { timeout_ms: seconds * 1000 });
+                      }}
+                    />
+                    <Switch
+                      label="Required for review"
+                      checked={cmd.required_for_review}
+                      onChange={(event) =>
+                        update(index, {
+                          required_for_review: event.currentTarget.checked,
+                        })
+                      }
+                      mt="lg"
+                    />
+                  </Group>
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    color="red"
+                    size="compact-xs"
+                    onClick={() => remove(index)}
+                  >
+                    Remove
+                  </Button>
+                </Group>
+              </Stack>
+            </Box>
+          ))}
+        </Stack>
+      )}
+      <Group>
+        <Button type="button" variant="light" size="compact-xs" onClick={add}>
+          Add command
+        </Button>
+      </Group>
+    </Stack>
+  );
 }
 
 export function ProjectConfigurationModals({
@@ -592,231 +713,34 @@ export function ProjectConfigurationModals({
                   </Text>
                 ) : (
                   <Stack gap="sm">
-                    {controller.projectOptionsRepositories.map((repository) => {
-                      const commands =
-                        controller.projectOptionsRepositoryValidationCommands[
-                          repository.id
-                        ] ?? repository.validation_profile;
-
-                      return (
-                        <Box key={repository.id} className="detail-meta-card">
-                          <Stack gap="xs">
-                            <Group justify="space-between" align="flex-start">
-                              <Text fw={600}>{repository.name}</Text>
-                              <Button
-                                type="button"
-                                variant="light"
-                                size="compact-xs"
-                                onClick={() => {
-                                  controller.setProjectOptionsFormError(null);
-                                  controller.updateProjectMutation.reset();
-                                  const newCommand: ValidationCommand = {
-                                    id: crypto.randomUUID(),
-                                    label: "",
-                                    command: "",
-                                    working_directory: repository.path,
-                                    timeout_ms: 300_000,
-                                    required_for_review: false,
-                                    shell: true,
-                                  };
-                                  controller.setProjectOptionsRepositoryValidationCommands(
-                                    (current) => ({
-                                      ...current,
-                                      [repository.id]: [
-                                        ...(current[repository.id] ??
-                                          repository.validation_profile),
-                                        newCommand,
-                                      ],
-                                    }),
-                                  );
-                                }}
-                              >
-                                Add command
-                              </Button>
-                            </Group>
-
-                            {commands.length === 0 ? (
-                              <Text size="sm" c="dimmed">
-                                No validation commands configured.
-                              </Text>
-                            ) : (
-                              <Stack gap="xs">
-                                {commands.map((cmd, index) => (
-                                  <Box
-                                    key={cmd.id}
-                                    style={{
-                                      border:
-                                        "1px solid var(--mantine-color-default-border)",
-                                      borderRadius: "var(--mantine-radius-sm)",
-                                      padding: "var(--mantine-spacing-xs)",
-                                    }}
-                                  >
-                                    <Stack gap="xs">
-                                      <Group gap="xs" grow>
-                                        <TextInput
-                                          label="Label"
-                                          placeholder="e.g. Type check"
-                                          value={cmd.label}
-                                          onChange={(event) => {
-                                            controller.setProjectOptionsFormError(
-                                              null,
-                                            );
-                                            controller.updateProjectMutation.reset();
-                                            controller.setProjectOptionsRepositoryValidationCommands(
-                                              (current) => ({
-                                                ...current,
-                                                [repository.id]:
-                                                  updateValidationCommand(
-                                                    current[repository.id] ??
-                                                      repository.validation_profile,
-                                                    index,
-                                                    {
-                                                      label:
-                                                        event.currentTarget
-                                                          .value,
-                                                    },
-                                                  ),
-                                              }),
-                                            );
-                                          }}
-                                        />
-                                        <TextInput
-                                          label="Command"
-                                          placeholder="e.g. npm run typecheck"
-                                          value={cmd.command}
-                                          onChange={(event) => {
-                                            controller.setProjectOptionsFormError(
-                                              null,
-                                            );
-                                            controller.updateProjectMutation.reset();
-                                            controller.setProjectOptionsRepositoryValidationCommands(
-                                              (current) => ({
-                                                ...current,
-                                                [repository.id]:
-                                                  updateValidationCommand(
-                                                    current[repository.id] ??
-                                                      repository.validation_profile,
-                                                    index,
-                                                    {
-                                                      command:
-                                                        event.currentTarget
-                                                          .value,
-                                                    },
-                                                  ),
-                                              }),
-                                            );
-                                          }}
-                                        />
-                                      </Group>
-                                      <Group
-                                        justify="space-between"
-                                        align="flex-end"
-                                      >
-                                        <Group gap="sm">
-                                          <NumberInput
-                                            label="Timeout (seconds)"
-                                            value={Math.round(
-                                              cmd.timeout_ms / 1000,
-                                            )}
-                                            min={1}
-                                            step={1}
-                                            w={140}
-                                            onChange={(value) => {
-                                              controller.setProjectOptionsFormError(
-                                                null,
-                                              );
-                                              controller.updateProjectMutation.reset();
-                                              const seconds =
-                                                typeof value === "number"
-                                                  ? value
-                                                  : parseInt(String(value), 10);
-                                              if (
-                                                Number.isNaN(seconds) ||
-                                                seconds < 1
-                                              ) {
-                                                return;
-                                              }
-                                              controller.setProjectOptionsRepositoryValidationCommands(
-                                                (current) => ({
-                                                  ...current,
-                                                  [repository.id]:
-                                                    updateValidationCommand(
-                                                      current[repository.id] ??
-                                                        repository.validation_profile,
-                                                      index,
-                                                      {
-                                                        timeout_ms:
-                                                          seconds * 1000,
-                                                      },
-                                                    ),
-                                                }),
-                                              );
-                                            }}
-                                          />
-                                          <Switch
-                                            label="Required for review"
-                                            checked={cmd.required_for_review}
-                                            onChange={(event) => {
-                                              controller.setProjectOptionsFormError(
-                                                null,
-                                              );
-                                              controller.updateProjectMutation.reset();
-                                              controller.setProjectOptionsRepositoryValidationCommands(
-                                                (current) => ({
-                                                  ...current,
-                                                  [repository.id]:
-                                                    updateValidationCommand(
-                                                      current[repository.id] ??
-                                                        repository.validation_profile,
-                                                      index,
-                                                      {
-                                                        required_for_review:
-                                                          event.currentTarget
-                                                            .checked,
-                                                      },
-                                                    ),
-                                                }),
-                                              );
-                                            }}
-                                            mt="lg"
-                                          />
-                                        </Group>
-                                        <Button
-                                          type="button"
-                                          variant="subtle"
-                                          color="red"
-                                          size="compact-xs"
-                                          onClick={() => {
-                                            controller.setProjectOptionsFormError(
-                                              null,
-                                            );
-                                            controller.updateProjectMutation.reset();
-                                            controller.setProjectOptionsRepositoryValidationCommands(
-                                              (current) => {
-                                                const list = (
-                                                  current[repository.id] ??
-                                                  repository.validation_profile
-                                                ).filter((_, i) => i !== index);
-                                                return {
-                                                  ...current,
-                                                  [repository.id]: list,
-                                                };
-                                              },
-                                            );
-                                          }}
-                                        >
-                                          Remove
-                                        </Button>
-                                      </Group>
-                                    </Stack>
-                                  </Box>
-                                ))}
-                              </Stack>
-                            )}
-                          </Stack>
-                        </Box>
-                      );
-                    })}
+                    {controller.projectOptionsRepositories.map((repository) => (
+                      <Box key={repository.id} className="detail-meta-card">
+                        <Stack gap="xs">
+                          <Text fw={600}>{repository.name}</Text>
+                          <ValidationCommandEditor
+                            commands={
+                              controller
+                                .projectOptionsRepositoryValidationCommands[
+                                repository.id
+                              ] ?? repository.validation_profile
+                            }
+                            repositoryPath={repository.path}
+                            onClearFormState={() => {
+                              controller.setProjectOptionsFormError(null);
+                              controller.updateProjectMutation.reset();
+                            }}
+                            onChange={(next) => {
+                              controller.setProjectOptionsRepositoryValidationCommands(
+                                (current) => ({
+                                  ...current,
+                                  [repository.id]: next,
+                                }),
+                              );
+                            }}
+                          />
+                        </Stack>
+                      </Box>
+                    ))}
                   </Stack>
                 )}
               </Stack>

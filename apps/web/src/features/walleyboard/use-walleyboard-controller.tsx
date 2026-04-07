@@ -57,6 +57,7 @@ import {
   resolveProjectReasoningEffortValue,
   resolveVisibleBoardItems,
   shouldRefreshProjectColorSelection,
+  validationProfilesEqual,
 } from "./shared-utils.js";
 import { navigateToTicketReference } from "./ticket-reference-navigation.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
@@ -423,7 +424,7 @@ export function useWalleyBoardController() {
           return (
             currentList !== undefined &&
             nextList !== undefined &&
-            currentList.length === nextList.length
+            validationProfilesEqual(currentList, nextList)
           );
         })
       ) {
@@ -1014,6 +1015,19 @@ export function useWalleyBoardController() {
     ) {
       setProjectOptionsFormError(
         "Enter a model ID for the custom ticket work model.",
+      );
+      return;
+    }
+
+    const allValidationCommands = Object.values(
+      projectOptionsRepositoryValidationCommands,
+    ).flat();
+    const hasEmptyValidationCommand = allValidationCommands.some(
+      (cmd) => cmd.label.trim().length === 0 || cmd.command.trim().length === 0,
+    );
+    if (hasEmptyValidationCommand) {
+      setProjectOptionsFormError(
+        "Every validation command must have a label and a command.",
       );
       return;
     }

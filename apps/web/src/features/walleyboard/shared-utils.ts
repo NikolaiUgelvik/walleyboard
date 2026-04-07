@@ -366,7 +366,7 @@ export function hasRepositoryValidationCommandChanges(input: {
   });
 }
 
-function validationProfilesEqual(
+export function validationProfilesEqual(
   a: ValidationCommand[],
   b: ValidationCommand[],
 ): boolean {
