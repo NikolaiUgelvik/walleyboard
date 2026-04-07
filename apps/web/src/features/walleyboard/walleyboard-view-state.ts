@@ -31,6 +31,7 @@ export type BoardViewController = Pick<
   | "boardLoading"
   | "boardSearch"
   | "createPullRequestMutation"
+  | "deleteDraftMutation"
   | "deleteTicket"
   | "deleteTicketMutation"
   | "doneColumnTickets"
@@ -306,6 +307,7 @@ export function createWalleyBoardViewState(
     boardLoading: controller.boardLoading,
     boardSearch: controller.boardSearch,
     createPullRequestMutation: controller.createPullRequestMutation,
+    deleteDraftMutation: controller.deleteDraftMutation,
     deleteTicket: controller.deleteTicket,
     deleteTicketMutation: controller.deleteTicketMutation,
     doneColumnTickets: controller.doneColumnTickets,
