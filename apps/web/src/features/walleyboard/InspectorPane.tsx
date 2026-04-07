@@ -40,6 +40,7 @@ import {
   sessionStatusColor,
   ticketStatusColor,
 } from "./shared-utils.js";
+import { TicketDetailPane } from "./TicketDetailPane.js";
 import type { InspectorPaneController } from "./walleyboard-view-state.js";
 
 function projectAccentButtonClassName(
@@ -1414,6 +1415,15 @@ export function InspectorPane({
               </Text>
             </SectionCard>
           )
+        ) : null}
+
+        {controller.inspectorState.kind === "ticket" &&
+        controller.selectedReadyTicket ? (
+          <TicketDetailPane
+            navigateToTicketReference={controller.navigateToTicketReference}
+            repositories={controller.repositories}
+            ticket={controller.selectedReadyTicket}
+          />
         ) : null}
       </Stack>
     </Box>

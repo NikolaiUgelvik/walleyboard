@@ -156,7 +156,8 @@ export type InspectorState =
   | { kind: "hidden" }
   | { kind: "new_draft" }
   | { kind: "draft"; draftId: string }
-  | { kind: "session"; sessionId: string };
+  | { kind: "session"; sessionId: string }
+  | { kind: "ticket"; ticketId: number };
 
 export type WalleyBoardProtocolEvent = ProtocolEvent;
 export type DraftArtifactUploadResponse = UploadDraftArtifactResponse;

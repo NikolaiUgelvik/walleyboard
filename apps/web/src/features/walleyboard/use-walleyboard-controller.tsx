@@ -215,6 +215,8 @@ export function useWalleyBoardController() {
     inspectorState.kind === "draft" ? inspectorState.draftId : null;
   const selectedSessionId =
     inspectorState.kind === "session" ? inspectorState.sessionId : null;
+  const selectedTicketId =
+    inspectorState.kind === "ticket" ? inspectorState.ticketId : null;
   const inspectorVisible = inspectorState.kind !== "hidden";
 
   const selectProject = (projectId: string | null): void => {
@@ -734,6 +736,8 @@ export function useWalleyBoardController() {
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
+  const selectedReadyTicket =
+    tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
   const ticketEvents = ticketEventsQuery.data?.events ?? [];
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
   const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
@@ -1183,6 +1187,7 @@ export function useWalleyBoardController() {
     hideInspector: forceHideInspector,
     openDraft,
     openNewDraft,
+    openTicket,
     openTicketSession,
     openTicketWorkspaceModal,
   } = createWorkspaceModalControls({
@@ -1321,6 +1326,7 @@ export function useWalleyBoardController() {
     openNewDraft,
     openProjectModal,
     openProjectOptions,
+    openTicket,
     openTicketSession,
     pendingDraftEditorSync,
     pendingNewDraftAction,
@@ -1404,9 +1410,11 @@ export function useWalleyBoardController() {
     selectedProject,
     selectedProjectId,
     selectedRepository,
+    selectedReadyTicket,
     selectedSessionId,
     selectedSessionTicket,
     selectedSessionTicketId,
+    selectedTicketId,
     selectedSessionTicketSession,
     session,
     sessionAttempts,

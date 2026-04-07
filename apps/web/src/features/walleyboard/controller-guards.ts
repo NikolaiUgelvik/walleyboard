@@ -51,6 +51,16 @@ export function resolveNextInspectorState(input: {
       : { kind: "hidden" };
   }
 
+  if (inspectorState.kind === "ticket") {
+    if (!input.ticketsLoaded) {
+      return null;
+    }
+
+    return input.tickets.some((ticket) => ticket.id === inspectorState.ticketId)
+      ? null
+      : { kind: "hidden" };
+  }
+
   if (inspectorState.kind === "new_draft" && input.selectedProjectId === null) {
     return { kind: "hidden" };
   }

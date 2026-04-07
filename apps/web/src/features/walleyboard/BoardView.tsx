@@ -980,9 +980,10 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                 ticket,
                               );
                               const isSelected =
-                                ticket.session_id !== null &&
-                                ticket.session_id ===
-                                  controller.selectedSessionId;
+                                (ticket.session_id !== null &&
+                                  ticket.session_id ===
+                                    controller.selectedSessionId) ||
+                                ticket.id === controller.selectedTicketId;
                               const showDeleteError =
                                 controller.deleteTicketMutation.isError &&
                                 controller.deleteTicketMutation.variables
@@ -1053,10 +1054,14 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                   key={ticket.id}
                                   id={`ticket-${ticket.id}`}
                                   tabIndex={-1}
-                                  className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id ? " board-card-clickable" : ""}`}
+                                  className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id || ticket.status === "ready" ? " board-card-clickable" : ""}`}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    controller.openTicketSession(ticket);
+                                    if (ticket.status === "ready") {
+                                      controller.openTicket(ticket);
+                                    } else {
+                                      controller.openTicketSession(ticket);
+                                    }
                                   }}
                                 >
                                   <Stack gap="xs">

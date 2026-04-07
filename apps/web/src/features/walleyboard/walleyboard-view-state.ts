@@ -48,6 +48,7 @@ export type BoardViewController = Pick<
   | "openDraft"
   | "openNewDraft"
   | "openSelectedRepositoryWorkspaceTerminal"
+  | "openTicket"
   | "openTicketSession"
   | "openTicketWorkspaceModal"
   | "previewActionErrorByTicketId"
@@ -63,6 +64,7 @@ export type BoardViewController = Pick<
   | "selectedProject"
   | "selectedRepository"
   | "selectedSessionId"
+  | "selectedTicketId"
   | "session"
   | "sessionById"
   | "sessionSummaryStateById"
@@ -136,6 +138,7 @@ export type InspectorPaneController = Pick<
   | "selectedDraft"
   | "selectedDraftRepository"
   | "selectedProject"
+  | "selectedReadyTicket"
   | "selectedSessionId"
   | "selectedSessionTicket"
   | "selectedSessionTicketSession"
@@ -322,6 +325,7 @@ export function createWalleyBoardViewState(
     openNewDraft: controller.openNewDraft,
     openSelectedRepositoryWorkspaceTerminal:
       controller.openSelectedRepositoryWorkspaceTerminal,
+    openTicket: controller.openTicket,
     openTicketSession: controller.openTicketSession,
     openTicketWorkspaceModal: controller.openTicketWorkspaceModal,
     previewActionErrorByTicketId: controller.previewActionErrorByTicketId,
@@ -337,6 +341,7 @@ export function createWalleyBoardViewState(
     selectedProject: controller.selectedProject,
     selectedRepository: controller.selectedRepository,
     selectedSessionId: controller.selectedSessionId,
+    selectedTicketId: controller.selectedTicketId,
     session: controller.session,
     sessionById: controller.sessionById,
     sessionSummaryStateById: controller.sessionSummaryStateById,
@@ -413,6 +418,7 @@ export function createWalleyBoardViewState(
     selectedDraft: controller.selectedDraft,
     selectedDraftRepository: controller.selectedDraftRepository,
     selectedProject: controller.selectedProject,
+    selectedReadyTicket: controller.selectedReadyTicket,
     selectedSessionId: controller.selectedSessionId,
     selectedSessionTicket: controller.selectedSessionTicket,
     selectedSessionTicketSession: controller.selectedSessionTicketSession,

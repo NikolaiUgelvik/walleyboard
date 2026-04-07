@@ -74,7 +74,7 @@ export function resolveWorkspaceTerminalPanelState(input: {
 }
 
 export function shouldKeepWorkspaceModalOpen(
-  inspectorKind: "draft" | "hidden" | "new_draft" | "session",
+  inspectorKind: "draft" | "hidden" | "new_draft" | "session" | "ticket",
   workspaceModal: WorkspaceModalKind | null,
   hasTerminalContext = false,
 ): boolean {
