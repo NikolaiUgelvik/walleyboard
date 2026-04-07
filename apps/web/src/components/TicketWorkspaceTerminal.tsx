@@ -78,6 +78,7 @@ export function TicketWorkspaceTerminal({
     terminal.loadAddon(fitAddon);
     terminal.open(container);
     fitAddon.fit();
+    terminal.focus();
     resizeObserver.observe(container);
 
     const sendResize = () => {

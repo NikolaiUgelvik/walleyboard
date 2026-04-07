@@ -1496,5 +1496,4 @@ export function useWalleyBoardController() {
     visibleTickets,
   };
 }
-
 export type WalleyBoardController = ReturnType<typeof useWalleyBoardController>;
