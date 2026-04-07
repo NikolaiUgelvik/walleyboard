@@ -2,6 +2,8 @@ import {
   ActionIcon,
   Badge,
   Box,
+  Group,
+  Indicator,
   Loader,
   Popover,
   Stack,
@@ -174,51 +176,74 @@ export function ProjectRail({
 
           <Popover.Dropdown className="project-inbox-popover">
             <Stack gap="xs">
-              <Text fw={700} size="sm">
-                Notifications
-              </Text>
-              {hasInboxItems ? (
-                controller.actionItems.map((item) => (
+              <Group justify="space-between" align="center">
+                <Text fw={700} size="sm">
+                  Notifications
+                </Text>
+                {hasUnreadInboxItems ? (
                   <UnstyledButton
-                    key={item.key}
-                    className="project-inbox-item"
-                    data-tone={item.color}
-                    style={
-                      {
-                        "--project-inbox-accent": normalizeProjectColor(
-                          item.projectColor,
-                        ),
-                      } as CSSProperties
-                    }
-                    onClick={() => {
-                      setInboxOpen(false);
-                      controller.openInboxItem(item);
-                    }}
+                    onClick={() => controller.markAllInboxItemsAsRead()}
                   >
-                    <Stack gap={6}>
-                      <Box>
-                        <Text fw={700} size="sm">
-                          {item.title}
-                        </Text>
-                        <Text size="xs" c="dimmed">
-                          {item.projectName}
-                        </Text>
-                      </Box>
-                      <MarkdownContent
-                        className="markdown-muted markdown-small"
-                        content={item.message}
-                      />
-                      <Badge
-                        variant="light"
-                        color={item.color === "yellow" ? "yellow" : "blue"}
-                        size="sm"
-                        style={{ alignSelf: "flex-start" }}
-                      >
-                        {item.actionLabel}
-                      </Badge>
-                    </Stack>
+                    <Text size="xs" c="#D97706" fw={600}>
+                      Mark all as read
+                    </Text>
                   </UnstyledButton>
-                ))
+                ) : null}
+              </Group>
+              {hasInboxItems ? (
+                controller.actionItems.map((item) => {
+                  const isUnread =
+                    controller.readInboxItemState[item.key] !==
+                    item.notificationKey;
+                  return (
+                    <Indicator
+                      key={item.key}
+                      color="#D97706"
+                      size={8}
+                      offset={4}
+                      disabled={!isUnread}
+                    >
+                      <UnstyledButton
+                        className="project-inbox-item"
+                        data-tone={item.color}
+                        style={
+                          {
+                            "--project-inbox-accent": normalizeProjectColor(
+                              item.projectColor,
+                            ),
+                          } as CSSProperties
+                        }
+                        onClick={() => {
+                          setInboxOpen(false);
+                          controller.openInboxItem(item);
+                        }}
+                      >
+                        <Stack gap={6}>
+                          <Box>
+                            <Text fw={700} size="sm">
+                              {item.title}
+                            </Text>
+                            <Text size="xs" c="dimmed">
+                              {item.projectName}
+                            </Text>
+                          </Box>
+                          <MarkdownContent
+                            className="markdown-muted markdown-small"
+                            content={item.message}
+                          />
+                          <Badge
+                            variant="light"
+                            color={item.color === "yellow" ? "yellow" : "blue"}
+                            size="sm"
+                            style={{ alignSelf: "flex-start" }}
+                          >
+                            {item.actionLabel}
+                          </Badge>
+                        </Stack>
+                      </UnstyledButton>
+                    </Indicator>
+                  );
+                })
               ) : (
                 <Text size="sm" c="dimmed">
                   No actionable notifications.

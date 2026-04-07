@@ -8,10 +8,12 @@ export type WalleyBoardShellState = Pick<
 export type ProjectRailController = Pick<
   WalleyBoardController,
   | "actionItems"
+  | "markAllInboxItemsAsRead"
   | "openInboxItem"
   | "openProjectModal"
   | "openProjectOptions"
   | "projectsQuery"
+  | "readInboxItemState"
   | "selectProject"
   | "selectedProjectId"
   | "unreadActionItemCount"
@@ -279,10 +281,12 @@ export function createWalleyBoardViewState(
 
   const projectRail: ProjectRailController = {
     actionItems: controller.actionItems,
+    markAllInboxItemsAsRead: controller.markAllInboxItemsAsRead,
     openInboxItem: controller.openInboxItem,
     openProjectModal: controller.openProjectModal,
     openProjectOptions: controller.openProjectOptions,
     projectsQuery: controller.projectsQuery,
+    readInboxItemState: controller.readInboxItemState,
     selectProject: controller.selectProject,
     selectedProjectId: controller.selectedProjectId,
     unreadActionItemCount: controller.unreadActionItemCount,

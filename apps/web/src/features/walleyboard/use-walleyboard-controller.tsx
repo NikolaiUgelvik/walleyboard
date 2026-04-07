@@ -1064,6 +1064,24 @@ export function useWalleyBoardController() {
     });
   };
 
+  const markAllInboxItemsAsRead = (): void => {
+    setReadInboxItemState((currentState) => {
+      const nextState = { ...currentState };
+      let changed = false;
+      for (const item of actionItems) {
+        if (nextState[item.key] !== item.notificationKey) {
+          nextState[item.key] = item.notificationKey;
+          changed = true;
+        }
+      }
+      if (!changed) {
+        return currentState;
+      }
+      writeInboxReadState(nextState);
+      return nextState;
+    });
+  };
+
   const openInboxItem = (item: (typeof actionItems)[number]): void => {
     setReadInboxItemState((currentState) => {
       if (currentState[item.key] === item.notificationKey) {
@@ -1235,6 +1253,8 @@ export function useWalleyBoardController() {
   return {
     ...mutations,
     actionItems,
+    markAllInboxItemsAsRead,
+    readInboxItemState,
     unreadActionItemCount,
     agentReviewHistoryModalOpen,
     archiveActionFeedback,
