@@ -237,6 +237,10 @@ test("getDiff includes committed changes and produces correct summary counts", a
     runGit(worktreePath, ["add", "tracked.txt"]);
     runGit(worktreePath, ["commit", "-m", "ticket work"]);
 
+    writeFileSync(join(repoPath, "main-only.txt"), "main advance\n", "utf8");
+    runGit(repoPath, ["add", "main-only.txt"]);
+    runGit(repoPath, ["commit", "-m", "advance main"]);
+
     writeFileSync(
       join(worktreePath, "tracked.txt"),
       "uncommitted v2\n",
@@ -259,6 +263,7 @@ test("getDiff includes committed changes and produces correct summary counts", a
     assert.match(diff.patch, /uncommitted v2/);
     assert.match(diff.patch, /untracked\.txt/);
     assert.match(diff.patch, /untracked content/);
+    assert.doesNotMatch(diff.patch, /main-only\.txt/);
 
     const trackedBlocks = diff.patch
       .split("\n")
