@@ -110,8 +110,9 @@ export function useWalleyBoardController() {
     projectOptionsDraftModelPreset,
     projectOptionsDraftReasoningEffort,
     projectOptionsFormError,
-    projectOptionsPostWorktreeCommand,
-    projectOptionsPreWorktreeCommand,
+    projectOptionsWorktreeTeardownCommand,
+    projectOptionsWorktreeInitCommand,
+    projectOptionsWorktreeInitRunSequential,
     projectOptionsPreviewStartCommand,
     projectOptionsProjectId,
     projectOptionsRepositoryTargetBranches,
@@ -131,8 +132,9 @@ export function useWalleyBoardController() {
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,
     setProjectOptionsFormError,
-    setProjectOptionsPostWorktreeCommand,
-    setProjectOptionsPreWorktreeCommand,
+    setProjectOptionsWorktreeTeardownCommand,
+    setProjectOptionsWorktreeInitCommand,
+    setProjectOptionsWorktreeInitRunSequential,
     setProjectOptionsPreviewStartCommand,
     setProjectOptionsProjectId,
     setProjectOptionsRepositoryTargetBranches,
@@ -582,12 +584,12 @@ export function useWalleyBoardController() {
   );
   const projectOptionsTicketReasoningEffortValue =
     resolveProjectReasoningEffortValue(projectOptionsTicketReasoningEffort);
-  const projectOptionsPreWorktreeCommandValue =
-    resolveOptionalProjectCommandValue(projectOptionsPreWorktreeCommand);
+  const projectOptionsWorktreeInitCommandValue =
+    resolveOptionalProjectCommandValue(projectOptionsWorktreeInitCommand);
   const projectOptionsPreviewStartCommandValue =
     resolveOptionalProjectCommandValue(projectOptionsPreviewStartCommand);
-  const projectOptionsPostWorktreeCommandValue =
-    resolveOptionalProjectCommandValue(projectOptionsPostWorktreeCommand);
+  const projectOptionsWorktreeTeardownCommandValue =
+    resolveOptionalProjectCommandValue(projectOptionsWorktreeTeardownCommand);
   const projectOptionsRepositoryBranchesDirty =
     hasRepositoryTargetBranchChanges({
       project: projectOptionsProject,
@@ -605,8 +607,9 @@ export function useWalleyBoardController() {
     draftModelValue: projectOptionsDraftModelValue,
     draftReasoningEffortValue: projectOptionsDraftReasoningEffortValue,
     disabledMcpServers: projectOptionsDisabledMcpServers,
-    postWorktreeCommandValue: projectOptionsPostWorktreeCommandValue,
-    preWorktreeCommandValue: projectOptionsPreWorktreeCommandValue,
+    worktreeTeardownCommandValue: projectOptionsWorktreeTeardownCommandValue,
+    worktreeInitCommandValue: projectOptionsWorktreeInitCommandValue,
+    worktreeInitRunSequential: projectOptionsWorktreeInitRunSequential,
     previewStartCommandValue: projectOptionsPreviewStartCommandValue,
     project: projectOptionsProject,
     projectOptionsAutomaticAgentReview,
@@ -928,8 +931,9 @@ export function useWalleyBoardController() {
       setProjectOptionsDraftModelPreset,
       setProjectOptionsDraftReasoningEffort,
       setProjectOptionsFormError,
-      setProjectOptionsPostWorktreeCommand,
-      setProjectOptionsPreWorktreeCommand,
+      setProjectOptionsWorktreeTeardownCommand,
+      setProjectOptionsWorktreeInitCommand,
+      setProjectOptionsWorktreeInitRunSequential,
       setProjectOptionsPreviewStartCommand,
       setProjectOptionsProjectId,
       setProjectOptionsRepositoryTargetBranches,
@@ -990,8 +994,9 @@ export function useWalleyBoardController() {
       automaticAgentReviewRunLimit: projectOptionsAutomaticAgentReviewRunLimit,
       defaultReviewAction: projectOptionsDefaultReviewAction,
       previewStartCommand: projectOptionsPreviewStartCommandValue,
-      preWorktreeCommand: projectOptionsPreWorktreeCommandValue,
-      postWorktreeCommand: projectOptionsPostWorktreeCommandValue,
+      worktreeInitCommand: projectOptionsWorktreeInitCommandValue,
+      worktreeTeardownCommand: projectOptionsWorktreeTeardownCommandValue,
+      worktreeInitRunSequential: projectOptionsWorktreeInitRunSequential,
       draftAnalysisModel: projectOptionsDraftModelValue,
       draftAnalysisReasoningEffort: projectOptionsDraftReasoningEffortValue,
       ticketWorkModel: projectOptionsTicketModelValue,
@@ -1241,10 +1246,11 @@ export function useWalleyBoardController() {
     projectOptionsDraftReasoningEffort,
     projectOptionsDraftReasoningEffortValue,
     projectOptionsFormError,
-    projectOptionsPostWorktreeCommand,
-    projectOptionsPostWorktreeCommandValue,
-    projectOptionsPreWorktreeCommand,
-    projectOptionsPreWorktreeCommandValue,
+    projectOptionsWorktreeTeardownCommand,
+    projectOptionsWorktreeTeardownCommandValue,
+    projectOptionsWorktreeInitCommand,
+    projectOptionsWorktreeInitCommandValue,
+    projectOptionsWorktreeInitRunSequential,
     projectOptionsPersistedColor,
     projectOptionsPreviewStartCommand,
     projectOptionsPreviewStartCommandValue,
@@ -1347,8 +1353,9 @@ export function useWalleyBoardController() {
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,
     setProjectOptionsFormError,
-    setProjectOptionsPostWorktreeCommand,
-    setProjectOptionsPreWorktreeCommand,
+    setProjectOptionsWorktreeTeardownCommand,
+    setProjectOptionsWorktreeInitCommand,
+    setProjectOptionsWorktreeInitRunSequential,
     setProjectOptionsPreviewStartCommand,
     setProjectOptionsRepositoryTargetBranches,
     setProjectOptionsTicketModelCustom,

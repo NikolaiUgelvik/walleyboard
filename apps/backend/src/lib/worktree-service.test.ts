@@ -20,12 +20,13 @@ import type {
 
 import {
   AutomaticMergeRecoveryError,
+  awaitWorktreeInitWithTimeout,
   fetchRepositoryBranches,
   mergeReviewedBranch,
   prepareWorktree,
   removePreparedWorktree,
   resetPreparedWorktreeImmediately,
-  runPreWorktreeCommand,
+  runWorktreeInitCommand,
 } from "./worktree-service.js";
 
 function setWalleyBoardHome(path: string): () => void {
@@ -96,8 +97,9 @@ function createProject(slug: string): Project {
     default_review_action: "direct_merge",
     default_target_branch: "main",
     preview_start_command: null,
-    pre_worktree_command: null,
-    post_worktree_command: null,
+    worktree_init_command: null,
+    worktree_teardown_command: null,
+    worktree_init_run_sequential: false,
     draft_analysis_model: null,
     draft_analysis_reasoning_effort: null,
     ticket_work_model: null,
@@ -323,7 +325,7 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
     assert.equal(result.warnings.length, 1);
     const warning = result.warnings[0];
     assert.ok(warning);
-    assert.match(warning, /Post-worktree command failed/);
+    assert.match(warning, /Worktree teardown command failed/);
     assert.equal(readFileSync(cleanupLogPath, "utf8"), "cleanup ran\n");
     assert.equal(existsSync(runtime.worktreePath), false);
     assert.equal(
@@ -337,7 +339,7 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
   }
 });
 
-test("runPreWorktreeCommand runs project hooks with bash", async () => {
+test("runWorktreeInitCommand runs project hooks with bash", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-pre-worktree-bash-"));
 
   try {
@@ -348,7 +350,7 @@ test("runPreWorktreeCommand runs project hooks with bash", async () => {
     configureGitIdentity(repoPath);
 
     const outputPath = join(tempDir, "pre-worktree.log");
-    const result = runPreWorktreeCommand(
+    const result = runWorktreeInitCommand(
       repoPath,
       `[[ "bash" == "bash" ]] && printf 'pre hook ran\\n' > "${outputPath}"`,
     );
@@ -357,6 +359,156 @@ test("runPreWorktreeCommand runs project hooks with bash", async () => {
 
     await waitForCondition(() => existsSync(outputPath));
     assert.equal(readFileSync(outputPath, "utf8"), "pre hook ran\n");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runWorktreeInitCommand completes before continuation when awaited sequentially", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-sequential-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const outputPath = join(tempDir, "sequential.log");
+    const result = runWorktreeInitCommand(
+      repoPath,
+      `printf 'done\\n' > "${outputPath}"`,
+    );
+    assert.equal(result.started, true);
+    await result.done;
+
+    assert.equal(existsSync(outputPath), true);
+    assert.equal(readFileSync(outputPath, "utf8"), "done\n");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runWorktreeInitCommand kill terminates a running process", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-kill-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const result = runWorktreeInitCommand(repoPath, "sleep 60");
+    assert.equal(result.started, true);
+    result.kill();
+    await result.done;
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runWorktreeInitCommand returns a no-op kill when command is empty", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-noop-"));
+
+  try {
+    const result = runWorktreeInitCommand(tempDir, null);
+    assert.equal(result.started, false);
+    assert.equal(typeof result.kill, "function");
+    result.kill();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("awaitWorktreeInitWithTimeout resolves when command completes before timeout", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-timeout-ok-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const outputPath = join(tempDir, "timeout-ok.log");
+    const initCommand = runWorktreeInitCommand(
+      repoPath,
+      `printf 'ok\\n' > "${outputPath}"`,
+    );
+    await awaitWorktreeInitWithTimeout(initCommand);
+    assert.equal(readFileSync(outputPath, "utf8"), "ok\n");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("awaitWorktreeInitWithTimeout is a no-op when command was not started", async () => {
+  await awaitWorktreeInitWithTimeout(
+    runWorktreeInitCommand("/nonexistent", null),
+  );
+});
+
+test("awaitWorktreeInitWithTimeout clears timer on normal completion", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-timer-clear-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const initCommand = runWorktreeInitCommand(repoPath, "true");
+    let killCalled = false;
+    const originalKill = initCommand.kill;
+    initCommand.kill = () => {
+      killCalled = true;
+      originalKill();
+    };
+    await awaitWorktreeInitWithTimeout(initCommand);
+    assert.equal(killCalled, false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runWorktreeInitCommand rejects on non-zero exit code", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-nonzero-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const result = runWorktreeInitCommand(repoPath, "exit 42");
+    assert.equal(result.started, true);
+    await assert.rejects(result.done, {
+      message: "Worktree init command exited with code 42",
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("awaitWorktreeInitWithTimeout propagates non-zero exit rejection", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-init-timeout-nonzero-"),
+  );
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const initCommand = runWorktreeInitCommand(repoPath, "exit 1");
+    await assert.rejects(awaitWorktreeInitWithTimeout(initCommand), {
+      message: "Worktree init command exited with code 1",
+    });
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

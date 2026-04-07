@@ -1001,7 +1001,7 @@ export class GitHubPullRequestService {
         const worktreeRemoval = removePreparedWorktree(
           repository,
           session.worktree_path,
-          project.post_worktree_command,
+          project.worktree_teardown_command,
           ticket.working_branch ?? undefined,
         );
         if (worktreeRemoval.status === "scheduled") {
@@ -1011,7 +1011,7 @@ export class GitHubPullRequestService {
         workspaceRetired = true;
         logLines.push(
           worktreeRemoval.status === "scheduled"
-            ? `Scheduled worktree removal for ${session.worktree_path} after the post-worktree command finishes`
+            ? `Scheduled worktree removal for ${session.worktree_path} after the worktree teardown command finishes`
             : `Removed worktree ${session.worktree_path}`,
         );
       } catch (error) {

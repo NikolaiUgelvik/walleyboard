@@ -240,34 +240,59 @@ export function ProjectConfigurationModals({
                   }}
                   minRows={2}
                 />
-                <Textarea
-                  label="Pre-worktree command"
-                  description="Runs inside each new worktree without blocking agent startup."
-                  placeholder="npm install"
-                  value={controller.projectOptionsPreWorktreeCommand}
-                  onChange={(event) => {
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsPreWorktreeCommand(
-                      event.currentTarget.value,
-                    );
+                <Box
+                  p="md"
+                  style={{
+                    border: "1px solid var(--mantine-color-default-border)",
+                    borderRadius: "var(--mantine-radius-sm)",
                   }}
-                  minRows={2}
-                />
-                <Textarea
-                  label="Post-worktree command"
-                  description="Runs inside the worktree before background teardown removes it."
-                  placeholder="npm run cleanup"
-                  value={controller.projectOptionsPostWorktreeCommand}
-                  onChange={(event) => {
-                    controller.setProjectOptionsFormError(null);
-                    controller.updateProjectMutation.reset();
-                    controller.setProjectOptionsPostWorktreeCommand(
-                      event.currentTarget.value,
-                    );
-                  }}
-                  minRows={2}
-                />
+                >
+                  <Stack gap="sm">
+                    <Text fw={600}>Worktree lifecycle hooks</Text>
+                    <Textarea
+                      label="Worktree init command"
+                      description="Runs inside each new worktree when the agent starts."
+                      placeholder="npm install"
+                      value={controller.projectOptionsWorktreeInitCommand}
+                      onChange={(event) => {
+                        controller.setProjectOptionsFormError(null);
+                        controller.updateProjectMutation.reset();
+                        controller.setProjectOptionsWorktreeInitCommand(
+                          event.currentTarget.value,
+                        );
+                      }}
+                      minRows={2}
+                    />
+                    <Switch
+                      label="Run before agent starts"
+                      description="When enabled, the init command finishes before the agent launches. When disabled, it runs in parallel."
+                      checked={
+                        controller.projectOptionsWorktreeInitRunSequential
+                      }
+                      onChange={(event) => {
+                        controller.setProjectOptionsFormError(null);
+                        controller.updateProjectMutation.reset();
+                        controller.setProjectOptionsWorktreeInitRunSequential(
+                          event.currentTarget.checked,
+                        );
+                      }}
+                    />
+                    <Textarea
+                      label="Worktree teardown command"
+                      description="Runs inside the worktree before background teardown removes it."
+                      placeholder="npm run cleanup"
+                      value={controller.projectOptionsWorktreeTeardownCommand}
+                      onChange={(event) => {
+                        controller.setProjectOptionsFormError(null);
+                        controller.updateProjectMutation.reset();
+                        controller.setProjectOptionsWorktreeTeardownCommand(
+                          event.currentTarget.value,
+                        );
+                      }}
+                      minRows={2}
+                    />
+                  </Stack>
+                </Box>
               </Stack>
 
               <Stack gap="sm">

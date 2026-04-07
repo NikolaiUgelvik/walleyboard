@@ -293,15 +293,20 @@ export function mapProject(row: SqliteRow): Project {
     "preview_start_command",
     "previewStartCommand",
   );
-  const preWorktreeCommand = readRowValue(
+  const worktreeInitCommand = readRowValue(
     row,
-    "pre_worktree_command",
-    "preWorktreeCommand",
+    "worktree_init_command",
+    "worktreeInitCommand",
   );
-  const postWorktreeCommand = readRowValue(
+  const worktreeTeardownCommand = readRowValue(
     row,
-    "post_worktree_command",
-    "postWorktreeCommand",
+    "worktree_teardown_command",
+    "worktreeTeardownCommand",
+  );
+  const worktreeInitRunSequential = readRowValue(
+    row,
+    "worktree_init_run_sequential",
+    "worktreeInitRunSequential",
   );
   const draftAnalysisModel = readRowValue(
     row,
@@ -375,14 +380,17 @@ export function mapProject(row: SqliteRow): Project {
       previewStartCommand === null || previewStartCommand === undefined
         ? null
         : String(previewStartCommand),
-    pre_worktree_command:
-      preWorktreeCommand === null || preWorktreeCommand === undefined
+    worktree_init_command:
+      worktreeInitCommand === null || worktreeInitCommand === undefined
         ? null
-        : String(preWorktreeCommand),
-    post_worktree_command:
-      postWorktreeCommand === null || postWorktreeCommand === undefined
+        : String(worktreeInitCommand),
+    worktree_teardown_command:
+      worktreeTeardownCommand === null || worktreeTeardownCommand === undefined
         ? null
-        : String(postWorktreeCommand),
+        : String(worktreeTeardownCommand),
+    worktree_init_run_sequential:
+      worktreeInitRunSequential === true ||
+      Number(worktreeInitRunSequential) === 1,
     draft_analysis_model:
       draftAnalysisModel === null || draftAnalysisModel === undefined
         ? null

@@ -105,8 +105,9 @@ export function populateProjectOptionsModal(input: {
   setProjectOptionsDraftModelPreset: StateSetter<ProjectModelPreset>;
   setProjectOptionsDraftReasoningEffort: StateSetter<ProjectReasoningEffortSelection>;
   setProjectOptionsFormError: StateSetter<string | null>;
-  setProjectOptionsPostWorktreeCommand: StateSetter<string>;
-  setProjectOptionsPreWorktreeCommand: StateSetter<string>;
+  setProjectOptionsWorktreeTeardownCommand: StateSetter<string>;
+  setProjectOptionsWorktreeInitCommand: StateSetter<string>;
+  setProjectOptionsWorktreeInitRunSequential: StateSetter<boolean>;
   setProjectOptionsPreviewStartCommand: StateSetter<string>;
   setProjectOptionsProjectId: StateSetter<string | null>;
   setProjectOptionsRepositoryTargetBranches: StateSetter<
@@ -164,11 +165,14 @@ export function populateProjectOptionsModal(input: {
   input.setProjectOptionsPreviewStartCommand(
     input.project.preview_start_command ?? "",
   );
-  input.setProjectOptionsPreWorktreeCommand(
-    input.project.pre_worktree_command ?? "",
+  input.setProjectOptionsWorktreeInitCommand(
+    input.project.worktree_init_command ?? "",
   );
-  input.setProjectOptionsPostWorktreeCommand(
-    input.project.post_worktree_command ?? "",
+  input.setProjectOptionsWorktreeTeardownCommand(
+    input.project.worktree_teardown_command ?? "",
+  );
+  input.setProjectOptionsWorktreeInitRunSequential(
+    input.project.worktree_init_run_sequential,
   );
   input.setProjectOptionsRepositoryTargetBranches(
     mapRepositoryTargetBranches(

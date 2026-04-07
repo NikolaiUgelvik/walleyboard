@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
+import type { Project } from "../../../../../packages/contracts/src/index.js";
 import {
   restartTicketInputSchema,
   resumeTicketInputSchema,
@@ -19,12 +20,60 @@ import {
 } from "../../lib/execution-runtime/publishers.js";
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
+import type { PreparedExecutionRuntime } from "../../lib/store.js";
 import {
+  awaitWorktreeInitWithTimeout,
   prepareWorktreeAsync,
   resetPreparedWorktreeImmediately,
-  runPreWorktreeCommand,
+  runWorktreeInitCommand,
 } from "../../lib/worktree-service.js";
 import type { TicketRouteDependencies } from "./shared.js";
+
+export function runInitCommandAndStartExecution(input: {
+  project: Project;
+  runtime: PreparedExecutionRuntime;
+  executionRuntime: TicketRouteDependencies["executionRuntime"];
+  ticketWorkspaceService: TicketRouteDependencies["ticketWorkspaceService"];
+  ticketId: number;
+  startExecutionArgs: Parameters<
+    TicketRouteDependencies["executionRuntime"]["startExecution"]
+  >[0];
+  appendWarning?: (message: string) => void;
+}): void {
+  if (input.project.worktree_init_run_sequential) {
+    const initCommand = runWorktreeInitCommand(
+      input.runtime.worktreePath,
+      input.project.worktree_init_command,
+    );
+    if (initCommand.started) {
+      awaitWorktreeInitWithTimeout(initCommand)
+        .catch((error) => {
+          input.appendWarning?.(
+            error instanceof Error
+              ? error.message
+              : "Worktree init command failed",
+          );
+        })
+        .finally(() => {
+          input.executionRuntime.startExecution(input.startExecutionArgs);
+        });
+    } else {
+      input.executionRuntime.startExecution(input.startExecutionArgs);
+    }
+  } else {
+    input.executionRuntime.startExecution(input.startExecutionArgs);
+    const initCommand = runWorktreeInitCommand(
+      input.runtime.worktreePath,
+      input.project.worktree_init_command,
+    );
+    if (initCommand.started) {
+      input.ticketWorkspaceService.deferWatcher(
+        input.ticketId,
+        initCommand.done,
+      );
+    }
+  }
+}
 
 export function registerTicketExecutionRoutes(
   app: FastifyInstance,
@@ -113,19 +162,20 @@ export function registerTicketExecutionRoutes(
             }),
           );
         });
-        executionRuntime.startExecution({
+        runInitCommandAndStartExecution({
           project,
-          repository,
-          ticket,
-          session,
+          runtime,
+          executionRuntime,
+          ticketWorkspaceService,
+          ticketId: ticket.id,
+          startExecutionArgs: { project, repository, ticket, session },
+          appendWarning: (message) =>
+            appendSessionOutput(
+              session.id,
+              session.current_attempt_id,
+              `Worktree init warning: ${message}`,
+            ),
         });
-        const preWorktree = runPreWorktreeCommand(
-          runtime.worktreePath,
-          project.pre_worktree_command,
-        );
-        if (preWorktree.started) {
-          ticketWorkspaceService.deferWatcher(ticket.id, preWorktree.done);
-        }
 
         reply.send(
           makeCommandAck(
@@ -413,7 +463,7 @@ export function registerTicketExecutionRoutes(
           repository,
           session.worktree_path,
           ticket.working_branch,
-          project.post_worktree_command,
+          project.worktree_teardown_command,
         );
         for (const warning of cleanup.warnings) {
           appendSessionOutput(
@@ -469,25 +519,28 @@ export function registerTicketExecutionRoutes(
           );
         });
 
-        executionRuntime.startExecution({
+        runInitCommandAndStartExecution({
           project,
-          repository,
-          ticket: restartResult.ticket,
-          session: restartResult.session,
-          ...(input.reason && input.reason.trim().length > 0
-            ? { additionalInstruction: input.reason }
-            : {}),
+          runtime,
+          executionRuntime,
+          ticketWorkspaceService,
+          ticketId: restartResult.ticket.id,
+          startExecutionArgs: {
+            project,
+            repository,
+            ticket: restartResult.ticket,
+            session: restartResult.session,
+            ...(input.reason && input.reason.trim().length > 0
+              ? { additionalInstruction: input.reason }
+              : {}),
+          },
+          appendWarning: (message) =>
+            appendSessionOutput(
+              restartResult.session.id,
+              restartResult.attempt.id,
+              `Worktree init warning: ${message}`,
+            ),
         });
-        const preWorktree = runPreWorktreeCommand(
-          runtime.worktreePath,
-          project.pre_worktree_command,
-        );
-        if (preWorktree.started) {
-          ticketWorkspaceService.deferWatcher(
-            restartResult.ticket.id,
-            preWorktree.done,
-          );
-        }
 
         reply.send(
           makeCommandAck(true, "Execution session restarted from scratch", {

@@ -247,8 +247,9 @@ export function useWalleyBoardMutations({
       automaticAgentReviewRunLimit: number;
       defaultReviewAction: ReviewAction;
       previewStartCommand: string | null;
-      preWorktreeCommand: string | null;
-      postWorktreeCommand: string | null;
+      worktreeInitCommand: string | null;
+      worktreeTeardownCommand: string | null;
+      worktreeInitRunSequential: boolean;
       draftAnalysisModel: string | null;
       draftAnalysisReasoningEffort: ReasoningEffort | null;
       ticketWorkModel: string | null;
@@ -267,8 +268,9 @@ export function useWalleyBoardMutations({
         automatic_agent_review_run_limit: input.automaticAgentReviewRunLimit,
         default_review_action: input.defaultReviewAction,
         preview_start_command: input.previewStartCommand,
-        pre_worktree_command: input.preWorktreeCommand,
-        post_worktree_command: input.postWorktreeCommand,
+        worktree_init_command: input.worktreeInitCommand,
+        worktree_teardown_command: input.worktreeTeardownCommand,
+        worktree_init_run_sequential: input.worktreeInitRunSequential,
         draft_analysis_model: input.draftAnalysisModel,
         draft_analysis_reasoning_effort: input.draftAnalysisReasoningEffort,
         ticket_work_model: input.ticketWorkModel,

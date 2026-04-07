@@ -110,8 +110,9 @@ export class ProjectRepository {
         defaultReviewAction: "direct_merge",
         defaultTargetBranch,
         previewStartCommand: null,
-        preWorktreeCommand: null,
-        postWorktreeCommand: null,
+        worktreeInitCommand: null,
+        worktreeTeardownCommand: null,
+        worktreeInitRunSequential: false,
         draftAnalysisModel: null,
         draftAnalysisReasoningEffort: null,
         ticketWorkModel: null,
@@ -209,18 +210,22 @@ export class ProjectRepository {
       input.preview_start_command === undefined
         ? project.preview_start_command
         : normalizeOptionalCommand(input.preview_start_command);
-    const preWorktreeCommand =
-      input.pre_worktree_command === undefined
-        ? project.pre_worktree_command
-        : normalizeOptionalCommand(input.pre_worktree_command);
+    const worktreeInitCommand =
+      input.worktree_init_command === undefined
+        ? project.worktree_init_command
+        : normalizeOptionalCommand(input.worktree_init_command);
     const defaultReviewAction =
       input.default_review_action === undefined
         ? project.default_review_action
         : normalizeReviewAction(input.default_review_action);
-    const postWorktreeCommand =
-      input.post_worktree_command === undefined
-        ? project.post_worktree_command
-        : normalizeOptionalCommand(input.post_worktree_command);
+    const worktreeTeardownCommand =
+      input.worktree_teardown_command === undefined
+        ? project.worktree_teardown_command
+        : normalizeOptionalCommand(input.worktree_teardown_command);
+    const worktreeInitRunSequential =
+      input.worktree_init_run_sequential === undefined
+        ? project.worktree_init_run_sequential
+        : input.worktree_init_run_sequential;
     const draftAnalysisReasoningEffort =
       input.draft_analysis_reasoning_effort === undefined
         ? project.draft_analysis_reasoning_effort
@@ -267,8 +272,9 @@ export class ProjectRepository {
         automaticAgentReviewRunLimit,
         defaultReviewAction,
         previewStartCommand,
-        preWorktreeCommand,
-        postWorktreeCommand,
+        worktreeInitCommand,
+        worktreeTeardownCommand,
+        worktreeInitRunSequential,
         draftAnalysisModel,
         draftAnalysisReasoningEffort,
         ticketWorkModel,

@@ -383,13 +383,15 @@ function addWorkspaceExclude(workspacePath: string, pattern: string): void {
   );
 }
 
-export function runPreWorktreeCommand(
+export const worktreeInitTimeoutMs = 5 * 60 * 1_000;
+
+export function runWorktreeInitCommand(
   worktreePath: string,
   command: string | null | undefined,
-): { started: boolean; done: Promise<void> } {
+): { started: boolean; done: Promise<void>; kill: () => void } {
   const normalizedCommand = normalizeOptionalCommand(command);
   if (!normalizedCommand || !existsSync(worktreePath)) {
-    return { started: false, done: Promise.resolve() };
+    return { started: false, done: Promise.resolve(), kill: () => {} };
   }
 
   const child = spawn(worktreeCommandShell, ["-lc", normalizedCommand], {
@@ -398,12 +400,47 @@ export function runPreWorktreeCommand(
     stdio: "ignore",
   });
 
-  const done = new Promise<void>((resolve) => {
-    child.on("exit", () => resolve());
+  const done = new Promise<void>((resolve, reject) => {
+    child.on("exit", (code) => {
+      if (code === 0 || code === null) {
+        resolve();
+      } else {
+        reject(new Error(`Worktree init command exited with code ${code}`));
+      }
+    });
     child.on("error", () => resolve());
   });
 
-  return { started: true, done };
+  return {
+    started: true,
+    done,
+    kill: () => {
+      try {
+        child.kill();
+      } catch {}
+    },
+  };
+}
+
+export async function awaitWorktreeInitWithTimeout(
+  initCommand: ReturnType<typeof runWorktreeInitCommand>,
+): Promise<void> {
+  if (!initCommand.started) {
+    return;
+  }
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    initCommand.kill();
+  }, worktreeInitTimeoutMs);
+  try {
+    await initCommand.done;
+    if (timedOut) {
+      throw new Error("Worktree init command timed out after 5 minutes");
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export type PreparedWorktreeRemovalResult = {
@@ -547,14 +584,14 @@ export async function prepareWorktreeAsync(
 export function removePreparedWorktree(
   repository: RepositoryConfig,
   worktreePath: string,
-  postWorktreeCommand?: string | null,
+  worktreeTeardownCommand?: string | null,
   workingBranch?: string | null,
 ): PreparedWorktreeRemovalResult {
   if (!existsSync(worktreePath)) {
     return { status: "removed" };
   }
 
-  const normalizedCommand = normalizeOptionalCommand(postWorktreeCommand);
+  const normalizedCommand = normalizeOptionalCommand(worktreeTeardownCommand);
   const selfContainedWorkspace = isSelfContainedWorkspace(worktreePath);
   if (normalizedCommand) {
     const child = spawn(
@@ -593,10 +630,10 @@ export function resetPreparedWorktreeImmediately(
   repository: RepositoryConfig,
   worktreePath: string | null | undefined,
   workingBranch?: string | null,
-  postWorktreeCommand?: string | null,
+  worktreeTeardownCommand?: string | null,
 ): ImmediateWorktreeResetResult {
   const warnings: string[] = [];
-  const normalizedCommand = normalizeOptionalCommand(postWorktreeCommand);
+  const normalizedCommand = normalizeOptionalCommand(worktreeTeardownCommand);
   const normalizedWorktreePath = hasMeaningfulContent(worktreePath)
     ? worktreePath
     : null;
@@ -617,8 +654,8 @@ export function resetPreparedWorktreeImmediately(
       const message =
         error instanceof Error
           ? error.message
-          : "Unknown post-worktree failure";
-      warnings.push(`Post-worktree command failed: ${message}`);
+          : "Unknown worktree teardown failure";
+      warnings.push(`Worktree teardown command failed: ${message}`);
     }
   }
 

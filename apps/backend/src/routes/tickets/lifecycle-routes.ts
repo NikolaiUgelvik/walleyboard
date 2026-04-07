@@ -205,7 +205,7 @@ export function registerTicketLifecycleRoutes(
           const worktreeRemoval = removePreparedWorktree(
             repository,
             session.worktree_path,
-            project?.post_worktree_command,
+            project?.worktree_teardown_command,
             ticket.working_branch,
           );
           if (worktreeRemoval.status === "scheduled") {

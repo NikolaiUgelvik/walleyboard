@@ -194,8 +194,9 @@ export type WalleyBoardModalsController = Pick<
   | "projectOptionsDraftModelPreset"
   | "projectOptionsDraftReasoningEffort"
   | "projectOptionsFormError"
-  | "projectOptionsPostWorktreeCommand"
-  | "projectOptionsPreWorktreeCommand"
+  | "projectOptionsWorktreeTeardownCommand"
+  | "projectOptionsWorktreeInitCommand"
+  | "projectOptionsWorktreeInitRunSequential"
   | "projectOptionsPreviewStartCommand"
   | "projectOptionsProject"
   | "projectOptionsRepositories"
@@ -233,8 +234,9 @@ export type WalleyBoardModalsController = Pick<
   | "setProjectOptionsDraftModelPreset"
   | "setProjectOptionsDraftReasoningEffort"
   | "setProjectOptionsFormError"
-  | "setProjectOptionsPostWorktreeCommand"
-  | "setProjectOptionsPreWorktreeCommand"
+  | "setProjectOptionsWorktreeTeardownCommand"
+  | "setProjectOptionsWorktreeInitCommand"
+  | "setProjectOptionsWorktreeInitRunSequential"
   | "setProjectOptionsPreviewStartCommand"
   | "setProjectOptionsRepositoryTargetBranches"
   | "setProjectOptionsTicketModelCustom"
@@ -469,10 +471,12 @@ export function createWalleyBoardViewState(
     projectOptionsDraftReasoningEffort:
       controller.projectOptionsDraftReasoningEffort,
     projectOptionsFormError: controller.projectOptionsFormError,
-    projectOptionsPostWorktreeCommand:
-      controller.projectOptionsPostWorktreeCommand,
-    projectOptionsPreWorktreeCommand:
-      controller.projectOptionsPreWorktreeCommand,
+    projectOptionsWorktreeTeardownCommand:
+      controller.projectOptionsWorktreeTeardownCommand,
+    projectOptionsWorktreeInitCommand:
+      controller.projectOptionsWorktreeInitCommand,
+    projectOptionsWorktreeInitRunSequential:
+      controller.projectOptionsWorktreeInitRunSequential,
     projectOptionsPreviewStartCommand:
       controller.projectOptionsPreviewStartCommand,
     projectOptionsProject: controller.projectOptionsProject,
@@ -522,10 +526,12 @@ export function createWalleyBoardViewState(
     setProjectOptionsDraftReasoningEffort:
       controller.setProjectOptionsDraftReasoningEffort,
     setProjectOptionsFormError: controller.setProjectOptionsFormError,
-    setProjectOptionsPostWorktreeCommand:
-      controller.setProjectOptionsPostWorktreeCommand,
-    setProjectOptionsPreWorktreeCommand:
-      controller.setProjectOptionsPreWorktreeCommand,
+    setProjectOptionsWorktreeTeardownCommand:
+      controller.setProjectOptionsWorktreeTeardownCommand,
+    setProjectOptionsWorktreeInitCommand:
+      controller.setProjectOptionsWorktreeInitCommand,
+    setProjectOptionsWorktreeInitRunSequential:
+      controller.setProjectOptionsWorktreeInitRunSequential,
     setProjectOptionsPreviewStartCommand:
       controller.setProjectOptionsPreviewStartCommand,
     setProjectOptionsRepositoryTargetBranches:

@@ -248,8 +248,9 @@ export async function saveProjectOptionsRequest(
     automatic_agent_review_run_limit: number;
     default_review_action: ReviewAction;
     preview_start_command: string | null;
-    pre_worktree_command: string | null;
-    post_worktree_command: string | null;
+    worktree_init_command: string | null;
+    worktree_teardown_command: string | null;
+    worktree_init_run_sequential: boolean;
     draft_analysis_model: string | null;
     draft_analysis_reasoning_effort: ReasoningEffort | null;
     ticket_work_model: string | null;

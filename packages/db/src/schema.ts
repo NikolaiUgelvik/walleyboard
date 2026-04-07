@@ -37,8 +37,13 @@ export const projectsTable = sqliteTable(
       .default("direct_merge"),
     defaultTargetBranch: text("default_target_branch"),
     previewStartCommand: text("preview_start_command"),
-    preWorktreeCommand: text("pre_worktree_command"),
-    postWorktreeCommand: text("post_worktree_command"),
+    worktreeInitCommand: text("worktree_init_command"),
+    worktreeTeardownCommand: text("worktree_teardown_command"),
+    worktreeInitRunSequential: integer("worktree_init_run_sequential", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
     draftAnalysisModel: text("draft_analysis_model"),
     draftAnalysisReasoningEffort: text("draft_analysis_reasoning_effort"),
     ticketWorkModel: text("ticket_work_model"),
