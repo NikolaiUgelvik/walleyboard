@@ -45,19 +45,19 @@ import {
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
   hasRepositoryValidationCommandChanges,
-  mapRepositoryValidationCommands,
   mergeRepositoryTargetBranches,
+  mergeRepositoryValidationCommands,
   parseDraftEventMeta,
   parseDraftQuestionsResult,
   pickProjectColor,
   repositoryTargetBranchesEqual,
+  repositoryValidationCommandsEqual,
   resolveOptionalProjectCommandValue,
   resolveProjectModelValue,
   resolveProjectOptionsColors,
   resolveProjectReasoningEffortValue,
   resolveVisibleBoardItems,
   shouldRefreshProjectColorSelection,
-  validationProfilesEqual,
 } from "./shared-utils.js";
 import { navigateToTicketReference } from "./ticket-reference-navigation.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
@@ -412,25 +412,11 @@ export function useWalleyBoardController() {
     }
 
     setProjectOptionsRepositoryValidationCommands((current) => {
-      const next = mapRepositoryValidationCommands(
+      const next = mergeRepositoryValidationCommands(
+        current,
         projectOptionsRepositoriesQuery.data.repositories,
       );
-      const keys = Object.keys(next);
-      if (
-        keys.length === Object.keys(current).length &&
-        keys.every((key) => {
-          const currentList = current[key];
-          const nextList = next[key];
-          return (
-            currentList !== undefined &&
-            nextList !== undefined &&
-            validationProfilesEqual(currentList, nextList)
-          );
-        })
-      ) {
-        return current;
-      }
-      return next;
+      return repositoryValidationCommandsEqual(current, next) ? current : next;
     });
   }, [
     projectOptionsRepositoriesQuery.data,

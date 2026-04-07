@@ -9,8 +9,10 @@ import {
   collectRepositoryValidationCommandUpdates,
   getProjectColorSwatchForegroundColor,
   hasRepositoryValidationCommandChanges,
+  mergeRepositoryValidationCommands,
   pickProjectColor,
   projectColorPalette,
+  repositoryValidationCommandsEqual,
   resolveProjectAccentVariables,
   validationProfilesEqual,
 } from "./shared-utils.js";
@@ -276,5 +278,69 @@ test("collectRepositoryValidationCommandUpdates handles add-then-remove returnin
       repositoryValidationCommands: { [repo.id]: [cmd] },
     }),
     [],
+  );
+});
+
+test("mergeRepositoryValidationCommands preserves local edits for existing repositories", () => {
+  const original = makeValidationCommand();
+  const edited = makeValidationCommand({ label: "Lint" });
+  const repo = makeRepository({ validation_profile: [original] });
+  const result = mergeRepositoryValidationCommands({ [repo.id]: [edited] }, [
+    repo,
+  ]);
+  assert.deepEqual(result[repo.id], [edited]);
+});
+
+test("mergeRepositoryValidationCommands uses server data for new repositories", () => {
+  const cmd = makeValidationCommand();
+  const existingRepo = makeRepository({ validation_profile: [cmd] });
+  const newRepo = makeRepository({
+    id: "repo-2",
+    validation_profile: [makeValidationCommand({ id: "cmd-new" })],
+  });
+  const result = mergeRepositoryValidationCommands(
+    { [existingRepo.id]: [makeValidationCommand({ label: "User edit" })] },
+    [existingRepo, newRepo],
+  );
+  assert.deepEqual(result[newRepo.id], newRepo.validation_profile);
+});
+
+test("mergeRepositoryValidationCommands drops removed repositories from result", () => {
+  const removedRepo = makeRepository({ id: "repo-removed" });
+  const activeRepo = makeRepository({ id: "repo-active" });
+  const result = mergeRepositoryValidationCommands(
+    {
+      [removedRepo.id]: [makeValidationCommand()],
+      [activeRepo.id]: [makeValidationCommand()],
+    },
+    [activeRepo],
+  );
+  assert.equal(result[removedRepo.id], undefined);
+  assert.ok(result[activeRepo.id]);
+});
+
+test("repositoryValidationCommandsEqual returns true for identical maps", () => {
+  const cmd = makeValidationCommand();
+  assert.equal(
+    repositoryValidationCommandsEqual({ "repo-1": [cmd] }, { "repo-1": [cmd] }),
+    true,
+  );
+});
+
+test("repositoryValidationCommandsEqual returns false when values differ", () => {
+  assert.equal(
+    repositoryValidationCommandsEqual(
+      { "repo-1": [makeValidationCommand()] },
+      { "repo-1": [makeValidationCommand({ label: "Changed" })] },
+    ),
+    false,
+  );
+});
+
+test("repositoryValidationCommandsEqual returns false for different keys", () => {
+  const cmd = makeValidationCommand();
+  assert.equal(
+    repositoryValidationCommandsEqual({ "repo-1": [cmd] }, { "repo-2": [cmd] }),
+    false,
   );
 });

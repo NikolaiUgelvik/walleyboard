@@ -353,6 +353,43 @@ export function mapRepositoryValidationCommands(
   );
 }
 
+export function mergeRepositoryValidationCommands(
+  current: Record<string, ValidationCommand[]>,
+  repositories: RepositoryConfig[],
+): Record<string, ValidationCommand[]> {
+  const next = mapRepositoryValidationCommands(repositories);
+
+  for (const repository of repositories) {
+    const currentValue = current[repository.id];
+    if (currentValue !== undefined) {
+      next[repository.id] = currentValue;
+    }
+  }
+
+  return next;
+}
+
+export function repositoryValidationCommandsEqual(
+  left: Record<string, ValidationCommand[]>,
+  right: Record<string, ValidationCommand[]>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => {
+    const leftList = left[key];
+    const rightList = right[key];
+    return (
+      leftList !== undefined &&
+      rightList !== undefined &&
+      validationProfilesEqual(leftList, rightList)
+    );
+  });
+}
+
 export function hasRepositoryValidationCommandChanges(input: {
   repositories: RepositoryConfig[];
   repositoryValidationCommands: Record<string, ValidationCommand[]>;
