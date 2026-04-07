@@ -323,9 +323,13 @@ export function registerTicketReadWorkspaceRoutes(
         return;
       }
 
+      const project = store.getProject(ticket.project);
+
       try {
         const preview = await ticketWorkspaceService.ensurePreview({
           ticketId: ticket.id,
+          repositoryId: ticket.repo,
+          previewStartCommand: project?.preview_start_command ?? null,
           worktreePath: session.worktree_path,
         });
         reply.send({ preview });
