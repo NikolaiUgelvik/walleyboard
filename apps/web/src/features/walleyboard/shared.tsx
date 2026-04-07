@@ -67,6 +67,14 @@ export const boardColumnMeta: Record<
   },
 };
 
+export function columnBadgeStyle(accent: string) {
+  return {
+    background: `${accent}14`,
+    color: accent,
+    border: `1px solid ${accent}22`,
+  };
+}
+
 const codexModelPresetValues = [
   "gpt-5.4",
   "gpt-5.4-mini",

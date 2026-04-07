@@ -42,7 +42,12 @@ import { SectionCard } from "../../components/SectionCard.js";
 import { formatDraftStatusLabel } from "../../lib/draft-status.js";
 import { getBoardTicketDescriptionPreview } from "../../lib/ticket-description-preview.js";
 import { PullRequestStatusBadge } from "./PullRequestStatusBadge.js";
-import { boardColumnMeta, boardColumns, ColorSchemeControl } from "./shared.js";
+import {
+  boardColumnMeta,
+  boardColumns,
+  ColorSchemeControl,
+  columnBadgeStyle,
+} from "./shared.js";
 import {
   humanizeSessionStatus,
   isStoppableSessionStatus,
@@ -672,11 +677,7 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                   key={column}
                   variant="light"
                   size="lg"
-                  style={{
-                    background: `${meta.accent}14`,
-                    color: meta.accent,
-                    border: `1px solid ${meta.accent}22`,
-                  }}
+                  style={columnBadgeStyle(meta.accent)}
                 >
                   {meta.label} {count}
                 </Badge>
@@ -800,11 +801,7 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                             <Badge
                               variant="light"
                               size="lg"
-                              style={{
-                                background: `${meta.accent}14`,
-                                color: meta.accent,
-                                border: `1px solid ${meta.accent}22`,
-                              }}
+                              style={columnBadgeStyle(meta.accent)}
                             >
                               {columnCount}
                             </Badge>
