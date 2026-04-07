@@ -636,29 +636,19 @@ export class TicketWorkspaceService {
       worktreePath: input.worktreePath,
     });
 
-    const committedPatch = (
+    const mergeBase = (
       await runGit(input.worktreePath, [
-        "diff",
-        "--no-color",
-        "--find-renames",
-        `${input.targetBranch}...HEAD`,
-        "--",
+        "merge-base",
+        input.targetBranch,
+        "HEAD",
       ])
     ).trim();
-    const stagedPatch = (
-      await runGit(input.worktreePath, [
-        "diff",
-        "--cached",
-        "--no-color",
-        "--find-renames",
-        "--",
-      ])
-    ).trim();
-    const unstagedPatch = (
+    const trackedPatch = (
       await runGit(input.worktreePath, [
         "diff",
         "--no-color",
         "--find-renames",
+        mergeBase,
         "--",
       ])
     ).trim();
@@ -696,9 +686,7 @@ export class TicketWorkspaceService {
       working_branch: input.workingBranch,
       worktree_path: input.worktreePath,
       artifact_path: null,
-      patch: [committedPatch, stagedPatch, unstagedPatch, untrackedPatch]
-        .filter(Boolean)
-        .join("\n\n"),
+      patch: [trackedPatch, untrackedPatch].filter(Boolean).join("\n\n"),
       generated_at: nowIso(),
     };
   }
@@ -904,23 +892,15 @@ export class TicketWorkspaceService {
     ticketId: number;
     worktreePath: string;
   }): Promise<TicketWorkspaceSummary> {
-    const committedSummary = parseNumstatOutput(
+    const mergeBase = (
       await runGit(input.worktreePath, [
-        "diff",
-        "--numstat",
-        `${input.targetBranch}...HEAD`,
-        "--",
-      ]),
-    );
-    const stagedSummary = parseNumstatOutput(
-      await runGit(input.worktreePath, ["diff", "--cached", "--numstat", "--"]),
-    );
-    const unstagedSummary = parseNumstatOutput(
-      await runGit(input.worktreePath, ["diff", "--numstat", "--"]),
-    );
-    const trackedSummary = mergeWorkspaceSummaryStats(
-      mergeWorkspaceSummaryStats(committedSummary, stagedSummary),
-      unstagedSummary,
+        "merge-base",
+        input.targetBranch,
+        "HEAD",
+      ])
+    ).trim();
+    const trackedSummary = parseNumstatOutput(
+      await runGit(input.worktreePath, ["diff", "--numstat", mergeBase, "--"]),
     );
     const untrackedFiles = await collectUntrackedFiles(input.worktreePath);
     const untrackedSummary = (

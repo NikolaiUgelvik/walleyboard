@@ -203,7 +203,7 @@ test("TicketWorkspaceService diffs the worktree and publishes live summary updat
   }
 });
 
-test("getDiff includes committed changes from the working branch", async () => {
+test("getDiff includes committed changes and produces correct summary counts", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-committed-diff-"));
   const repoPath = join(tempDir, "repo");
   const worktreePath = join(tempDir, "ticket-worktree");
@@ -233,20 +233,15 @@ test("getDiff includes committed changes from the working branch", async () => {
       "main",
     ]);
 
-    writeFileSync(
-      join(worktreePath, "tracked.txt"),
-      "committed change\n",
-      "utf8",
-    );
+    writeFileSync(join(worktreePath, "tracked.txt"), "committed v1\n", "utf8");
     runGit(worktreePath, ["add", "tracked.txt"]);
     runGit(worktreePath, ["commit", "-m", "ticket work"]);
 
     writeFileSync(
-      join(worktreePath, "new-file.txt"),
-      "uncommitted new file\n",
+      join(worktreePath, "tracked.txt"),
+      "uncommitted v2\n",
       "utf8",
     );
-    runGit(worktreePath, ["add", "new-file.txt"]);
 
     writeFileSync(
       join(worktreePath, "untracked.txt"),
@@ -261,11 +256,26 @@ test("getDiff includes committed changes from the working branch", async () => {
       worktreePath,
     });
 
-    assert.match(diff.patch, /committed change/);
-    assert.match(diff.patch, /new-file\.txt/);
-    assert.match(diff.patch, /uncommitted new file/);
+    assert.match(diff.patch, /uncommitted v2/);
     assert.match(diff.patch, /untracked\.txt/);
     assert.match(diff.patch, /untracked content/);
+
+    const trackedBlocks = diff.patch
+      .split("\n")
+      .filter((line) => line.startsWith("diff --git a/tracked.txt"));
+    assert.equal(trackedBlocks.length, 1, "tracked.txt should appear once");
+
+    const summary = await workspaceService.getSummary({
+      targetBranch: "main",
+      ticketId: 99,
+      workingBranch: "committed-branch",
+      worktreePath,
+    });
+
+    assert.equal(summary.files_changed, 2);
+    assert.equal(summary.added_lines, 2);
+    assert.equal(summary.removed_lines, 1);
+    assert.equal(summary.has_changes, true);
   } finally {
     await workspaceService.disposeTicket(99);
     rmSync(tempDir, { recursive: true, force: true });
