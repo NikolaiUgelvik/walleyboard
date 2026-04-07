@@ -39,6 +39,13 @@ export function createWorkspaceModalControls(input: {
     input.setInspectorState({ kind: "hidden" });
   };
 
+  const openTicket = (ticket: TicketFrontmatter): void => {
+    input.setWorkspaceModal(null);
+    input.setWorkspaceTicket(null);
+    input.setWorkspaceTerminalContext(null);
+    input.setInspectorState({ kind: "ticket", ticketId: ticket.id });
+  };
+
   const openTicketSession = (ticket: TicketFrontmatter): void => {
     if (!ticket.session_id) {
       return;
@@ -110,6 +117,7 @@ export function createWorkspaceModalControls(input: {
     openArchivedTicketDiff,
     openDraft,
     openNewDraft,
+    openTicket,
     openTicketSession,
     openTicketWorkspaceModal,
   };
