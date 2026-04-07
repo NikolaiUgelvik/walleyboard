@@ -864,6 +864,17 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                   >
                                     New
                                   </Menu.Item>
+                                  <Menu.Item
+                                    disabled={
+                                      controller.unrefinedDrafts.length === 0
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      controller.refineAllUnrefinedDrafts();
+                                    }}
+                                  >
+                                    Refine all
+                                  </Menu.Item>
                                 </Menu.Dropdown>
                               </Menu>
                             ) : null}
