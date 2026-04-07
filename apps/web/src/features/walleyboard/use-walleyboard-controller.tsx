@@ -671,6 +671,10 @@ export function useWalleyBoardController() {
         draftEditorAcceptanceCriteriaLines,
         selectedDraft.proposed_acceptance_criteria,
       ));
+  const newDraftFormDirty =
+    inspectorState.kind === "new_draft" &&
+    (draftEditorTitle.trim().length > 0 ||
+      draftEditorDescription.trim().length > 0);
   const draftEvents = draftEventsQuery.data?.events ?? [];
   const latestDraftEvent = draftEvents.at(0);
   const latestDraftEventMeta = latestDraftEvent
@@ -1119,9 +1123,8 @@ export function useWalleyBoardController() {
 
   const hideInspector = (): void => {
     if (
-      (inspectorState.kind === "draft" ||
-        inspectorState.kind === "new_draft") &&
-      draftFormDirty
+      (inspectorState.kind === "draft" && draftFormDirty) ||
+      newDraftFormDirty
     ) {
       setDiscardDraftConfirmOpen(true);
       return;
