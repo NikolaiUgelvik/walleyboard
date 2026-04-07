@@ -40,6 +40,8 @@ export function createNewDraftActionHandlers(input: {
 
       try {
         await onDraftCreated(draftId);
+      } catch {
+        // error is surfaced by react-query's mutation state
       } finally {
         input.setPendingNewDraftAction(null);
       }

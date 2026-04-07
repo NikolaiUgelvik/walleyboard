@@ -120,7 +120,7 @@ export function createDraftEditorController(input: {
         );
       }
 
-      if (action === "save") {
+      if (action === "save" || !draftId) {
         input.setPendingNewDraftAction(null);
       }
 

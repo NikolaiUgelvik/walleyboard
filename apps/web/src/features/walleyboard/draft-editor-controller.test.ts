@@ -48,6 +48,91 @@ function installDom() {
   };
 }
 
+function buildControllerInput(overrides?: {
+  createDraftMutateAsync?: (input: unknown) => Promise<{
+    resource_refs?: { draft_id?: string | undefined } | undefined;
+  }>;
+}) {
+  const actionCalls: Array<string | null> = [];
+  return {
+    actionCalls,
+    input: {
+      createDraftMutation: {
+        mutateAsync:
+          overrides?.createDraftMutateAsync ??
+          (async () => ({ resource_refs: { draft_id: "draft-1" } })),
+      },
+      draftEditorAcceptanceCriteria: "",
+      draftEditorArtifactScopeId: null,
+      draftEditorDescription: "Description",
+      draftEditorProjectId: "project-1",
+      draftEditorTicketType: "feature" as const,
+      draftEditorTitle: "Title",
+      queryClient: new QueryClient(),
+      setDraftEditorAcceptanceCriteria: () => {},
+      setDraftEditorArtifactScopeId: () => {},
+      setDraftEditorDescription: () => {},
+      setDraftEditorProjectId: () => {},
+      setDraftEditorSourceId: () => {},
+      setDraftEditorTicketType: () => {},
+      setDraftEditorTitle: () => {},
+      setDraftEditorUploadError: () => {},
+      setPendingDraftEditorSync: () => {},
+      setPendingNewDraftAction: (value: string | null) => {
+        actionCalls.push(value);
+      },
+      uploadDraftArtifactMutation: {
+        mutateAsync: async () => ({
+          artifact_scope_id: "scope-1",
+          artifact_url: "/url",
+          markdown_image: "![img](/url)",
+        }),
+      },
+    },
+  };
+}
+
+test("persistNewDraftFromEditor clears pendingNewDraftAction for save action", async () => {
+  const { actionCalls, input } = buildControllerInput();
+  const { persistNewDraftFromEditor } = createDraftEditorController(input);
+
+  await persistNewDraftFromEditor("save");
+  assert.deepEqual(actionCalls, ["save", null]);
+});
+
+test("persistNewDraftFromEditor keeps pendingNewDraftAction for refine action", async () => {
+  const { actionCalls, input } = buildControllerInput();
+  const { persistNewDraftFromEditor } = createDraftEditorController(input);
+
+  const draftId = await persistNewDraftFromEditor("refine");
+  assert.equal(draftId, "draft-1");
+  assert.deepEqual(actionCalls, ["refine"]);
+});
+
+test("persistNewDraftFromEditor clears pendingNewDraftAction when create mutation rejects", async () => {
+  const { actionCalls, input } = buildControllerInput({
+    createDraftMutateAsync: async () => {
+      throw new Error("network failure");
+    },
+  });
+  const { persistNewDraftFromEditor } = createDraftEditorController(input);
+
+  const draftId = await persistNewDraftFromEditor("refine");
+  assert.equal(draftId, null);
+  assert.deepEqual(actionCalls, ["refine", null]);
+});
+
+test("persistNewDraftFromEditor clears pendingNewDraftAction when create succeeds but returns null draftId", async () => {
+  const { actionCalls, input } = buildControllerInput({
+    createDraftMutateAsync: async () => ({ resource_refs: undefined }),
+  });
+  const { persistNewDraftFromEditor } = createDraftEditorController(input);
+
+  const draftId = await persistNewDraftFromEditor("refine");
+  assert.equal(draftId, null);
+  assert.deepEqual(actionCalls, ["refine", null]);
+});
+
 test("uploadDraftEditorImage uploads pasted images and updates the shared artifact scope", async () => {
   const dom = installDom();
 
