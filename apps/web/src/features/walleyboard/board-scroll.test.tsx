@@ -427,6 +427,7 @@ function createWalleyBoardController(): WalleyBoardController {
     openDraft: () => undefined,
     openInboxItem: () => undefined,
     openNewDraft: () => undefined,
+    refineAllUnrefinedDrafts: () => undefined,
     openProjectOptions: () => undefined,
     projectOptionsProject: null,
     projectsQuery: {
@@ -464,6 +465,7 @@ function createWalleyBoardController(): WalleyBoardController {
     stopAgentReviewMutation: createMutationStub(),
     ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspaceDiff: null,
+    unrefinedDrafts: [],
     ticketWorkspaceDiffLayout: "split",
     ticketWorkspaceDiffQuery: {
       isPending: false,
