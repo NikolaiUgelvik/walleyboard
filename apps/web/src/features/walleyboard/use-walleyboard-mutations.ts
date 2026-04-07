@@ -9,6 +9,7 @@ import type {
   RepositoryConfig,
   ReviewAction,
   TicketFrontmatter,
+  ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
 
 import type { PendingDraftEditorSync } from "../../lib/draft-editor-sync.js";
@@ -258,6 +259,10 @@ export function useWalleyBoardMutations({
         repositoryId: string;
         targetBranch: string;
       }>;
+      repositoryValidationCommands: Array<{
+        repositoryId: string;
+        validationProfile: ValidationCommand[];
+      }>;
     }) =>
       saveProjectOptionsRequest(input.projectId, {
         color: input.color,
@@ -279,6 +284,12 @@ export function useWalleyBoardMutations({
           (repository) => ({
             repository_id: repository.repositoryId,
             target_branch: repository.targetBranch,
+          }),
+        ),
+        repository_validation_commands: input.repositoryValidationCommands.map(
+          (repository) => ({
+            repository_id: repository.repositoryId,
+            validation_profile: repository.validationProfile,
           }),
         ),
       }),

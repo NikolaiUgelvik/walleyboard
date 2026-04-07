@@ -7,6 +7,7 @@ import type {
   ReviewAction,
   StructuredEvent,
   TicketFrontmatter,
+  ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
 import {
   isProjectColor,
@@ -336,6 +337,112 @@ export function collectRepositoryTargetBranchUpdates(input: {
       {
         repositoryId: repository.id,
         targetBranch: selectedTargetBranch,
+      },
+    ];
+  });
+}
+
+export function mapRepositoryValidationCommands(
+  repositories: RepositoryConfig[],
+): Record<string, ValidationCommand[]> {
+  return Object.fromEntries(
+    repositories.map((repository) => [
+      repository.id,
+      repository.validation_profile,
+    ]),
+  );
+}
+
+export function mergeRepositoryValidationCommands(
+  current: Record<string, ValidationCommand[]>,
+  repositories: RepositoryConfig[],
+): Record<string, ValidationCommand[]> {
+  const next = mapRepositoryValidationCommands(repositories);
+
+  for (const repository of repositories) {
+    const currentValue = current[repository.id];
+    if (currentValue !== undefined) {
+      next[repository.id] = currentValue;
+    }
+  }
+
+  return next;
+}
+
+export function repositoryValidationCommandsEqual(
+  left: Record<string, ValidationCommand[]>,
+  right: Record<string, ValidationCommand[]>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => {
+    const leftList = left[key];
+    const rightList = right[key];
+    return (
+      leftList !== undefined &&
+      rightList !== undefined &&
+      validationProfilesEqual(leftList, rightList)
+    );
+  });
+}
+
+export function hasRepositoryValidationCommandChanges(input: {
+  repositories: RepositoryConfig[];
+  repositoryValidationCommands: Record<string, ValidationCommand[]>;
+}): boolean {
+  return input.repositories.some((repository) => {
+    const edited = input.repositoryValidationCommands[repository.id];
+    if (edited === undefined) {
+      return false;
+    }
+    return !validationProfilesEqual(repository.validation_profile, edited);
+  });
+}
+
+export function validationProfilesEqual(
+  a: ValidationCommand[],
+  b: ValidationCommand[],
+): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((cmd, i) => {
+    const other = b[i];
+    if (!other) {
+      return false;
+    }
+    return (
+      cmd.id === other.id &&
+      cmd.label === other.label &&
+      cmd.command === other.command &&
+      cmd.working_directory === other.working_directory &&
+      cmd.timeout_ms === other.timeout_ms &&
+      cmd.required_for_review === other.required_for_review &&
+      cmd.shell === other.shell
+    );
+  });
+}
+
+export function collectRepositoryValidationCommandUpdates(input: {
+  repositories: RepositoryConfig[];
+  repositoryValidationCommands: Record<string, ValidationCommand[]>;
+}): Array<{ repositoryId: string; validationProfile: ValidationCommand[] }> {
+  return input.repositories.flatMap((repository) => {
+    const edited = input.repositoryValidationCommands[repository.id];
+    if (edited === undefined) {
+      return [];
+    }
+    if (validationProfilesEqual(repository.validation_profile, edited)) {
+      return [];
+    }
+    return [
+      {
+        repositoryId: repository.id,
+        validationProfile: edited,
       },
     ];
   });

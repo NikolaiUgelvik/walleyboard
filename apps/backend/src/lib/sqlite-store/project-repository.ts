@@ -242,6 +242,8 @@ export class ProjectRepository {
         : normalizeOptionalReasoningEffort(input.ticket_work_reasoning_effort);
     const repositoryTargetBranchUpdates =
       input.repository_target_branches ?? [];
+    const repositoryValidationCommandUpdates =
+      input.repository_validation_commands ?? [];
     const timestamp = nowIso();
 
     this.#assertSupportedExecutionConfiguration({
@@ -254,6 +256,13 @@ export class ProjectRepository {
     });
 
     for (const repositoryUpdate of repositoryTargetBranchUpdates) {
+      const repository = this.getRepository(repositoryUpdate.repository_id);
+      if (!repository || repository.project_id !== projectId) {
+        throw new Error("Repository not found");
+      }
+    }
+
+    for (const repositoryUpdate of repositoryValidationCommandUpdates) {
       const repository = this.getRepository(repositoryUpdate.repository_id);
       if (!repository || repository.project_id !== projectId) {
         throw new Error("Repository not found");
@@ -289,6 +298,17 @@ export class ProjectRepository {
         .update(repositoriesTable)
         .set({
           targetBranch: repositoryUpdate.target_branch,
+          updatedAt: timestamp,
+        })
+        .where(eq(repositoriesTable.id, repositoryUpdate.repository_id))
+        .run();
+    }
+
+    for (const repositoryUpdate of repositoryValidationCommandUpdates) {
+      this.context.db
+        .update(repositoriesTable)
+        .set({
+          validationProfile: repositoryUpdate.validation_profile,
           updatedAt: timestamp,
         })
         .where(eq(repositoriesTable.id, repositoryUpdate.repository_id))

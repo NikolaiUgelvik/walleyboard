@@ -20,6 +20,7 @@ type ProjectOptionsDirtyInput = {
   projectOptionsAutomaticAgentReviewRunLimit: number;
   projectOptionsDefaultReviewAction: ReviewAction;
   repositoryBranchesDirty: boolean;
+  validationCommandsDirty: boolean;
   selectedDraftAgentAdapter: AgentAdapter;
   selectedTicketAgentAdapter: AgentAdapter;
   ticketModelValue: string | null;
@@ -58,6 +59,7 @@ export function hasProjectOptionsDirty(
       project.draft_analysis_reasoning_effort ||
     input.ticketModelValue !== project.ticket_work_model ||
     input.ticketReasoningEffortValue !== project.ticket_work_reasoning_effort ||
-    input.repositoryBranchesDirty
+    input.repositoryBranchesDirty ||
+    input.validationCommandsDirty
   );
 }

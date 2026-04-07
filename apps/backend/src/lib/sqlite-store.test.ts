@@ -229,6 +229,127 @@ test("updateProject persists repository target branch changes", () => {
   }
 });
 
+test("updateProject persists repository validation command changes", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-validation-commands-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project, repository } = store.createProject({
+      name: "Validation Commands",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+        validation_commands: ["npm test"],
+      },
+    });
+
+    const originalProfile = store.getRepository(
+      repository.id,
+    )?.validation_profile;
+    assert.ok(originalProfile);
+    assert.equal(originalProfile.length, 1);
+    const originalCommand = originalProfile[0];
+    assert.ok(originalCommand);
+    assert.equal(originalCommand.command, "npm test");
+
+    store.updateProject(project.id, {
+      repository_validation_commands: [
+        {
+          repository_id: repository.id,
+          validation_profile: [
+            {
+              ...originalCommand,
+              label: "Unit tests",
+              command: "npm run test:unit",
+              timeout_ms: 120_000,
+            },
+            {
+              id: "new-cmd-1",
+              label: "Lint",
+              command: "npm run lint",
+              working_directory: join(tempDir, "repo"),
+              timeout_ms: 60_000,
+              required_for_review: false,
+              shell: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const updated = store.getRepository(repository.id)?.validation_profile;
+    assert.ok(updated);
+    assert.equal(updated.length, 2);
+    const updatedFirst = updated[0];
+    const updatedSecond = updated[1];
+    assert.ok(updatedFirst);
+    assert.ok(updatedSecond);
+    assert.equal(updatedFirst.label, "Unit tests");
+    assert.equal(updatedFirst.command, "npm run test:unit");
+    assert.equal(updatedFirst.timeout_ms, 120_000);
+    assert.equal(updatedSecond.label, "Lint");
+    assert.equal(updatedSecond.command, "npm run lint");
+
+    const reloadedStore = new SqliteStore(databasePath);
+    const reloaded = reloadedStore.getRepository(
+      repository.id,
+    )?.validation_profile;
+    assert.ok(reloaded);
+    assert.equal(reloaded.length, 2);
+    const reloadedFirst = reloaded[0];
+    const reloadedSecond = reloaded[1];
+    assert.ok(reloadedFirst);
+    assert.ok(reloadedSecond);
+    assert.equal(reloadedFirst.command, "npm run test:unit");
+    assert.equal(reloadedSecond.command, "npm run lint");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("updateProject rejects validation command update for repository not in project", () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-validation-ownership-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+
+  try {
+    const store = new SqliteStore(databasePath);
+    const { project } = store.createProject({
+      name: "Project A",
+      repository: {
+        name: "repo-a",
+        path: join(tempDir, "repo-a"),
+      },
+    });
+    const { repository: otherRepo } = store.createProject({
+      name: "Project B",
+      repository: {
+        name: "repo-b",
+        path: join(tempDir, "repo-b"),
+      },
+    });
+
+    assert.throws(
+      () =>
+        store.updateProject(project.id, {
+          repository_validation_commands: [
+            {
+              repository_id: otherRepo.id,
+              validation_profile: [],
+            },
+          ],
+        }),
+      { message: "Repository not found" },
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("recoverInterruptedReviewRuns marks stale running review runs as failed", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-review-recovery-"));
   const databasePath = join(tempDir, "walleyboard.sqlite");
