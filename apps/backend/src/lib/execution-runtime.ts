@@ -72,6 +72,7 @@ import {
   resolveTrackedExit,
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
+import type { DraftRefineSessionPersistence } from "./store.js";
 import { getAgentEnvOverridesCached } from "./walleyboard-conf.js";
 
 type ActiveSessionProcess = ChildProcessWithoutNullStreams;
@@ -98,9 +99,7 @@ export class ExecutionRuntime {
     string,
     { pty: IPty; attemptId: string | null }
   >();
-  readonly #draftRefineSessionRepo:
-    | import("./sqlite-store/draft-refine-session-repository.js").DraftRefineSessionRepository
-    | null;
+  readonly #draftRefineSessionRepo: DraftRefineSessionPersistence | null;
   readonly #hostSidecars = new HostSidecarRegistry();
   readonly #stoppingSessions = new Map<string, string>();
   readonly #stoppingManualTerminals = new Map<string, string>();

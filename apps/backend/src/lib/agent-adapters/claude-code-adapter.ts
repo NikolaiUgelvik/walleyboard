@@ -450,7 +450,7 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
         : 0;
     const effectiveInstruction =
       retryAttempt > 0
-        ? buildDraftRefinementRetryInstruction(retryAttempt)
+        ? buildDraftRefinementRetryInstruction(retryAttempt, input.instruction)
         : input.instruction;
     const basePrompt =
       input.mode === "refine"

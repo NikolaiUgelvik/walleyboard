@@ -261,6 +261,34 @@ export interface SessionPersistence {
   getSessionLogs(sessionId: string): string[];
 }
 
+export type DraftRefineSession = {
+  id: string;
+  draft_id: string;
+  project_id: string;
+  repository_id: string;
+  adapter_session_ref: string | null;
+  attempt_count: number;
+  status: string;
+  created_at: string;
+  last_attempt_at: string;
+};
+
+export interface DraftRefineSessionPersistence {
+  create(input: {
+    draftId: string;
+    projectId: string;
+    repositoryId: string;
+  }): DraftRefineSession;
+  recordAttempt(
+    id: string,
+    input: {
+      adapterSessionRef: string | null;
+      attemptCount: number;
+    },
+  ): DraftRefineSession | undefined;
+  complete(id: string, status: "completed" | "failed"): void;
+}
+
 export interface WalleyboardPersistence
   extends ProjectPersistence,
     DraftPersistence,
@@ -272,6 +300,7 @@ export interface WalleyboardPersistence
   tickets: TicketPersistence;
   reviews: ReviewPersistence;
   sessions: SessionPersistence;
+  draftRefineSessions: DraftRefineSessionPersistence | null;
   withTransaction<T>(operation: (persistence: WalleyboardPersistence) => T): T;
   close(): void;
 }

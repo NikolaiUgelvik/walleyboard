@@ -13,8 +13,10 @@ import type { AgentCliAdapter } from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import { preserveDraftArtifactImages } from "../draft-artifact-images.js";
 import type { EventHub } from "../event-hub.js";
-import type { DraftRefineSessionRepository } from "../sqlite-store/draft-refine-session-repository.js";
-import type { ExecutionRuntimePersistence } from "../store.js";
+import type {
+  DraftRefineSessionPersistence,
+  ExecutionRuntimePersistence,
+} from "../store.js";
 import { getAgentEnvOverrides } from "../walleyboard-conf.js";
 import {
   clearExecutionActivity,
@@ -47,7 +49,7 @@ export type DraftAnalysisDeps = {
   cleanupExecutionEnvironment: (sessionId: string) => void;
   cleanupHostSidecar: (sessionId: string) => void;
   dockerRuntime: DockerRuntime;
-  draftRefineSessionRepo: DraftRefineSessionRepository | null;
+  draftRefineSessionRepo: DraftRefineSessionPersistence | null;
   eventHub: EventHub;
   registerHostSidecar: (
     sessionId: string,

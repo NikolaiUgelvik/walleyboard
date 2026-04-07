@@ -151,13 +151,18 @@ export function buildDraftRefinementPrompt(
 
 export function buildDraftRefinementRetryInstruction(
   attemptNumber: number,
+  originalInstruction?: string,
 ): string {
-  return [
+  const retryGuidance = [
     `This is retry attempt ${attemptNumber + 1} of 3.`,
     "Your previous attempt did not produce valid JSON output.",
     "You MUST return your result by calling the MCP tool `mcp__walleyboard__submit_refined_draft` with the structured fields.",
     "Do not return JSON inline — use only the MCP tool.",
   ].join(" ");
+  if (originalInstruction) {
+    return `${retryGuidance}\n\nOriginal instruction:\n${originalInstruction}`;
+  }
+  return retryGuidance;
 }
 
 export function buildDraftQuestionsPrompt(

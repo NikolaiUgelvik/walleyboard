@@ -2,20 +2,12 @@ import { draftRefineSessionsTable } from "@walleyboard/db";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+import type {
+  DraftRefineSession,
+  DraftRefineSessionPersistence,
+} from "../store.js";
 import { nowIso } from "../time.js";
 import type { SqliteStoreContext } from "./shared.js";
-
-export type DraftRefineSession = {
-  id: string;
-  draft_id: string;
-  project_id: string;
-  repository_id: string;
-  adapter_session_ref: string | null;
-  attempt_count: number;
-  status: string;
-  created_at: string;
-  last_attempt_at: string;
-};
 
 function mapRow(
   row: typeof draftRefineSessionsTable.$inferSelect,
@@ -33,7 +25,9 @@ function mapRow(
   };
 }
 
-export class DraftRefineSessionRepository {
+export class DraftRefineSessionRepository
+  implements DraftRefineSessionPersistence
+{
   constructor(private readonly context: SqliteStoreContext) {}
 
   create(input: {
@@ -68,15 +62,6 @@ export class DraftRefineSessionRepository {
       created_at: now,
       last_attempt_at: now,
     };
-  }
-
-  getByDraftId(draftId: string): DraftRefineSession | undefined {
-    const row = this.context.db
-      .select()
-      .from(draftRefineSessionsTable)
-      .where(eq(draftRefineSessionsTable.draftId, draftId))
-      .get();
-    return row ? mapRow(row) : undefined;
   }
 
   recordAttempt(
