@@ -138,7 +138,7 @@ export type InspectorPaneController = Pick<
   | "selectedDraft"
   | "selectedDraftRepository"
   | "selectedProject"
-  | "selectedReadyTicket"
+  | "selectedInspectorTicket"
   | "selectedSessionId"
   | "selectedSessionTicket"
   | "selectedSessionTicketSession"
@@ -418,7 +418,7 @@ export function createWalleyBoardViewState(
     selectedDraft: controller.selectedDraft,
     selectedDraftRepository: controller.selectedDraftRepository,
     selectedProject: controller.selectedProject,
-    selectedReadyTicket: controller.selectedReadyTicket,
+    selectedInspectorTicket: controller.selectedInspectorTicket,
     selectedSessionId: controller.selectedSessionId,
     selectedSessionTicket: controller.selectedSessionTicket,
     selectedSessionTicketSession: controller.selectedSessionTicketSession,

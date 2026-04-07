@@ -736,7 +736,7 @@ export function useWalleyBoardController() {
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
   const selectedSessionTicket =
     tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
-  const selectedReadyTicket =
+  const selectedInspectorTicket =
     tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
   const ticketEvents = ticketEventsQuery.data?.events ?? [];
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
@@ -1410,7 +1410,7 @@ export function useWalleyBoardController() {
     selectedProject,
     selectedProjectId,
     selectedRepository,
-    selectedReadyTicket,
+    selectedInspectorTicket,
     selectedSessionId,
     selectedSessionTicket,
     selectedSessionTicketId,

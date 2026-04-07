@@ -1418,11 +1418,11 @@ export function InspectorPane({
         ) : null}
 
         {controller.inspectorState.kind === "ticket" &&
-        controller.selectedReadyTicket ? (
+        controller.selectedInspectorTicket ? (
           <TicketDetailPane
             navigateToTicketReference={controller.navigateToTicketReference}
             repositories={controller.repositories}
-            ticket={controller.selectedReadyTicket}
+            ticket={controller.selectedInspectorTicket}
           />
         ) : null}
       </Stack>
