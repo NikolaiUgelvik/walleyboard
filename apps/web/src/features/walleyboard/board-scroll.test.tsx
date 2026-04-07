@@ -390,6 +390,7 @@ function createWalleyBoardController(): WalleyBoardController {
   return {
     actionItems: [],
     unreadActionItemCount: 0,
+    unreadInboxItemKeys: new Set<string>(),
     archiveActionFeedback: null,
     archiveDoneTickets: () => undefined,
     archiveDoneTicketsMutation: createMutationStub(),

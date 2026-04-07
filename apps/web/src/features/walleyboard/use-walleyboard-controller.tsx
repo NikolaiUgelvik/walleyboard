@@ -41,6 +41,7 @@ import {
   arraysEqual,
   collectRepositoryTargetBranchUpdates,
   collectRepositoryValidationCommandUpdates,
+  computeMarkAllReadState,
   defaultProjectColor,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
@@ -529,9 +530,12 @@ export function useWalleyBoardController() {
       ticketAiReviewActiveById,
       ticketAiReviewResolvedById,
     });
-  const unreadActionItemCount = actionItems.filter(
-    (item) => readInboxItemState[item.key] !== item.notificationKey,
-  ).length;
+  const unreadInboxItemKeys = new Set(
+    actionItems
+      .filter((item) => readInboxItemState[item.key] !== item.notificationKey)
+      .map((item) => item.key),
+  );
+  const unreadActionItemCount = unreadInboxItemKeys.size;
   const inboxQueriesSettled =
     projectsLoaded &&
     globalDraftsQueries.every((query) => !query.isPending) &&
@@ -1064,6 +1068,17 @@ export function useWalleyBoardController() {
     });
   };
 
+  const markAllInboxItemsAsRead = (): void => {
+    setReadInboxItemState((currentState) => {
+      const result = computeMarkAllReadState(currentState, actionItems);
+      if (result === null) {
+        return currentState;
+      }
+      writeInboxReadState(result);
+      return result;
+    });
+  };
+
   const openInboxItem = (item: (typeof actionItems)[number]): void => {
     setReadInboxItemState((currentState) => {
       if (currentState[item.key] === item.notificationKey) {
@@ -1235,7 +1250,9 @@ export function useWalleyBoardController() {
   return {
     ...mutations,
     actionItems,
+    markAllInboxItemsAsRead,
     unreadActionItemCount,
+    unreadInboxItemKeys,
     agentReviewHistoryModalOpen,
     archiveActionFeedback,
     archiveModalOpen,

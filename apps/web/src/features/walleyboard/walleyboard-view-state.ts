@@ -8,6 +8,7 @@ export type WalleyBoardShellState = Pick<
 export type ProjectRailController = Pick<
   WalleyBoardController,
   | "actionItems"
+  | "markAllInboxItemsAsRead"
   | "openInboxItem"
   | "openProjectModal"
   | "openProjectOptions"
@@ -15,6 +16,7 @@ export type ProjectRailController = Pick<
   | "selectProject"
   | "selectedProjectId"
   | "unreadActionItemCount"
+  | "unreadInboxItemKeys"
 >;
 
 export type BoardViewController = Pick<
@@ -279,6 +281,7 @@ export function createWalleyBoardViewState(
 
   const projectRail: ProjectRailController = {
     actionItems: controller.actionItems,
+    markAllInboxItemsAsRead: controller.markAllInboxItemsAsRead,
     openInboxItem: controller.openInboxItem,
     openProjectModal: controller.openProjectModal,
     openProjectOptions: controller.openProjectOptions,
@@ -286,6 +289,7 @@ export function createWalleyBoardViewState(
     selectProject: controller.selectProject,
     selectedProjectId: controller.selectedProjectId,
     unreadActionItemCount: controller.unreadActionItemCount,
+    unreadInboxItemKeys: controller.unreadInboxItemKeys,
   };
 
   const boardView: BoardViewController = {
