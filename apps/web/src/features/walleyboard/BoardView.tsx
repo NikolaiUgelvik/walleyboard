@@ -249,6 +249,46 @@ function TicketMenu({
   );
 }
 
+function DraftMenu({
+  controller,
+  draftId,
+}: {
+  controller: BoardViewController;
+  draftId: string;
+}) {
+  const isDeleting =
+    controller.deleteDraftMutation.isPending &&
+    controller.deleteDraftMutation.variables === draftId;
+
+  return (
+    <Menu withinPortal position="bottom-end">
+      <Menu.Target>
+        <ActionIcon
+          aria-label={`More actions for draft ${draftId}`}
+          color="gray"
+          variant="subtle"
+          disabled={isDeleting}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {isDeleting ? "Deleting..." : "..."}
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown onClick={(event) => event.stopPropagation()}>
+        <Menu.Item
+          color="red"
+          disabled={isDeleting}
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.deleteDraftMutation.mutate(draftId);
+          }}
+        >
+          Delete
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
 function BoardColumnScrollArea({
   children,
   columnIndex,
@@ -915,15 +955,21 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                                             }
                                           />
                                         </Box>
-                                        <Badge variant="light" color="gray">
-                                          {formatDraftStatusLabel({
-                                            isRefining:
-                                              controller.isDraftRefinementActive(
-                                                draft.id,
-                                              ),
-                                            wizardStatus: draft.wizard_status,
-                                          })}
-                                        </Badge>
+                                        <Group gap="xs" wrap="nowrap">
+                                          <Badge variant="light" color="gray">
+                                            {formatDraftStatusLabel({
+                                              isRefining:
+                                                controller.isDraftRefinementActive(
+                                                  draft.id,
+                                                ),
+                                              wizardStatus: draft.wizard_status,
+                                            })}
+                                          </Badge>
+                                          <DraftMenu
+                                            controller={controller}
+                                            draftId={draft.id}
+                                          />
+                                        </Group>
                                       </Group>
                                       <MarkdownContent
                                         className="markdown-muted markdown-small"
