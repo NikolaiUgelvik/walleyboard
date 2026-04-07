@@ -129,7 +129,7 @@ export type ArchiveActionFeedback = {
 };
 
 export type DiffLayout = "split" | "stacked";
-export type WorkspaceModalKind = "diff" | "terminal" | "activity";
+export type WorkspaceModalKind = "diff" | "terminal" | "activity" | "timeline";
 export type WorkspaceTerminalTab = {
   id: string;
   label: string;
