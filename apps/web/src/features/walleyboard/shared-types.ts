@@ -22,9 +22,9 @@ export const projectModelPresetValues = [
   "gpt-5.4-mini",
   "gpt-5.3-codex",
   "gpt-5.3-codex-spark",
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5",
+  "sonnet",
+  "opus",
+  "haiku",
 ] as const;
 
 export type ProjectModelPreset =
