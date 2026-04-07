@@ -1,5 +1,5 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { type SetStateAction, useEffect } from "react";
+import { type SetStateAction, useEffect, useState } from "react";
 import type {
   ExecutionSession,
   Project,
@@ -705,6 +705,12 @@ export function useWalleyBoardController() {
         draftEditorAcceptanceCriteriaLines,
         selectedDraft.proposed_acceptance_criteria,
       ));
+  const newDraftFormDirty =
+    inspectorState.kind === "new_draft" &&
+    (draftEditorTitle.trim().length > 0 ||
+      draftEditorDescription.trim().length > 0 ||
+      draftEditorAcceptanceCriteria.trim().length > 0 ||
+      draftEditorTicketType !== "feature");
   const draftEvents = draftEventsQuery.data?.events ?? [];
   const latestDraftEvent = draftEvents.at(0);
   const latestDraftEventMeta = latestDraftEvent
@@ -1155,9 +1161,11 @@ export function useWalleyBoardController() {
     setArchiveModalVisibility(false);
   };
 
+  const [discardDraftConfirmOpen, setDiscardDraftConfirmOpen] = useState(false);
+
   const {
     closeWorkspaceModal,
-    hideInspector,
+    hideInspector: forceHideInspector,
     openDraft,
     openNewDraft,
     openTicketSession,
@@ -1172,6 +1180,26 @@ export function useWalleyBoardController() {
     setWorkspaceTerminalContext,
     setWorkspaceTicket,
   });
+
+  const hideInspector = (): void => {
+    if (
+      (inspectorState.kind === "draft" && draftFormDirty) ||
+      newDraftFormDirty
+    ) {
+      setDiscardDraftConfirmOpen(true);
+      return;
+    }
+    forceHideInspector();
+  };
+
+  const confirmDiscardDraft = (): void => {
+    setDiscardDraftConfirmOpen(false);
+    forceHideInspector();
+  };
+
+  const cancelDiscardDraft = (): void => {
+    setDiscardDraftConfirmOpen(false);
+  };
 
   const openArchivedTicketDiff = (ticket: TicketFrontmatter): void => {
     setArchiveActionFeedback(null);
@@ -1218,12 +1246,15 @@ export function useWalleyBoardController() {
     boardError,
     boardLoading,
     boardSearch,
+    cancelDiscardDraft,
     canDeleteProject,
     closeArchiveModal,
     closeAgentReviewHistoryModal,
     closeProjectOptionsModal,
+    confirmDiscardDraft,
     defaultBranch,
     deleteTicket,
+    discardDraftConfirmOpen,
     editReadyTicket,
     codexMcpServers,
     dockerHealth,

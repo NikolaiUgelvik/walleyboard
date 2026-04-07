@@ -163,9 +163,11 @@ export type WalleyBoardModalsController = Pick<
   | "archiveActionFeedback"
   | "archiveModalOpen"
   | "archivedTicketsQuery"
+  | "cancelDiscardDraft"
   | "canDeleteProject"
   | "closeAgentReviewHistoryModal"
   | "closeArchiveModal"
+  | "confirmDiscardDraft"
   | "closeProjectModal"
   | "closeProjectOptionsModal"
   | "closeWorkspaceModal"
@@ -173,6 +175,7 @@ export type WalleyBoardModalsController = Pick<
   | "createProjectMutation"
   | "defaultBranch"
   | "deleteProjectMutation"
+  | "discardDraftConfirmOpen"
   | "dockerHealth"
   | "healthQuery"
   | "openArchivedTicketDiff"
@@ -435,8 +438,10 @@ export function createWalleyBoardViewState(
     archiveActionFeedback: controller.archiveActionFeedback,
     archiveModalOpen: controller.archiveModalOpen,
     archivedTicketsQuery: controller.archivedTicketsQuery,
+    cancelDiscardDraft: controller.cancelDiscardDraft,
     canDeleteProject: controller.canDeleteProject,
     closeAgentReviewHistoryModal: controller.closeAgentReviewHistoryModal,
+    confirmDiscardDraft: controller.confirmDiscardDraft,
     closeArchiveModal: controller.closeArchiveModal,
     closeProjectModal: controller.closeProjectModal,
     closeProjectOptionsModal: controller.closeProjectOptionsModal,
@@ -445,6 +450,7 @@ export function createWalleyBoardViewState(
     createProjectMutation: controller.createProjectMutation,
     defaultBranch: controller.defaultBranch,
     deleteProjectMutation: controller.deleteProjectMutation,
+    discardDraftConfirmOpen: controller.discardDraftConfirmOpen,
     dockerHealth: controller.dockerHealth,
     healthQuery: controller.healthQuery,
     openArchivedTicketDiff: controller.openArchivedTicketDiff,
