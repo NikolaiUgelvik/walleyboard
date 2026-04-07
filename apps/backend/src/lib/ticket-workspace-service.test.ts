@@ -203,6 +203,75 @@ test("TicketWorkspaceService diffs the worktree and publishes live summary updat
   }
 });
 
+test("getDiff includes committed changes from the working branch", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-committed-diff-"));
+  const repoPath = join(tempDir, "repo");
+  const worktreePath = join(tempDir, "ticket-worktree");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  try {
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "tracked.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "tracked.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "committed-branch",
+      worktreePath,
+      "main",
+    ]);
+
+    writeFileSync(
+      join(worktreePath, "tracked.txt"),
+      "committed change\n",
+      "utf8",
+    );
+    runGit(worktreePath, ["add", "tracked.txt"]);
+    runGit(worktreePath, ["commit", "-m", "ticket work"]);
+
+    writeFileSync(
+      join(worktreePath, "new-file.txt"),
+      "uncommitted new file\n",
+      "utf8",
+    );
+    runGit(worktreePath, ["add", "new-file.txt"]);
+
+    writeFileSync(
+      join(worktreePath, "untracked.txt"),
+      "untracked content\n",
+      "utf8",
+    );
+
+    const diff = await workspaceService.getDiff({
+      targetBranch: "main",
+      ticketId: 99,
+      workingBranch: "committed-branch",
+      worktreePath,
+    });
+
+    assert.match(diff.patch, /committed change/);
+    assert.match(diff.patch, /new-file\.txt/);
+    assert.match(diff.patch, /uncommitted new file/);
+    assert.match(diff.patch, /untracked\.txt/);
+    assert.match(diff.patch, /untracked content/);
+  } finally {
+    await workspaceService.disposeTicket(99);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("disposeTicket succeeds after worktree is already removed", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-dispose-"));
   const repoPath = join(tempDir, "repo");

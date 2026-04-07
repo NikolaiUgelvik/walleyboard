@@ -636,12 +636,29 @@ export class TicketWorkspaceService {
       worktreePath: input.worktreePath,
     });
 
-    const trackedPatch = (
+    const committedPatch = (
       await runGit(input.worktreePath, [
         "diff",
         "--no-color",
         "--find-renames",
-        input.targetBranch,
+        `${input.targetBranch}...HEAD`,
+        "--",
+      ])
+    ).trim();
+    const stagedPatch = (
+      await runGit(input.worktreePath, [
+        "diff",
+        "--cached",
+        "--no-color",
+        "--find-renames",
+        "--",
+      ])
+    ).trim();
+    const unstagedPatch = (
+      await runGit(input.worktreePath, [
+        "diff",
+        "--no-color",
+        "--find-renames",
         "--",
       ])
     ).trim();
@@ -679,7 +696,9 @@ export class TicketWorkspaceService {
       working_branch: input.workingBranch,
       worktree_path: input.worktreePath,
       artifact_path: null,
-      patch: [trackedPatch, untrackedPatch].filter(Boolean).join("\n\n"),
+      patch: [committedPatch, stagedPatch, unstagedPatch, untrackedPatch]
+        .filter(Boolean)
+        .join("\n\n"),
       generated_at: nowIso(),
     };
   }
@@ -885,13 +904,23 @@ export class TicketWorkspaceService {
     ticketId: number;
     worktreePath: string;
   }): Promise<TicketWorkspaceSummary> {
-    const trackedSummary = parseNumstatOutput(
+    const committedSummary = parseNumstatOutput(
       await runGit(input.worktreePath, [
         "diff",
         "--numstat",
-        input.targetBranch,
+        `${input.targetBranch}...HEAD`,
         "--",
       ]),
+    );
+    const stagedSummary = parseNumstatOutput(
+      await runGit(input.worktreePath, ["diff", "--cached", "--numstat", "--"]),
+    );
+    const unstagedSummary = parseNumstatOutput(
+      await runGit(input.worktreePath, ["diff", "--numstat", "--"]),
+    );
+    const trackedSummary = mergeWorkspaceSummaryStats(
+      mergeWorkspaceSummaryStats(committedSummary, stagedSummary),
+      unstagedSummary,
     );
     const untrackedFiles = await collectUntrackedFiles(input.worktreePath);
     const untrackedSummary = (
