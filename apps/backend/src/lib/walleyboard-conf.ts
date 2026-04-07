@@ -37,6 +37,7 @@ function applyParsedConf(content: string): void {
         console.warn(
           `[walleyboard-conf] Unrecognized section [${key}] in walleyboard.conf — expected one of: ${agentAdapterSchema.options.join(", ")}`,
         );
+        continue;
       }
       overrides[key] = extractStringEntries(parsed[key]);
     }
