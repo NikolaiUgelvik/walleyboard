@@ -73,7 +73,7 @@ const codexModelPresetValues = [
   "gpt-5.3-codex",
   "gpt-5.3-codex-spark",
 ] as const;
-const claudeCodeModelPresetValues = ["opus", "sonnet", "haiku"] as const;
+const claudeCodeModelPresetValues = ["sonnet", "opus", "haiku"] as const;
 
 export function getModelPresetOptions(adapter: AgentAdapter) {
   const values =
