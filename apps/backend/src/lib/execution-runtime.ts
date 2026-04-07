@@ -71,6 +71,7 @@ import {
   resolveTrackedExit,
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
+import { getAgentEnvOverridesCached } from "./walleyboard-conf.js";
 
 type ActiveSessionProcess = ChildProcessWithoutNullStreams;
 
@@ -686,7 +687,7 @@ export class ExecutionRuntime {
       "ticket",
     );
 
-    const processEnv = buildProcessEnv();
+    const processEnv = buildProcessEnv(getAgentEnvOverridesCached(adapter.id));
     let child: ChildProcessWithoutNullStreams;
     const startedAt = new Date().toISOString();
 

@@ -32,6 +32,7 @@ import {
   startHostSidecar,
 } from "./execution-runtime/host-sidecar.js";
 import { spawnUnattendedProcessInSession } from "./execution-runtime/spawn-unattended-process.js";
+import { getAgentEnvOverrides } from "./walleyboard-conf.js";
 
 const pullRequestBodyResultSchema = z
   .object({
@@ -100,6 +101,8 @@ export async function generatePullRequestBody(input: {
     input.registerHostSidecar(activityId, sidecar);
   }
 
+  const agentEnvOverrides = await getAgentEnvOverrides(input.adapter.id);
+
   return await new Promise((resolve, reject) => {
     let child: ChildProcessWithoutNullStreams;
     const startedAt = new Date().toISOString();
@@ -124,7 +127,7 @@ export async function generatePullRequestBody(input: {
       child = spawnUnattendedProcessInSession({
         cwd: worktreePath,
         dockerRuntime: input.dockerRuntime,
-        env: buildProcessEnv(),
+        env: buildProcessEnv(agentEnvOverrides),
         run,
         sessionId: activityId,
       });
