@@ -391,6 +391,85 @@ test("re-intersecting ticket is restored to full rendering", async () => {
   }
 });
 
+test("off-screen ticket sentinel is focusable and re-renders card on intersection", async () => {
+  IntersectionObserverMock.reset();
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const controller = createControllerStub();
+  const tickets = [createTicket({ id: 42, title: "Focus target" })];
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <VirtualizedTicketList
+            tickets={tickets}
+            column="in_progress"
+            controller={controller}
+            onVisibleTicketIdsChange={() => {}}
+          />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const observer = IntersectionObserverMock.instances.find(
+      (o) => o.elements.size > 0,
+    );
+    assert.ok(observer);
+
+    const sentinel = harness.mountNode.querySelector(
+      '[data-ticket-virtual="42"]',
+    );
+    assert.ok(sentinel);
+
+    await act(async () => {
+      observer.simulateEntries([
+        { target: sentinel, isIntersecting: false, intersectionRatio: 0 },
+      ]);
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      harness.mountNode.querySelectorAll(".board-card").length,
+      0,
+      "Card is hidden when off-screen",
+    );
+
+    const sentinelById = harness.window.document.getElementById("ticket-42");
+    assert.ok(sentinelById, "Sentinel is findable via getElementById");
+    assert.equal(
+      sentinelById.getAttribute("tabindex"),
+      "-1",
+      "Sentinel is programmatically focusable",
+    );
+    sentinelById.focus();
+    assert.equal(
+      harness.window.document.activeElement,
+      sentinelById,
+      "Sentinel received focus",
+    );
+
+    await act(async () => {
+      observer.simulateEntries([
+        { target: sentinel, isIntersecting: true, intersectionRatio: 1 },
+      ]);
+      await Promise.resolve();
+    });
+
+    assert.equal(
+      harness.mountNode.querySelectorAll(".board-card").length,
+      1,
+      "Card rendered after intersection fires",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
 test("useVisibleTicketDiffSummary merges IDs from multiple columns", async () => {
   const harness = installDom();
   const root = createRoot(harness.mountNode);

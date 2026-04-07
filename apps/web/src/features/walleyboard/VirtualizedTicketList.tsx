@@ -834,6 +834,36 @@ export function VirtualizedTicketList({
     [],
   );
 
+  const sentinelCallbackCache = useRef(
+    new Map<number, (el: HTMLDivElement | null) => void>(),
+  );
+  const getSentinelRef = useCallback(
+    (ticketId: number) => {
+      let cb = sentinelCallbackCache.current.get(ticketId);
+      if (!cb) {
+        cb = (el: HTMLDivElement | null) => registerSentinel(ticketId, el);
+        sentinelCallbackCache.current.set(ticketId, cb);
+      }
+      return cb;
+    },
+    [registerSentinel],
+  );
+
+  const measureCallbackCache = useRef(
+    new Map<number, (el: HTMLDivElement | null) => void>(),
+  );
+  const getMeasureRef = useCallback(
+    (ticketId: number) => {
+      let cb = measureCallbackCache.current.get(ticketId);
+      if (!cb) {
+        cb = (el: HTMLDivElement | null) => measureRef(ticketId, el);
+        measureCallbackCache.current.set(ticketId, cb);
+      }
+      return cb;
+    },
+    [measureRef],
+  );
+
   if (!HAS_INTERSECTION_OBSERVER) {
     return (
       <>
@@ -863,11 +893,11 @@ export function VirtualizedTicketList({
             id={`ticket-${ticket.id}`}
             tabIndex={-1}
             data-ticket-virtual={ticket.id}
-            ref={(el) => registerSentinel(ticket.id, el)}
+            ref={getSentinelRef(ticket.id)}
             style={isVisible ? undefined : { minHeight: cachedHeight }}
           >
             {isVisible ? (
-              <div ref={(el) => measureRef(ticket.id, el)}>
+              <div ref={getMeasureRef(ticket.id)}>
                 <TicketCard
                   controller={controller}
                   ticket={ticket}
