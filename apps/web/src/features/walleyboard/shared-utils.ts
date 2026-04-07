@@ -823,7 +823,8 @@ export function parseDraftRefinementResult(value: unknown): {
       value.proposed_ticket_type === "feature" ||
       value.proposed_ticket_type === "bugfix" ||
       value.proposed_ticket_type === "chore" ||
-      value.proposed_ticket_type === "research"
+      value.proposed_ticket_type === "research" ||
+      value.proposed_ticket_type === "refactor"
         ? value.proposed_ticket_type
         : null,
     proposed_acceptance_criteria: parseStringList(

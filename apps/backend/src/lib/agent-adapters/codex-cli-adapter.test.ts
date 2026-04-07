@@ -207,7 +207,7 @@ function resolveWalleyBoardHomeForTest(): string {
 const draftResultSchema = z.object({
   title: z.string(),
   description: z.string(),
-  ticket_type: z.enum(["feature", "bugfix", "chore", "research"]),
+  ticket_type: z.enum(["feature", "bugfix", "chore", "research", "refactor"]),
   acceptance_criteria: z.array(z.string()),
 });
 

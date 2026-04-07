@@ -150,6 +150,7 @@ function DraftEditorFields({
           { value: "bugfix", label: "Bugfix" },
           { value: "chore", label: "Chore" },
           { value: "research", label: "Research" },
+          { value: "refactor", label: "Refactor" },
         ]}
         clearable
         value={controller.draftEditorTicketType}
@@ -159,7 +160,8 @@ function DraftEditorFields({
             value === "feature" ||
             value === "bugfix" ||
             value === "chore" ||
-            value === "research"
+            value === "research" ||
+            value === "refactor"
           ) {
             controller.setDraftEditorTicketType(value);
           }

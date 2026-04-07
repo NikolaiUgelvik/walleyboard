@@ -213,7 +213,7 @@ The intended v1 happy path is:
   - Propose better alternatives when the requested approach is not feasible or is a poor fit
   - Infer the correct repository
   - Confirm the repository with the user
-  - Propose a ticket type such as `feature`, `bugfix`, or `chore`
+  - Propose a ticket type such as `feature`, `bugfix`, `chore`, or `refactor`
   - Detect epic-sized work
   - Propose repo-scoped ticket splits when needed
 - The refinement experience should behave like a guided wizard rather than a single opaque rewrite.
@@ -924,7 +924,7 @@ DraftTicketState:
 - `description_draft: string`
 - `proposed_repo_id: string | null`
 - `confirmed_repo_id: string | null`
-- `proposed_ticket_type: "feature" | "bugfix" | "chore" | "research" | null`
+- `proposed_ticket_type: "feature" | "bugfix" | "chore" | "research" | "refactor" | null`
 - `proposed_acceptance_criteria: string[]`
 - `wizard_status: "editing" | "awaiting_confirmation" | "ready_to_create"`
 - `split_proposal_summary: string | null`
@@ -961,7 +961,7 @@ Ticket record:
 - `status: "draft" | "ready" | "in_progress" | "review" | "done"`
 - `title: string`
 - `description: string`
-- `ticket_type: "feature" | "bugfix" | "chore" | "research"`
+- `ticket_type: "feature" | "bugfix" | "chore" | "research" | "refactor"`
 - `acceptance_criteria: string[]`
 - `working_branch: string | null`
 - `target_branch: string`
