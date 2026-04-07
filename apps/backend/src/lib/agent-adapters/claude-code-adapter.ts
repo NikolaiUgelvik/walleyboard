@@ -19,6 +19,7 @@ import { augmentPromptForAgent } from "./prompt-augmentation.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
+  buildDraftRefinementRetryInstruction,
 } from "./shared-draft-prompts.js";
 import {
   buildImplementationPrompt,
@@ -441,13 +442,23 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       "draft",
     );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
+    const retryAttempt =
+      input.mode === "refine" &&
+      typeof input.retryAttempt === "number" &&
+      input.retryAttempt > 0
+        ? input.retryAttempt
+        : 0;
+    const effectiveInstruction =
+      retryAttempt > 0
+        ? buildDraftRefinementRetryInstruction(retryAttempt)
+        : input.instruction;
     const basePrompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
             input.draft,
             input.repository,
             enabledMcpServers,
-            input.instruction,
+            effectiveInstruction,
           )
         : buildDraftQuestionsPrompt(
             input.draft,
@@ -469,7 +480,16 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
         structuredOutputTool.name,
       ),
     });
-    const claudeArgs = ["-p", prompt];
+
+    const resumeRef = hasMeaningfulContent(input.adapterSessionRef)
+      ? input.adapterSessionRef
+      : null;
+
+    const claudeArgs: string[] = [];
+    if (resumeRef) {
+      claudeArgs.push("--resume", resumeRef);
+    }
+    claudeArgs.push("-p", prompt);
     appendClaudeCodeModelArgs(claudeArgs, model, reasoningEffort);
     if (!input.mcpPort) {
       throw new Error("mcpPort is required for Claude Code draft runs.");

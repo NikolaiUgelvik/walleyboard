@@ -70,6 +70,8 @@ export type DraftRunInput = {
   resultSchema: z.ZodType<unknown>;
   repository: RepositoryConfig;
   useDockerRuntime: boolean;
+  adapterSessionRef?: string;
+  retryAttempt?: number;
 };
 
 export type ExecutionRunInput = {

@@ -22,6 +22,13 @@
       "when": 1775672400000,
       "tag": "0002_rename_worktree_commands",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1775845200000,
+      "tag": "0003_draft_refine_sessions",
+      "breakpoints": true
     }
   ]
 }

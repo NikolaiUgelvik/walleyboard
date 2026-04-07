@@ -149,6 +149,17 @@ export function buildDraftRefinementPrompt(
   return sections.join("\n");
 }
 
+export function buildDraftRefinementRetryInstruction(
+  attemptNumber: number,
+): string {
+  return [
+    `This is retry attempt ${attemptNumber + 1} of 3.`,
+    "Your previous attempt did not produce valid JSON output.",
+    "You MUST return your result by calling the MCP tool `mcp__walleyboard__submit_refined_draft` with the structured fields.",
+    "Do not return JSON inline — use only the MCP tool.",
+  ].join(" ");
+}
+
 export function buildDraftQuestionsPrompt(
   draft: DraftTicketState,
   repository: RepositoryConfig,

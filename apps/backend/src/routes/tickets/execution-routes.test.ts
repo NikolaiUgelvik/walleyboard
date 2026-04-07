@@ -94,7 +94,7 @@ test("parallel mode starts execution and defers watcher when init command runs",
 
     assert.equal(mocks.startExecution.mock.callCount(), 1);
     assert.equal(mocks.deferWatcher.mock.callCount(), 1);
-    assert.equal(mocks.deferWatcher.mock.calls[0]!.arguments[0], 1);
+    assert.equal(mocks.deferWatcher.mock.calls[0]?.arguments[0], 1);
     assert.equal(mocks.appendWarning.mock.callCount(), 0);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -188,7 +188,7 @@ test("sequential mode appends warning when init command fails", async () => {
     assert.equal(mocks.startExecution.mock.callCount(), 1);
     assert.equal(mocks.appendWarning.mock.callCount(), 1);
     assert.match(
-      mocks.appendWarning.mock.calls[0]!.arguments[0],
+      String(mocks.appendWarning.mock.calls[0]?.arguments[0]),
       /exited with code 1/,
     );
   } finally {

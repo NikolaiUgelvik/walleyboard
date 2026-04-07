@@ -14,11 +14,13 @@ import { ticketTypeSchema } from "../../../../../packages/contracts/src/index.js
 import type { AgentAdapterRegistry } from "../agent-adapters/registry.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import type { EventHub } from "../event-hub.js";
+import type { DraftRefineSessionRepository } from "../sqlite-store/draft-refine-session-repository.js";
 import type { ExecutionRuntimePersistence } from "../store.js";
 
 export type ExecutionRuntimeOptions = {
   adapterRegistry: AgentAdapterRegistry;
   dockerRuntime: DockerRuntime;
+  draftRefineSessionRepo?: DraftRefineSessionRepository | null;
   eventHub: EventHub;
   store: ExecutionRuntimePersistence;
 };
