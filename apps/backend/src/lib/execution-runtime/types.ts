@@ -97,7 +97,7 @@ export function mapDraftRefinementAgentResult(
   };
 }
 
-export const draftAnalysisTimeoutMs = 180_000;
+export const draftAnalysisTimeoutMs = 540_000;
 
 export type ModelSelection = {
   model: string | null;
