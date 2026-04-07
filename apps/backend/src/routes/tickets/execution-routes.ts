@@ -20,10 +20,10 @@ import {
 import { parseBody, parsePositiveInt } from "../../lib/http.js";
 import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
+  awaitWorktreeInitWithTimeout,
   prepareWorktreeAsync,
   resetPreparedWorktreeImmediately,
   runWorktreeInitCommand,
-  worktreeInitTimeoutMs,
 } from "../../lib/worktree-service.js";
 import type { TicketRouteDependencies } from "./shared.js";
 
@@ -115,25 +115,12 @@ export function registerTicketExecutionRoutes(
           );
         });
         if (project.worktree_init_run_sequential) {
-          const initCommand = runWorktreeInitCommand(
-            runtime.worktreePath,
-            project.worktree_init_command,
+          await awaitWorktreeInitWithTimeout(
+            runWorktreeInitCommand(
+              runtime.worktreePath,
+              project.worktree_init_command,
+            ),
           );
-          if (initCommand.started) {
-            await Promise.race([
-              initCommand.done,
-              new Promise<void>((_, reject) =>
-                setTimeout(() => {
-                  initCommand.kill();
-                  reject(
-                    new Error(
-                      "Worktree init command timed out after 5 minutes",
-                    ),
-                  );
-                }, worktreeInitTimeoutMs),
-              ),
-            ]);
-          }
           executionRuntime.startExecution({
             project,
             repository,
@@ -499,25 +486,12 @@ export function registerTicketExecutionRoutes(
         });
 
         if (project.worktree_init_run_sequential) {
-          const initCommand = runWorktreeInitCommand(
-            runtime.worktreePath,
-            project.worktree_init_command,
+          await awaitWorktreeInitWithTimeout(
+            runWorktreeInitCommand(
+              runtime.worktreePath,
+              project.worktree_init_command,
+            ),
           );
-          if (initCommand.started) {
-            await Promise.race([
-              initCommand.done,
-              new Promise<void>((_, reject) =>
-                setTimeout(() => {
-                  initCommand.kill();
-                  reject(
-                    new Error(
-                      "Worktree init command timed out after 5 minutes",
-                    ),
-                  );
-                }, worktreeInitTimeoutMs),
-              ),
-            ]);
-          }
           executionRuntime.startExecution({
             project,
             repository,

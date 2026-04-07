@@ -20,6 +20,7 @@ import type {
 
 import {
   AutomaticMergeRecoveryError,
+  awaitWorktreeInitWithTimeout,
   fetchRepositoryBranches,
   mergeReviewedBranch,
   prepareWorktree,
@@ -415,6 +416,58 @@ test("runWorktreeInitCommand returns a no-op kill when command is empty", () => 
     assert.equal(result.started, false);
     assert.equal(typeof result.kill, "function");
     result.kill();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("awaitWorktreeInitWithTimeout resolves when command completes before timeout", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-timeout-ok-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const outputPath = join(tempDir, "timeout-ok.log");
+    const initCommand = runWorktreeInitCommand(
+      repoPath,
+      `printf 'ok\\n' > "${outputPath}"`,
+    );
+    await awaitWorktreeInitWithTimeout(initCommand);
+    assert.equal(readFileSync(outputPath, "utf8"), "ok\n");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("awaitWorktreeInitWithTimeout is a no-op when command was not started", async () => {
+  await awaitWorktreeInitWithTimeout(
+    runWorktreeInitCommand("/nonexistent", null),
+  );
+});
+
+test("awaitWorktreeInitWithTimeout clears timer on normal completion", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-timer-clear-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const initCommand = runWorktreeInitCommand(repoPath, "true");
+    let killCalled = false;
+    const originalKill = initCommand.kill;
+    initCommand.kill = () => {
+      killCalled = true;
+      originalKill();
+    };
+    await awaitWorktreeInitWithTimeout(initCommand);
+    assert.equal(killCalled, false);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

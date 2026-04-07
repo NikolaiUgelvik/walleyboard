@@ -416,6 +416,27 @@ export function runWorktreeInitCommand(
   };
 }
 
+export async function awaitWorktreeInitWithTimeout(
+  initCommand: ReturnType<typeof runWorktreeInitCommand>,
+): Promise<void> {
+  if (!initCommand.started) {
+    return;
+  }
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    initCommand.kill();
+  }, worktreeInitTimeoutMs);
+  try {
+    await initCommand.done;
+    if (timedOut) {
+      throw new Error("Worktree init command timed out after 5 minutes");
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type PreparedWorktreeRemovalResult = {
   status: "removed" | "scheduled";
 };
