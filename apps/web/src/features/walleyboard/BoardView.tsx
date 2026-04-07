@@ -797,7 +797,17 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                             <Text fw={700}>{meta.label}</Text>
                           </Box>
                           <Group gap="xs">
-                            <Badge variant="outline">{columnCount}</Badge>
+                            <Badge
+                              variant="light"
+                              size="lg"
+                              style={{
+                                background: `${meta.accent}14`,
+                                color: meta.accent,
+                                border: `1px solid ${meta.accent}22`,
+                              }}
+                            >
+                              {columnCount}
+                            </Badge>
                             {column === "draft" ? (
                               <Menu withinPortal position="bottom-end">
                                 <Menu.Target>
