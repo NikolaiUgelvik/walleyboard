@@ -777,6 +777,28 @@ export function VirtualizedTicketList({
   }, [scrollRoot]);
 
   useEffect(() => {
+    setVisibleSet((prev) => {
+      const currentIds = new Set(tickets.map((t) => t.id));
+      let changed = false;
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (currentIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      for (const id of currentIds) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [tickets]);
+
+  useEffect(() => {
     onChangeRef.current(column, visibleSet);
   }, [column, visibleSet]);
 
