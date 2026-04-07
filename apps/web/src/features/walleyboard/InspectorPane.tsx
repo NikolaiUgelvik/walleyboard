@@ -288,10 +288,7 @@ export function InspectorPane({
                         !controller.draftEditorCanPersist ||
                         controller.createDraftMutation.isPending
                       }
-                      loading={
-                        controller.createDraftMutation.isPending &&
-                        controller.pendingNewDraftAction === "save"
-                      }
+                      loading={controller.pendingNewDraftAction === "save"}
                     >
                       Save Draft
                     </Button>
@@ -304,10 +301,7 @@ export function InspectorPane({
                         controller.createDraftMutation.isPending ||
                         !controller.draftEditorRepository
                       }
-                      loading={
-                        controller.createDraftMutation.isPending &&
-                        controller.pendingNewDraftAction === "refine"
-                      }
+                      loading={controller.pendingNewDraftAction === "refine"}
                       onClick={controller.handleRefineNewDraft}
                     >
                       Refine
@@ -329,10 +323,7 @@ export function InspectorPane({
                         controller.createDraftMutation.isPending ||
                         !controller.draftEditorRepository
                       }
-                      loading={
-                        controller.createDraftMutation.isPending &&
-                        controller.pendingNewDraftAction === "questions"
-                      }
+                      loading={controller.pendingNewDraftAction === "questions"}
                       onClick={controller.handleQuestionNewDraft}
                     >
                       Questions?
@@ -346,10 +337,7 @@ export function InspectorPane({
                         !controller.draftEditorRepository ||
                         controller.createDraftMutation.isPending
                       }
-                      loading={
-                        controller.createDraftMutation.isPending &&
-                        controller.pendingNewDraftAction === "confirm"
-                      }
+                      loading={controller.pendingNewDraftAction === "confirm"}
                       onClick={controller.handleConfirmNewDraft}
                     >
                       Create Ready
@@ -402,9 +390,13 @@ export function InspectorPane({
                   ) : null}
                   <Badge variant="light" color="gray">
                     {formatDraftStatusLabel({
-                      isRefining: controller.isDraftRefinementActive(
-                        controller.selectedDraft.id,
-                      ),
+                      isRefining:
+                        controller.isDraftRefinementActive(
+                          controller.selectedDraft.id,
+                        ) ||
+                        (controller.refineDraftMutation.isPending &&
+                          controller.refineDraftMutation.variables ===
+                            controller.selectedDraft.id),
                       wizardStatus: controller.selectedDraft.wizard_status,
                     })}
                   </Badge>

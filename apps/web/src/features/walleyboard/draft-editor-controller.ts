@@ -120,11 +120,14 @@ export function createDraftEditorController(input: {
         );
       }
 
+      if (action === "save" || !draftId) {
+        input.setPendingNewDraftAction(null);
+      }
+
       return draftId;
     } catch {
-      return null;
-    } finally {
       input.setPendingNewDraftAction(null);
+      return null;
     }
   };
 

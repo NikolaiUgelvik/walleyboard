@@ -1240,16 +1240,17 @@ export function useWalleyBoardController() {
     draftEditorRepository,
     draftEditorTicketType,
     draftEditorTitle,
-    onConfirmDraft: (input) => {
-      mutations.confirmDraftMutation.mutate(input);
+    onConfirmDraft: async (input) => {
+      await mutations.confirmDraftMutation.mutateAsync(input);
     },
-    onQuestionDraft: (draftId) => {
-      mutations.questionDraftMutation.mutate(draftId);
+    onQuestionDraft: async (draftId) => {
+      await mutations.questionDraftMutation.mutateAsync(draftId);
     },
-    onRefineDraft: (draftId) => {
-      mutations.refineDraftMutation.mutate(draftId);
+    onRefineDraft: async (draftId) => {
+      await mutations.refineDraftMutation.mutateAsync(draftId);
     },
     persistNewDraftFromEditor,
+    setPendingNewDraftAction,
   });
 
   return {

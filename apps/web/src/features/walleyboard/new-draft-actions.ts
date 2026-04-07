@@ -20,16 +20,17 @@ export function createNewDraftActionHandlers(input: {
     repository: RepositoryConfig;
     ticketType: string | null;
     title: string;
-  }) => void;
-  onQuestionDraft: (draftId: string) => void;
-  onRefineDraft: (draftId: string) => void;
+  }) => Promise<void>;
+  onQuestionDraft: (draftId: string) => Promise<void>;
+  onRefineDraft: (draftId: string) => Promise<void>;
   persistNewDraftFromEditor: (
     action: PersistNewDraftAction,
   ) => Promise<string | null>;
+  setPendingNewDraftAction: (value: PersistNewDraftAction | null) => void;
 }) {
   const runPersistedNewDraftAction = (
     action: Exclude<PersistNewDraftAction, "save">,
-    onDraftCreated: (draftId: string) => void,
+    onDraftCreated: (draftId: string) => Promise<void>,
   ): void => {
     void (async () => {
       const draftId = await input.persistNewDraftFromEditor(action);
@@ -37,7 +38,12 @@ export function createNewDraftActionHandlers(input: {
         return;
       }
 
-      onDraftCreated(draftId);
+      try {
+        await onDraftCreated(draftId);
+      } catch {
+      } finally {
+        input.setPendingNewDraftAction(null);
+      }
     })();
   };
 
@@ -58,7 +64,7 @@ export function createNewDraftActionHandlers(input: {
       return;
     }
 
-    runPersistedNewDraftAction("confirm", (draftId) => {
+    runPersistedNewDraftAction("confirm", (draftId) =>
       input.onConfirmDraft({
         acceptanceCriteria: input.draftEditorAcceptanceCriteriaLines,
         description: input.draftEditorDescription,
@@ -67,8 +73,8 @@ export function createNewDraftActionHandlers(input: {
         repository: input.draftEditorRepository as RepositoryConfig,
         ticketType: input.draftEditorTicketType,
         title: input.draftEditorTitle,
-      });
-    });
+      }),
+    );
   };
 
   return {
