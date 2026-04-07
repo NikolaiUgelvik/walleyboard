@@ -423,8 +423,10 @@ export async function startDraftAnalysis(
           activeDraftRuns.delete(draft.id);
           cleanupHostSidecar(runId);
 
+          finalized = true;
+
           spawnAttempt().catch((retryError) => {
-            failRun(
+            failEarly(
               retryError instanceof Error
                 ? retryError.message
                 : `${adapter.label} retry failed to start`,

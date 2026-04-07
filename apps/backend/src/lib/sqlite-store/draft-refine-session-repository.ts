@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import type {
   DraftRefineSession,
   DraftRefineSessionPersistence,
+  DraftRefineSessionStatus,
 } from "../store.js";
 import { nowIso } from "../time.js";
 import type { SqliteStoreContext } from "./shared.js";
@@ -19,7 +20,7 @@ function mapRow(
     repository_id: row.repositoryId,
     adapter_session_ref: row.adapterSessionRef,
     attempt_count: row.attemptCount,
-    status: row.status,
+    status: row.status as DraftRefineSessionStatus,
     created_at: row.createdAt,
     last_attempt_at: row.lastAttemptAt,
   };

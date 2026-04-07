@@ -261,6 +261,8 @@ export interface SessionPersistence {
   getSessionLogs(sessionId: string): string[];
 }
 
+export type DraftRefineSessionStatus = "running" | "completed" | "failed";
+
 export type DraftRefineSession = {
   id: string;
   draft_id: string;
@@ -268,7 +270,7 @@ export type DraftRefineSession = {
   repository_id: string;
   adapter_session_ref: string | null;
   attempt_count: number;
-  status: string;
+  status: DraftRefineSessionStatus;
   created_at: string;
   last_attempt_at: string;
 };
