@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { JSDOM } from "jsdom";
@@ -1006,6 +1006,103 @@ test("opening an inbox item marks that notification instance as read", async () 
       });
     }
   } finally {
+    globalThis.fetch = originalFetch;
+    queryClient.clear();
+    dom.cleanup();
+  }
+});
+
+test("startTicketMutation does not set inspector state on success", async () => {
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  const originalFetch = globalThis.fetch;
+  const inspectorSpy = mock.fn<Dispatch<SetStateAction<unknown>>>();
+  let startTicket:
+    | ((input: {
+        planningEnabled: boolean;
+        ticketId: number;
+      }) => Promise<unknown>)
+    | null = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        message: "Ticket started",
+        resource_refs: {
+          project_id: "project-1",
+          session_id: "session-42",
+          ticket_id: 7,
+        },
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  function Harness() {
+    const { silenceNextInboxItemKey } = useInboxAlert({
+      actionItemKeys: [],
+      inboxQueriesSettled: true,
+    });
+    const mutations = useWalleyBoardMutations({
+      queryClient,
+      pendingDraftEditorSync: null,
+      selectedDraftId: null,
+      selectedProjectId: "project-1",
+      selectedSessionId: null,
+      selectProject: () => undefined,
+      setArchiveActionFeedback: noopStateSetter(),
+      setDefaultBranch: noopStateSetter(),
+      setInspectorState: inspectorSpy as Dispatch<SetStateAction<unknown>>,
+      setPendingDraftEditorSync: noopStateSetter(),
+      setPlanFeedbackBody: noopStateSetter(),
+      setProjectColor: noopStateSetter(),
+      setProjectDeleteConfirmText: noopStateSetter(),
+      setProjectModalOpen: noopStateSetter(),
+      setProjectName: noopStateSetter(),
+      setProjectOptionsFormError: noopStateSetter(),
+      setProjectOptionsProjectId: noopStateSetter(),
+      setProjectOptionsRepositoryTargetBranches: noopStateSetter(),
+      setRepositoryPath: noopStateSetter(),
+      setRequestedChangesBody: noopStateSetter(),
+      setResumeReason: noopStateSetter(),
+      setTerminalCommand: noopStateSetter(),
+      setValidationCommandsText: noopStateSetter(),
+      silenceNextInboxItemKey,
+      tickets: [],
+    });
+    startTicket = mutations.startTicketMutation.mutateAsync;
+    return null;
+  }
+
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await startTicket?.({ planningEnabled: false, ticketId: 7 });
+    });
+
+    assert.equal(
+      inspectorSpy.mock.callCount(),
+      0,
+      "setInspectorState must not be called after starting a ticket",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
     globalThis.fetch = originalFetch;
     queryClient.clear();
     dom.cleanup();
