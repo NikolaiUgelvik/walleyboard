@@ -513,14 +513,6 @@ export function useWalleyBoardMutations({
         return;
       }
 
-      if (ack.resource_refs.session_id) {
-        setInspectorState({
-          kind: "session",
-          sessionId: ack.resource_refs.session_id,
-        });
-      } else {
-        setInspectorState({ kind: "hidden" });
-      }
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["projects", selectedProjectId, "tickets"],
