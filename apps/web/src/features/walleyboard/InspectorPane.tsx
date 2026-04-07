@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import type React from "react";
 
+import { ticketTypeSchema } from "../../../../../packages/contracts/src/index.js";
 import { AgentReviewPanel } from "../../components/AgentReviewPanel.js";
 import { MarkdownCodeEditor } from "../../components/MarkdownCodeEditor.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
@@ -145,24 +146,14 @@ function DraftEditorFields({
       ) : null}
       <Select
         label="Ticket type"
-        data={[
-          { value: "feature", label: "Feature" },
-          { value: "bugfix", label: "Bugfix" },
-          { value: "chore", label: "Chore" },
-          { value: "research", label: "Research" },
-          { value: "refactor", label: "Refactor" },
-        ]}
+        data={ticketTypeSchema.options.map((t) => ({
+          value: t,
+          label: t.charAt(0).toUpperCase() + t.slice(1),
+        }))}
         clearable
         value={controller.draftEditorTicketType}
         onChange={(value) => {
-          if (
-            value === null ||
-            value === "feature" ||
-            value === "bugfix" ||
-            value === "chore" ||
-            value === "research" ||
-            value === "refactor"
-          ) {
+          if (value === null || ticketTypeSchema.safeParse(value).success) {
             controller.setDraftEditorTicketType(value);
           }
         }}
