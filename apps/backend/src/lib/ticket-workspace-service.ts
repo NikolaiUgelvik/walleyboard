@@ -760,13 +760,15 @@ export class TicketWorkspaceService {
 
   async ensurePreview(input: {
     ticketId: number;
+    repositoryId?: string | null;
+    previewStartCommand?: string | null;
     worktreePath: string;
   }): Promise<TicketWorkspacePreview> {
     const runtime = await this.#ensurePreviewRuntime({
       key: getTicketPreviewKey(input.ticketId),
-      repositoryId: null,
+      repositoryId: input.repositoryId ?? null,
       ticketId: input.ticketId,
-      previewStartCommand: null,
+      previewStartCommand: input.previewStartCommand ?? null,
       worktreePath: input.worktreePath,
     });
     return makeTicketPreviewSnapshot(runtime);
