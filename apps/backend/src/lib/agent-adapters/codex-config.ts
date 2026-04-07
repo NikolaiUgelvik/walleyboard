@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parse } from "smol-toml";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
@@ -14,7 +15,6 @@ export function resolveCodexConfigHome(): string {
 }
 
 const codexConfigPath = join(resolveCodexConfigHome(), "config.toml");
-const mcpServerHeaderPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)\]\s*$/;
 const mcpServerSectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)(?:[.\]])/;
 
 function readCodexConfigToml(configPath: string): string | null {
@@ -32,15 +32,24 @@ function readCodexConfigToml(configPath: string): string | null {
 export function listConfiguredCodexMcpServersInConfig(
   configToml: string,
 ): string[] {
-  const servers = new Set<string>();
-  for (const line of configToml.split(/\r?\n/)) {
-    const match = line.trim().match(mcpServerHeaderPattern);
-    if (match?.[1]) {
-      servers.add(match[1]);
+  try {
+    const parsed = parse(configToml) as Record<string, unknown>;
+    const mcpServers = parsed.mcp_servers;
+    if (!mcpServers || typeof mcpServers !== "object") {
+      return [];
     }
+    const servers = mcpServers as Record<string, unknown>;
+    return Object.keys(servers)
+      .filter(
+        (k) =>
+          servers[k] != null &&
+          typeof servers[k] === "object" &&
+          !Array.isArray(servers[k]),
+      )
+      .sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
   }
-
-  return Array.from(servers).sort((left, right) => left.localeCompare(right));
 }
 
 export function listConfiguredCodexMcpServers(): string[] {
