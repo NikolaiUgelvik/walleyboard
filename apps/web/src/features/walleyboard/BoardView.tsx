@@ -681,25 +681,6 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
 
         <Box className="workbench-toolbar">
           <Box className="toolbar-group">
-            {boardColumns.map((column) => {
-              const count =
-                column === "draft"
-                  ? controller.visibleDrafts.length
-                  : controller.groupedTickets[column].length;
-              const meta = boardColumnMeta[column];
-              return (
-                <Badge
-                  key={column}
-                  variant="light"
-                  size="lg"
-                  style={columnBadgeStyle(meta.accent)}
-                >
-                  {meta.label} {count}
-                </Badge>
-              );
-            })}
-          </Box>
-          <Box className="toolbar-group">
             <TextInput
               className="board-search"
               placeholder="Search tickets and drafts..."
