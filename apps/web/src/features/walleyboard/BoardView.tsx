@@ -24,6 +24,8 @@ import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mj
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 // @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
 import IconTerminal2 from "@tabler/icons-react/dist/esm/icons/IconTerminal2.mjs";
+// @ts-expect-error Tabler deep icon entrypoints do not ship declaration files.
+import IconTimelineEventText from "@tabler/icons-react/dist/esm/icons/IconTimelineEventText.mjs";
 import type React from "react";
 import {
   useCallback,
@@ -369,6 +371,19 @@ export function TicketWorkspaceActions({
           }}
         >
           <IconActivityHeartbeat size={16} />
+        </ActionIcon>
+        <ActionIcon
+          aria-label="Open activity timeline"
+          className="project-accent-action"
+          disabled={activityDisabled}
+          title="Timeline"
+          variant="light"
+          onClick={(event) => {
+            event.stopPropagation();
+            controller.openTicketWorkspaceModal(ticket, "timeline");
+          }}
+        >
+          <IconTimelineEventText size={16} />
         </ActionIcon>
         <ActionIcon
           aria-label="Open worktree diff"

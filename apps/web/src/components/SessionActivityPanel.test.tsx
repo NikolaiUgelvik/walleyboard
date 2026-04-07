@@ -189,6 +189,73 @@ test("session activity panel defaults to overview and switches to the timeline t
   }
 });
 
+test("session activity panel starts on timeline tab when defaultTab is timeline", async () => {
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const session = createSession();
+  const attempts: ExecutionAttempt[] = [
+    {
+      id: "attempt-1",
+      session_id: session.id,
+      attempt_number: 1,
+      status: "completed",
+      prompt_kind: "implementation",
+      prompt: "Implement the ticket.",
+      pty_pid: null,
+      started_at: "2026-04-04T10:00:00.000Z",
+      ended_at: "2026-04-04T10:10:00.000Z",
+      end_reason: "completed",
+    },
+  ];
+  const events: StructuredEvent[] = [
+    {
+      id: "event-created",
+      occurred_at: "2026-04-04T09:59:00.000Z",
+      entity_type: "ticket",
+      entity_id: "42",
+      event_type: "ticket.created",
+      payload: {
+        title: "Wire up the activity timeline",
+      },
+    },
+  ];
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <SessionActivityPanel
+            attempts={attempts}
+            defaultTab="timeline"
+            logs={[
+              "Session created for ticket #42: Wire up the activity timeline",
+            ]}
+            reviewRuns={[]}
+            session={session}
+            ticketEvents={events}
+            timelineError={null}
+            timelinePending={false}
+          />
+        </MantineProvider>,
+      );
+    });
+
+    assert.match(
+      harness.window.document.body.textContent ?? "",
+      /Ticket created/,
+    );
+    assert.match(
+      harness.window.document.body.textContent ?? "",
+      /Implementation prompt prepared for attempt 1/,
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
 test("timeline copies raw markdown for implementation prompt entries", async () => {
   const harness = installDom();
   const root = createRoot(harness.mountNode);

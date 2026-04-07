@@ -13,6 +13,7 @@ type ActivityTab = "overview" | "timeline";
 
 export function SessionActivityPanel({
   attempts,
+  defaultTab,
   logs,
   reviewRuns,
   session,
@@ -27,8 +28,11 @@ export function SessionActivityPanel({
   ticketEvents: StructuredEvent[];
   timelineError: string | null;
   timelinePending: boolean;
+  defaultTab?: ActivityTab | undefined;
 }) {
-  const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
+  const [activeTab, setActiveTab] = useState<ActivityTab>(
+    defaultTab ?? "overview",
+  );
 
   return (
     <Tabs

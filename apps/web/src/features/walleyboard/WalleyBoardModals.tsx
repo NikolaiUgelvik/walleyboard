@@ -50,7 +50,8 @@ export function WorkspaceModalContent({
           workspaceTerminalPanelState={workspaceTerminalPanelState}
           TerminalComponent={TicketWorkspaceTerminal}
         />
-      ) : controller.workspaceModal === "activity" ? (
+      ) : controller.workspaceModal === "activity" ||
+        controller.workspaceModal === "timeline" ? (
         controller.sessionQuery.isPending ||
         controller.sessionLogsQuery.isPending ? (
           <Loader size="sm" />
@@ -62,6 +63,9 @@ export function WorkspaceModalContent({
           <SessionActivityPanel
             key={controller.session.id}
             attempts={controller.sessionAttempts}
+            defaultTab={
+              controller.workspaceModal === "timeline" ? "timeline" : undefined
+            }
             logs={controller.sessionLogs}
             reviewRuns={controller.reviewRuns}
             session={controller.session}
@@ -103,7 +107,8 @@ export function WalleyBoardModals({
         ? controller.workspaceTerminalContext?.kind === "repository_tabs"
           ? "Project terminal"
           : "Terminal"
-        : controller.workspaceModal === "activity"
+        : controller.workspaceModal === "activity" ||
+            controller.workspaceModal === "timeline"
           ? "Activity stream"
           : "Workspace";
 
