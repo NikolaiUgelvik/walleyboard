@@ -191,59 +191,54 @@ export function ProjectRail({
                 ) : null}
               </Group>
               {hasInboxItems ? (
-                controller.actionItems.map((item) => {
-                  const isUnread =
-                    controller.readInboxItemState[item.key] !==
-                    item.notificationKey;
-                  return (
-                    <Indicator
-                      key={item.key}
-                      color="#D97706"
-                      size={8}
-                      offset={4}
-                      disabled={!isUnread}
+                controller.actionItems.map((item) => (
+                  <Indicator
+                    key={item.key}
+                    color="#D97706"
+                    size={8}
+                    offset={4}
+                    disabled={!controller.unreadInboxItemKeys.has(item.key)}
+                  >
+                    <UnstyledButton
+                      className="project-inbox-item"
+                      data-tone={item.color}
+                      style={
+                        {
+                          "--project-inbox-accent": normalizeProjectColor(
+                            item.projectColor,
+                          ),
+                        } as CSSProperties
+                      }
+                      onClick={() => {
+                        setInboxOpen(false);
+                        controller.openInboxItem(item);
+                      }}
                     >
-                      <UnstyledButton
-                        className="project-inbox-item"
-                        data-tone={item.color}
-                        style={
-                          {
-                            "--project-inbox-accent": normalizeProjectColor(
-                              item.projectColor,
-                            ),
-                          } as CSSProperties
-                        }
-                        onClick={() => {
-                          setInboxOpen(false);
-                          controller.openInboxItem(item);
-                        }}
-                      >
-                        <Stack gap={6}>
-                          <Box>
-                            <Text fw={700} size="sm">
-                              {item.title}
-                            </Text>
-                            <Text size="xs" c="dimmed">
-                              {item.projectName}
-                            </Text>
-                          </Box>
-                          <MarkdownContent
-                            className="markdown-muted markdown-small"
-                            content={item.message}
-                          />
-                          <Badge
-                            variant="light"
-                            color={item.color === "yellow" ? "yellow" : "blue"}
-                            size="sm"
-                            style={{ alignSelf: "flex-start" }}
-                          >
-                            {item.actionLabel}
-                          </Badge>
-                        </Stack>
-                      </UnstyledButton>
-                    </Indicator>
-                  );
-                })
+                      <Stack gap={6}>
+                        <Box>
+                          <Text fw={700} size="sm">
+                            {item.title}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            {item.projectName}
+                          </Text>
+                        </Box>
+                        <MarkdownContent
+                          className="markdown-muted markdown-small"
+                          content={item.message}
+                        />
+                        <Badge
+                          variant="light"
+                          color={item.color === "yellow" ? "yellow" : "blue"}
+                          size="sm"
+                          style={{ alignSelf: "flex-start" }}
+                        >
+                          {item.actionLabel}
+                        </Badge>
+                      </Stack>
+                    </UnstyledButton>
+                  </Indicator>
+                ))
               ) : (
                 <Text size="sm" c="dimmed">
                   No actionable notifications.

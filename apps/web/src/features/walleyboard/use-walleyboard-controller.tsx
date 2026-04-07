@@ -84,6 +84,21 @@ import {
   shouldKeepWorkspaceModalOpen,
 } from "./workspace-modal-state.js";
 
+export function computeMarkAllReadState(
+  currentState: Record<string, string>,
+  actionItems: ReadonlyArray<{ key: string; notificationKey: string }>,
+): Record<string, string> | null {
+  const nextState = { ...currentState };
+  let changed = false;
+  for (const item of actionItems) {
+    if (nextState[item.key] !== item.notificationKey) {
+      nextState[item.key] = item.notificationKey;
+      changed = true;
+    }
+  }
+  return changed ? nextState : null;
+}
+
 export function useWalleyBoardController() {
   const queryClient = useQueryClient();
   const {
@@ -529,9 +544,12 @@ export function useWalleyBoardController() {
       ticketAiReviewActiveById,
       ticketAiReviewResolvedById,
     });
-  const unreadActionItemCount = actionItems.filter(
-    (item) => readInboxItemState[item.key] !== item.notificationKey,
-  ).length;
+  const unreadInboxItemKeys = new Set(
+    actionItems
+      .filter((item) => readInboxItemState[item.key] !== item.notificationKey)
+      .map((item) => item.key),
+  );
+  const unreadActionItemCount = unreadInboxItemKeys.size;
   const inboxQueriesSettled =
     projectsLoaded &&
     globalDraftsQueries.every((query) => !query.isPending) &&
@@ -1066,19 +1084,12 @@ export function useWalleyBoardController() {
 
   const markAllInboxItemsAsRead = (): void => {
     setReadInboxItemState((currentState) => {
-      const nextState = { ...currentState };
-      let changed = false;
-      for (const item of actionItems) {
-        if (nextState[item.key] !== item.notificationKey) {
-          nextState[item.key] = item.notificationKey;
-          changed = true;
-        }
-      }
-      if (!changed) {
+      const result = computeMarkAllReadState(currentState, actionItems);
+      if (result === null) {
         return currentState;
       }
-      writeInboxReadState(nextState);
-      return nextState;
+      writeInboxReadState(result);
+      return result;
     });
   };
 
@@ -1254,8 +1265,8 @@ export function useWalleyBoardController() {
     ...mutations,
     actionItems,
     markAllInboxItemsAsRead,
-    readInboxItemState,
     unreadActionItemCount,
+    unreadInboxItemKeys,
     agentReviewHistoryModalOpen,
     archiveActionFeedback,
     archiveModalOpen,

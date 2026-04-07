@@ -12,7 +12,10 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
-import { useWalleyBoardController } from "./use-walleyboard-controller.js";
+import {
+  computeMarkAllReadState,
+  useWalleyBoardController,
+} from "./use-walleyboard-controller.js";
 import { setOptimisticRunningReviewRun } from "./use-walleyboard-mutations.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
@@ -248,4 +251,54 @@ test("hides a review inbox item immediately after agent review starts from cache
   );
 
   assert.doesNotMatch(hiddenMarkup, /review-31/);
+});
+
+test("computeMarkAllReadState marks all unread items as read", () => {
+  const currentState: Record<string, string> = {
+    "item-a": "old-key-a",
+    "item-b": "key-b",
+  };
+  const actionItems = [
+    { key: "item-a", notificationKey: "new-key-a" },
+    { key: "item-b", notificationKey: "key-b" },
+    { key: "item-c", notificationKey: "key-c" },
+  ];
+
+  const result = computeMarkAllReadState(currentState, actionItems);
+
+  assert.deepEqual(result, {
+    "item-a": "new-key-a",
+    "item-b": "key-b",
+    "item-c": "key-c",
+  });
+});
+
+test("computeMarkAllReadState returns null when all items are already read", () => {
+  const currentState: Record<string, string> = {
+    "item-a": "key-a",
+    "item-b": "key-b",
+  };
+  const actionItems = [
+    { key: "item-a", notificationKey: "key-a" },
+    { key: "item-b", notificationKey: "key-b" },
+  ];
+
+  const result = computeMarkAllReadState(currentState, actionItems);
+
+  assert.equal(result, null);
+});
+
+test("computeMarkAllReadState preserves existing read state for other keys", () => {
+  const currentState: Record<string, string> = {
+    "item-a": "key-a",
+    "stale-item": "stale-key",
+  };
+  const actionItems = [{ key: "item-a", notificationKey: "new-key-a" }];
+
+  const result = computeMarkAllReadState(currentState, actionItems);
+
+  assert.deepEqual(result, {
+    "item-a": "new-key-a",
+    "stale-item": "stale-key",
+  });
 });

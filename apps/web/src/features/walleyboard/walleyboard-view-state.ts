@@ -13,10 +13,10 @@ export type ProjectRailController = Pick<
   | "openProjectModal"
   | "openProjectOptions"
   | "projectsQuery"
-  | "readInboxItemState"
   | "selectProject"
   | "selectedProjectId"
   | "unreadActionItemCount"
+  | "unreadInboxItemKeys"
 >;
 
 export type BoardViewController = Pick<
@@ -286,10 +286,10 @@ export function createWalleyBoardViewState(
     openProjectModal: controller.openProjectModal,
     openProjectOptions: controller.openProjectOptions,
     projectsQuery: controller.projectsQuery,
-    readInboxItemState: controller.readInboxItemState,
     selectProject: controller.selectProject,
     selectedProjectId: controller.selectedProjectId,
     unreadActionItemCount: controller.unreadActionItemCount,
+    unreadInboxItemKeys: controller.unreadInboxItemKeys,
   };
 
   const boardView: BoardViewController = {
