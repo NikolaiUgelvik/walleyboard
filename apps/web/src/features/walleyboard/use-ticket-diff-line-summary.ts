@@ -15,7 +15,10 @@ export function getTicketsWithVisibleDiffSummary(
   );
 }
 
-export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
+export function useTicketDiffLineSummary(
+  tickets: TicketFrontmatter[],
+  visibleTicketIds?: Set<number>,
+) {
   const ticketsWithVisibleDiffSummary =
     getTicketsWithVisibleDiffSummary(tickets);
   const ticketDiffSummaryQueries = useQueries({
@@ -26,6 +29,8 @@ export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
           `/tickets/${ticket.id}/workspace/summary`,
         ),
       retry: false,
+      enabled:
+        visibleTicketIds === undefined || visibleTicketIds.has(ticket.id),
     })),
   });
 

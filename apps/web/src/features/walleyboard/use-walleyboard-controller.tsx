@@ -65,9 +65,9 @@ import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useSelectedRepositoryWorkspace } from "./use-selected-repository-workspace.js";
 import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
-import { useTicketDiffLineSummary } from "./use-ticket-diff-line-summary.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
+import { useVisibleTicketDiffSummary } from "./use-visible-ticket-diff-summary.js";
 import {
   useDraftEditorState,
   useDraftInspectorState,
@@ -475,16 +475,15 @@ export function useWalleyBoardController() {
     setWorkspaceModal,
   ]);
 
-  const tickets = ticketRecords;
-  const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(tickets);
+  const { ticketDiffLineSummaryByTicketId, setVisibleTicketIds } =
+    useVisibleTicketDiffSummary(ticketRecords);
   const { ticketAiReviewActiveById, ticketAiReviewResolvedById } =
     useTicketAiReviewStatus(globalTickets, projectRecords);
-  const selectedSessionTicketId =
-    tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
-    null;
-  const selectedSessionTicketStatus =
-    tickets.find((ticket) => ticket.session_id === selectedSessionId)?.status ??
-    null;
+  const selectedSessionRecord = ticketRecords.find(
+    (ticket) => ticket.session_id === selectedSessionId,
+  );
+  const selectedSessionTicketId = selectedSessionRecord?.id ?? null;
+  const selectedSessionTicketStatus = selectedSessionRecord?.status ?? null;
   const selectedWorkspaceTicketId = resolveSelectedWorkspaceTicketId({
     selectedSessionTicketId,
     workspaceModal,
@@ -573,7 +572,7 @@ export function useWalleyBoardController() {
     silenceNextInboxItemKey,
     setTerminalCommand,
     setValidationCommandsText,
-    tickets,
+    tickets: ticketRecords,
   });
   const {
     handleTicketPreviewAction,
@@ -582,7 +581,7 @@ export function useWalleyBoardController() {
   } = useTicketWorkspacePreview({
     startPreviewMutation: mutations.startTicketWorkspacePreviewMutation,
     stopPreviewMutation: mutations.stopTicketWorkspacePreviewMutation,
-    tickets,
+    tickets: ticketRecords,
   });
 
   const selectedProject =
@@ -734,10 +733,9 @@ export function useWalleyBoardController() {
   const session = sessionQuery.data?.session ?? null;
   const sessionAttempts = sessionAttemptsQuery.data?.attempts ?? [];
   const sessionLogs = sessionLogsQuery.data?.logs ?? [];
-  const selectedSessionTicket =
-    tickets.find((ticket) => ticket.session_id === selectedSessionId) ?? null;
+  const selectedSessionTicket = selectedSessionRecord ?? null;
   const selectedInspectorTicket =
-    tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
+    ticketRecords.find((ticket) => ticket.id === selectedTicketId) ?? null;
   const ticketEvents = ticketEventsQuery.data?.events ?? [];
   const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
   const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
@@ -764,7 +762,7 @@ export function useWalleyBoardController() {
     resolveVisibleBoardItems({
       boardSearch,
       drafts,
-      tickets,
+      tickets: ticketRecords,
     });
 
   const selectedSessionTicketSession = selectedSessionTicket?.session_id
@@ -1397,7 +1395,7 @@ export function useWalleyBoardController() {
         setBoardSearch,
         setInspectorState,
         ticketId,
-        tickets,
+        tickets: ticketRecords,
       }),
     reviewPackage,
     reviewPackageQuery,
@@ -1489,8 +1487,9 @@ export function useWalleyBoardController() {
     ticketWorkspaceDiffLayout,
     ticketWorkspaceDiffQuery,
     ticketWorkspacePreviewByTicketId,
-    tickets,
+    tickets: ticketRecords,
     ticketsQuery,
+    setVisibleTicketIds,
     validationCommandsText,
     visibleDrafts,
     visibleTickets,

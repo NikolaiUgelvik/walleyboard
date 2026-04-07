@@ -462,6 +462,7 @@ function createWalleyBoardController(): WalleyBoardController {
     setProjectModalOpen: () => undefined,
     setTicketWorkspaceDiffLayout: () => undefined,
     stopAgentReviewMutation: createMutationStub(),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspaceDiff: null,
     ticketWorkspaceDiffLayout: "split",
@@ -1241,6 +1242,7 @@ test("ticket cards show inline diff summaries for in-progress, review, and done 
     stopTicketMutation: createMutationStub(),
     stopTicketWorkspacePreviewMutation: createMutationStub(),
     ticketAiReviewActiveById: new Map(),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map([
       [readyTicket.id, { additions: 99, deletions: 1, files: 9 }],
       [inProgressTicket.id, { additions: 12, deletions: 4, files: 2 }],
@@ -1311,6 +1313,7 @@ test("done ticket cards omit inline diff summaries when no diff data is availabl
     stopTicketMutation: createMutationStub(),
     stopTicketWorkspacePreviewMutation: createMutationStub(),
     ticketAiReviewActiveById: new Map(),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspacePreviewByTicketId: new Map(),
     visibleDrafts: [],
@@ -1388,6 +1391,7 @@ test("ticket cards place workspace controls under metadata and move statuses int
     stopTicketMutation: createMutationStub(),
     stopTicketWorkspacePreviewMutation: createMutationStub(),
     ticketAiReviewActiveById: new Map(),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map([
       [ticket.id, { additions: 12, deletions: 4, files: 2 }],
     ]),
@@ -1484,6 +1488,7 @@ test("ticket cards keep the session status badge when only controller.session is
     stopTicketMutation: createMutationStub(),
     stopTicketWorkspacePreviewMutation: createMutationStub(),
     ticketAiReviewActiveById: new Map(),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map([
       [ticket.id, { additions: 5, deletions: 2, files: 1 }],
     ]),
@@ -1640,6 +1645,7 @@ test("ticket cards hide completed session badges and keep waiting and failed bad
     stopTicketMutation: createMutationStub(),
     stopTicketWorkspacePreviewMutation: createMutationStub(),
     ticketAiReviewActiveById: new Map(),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspacePreviewByTicketId: new Map(),
     visibleDrafts: [],
@@ -1720,6 +1726,7 @@ test("ticket cards pin the overflow trigger in a dedicated header slot during AI
     stopTicketMutation: createMutationStub(),
     stopTicketWorkspacePreviewMutation: createMutationStub(),
     ticketAiReviewActiveById: new Map([[ticket.id, true]]),
+    setVisibleTicketIds: () => undefined,
     ticketDiffLineSummaryByTicketId: new Map([
       [ticket.id, { additions: 8, deletions: 3, files: 1 }],
     ]),
