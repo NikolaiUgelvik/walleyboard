@@ -41,6 +41,7 @@ import {
   arraysEqual,
   collectRepositoryTargetBranchUpdates,
   collectRepositoryValidationCommandUpdates,
+  computeMarkAllReadState,
   defaultProjectColor,
   findLatestRevertableRefineEvent,
   hasRepositoryTargetBranchChanges,
@@ -83,21 +84,6 @@ import {
   resolveSelectedWorkspaceTicketId,
   shouldKeepWorkspaceModalOpen,
 } from "./workspace-modal-state.js";
-
-export function computeMarkAllReadState(
-  currentState: Record<string, string>,
-  actionItems: ReadonlyArray<{ key: string; notificationKey: string }>,
-): Record<string, string> | null {
-  const nextState = { ...currentState };
-  let changed = false;
-  for (const item of actionItems) {
-    if (nextState[item.key] !== item.notificationKey) {
-      nextState[item.key] = item.notificationKey;
-      changed = true;
-    }
-  }
-  return changed ? nextState : null;
-}
 
 export function useWalleyBoardController() {
   const queryClient = useQueryClient();

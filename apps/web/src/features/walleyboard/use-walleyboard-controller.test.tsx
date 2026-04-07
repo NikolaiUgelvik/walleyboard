@@ -12,10 +12,8 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
-import {
-  computeMarkAllReadState,
-  useWalleyBoardController,
-} from "./use-walleyboard-controller.js";
+import { computeMarkAllReadState } from "./shared-utils.js";
+import { useWalleyBoardController } from "./use-walleyboard-controller.js";
 import { setOptimisticRunningReviewRun } from "./use-walleyboard-mutations.js";
 
 (globalThis as typeof globalThis & { React?: typeof React }).React = React;
