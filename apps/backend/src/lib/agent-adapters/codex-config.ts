@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parse, stringify } from "smol-toml";
+import { parse } from "smol-toml";
 
 import type { Project } from "../../../../../packages/contracts/src/index.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
@@ -15,6 +15,7 @@ export function resolveCodexConfigHome(): string {
 }
 
 const codexConfigPath = join(resolveCodexConfigHome(), "config.toml");
+const mcpServerSectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)(?:[.\]])/;
 
 function readCodexConfigToml(configPath: string): string | null {
   if (!existsSync(configPath)) {
@@ -93,17 +94,23 @@ export function filterCodexConfigToml(
     return configToml;
   }
 
-  const parsed = parse(configToml) as Record<string, unknown>;
-  const mcpServers = parsed.mcp_servers as Record<string, unknown> | undefined;
-  if (mcpServers && typeof mcpServers === "object") {
-    for (const serverName of Object.keys(mcpServers)) {
-      if (disabled.has(serverName)) {
-        delete mcpServers[serverName];
-      }
+  const filteredLines: string[] = [];
+  let keepCurrentSection = true;
+
+  for (const line of configToml.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      const match = trimmed.match(mcpServerSectionPattern);
+      keepCurrentSection = match?.[1] ? !disabled.has(match[1]) : true;
+    }
+
+    if (keepCurrentSection) {
+      filteredLines.push(line);
     }
   }
 
-  return stringify(parsed);
+  const normalized = filteredLines.join("\n").replace(/\n{3,}/g, "\n\n");
+  return configToml.endsWith("\n") ? `${normalized.trimEnd()}\n` : normalized;
 }
 
 export function writeCodexConfigOverride(project: Project): string | null {
