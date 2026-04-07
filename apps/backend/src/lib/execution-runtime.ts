@@ -2,6 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { IPty } from "node-pty";
 import type {
+  AgentAdapter,
   ExecutionSession,
   Project,
   RepositoryConfig,
@@ -71,6 +72,7 @@ import {
   resolveTrackedExit,
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
+import { getAgentEnvOverridesCached } from "./walleyboard-conf.js";
 
 type ActiveSessionProcess = ChildProcessWithoutNullStreams;
 
@@ -248,10 +250,12 @@ export class ExecutionRuntime {
   }
 
   startWorkspaceTerminal(input: {
+    agentType?: AgentAdapter;
     sessionId: string;
     worktreePath: string;
   }): WorkspaceTerminalRuntime {
     return startTrackedWorkspaceTerminal({
+      ...(input.agentType ? { agentType: input.agentType } : {}),
       sessionId: input.sessionId,
       worktreePath: input.worktreePath,
       workspaceTerminals: this.#workspaceTerminals,
@@ -490,11 +494,13 @@ export class ExecutionRuntime {
   }
 
   startManualTerminal({
+    agentType,
     sessionId,
     worktreePath,
     attemptId,
   }: ManualTerminalStartInput): void {
     startTrackedManualTerminal({
+      ...(agentType ? { agentType } : {}),
       attemptId,
       eventHub: this.#eventHub,
       manualExitWaiters: this.#manualExitWaiters,
@@ -686,7 +692,7 @@ export class ExecutionRuntime {
       "ticket",
     );
 
-    const processEnv = buildProcessEnv();
+    const processEnv = buildProcessEnv(getAgentEnvOverridesCached(adapter.id));
     let child: ChildProcessWithoutNullStreams;
     const startedAt = new Date().toISOString();
 

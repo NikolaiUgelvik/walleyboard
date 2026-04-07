@@ -142,6 +142,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRouteOptions> = async (
         }
 
         executionRuntime.startManualTerminal({
+          agentType: session.agent_adapter,
           sessionId: session.id,
           worktreePath: session.worktree_path,
           attemptId: session.current_attempt_id,

@@ -411,6 +411,7 @@ export function handleTicketWorkspaceTerminalConnection(
     sessionId: session.id,
     startWorkspaceTerminal: ({ sessionId, worktreePath }) =>
       dependencies.executionRuntime.startWorkspaceTerminal({
+        agentType: session.agent_adapter,
         sessionId,
         worktreePath,
       }),

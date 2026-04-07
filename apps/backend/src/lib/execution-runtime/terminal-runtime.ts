@@ -1,7 +1,9 @@
 import { type IPty, spawn as spawnPty } from "node-pty";
 
+import type { AgentAdapter } from "../../../../../packages/contracts/src/index.js";
 import type { EventHub } from "../event-hub.js";
 import type { SessionPersistence } from "../store.js";
+import { getAgentEnvOverridesCached } from "../walleyboard-conf.js";
 import { buildProcessEnv } from "./helpers.js";
 import { publishSessionOutput } from "./publishers.js";
 import { resolveTrackedExit } from "./waiters.js";
@@ -42,6 +44,7 @@ export function closeTrackedWorkspaceTerminals(
 }
 
 export function startTrackedWorkspaceTerminal(input: {
+  agentType?: AgentAdapter;
   sessionId: string;
   worktreePath: string;
   workspaceTerminals: Map<string, Set<WorkspaceTerminalRuntime>>;
@@ -52,7 +55,11 @@ export function startTrackedWorkspaceTerminal(input: {
     child = spawnPty("bash", ["--noprofile", "--norc"], {
       cwd: input.worktreePath,
       env: {
-        ...buildProcessEnv(),
+        ...buildProcessEnv(
+          input.agentType
+            ? getAgentEnvOverridesCached(input.agentType)
+            : undefined,
+        ),
         TERM: "xterm-256color",
       },
       cols: 120,
@@ -93,6 +100,7 @@ export function startTrackedWorkspaceTerminal(input: {
 }
 
 export function startTrackedManualTerminal(input: {
+  agentType?: AgentAdapter;
   attemptId: string | null;
   eventHub: EventHub;
   manualExitWaiters: Map<string, Set<(didExit: boolean) => void>>;
@@ -112,7 +120,11 @@ export function startTrackedManualTerminal(input: {
     child = spawnPty("bash", ["--noprofile", "--norc"], {
       cwd: input.worktreePath,
       env: {
-        ...buildProcessEnv(),
+        ...buildProcessEnv(
+          input.agentType
+            ? getAgentEnvOverridesCached(input.agentType)
+            : undefined,
+        ),
         TERM: "dumb",
       },
       cols: 120,

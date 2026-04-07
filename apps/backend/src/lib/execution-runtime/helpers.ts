@@ -140,12 +140,18 @@ export function normalizeOptionalReasoningEffort(
   return effort ?? null;
 }
 
-export function buildProcessEnv(): Record<string, string> {
-  return Object.fromEntries(
+export function buildProcessEnv(
+  agentEnvOverrides?: Record<string, string>,
+): Record<string, string> {
+  const base = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => {
       return typeof entry[1] === "string";
     }),
   );
+  if (agentEnvOverrides) {
+    Object.assign(base, agentEnvOverrides);
+  }
+  return base;
 }
 
 export function formatPreparedRunCommand(run: PreparedAgentRun): string {

@@ -14,6 +14,7 @@ import type {
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
+import { loadAgentEnvOverrides, resetConfCache } from "../walleyboard-conf.js";
 import { runMergeRecovery } from "./run-merge-recovery.js";
 
 function createProject(): Project {
@@ -151,6 +152,8 @@ test("runMergeRecovery streams Docker child-process output through the log callb
 
   try {
     process.env.WALLEYBOARD_HOME = walleyBoardHome;
+    resetConfCache();
+    await loadAgentEnvOverrides();
     const recoveryPromise = runMergeRecovery({
       adapter: {
         id: "codex",
@@ -240,6 +243,7 @@ test("runMergeRecovery streams Docker child-process output through the log callb
       ticket: createTicket(),
     });
 
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(child.stdin.writableEnded, true);
     emitStdout(
       '{"summary":"Resolved the conflict and continued the rebase."}\nStill waiting on one more tool check.\n',

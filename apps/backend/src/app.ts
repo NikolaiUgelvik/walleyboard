@@ -30,6 +30,7 @@ import { createSocketServer } from "./lib/socket-server.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import type { WalleyboardPersistence } from "./lib/store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
+import { loadAgentEnvOverrides } from "./lib/walleyboard-conf.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -85,6 +86,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     new CodexCliAdapter(),
     new ClaudeCodeAdapter(),
   ]);
+  await loadAgentEnvOverrides();
   const executionRuntime =
     options.executionRuntime ??
     new ExecutionRuntime({

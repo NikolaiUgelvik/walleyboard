@@ -14,6 +14,7 @@ import type { DockerRuntime } from "../docker-runtime.js";
 import { preserveDraftArtifactImages } from "../draft-artifact-images.js";
 import type { EventHub } from "../event-hub.js";
 import type { ExecutionRuntimePersistence } from "../store.js";
+import { getAgentEnvOverrides } from "../walleyboard-conf.js";
 import {
   clearExecutionActivity,
   updateExecutionActivity,
@@ -117,7 +118,8 @@ export async function startDraftAnalysis(
     useDockerRuntime: true,
     ...(hasMeaningfulContent(instruction) ? { instruction } : {}),
   });
-  const processEnv = buildProcessEnv();
+  const agentEnvOverrides = await getAgentEnvOverrides(adapter.id);
+  const processEnv = buildProcessEnv(agentEnvOverrides);
   let child: ChildProcessWithoutNullStreams;
   const startedAt = new Date().toISOString();
 

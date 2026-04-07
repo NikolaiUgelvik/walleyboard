@@ -18,6 +18,7 @@ import {
   upsertObservedExecutionActivity,
 } from "../backend-observability.js";
 import type { DockerRuntime } from "../docker-runtime.js";
+import { getAgentEnvOverrides } from "../walleyboard-conf.js";
 import {
   buildProcessEnv,
   buildReviewRunOutputPath,
@@ -88,6 +89,8 @@ export async function runTicketReviewSession(input: {
     input.registerHostSidecar(reviewSessionId, sidecar);
   }
 
+  const agentEnvOverrides = await getAgentEnvOverrides(input.adapter.id);
+
   return await new Promise((resolve, reject) => {
     let child: ChildProcessWithoutNullStreams;
     const startedAt = new Date().toISOString();
@@ -111,7 +114,7 @@ export async function runTicketReviewSession(input: {
       child = spawnUnattendedProcessInSession({
         cwd: worktreePath,
         dockerRuntime: input.dockerRuntime,
-        env: buildProcessEnv(),
+        env: buildProcessEnv(agentEnvOverrides),
         run,
         sessionId: reviewSessionId,
       });

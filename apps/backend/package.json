@@ -20,6 +20,7 @@
     "fastify-rate-limit": "npm:@fastify/rate-limit@^10.3.0",
     "nanoid": "^5.1.5",
     "node-pty": "^1.1.0",
+    "smol-toml": "^1.6.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
