@@ -22,7 +22,7 @@ import { commandRouteRateLimit } from "../../lib/rate-limit.js";
 import {
   prepareWorktreeAsync,
   resetPreparedWorktreeImmediately,
-  runPreWorktreeCommand,
+  runWorktreeInitCommand,
 } from "../../lib/worktree-service.js";
 import type { TicketRouteDependencies } from "./shared.js";
 
@@ -113,18 +113,21 @@ export function registerTicketExecutionRoutes(
             }),
           );
         });
+        const initCommand = runWorktreeInitCommand(
+          runtime.worktreePath,
+          project.worktree_init_command,
+        );
+        if (initCommand.started && project.worktree_init_run_sequential) {
+          await initCommand.done;
+        }
         executionRuntime.startExecution({
           project,
           repository,
           ticket,
           session,
         });
-        const preWorktree = runPreWorktreeCommand(
-          runtime.worktreePath,
-          project.pre_worktree_command,
-        );
-        if (preWorktree.started) {
-          ticketWorkspaceService.deferWatcher(ticket.id, preWorktree.done);
+        if (initCommand.started && !project.worktree_init_run_sequential) {
+          ticketWorkspaceService.deferWatcher(ticket.id, initCommand.done);
         }
 
         reply.send(
@@ -413,7 +416,7 @@ export function registerTicketExecutionRoutes(
           repository,
           session.worktree_path,
           ticket.working_branch,
-          project.post_worktree_command,
+          project.worktree_teardown_command,
         );
         for (const warning of cleanup.warnings) {
           appendSessionOutput(
@@ -469,6 +472,13 @@ export function registerTicketExecutionRoutes(
           );
         });
 
+        const initCommand = runWorktreeInitCommand(
+          runtime.worktreePath,
+          project.worktree_init_command,
+        );
+        if (initCommand.started && project.worktree_init_run_sequential) {
+          await initCommand.done;
+        }
         executionRuntime.startExecution({
           project,
           repository,
@@ -478,14 +488,10 @@ export function registerTicketExecutionRoutes(
             ? { additionalInstruction: input.reason }
             : {}),
         });
-        const preWorktree = runPreWorktreeCommand(
-          runtime.worktreePath,
-          project.pre_worktree_command,
-        );
-        if (preWorktree.started) {
+        if (initCommand.started && !project.worktree_init_run_sequential) {
           ticketWorkspaceService.deferWatcher(
             restartResult.ticket.id,
-            preWorktree.done,
+            initCommand.done,
           );
         }
 

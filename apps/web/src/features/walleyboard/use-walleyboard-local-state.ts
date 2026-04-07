@@ -130,17 +130,21 @@ export function useProjectOptionsState() {
     setProjectOptionsTicketReasoningEffort,
   ] = useState<ProjectReasoningEffortSelection>("default");
   const [
-    projectOptionsPreWorktreeCommand,
-    setProjectOptionsPreWorktreeCommand,
+    projectOptionsWorktreeInitCommand,
+    setProjectOptionsWorktreeInitCommand,
   ] = useState("");
   const [
     projectOptionsPreviewStartCommand,
     setProjectOptionsPreviewStartCommand,
   ] = useState("");
   const [
-    projectOptionsPostWorktreeCommand,
-    setProjectOptionsPostWorktreeCommand,
+    projectOptionsWorktreeTeardownCommand,
+    setProjectOptionsWorktreeTeardownCommand,
   ] = useState("");
+  const [
+    projectOptionsWorktreeInitRunSequential,
+    setProjectOptionsWorktreeInitRunSequential,
+  ] = useState(false);
   const [
     projectOptionsRepositoryTargetBranches,
     setProjectOptionsRepositoryTargetBranches,
@@ -163,8 +167,9 @@ export function useProjectOptionsState() {
     projectOptionsDraftModelPreset,
     projectOptionsDraftReasoningEffort,
     projectOptionsFormError,
-    projectOptionsPostWorktreeCommand,
-    projectOptionsPreWorktreeCommand,
+    projectOptionsWorktreeTeardownCommand,
+    projectOptionsWorktreeInitCommand,
+    projectOptionsWorktreeInitRunSequential,
     projectOptionsPreviewStartCommand,
     projectOptionsProjectId,
     projectOptionsRepositoryTargetBranches,
@@ -184,8 +189,9 @@ export function useProjectOptionsState() {
     setProjectOptionsDraftModelPreset,
     setProjectOptionsDraftReasoningEffort,
     setProjectOptionsFormError,
-    setProjectOptionsPostWorktreeCommand,
-    setProjectOptionsPreWorktreeCommand,
+    setProjectOptionsWorktreeTeardownCommand,
+    setProjectOptionsWorktreeInitCommand,
+    setProjectOptionsWorktreeInitRunSequential,
     setProjectOptionsPreviewStartCommand,
     setProjectOptionsProjectId,
     setProjectOptionsRepositoryTargetBranches,

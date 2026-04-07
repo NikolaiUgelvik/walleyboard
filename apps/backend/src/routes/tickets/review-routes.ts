@@ -370,7 +370,7 @@ export function registerTicketReviewRoutes(
                 const worktreeRemoval = removePreparedWorktree(
                   repository,
                   lockedSession.worktree_path,
-                  lockedProject.post_worktree_command,
+                  lockedProject.worktree_teardown_command,
                   lockedTicket.working_branch,
                 );
                 if (worktreeRemoval.status === "scheduled") {
@@ -380,7 +380,7 @@ export function registerTicketReviewRoutes(
                 workspaceRetired = true;
                 logLines.push(
                   worktreeRemoval.status === "scheduled"
-                    ? `Scheduled worktree removal for ${lockedSession.worktree_path} after the post-worktree command finishes`
+                    ? `Scheduled worktree removal for ${lockedSession.worktree_path} after the worktree teardown command finishes`
                     : `Removed worktree ${lockedSession.worktree_path}`,
                 );
               } catch (error) {

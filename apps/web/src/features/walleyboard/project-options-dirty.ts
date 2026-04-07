@@ -11,8 +11,9 @@ type ProjectOptionsDirtyInput = {
   draftModelValue: string | null;
   draftReasoningEffortValue: string | null;
   disabledMcpServers: string[];
-  postWorktreeCommandValue: string | null;
-  preWorktreeCommandValue: string | null;
+  worktreeTeardownCommandValue: string | null;
+  worktreeInitCommandValue: string | null;
+  worktreeInitRunSequential: boolean;
   previewStartCommandValue: string | null;
   project: Project | null;
   projectOptionsAutomaticAgentReview: boolean;
@@ -49,8 +50,9 @@ export function hasProjectOptionsDirty(
       project.automatic_agent_review_run_limit ||
     input.projectOptionsDefaultReviewAction !== project.default_review_action ||
     input.previewStartCommandValue !== project.preview_start_command ||
-    input.preWorktreeCommandValue !== project.pre_worktree_command ||
-    input.postWorktreeCommandValue !== project.post_worktree_command ||
+    input.worktreeInitCommandValue !== project.worktree_init_command ||
+    input.worktreeTeardownCommandValue !== project.worktree_teardown_command ||
+    input.worktreeInitRunSequential !== project.worktree_init_run_sequential ||
     input.draftModelValue !== project.draft_analysis_model ||
     input.draftReasoningEffortValue !==
       project.draft_analysis_reasoning_effort ||

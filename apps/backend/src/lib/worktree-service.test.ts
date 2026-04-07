@@ -25,7 +25,7 @@ import {
   prepareWorktree,
   removePreparedWorktree,
   resetPreparedWorktreeImmediately,
-  runPreWorktreeCommand,
+  runWorktreeInitCommand,
 } from "./worktree-service.js";
 
 function setWalleyBoardHome(path: string): () => void {
@@ -96,8 +96,9 @@ function createProject(slug: string): Project {
     default_review_action: "direct_merge",
     default_target_branch: "main",
     preview_start_command: null,
-    pre_worktree_command: null,
-    post_worktree_command: null,
+    worktree_init_command: null,
+    worktree_teardown_command: null,
+    worktree_init_run_sequential: false,
     draft_analysis_model: null,
     draft_analysis_reasoning_effort: null,
     ticket_work_model: null,
@@ -323,7 +324,7 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
     assert.equal(result.warnings.length, 1);
     const warning = result.warnings[0];
     assert.ok(warning);
-    assert.match(warning, /Post-worktree command failed/);
+    assert.match(warning, /Worktree teardown command failed/);
     assert.equal(readFileSync(cleanupLogPath, "utf8"), "cleanup ran\n");
     assert.equal(existsSync(runtime.worktreePath), false);
     assert.equal(
@@ -337,7 +338,7 @@ test("resetPreparedWorktreeImmediately removes the worktree and branch even when
   }
 });
 
-test("runPreWorktreeCommand runs project hooks with bash", async () => {
+test("runWorktreeInitCommand runs project hooks with bash", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-pre-worktree-bash-"));
 
   try {
@@ -348,7 +349,7 @@ test("runPreWorktreeCommand runs project hooks with bash", async () => {
     configureGitIdentity(repoPath);
 
     const outputPath = join(tempDir, "pre-worktree.log");
-    const result = runPreWorktreeCommand(
+    const result = runWorktreeInitCommand(
       repoPath,
       `[[ "bash" == "bash" ]] && printf 'pre hook ran\\n' > "${outputPath}"`,
     );
