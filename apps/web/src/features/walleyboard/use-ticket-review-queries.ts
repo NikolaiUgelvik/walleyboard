@@ -19,7 +19,8 @@ export function useTicketReviewQueries(input: {
   selectedWorkspaceTicketId: number | null;
   workspaceModal: WorkspaceModalKind | null;
 }) {
-  const activityModalOpen = input.workspaceModal === "activity";
+  const activityPanelVisible =
+    input.workspaceModal === "activity" || input.workspaceModal === "timeline";
 
   const reviewPackageQuery = useQuery({
     queryKey: ["tickets", input.selectedSessionTicketId, "review-package"],
@@ -52,7 +53,7 @@ export function useTicketReviewQueries(input: {
       ),
     enabled:
       input.selectedSessionTicketId !== null &&
-      (input.selectedSessionTicketStatus === "review" || activityModalOpen),
+      (input.selectedSessionTicketStatus === "review" || activityPanelVisible),
   });
 
   const sessionAttemptsQuery = useQuery({
@@ -61,7 +62,7 @@ export function useTicketReviewQueries(input: {
       fetchJson<SessionAttemptsResponse>(
         `/sessions/${input.selectedSessionId}/attempts`,
       ),
-    enabled: activityModalOpen && input.selectedSessionId !== null,
+    enabled: activityPanelVisible && input.selectedSessionId !== null,
   });
 
   const ticketEventsQuery = useQuery({
@@ -70,7 +71,7 @@ export function useTicketReviewQueries(input: {
       fetchJson<TicketEventsResponse>(
         `/tickets/${input.selectedSessionTicketId}/events`,
       ),
-    enabled: activityModalOpen && input.selectedSessionTicketId !== null,
+    enabled: activityPanelVisible && input.selectedSessionTicketId !== null,
   });
 
   const ticketWorkspaceDiffQuery = useQuery({
