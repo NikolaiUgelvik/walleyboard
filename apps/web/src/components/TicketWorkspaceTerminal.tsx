@@ -78,6 +78,11 @@ export function TicketWorkspaceTerminal({
     terminal.loadAddon(fitAddon);
     terminal.open(container);
     fitAddon.fit();
+    const focusFrame = requestAnimationFrame(() => {
+      if (terminalRef.current === terminal) {
+        terminal.focus();
+      }
+    });
     resizeObserver.observe(container);
 
     const sendResize = () => {
@@ -161,6 +166,7 @@ export function TicketWorkspaceTerminal({
     });
 
     return () => {
+      cancelAnimationFrame(focusFrame);
       resizeObserver.disconnect();
       disposable.dispose();
       socket.disconnect();
