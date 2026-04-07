@@ -5,16 +5,17 @@ import test from "node:test";
 
 import { z } from "zod";
 
-import type {
-  DraftTicketState,
-  ExecutionAttempt,
-  ExecutionSession,
-  Project,
-  RepositoryConfig,
-  ReviewPackage,
-  ReviewRun,
-  StructuredEvent,
-  TicketFrontmatter,
+import {
+  type DraftTicketState,
+  type ExecutionAttempt,
+  type ExecutionSession,
+  type Project,
+  type RepositoryConfig,
+  type ReviewPackage,
+  type ReviewRun,
+  type StructuredEvent,
+  type TicketFrontmatter,
+  ticketTypeSchema,
 } from "../../../../../packages/contracts/src/index.js";
 
 import { CodexCliAdapter } from "./codex-cli-adapter.js";
@@ -207,7 +208,7 @@ function resolveWalleyBoardHomeForTest(): string {
 const draftResultSchema = z.object({
   title: z.string(),
   description: z.string(),
-  ticket_type: z.enum(["feature", "bugfix", "chore", "research"]),
+  ticket_type: ticketTypeSchema,
   acceptance_criteria: z.array(z.string()),
 });
 
