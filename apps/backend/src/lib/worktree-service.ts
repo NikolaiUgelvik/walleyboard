@@ -383,13 +383,15 @@ function addWorkspaceExclude(workspacePath: string, pattern: string): void {
   );
 }
 
+export const worktreeInitTimeoutMs = 5 * 60 * 1_000;
+
 export function runWorktreeInitCommand(
   worktreePath: string,
   command: string | null | undefined,
-): { started: boolean; done: Promise<void> } {
+): { started: boolean; done: Promise<void>; kill: () => void } {
   const normalizedCommand = normalizeOptionalCommand(command);
   if (!normalizedCommand || !existsSync(worktreePath)) {
-    return { started: false, done: Promise.resolve() };
+    return { started: false, done: Promise.resolve(), kill: () => {} };
   }
 
   const child = spawn(worktreeCommandShell, ["-lc", normalizedCommand], {
@@ -403,7 +405,15 @@ export function runWorktreeInitCommand(
     child.on("error", () => resolve());
   });
 
-  return { started: true, done };
+  return {
+    started: true,
+    done,
+    kill: () => {
+      try {
+        child.kill();
+      } catch {}
+    },
+  };
 }
 
 export type PreparedWorktreeRemovalResult = {

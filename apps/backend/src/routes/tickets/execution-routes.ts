@@ -23,6 +23,7 @@ import {
   prepareWorktreeAsync,
   resetPreparedWorktreeImmediately,
   runWorktreeInitCommand,
+  worktreeInitTimeoutMs,
 } from "../../lib/worktree-service.js";
 import type { TicketRouteDependencies } from "./shared.js";
 
@@ -113,21 +114,46 @@ export function registerTicketExecutionRoutes(
             }),
           );
         });
-        const initCommand = runWorktreeInitCommand(
-          runtime.worktreePath,
-          project.worktree_init_command,
-        );
-        if (initCommand.started && project.worktree_init_run_sequential) {
-          await initCommand.done;
-        }
-        executionRuntime.startExecution({
-          project,
-          repository,
-          ticket,
-          session,
-        });
-        if (initCommand.started && !project.worktree_init_run_sequential) {
-          ticketWorkspaceService.deferWatcher(ticket.id, initCommand.done);
+        if (project.worktree_init_run_sequential) {
+          const initCommand = runWorktreeInitCommand(
+            runtime.worktreePath,
+            project.worktree_init_command,
+          );
+          if (initCommand.started) {
+            await Promise.race([
+              initCommand.done,
+              new Promise<void>((_, reject) =>
+                setTimeout(() => {
+                  initCommand.kill();
+                  reject(
+                    new Error(
+                      "Worktree init command timed out after 5 minutes",
+                    ),
+                  );
+                }, worktreeInitTimeoutMs),
+              ),
+            ]);
+          }
+          executionRuntime.startExecution({
+            project,
+            repository,
+            ticket,
+            session,
+          });
+        } else {
+          executionRuntime.startExecution({
+            project,
+            repository,
+            ticket,
+            session,
+          });
+          const initCommand = runWorktreeInitCommand(
+            runtime.worktreePath,
+            project.worktree_init_command,
+          );
+          if (initCommand.started) {
+            ticketWorkspaceService.deferWatcher(ticket.id, initCommand.done);
+          }
         }
 
         reply.send(
@@ -472,27 +498,55 @@ export function registerTicketExecutionRoutes(
           );
         });
 
-        const initCommand = runWorktreeInitCommand(
-          runtime.worktreePath,
-          project.worktree_init_command,
-        );
-        if (initCommand.started && project.worktree_init_run_sequential) {
-          await initCommand.done;
-        }
-        executionRuntime.startExecution({
-          project,
-          repository,
-          ticket: restartResult.ticket,
-          session: restartResult.session,
-          ...(input.reason && input.reason.trim().length > 0
-            ? { additionalInstruction: input.reason }
-            : {}),
-        });
-        if (initCommand.started && !project.worktree_init_run_sequential) {
-          ticketWorkspaceService.deferWatcher(
-            restartResult.ticket.id,
-            initCommand.done,
+        if (project.worktree_init_run_sequential) {
+          const initCommand = runWorktreeInitCommand(
+            runtime.worktreePath,
+            project.worktree_init_command,
           );
+          if (initCommand.started) {
+            await Promise.race([
+              initCommand.done,
+              new Promise<void>((_, reject) =>
+                setTimeout(() => {
+                  initCommand.kill();
+                  reject(
+                    new Error(
+                      "Worktree init command timed out after 5 minutes",
+                    ),
+                  );
+                }, worktreeInitTimeoutMs),
+              ),
+            ]);
+          }
+          executionRuntime.startExecution({
+            project,
+            repository,
+            ticket: restartResult.ticket,
+            session: restartResult.session,
+            ...(input.reason && input.reason.trim().length > 0
+              ? { additionalInstruction: input.reason }
+              : {}),
+          });
+        } else {
+          executionRuntime.startExecution({
+            project,
+            repository,
+            ticket: restartResult.ticket,
+            session: restartResult.session,
+            ...(input.reason && input.reason.trim().length > 0
+              ? { additionalInstruction: input.reason }
+              : {}),
+          });
+          const initCommand = runWorktreeInitCommand(
+            runtime.worktreePath,
+            project.worktree_init_command,
+          );
+          if (initCommand.started) {
+            ticketWorkspaceService.deferWatcher(
+              restartResult.ticket.id,
+              initCommand.done,
+            );
+          }
         }
 
         reply.send(

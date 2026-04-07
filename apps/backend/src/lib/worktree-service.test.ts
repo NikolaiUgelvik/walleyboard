@@ -363,6 +363,63 @@ test("runWorktreeInitCommand runs project hooks with bash", async () => {
   }
 });
 
+test("runWorktreeInitCommand completes before continuation when awaited sequentially", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-sequential-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const outputPath = join(tempDir, "sequential.log");
+    const result = runWorktreeInitCommand(
+      repoPath,
+      `printf 'done\\n' > "${outputPath}"`,
+    );
+    assert.equal(result.started, true);
+    await result.done;
+
+    assert.equal(existsSync(outputPath), true);
+    assert.equal(readFileSync(outputPath, "utf8"), "done\n");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runWorktreeInitCommand kill terminates a running process", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-kill-"));
+
+  try {
+    const repoPath = join(tempDir, "repo");
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    const result = runWorktreeInitCommand(repoPath, "sleep 60");
+    assert.equal(result.started, true);
+    result.kill();
+    await result.done;
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runWorktreeInitCommand returns a no-op kill when command is empty", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-init-noop-"));
+
+  try {
+    const result = runWorktreeInitCommand(tempDir, null);
+    assert.equal(result.started, false);
+    assert.equal(typeof result.kill, "function");
+    result.kill();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("removePreparedWorktree runs post-worktree hooks with bash before cleanup", async () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-remove-worktree-bash-"),
