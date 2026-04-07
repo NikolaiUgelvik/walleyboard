@@ -405,6 +405,7 @@ function createWalleyBoardController(): WalleyBoardController {
     boardError: null,
     boardLoading: false,
     boardSearch: "",
+    deleteDraftMutation: createMutationStub(),
     closeArchiveModal: () => undefined,
     closeProjectOptionsModal: () => undefined,
     closeWorkspaceModal: () => undefined,
