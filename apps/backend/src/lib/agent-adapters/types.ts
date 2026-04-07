@@ -72,6 +72,7 @@ export type DraftRunInput = {
   useDockerRuntime: boolean;
   adapterSessionRef?: string;
   retryAttempt?: number;
+  maxRetryAttempts?: number;
 };
 
 export type ExecutionRunInput = {

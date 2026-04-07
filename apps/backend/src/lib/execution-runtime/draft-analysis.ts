@@ -58,7 +58,7 @@ export type DraftAnalysisDeps = {
   store: ExecutionRuntimePersistence;
 };
 
-const maxDraftRefineAttempts = 3;
+export const maxDraftRefineAttempts = 3;
 
 export async function startDraftAnalysis(
   deps: DraftAnalysisDeps,
@@ -174,7 +174,12 @@ export async function startDraftAnalysis(
       ...(attemptNumber > 0 && capturedSessionRef
         ? { adapterSessionRef: capturedSessionRef }
         : {}),
-      ...(attemptNumber > 0 ? { retryAttempt: attemptNumber } : {}),
+      ...(attemptNumber > 0
+        ? {
+            retryAttempt: attemptNumber,
+            maxRetryAttempts: maxDraftRefineAttempts,
+          }
+        : {}),
     });
 
     let child: ChildProcessWithoutNullStreams;

@@ -79,15 +79,21 @@ test("buildDraftRefinementPrompt uses human-readable Markdown sections", () => {
 });
 
 test("buildDraftRefinementRetryInstruction includes attempt number and MCP guidance", () => {
-  const result = buildDraftRefinementRetryInstruction(1);
+  const result = buildDraftRefinementRetryInstruction(1, 3);
   assert.match(result, /retry attempt 2 of 3/);
   assert.match(result, /mcp__walleyboard__submit_refined_draft/);
   assert.doesNotMatch(result, /Original instruction/);
 });
 
+test("buildDraftRefinementRetryInstruction uses provided maxAttempts", () => {
+  const result = buildDraftRefinementRetryInstruction(0, 5);
+  assert.match(result, /retry attempt 1 of 5/);
+});
+
 test("buildDraftRefinementRetryInstruction preserves original instruction", () => {
   const result = buildDraftRefinementRetryInstruction(
     0,
+    3,
     "Focus on error handling paths.",
   );
   assert.match(result, /retry attempt 1 of 3/);
