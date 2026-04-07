@@ -674,7 +674,9 @@ export function useWalleyBoardController() {
   const newDraftFormDirty =
     inspectorState.kind === "new_draft" &&
     (draftEditorTitle.trim().length > 0 ||
-      draftEditorDescription.trim().length > 0);
+      draftEditorDescription.trim().length > 0 ||
+      draftEditorAcceptanceCriteria.trim().length > 0 ||
+      draftEditorTicketType !== "feature");
   const draftEvents = draftEventsQuery.data?.events ?? [];
   const latestDraftEvent = draftEvents.at(0);
   const latestDraftEventMeta = latestDraftEvent
