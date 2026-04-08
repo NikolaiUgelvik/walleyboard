@@ -1,8 +1,5 @@
-import "@xterm/xterm/css/xterm.css";
-
 import { Code, Stack, Text, useComputedColorScheme } from "@mantine/core";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import { FitAddon, init, Terminal } from "ghostty-web";
 import { useEffect, useRef, useState } from "react";
 
 import { connectWalleyboardSocket } from "../lib/socket-io.js";
@@ -21,6 +18,19 @@ type TicketWorkspaceTerminalProps = {
   surfaceLabel: "ticket" | "repository";
   worktreePath: string | null;
 };
+
+let ghosttyWebInitialization: Promise<void> | null = null;
+
+function initializeGhosttyWeb() {
+  if (!ghosttyWebInitialization) {
+    ghosttyWebInitialization = init().catch((error) => {
+      ghosttyWebInitialization = null;
+      throw error;
+    });
+  }
+
+  return ghosttyWebInitialization;
+}
 
 export function TicketWorkspaceTerminal({
   socketPath,
@@ -46,133 +56,169 @@ export function TicketWorkspaceTerminal({
       return;
     }
 
+    let cancelled = false;
+    let terminal: Terminal | null = null;
+    let fitAddon: FitAddon | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let focusFrame: number | null = null;
+    let socket: ReturnType<typeof connectWalleyboardSocket> | null = null;
+    let disposable: { dispose(): void } | null = null;
+
     setError(null);
     setResolvedWorktreePath(worktreePath);
-    const terminal = new Terminal(
-      buildTicketWorkspaceTerminalOptions(terminalThemeRef.current),
-    );
-    const fitAddon = new FitAddon();
-    const socket = connectWalleyboardSocket("/terminals", {
-      auth: {
-        socketPath,
-      },
-    });
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-    const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-      if (!socket.connected) {
-        return;
-      }
-
-      socket.emit(
-        "terminal.message",
-        JSON.stringify({
-          type: "terminal.resize",
-          cols: terminal.cols,
-          rows: terminal.rows,
-        }),
-      );
-    });
-
-    terminal.loadAddon(fitAddon);
-    terminal.open(container);
-    fitAddon.fit();
-    const focusFrame = requestAnimationFrame(() => {
-      if (terminalRef.current === terminal) {
-        terminal.focus();
-      }
-    });
-    resizeObserver.observe(container);
-
-    const sendResize = () => {
-      socket.emit(
-        "terminal.message",
-        JSON.stringify({
-          type: "terminal.resize",
-          cols: terminal.cols,
-          rows: terminal.rows,
-        }),
-      );
-    };
-
-    socket.on("connect", () => {
-      setError(null);
-      sendResize();
-    });
-    socket.on("terminal.message", (rawMessage: string) => {
-      try {
-        const message = JSON.parse(String(rawMessage)) as
-          | {
-              type?: "terminal.started";
-              worktree_path?: string | null;
-            }
-          | {
-              type?: "terminal.output";
-              data?: string;
-            }
-          | {
-              type?: "terminal.error";
-              message?: string;
-            }
-          | {
-              type?: "terminal.exit";
-              exit_code?: number;
-              signal?: number;
-            };
-
-        if (message.type === "terminal.started") {
-          setResolvedWorktreePath(message.worktree_path ?? null);
+    container.replaceChildren();
+    void initializeGhosttyWeb()
+      .then(() => {
+        if (cancelled) {
           return;
         }
 
-        if (message.type === "terminal.output" && message.data) {
-          terminal.write(message.data);
-          return;
-        }
+        terminal = new Terminal(
+          buildTicketWorkspaceTerminalOptions(terminalThemeRef.current),
+        );
+        fitAddon = new FitAddon();
+        socket = connectWalleyboardSocket("/terminals", {
+          auth: {
+            socketPath,
+          },
+        });
+        const startedTerminal = terminal;
+        const startedFitAddon = fitAddon;
+        const startedSocket = socket;
+        terminalRef.current = startedTerminal;
+        fitAddonRef.current = startedFitAddon;
+        container.replaceChildren();
+        resizeObserver = new ResizeObserver(() => {
+          startedFitAddon.fit();
+          if (!startedSocket.connected) {
+            return;
+          }
 
-        if (message.type === "terminal.error") {
-          const detail = message.message ?? "Workspace terminal failed";
-          setError(detail);
-          terminal.writeln(`\r\n${detail}`);
-          return;
-        }
-
-        if (message.type === "terminal.exit") {
-          terminal.writeln(
-            `\r\n[terminal exited: ${message.signal ?? message.exit_code ?? "unknown"}]`,
+          startedSocket.emit(
+            "terminal.message",
+            JSON.stringify({
+              type: "terminal.resize",
+              cols: startedTerminal.cols,
+              rows: startedTerminal.rows,
+            }),
           );
+        });
+
+        startedTerminal.loadAddon(startedFitAddon);
+        startedTerminal.open(container);
+        startedTerminal.clear();
+        startedFitAddon.fit();
+        focusFrame = requestAnimationFrame(() => {
+          if (terminalRef.current === startedTerminal) {
+            startedTerminal.focus();
+          }
+        });
+        resizeObserver.observe(container);
+
+        const sendResize = () => {
+          startedSocket.emit(
+            "terminal.message",
+            JSON.stringify({
+              type: "terminal.resize",
+              cols: startedTerminal.cols,
+              rows: startedTerminal.rows,
+            }),
+          );
+        };
+
+        startedSocket.on("connect", () => {
+          setError(null);
+          sendResize();
+        });
+        startedSocket.on("terminal.message", (rawMessage: string) => {
+          try {
+            const message = JSON.parse(String(rawMessage)) as
+              | {
+                  type?: "terminal.started";
+                  worktree_path?: string | null;
+                }
+              | {
+                  type?: "terminal.output";
+                  data?: string;
+                }
+              | {
+                  type?: "terminal.error";
+                  message?: string;
+                }
+              | {
+                  type?: "terminal.exit";
+                  exit_code?: number;
+                  signal?: number;
+                };
+
+            if (message.type === "terminal.started") {
+              setResolvedWorktreePath(message.worktree_path ?? null);
+              return;
+            }
+
+            if (message.type === "terminal.output" && message.data) {
+              startedTerminal.write(message.data);
+              return;
+            }
+
+            if (message.type === "terminal.error") {
+              const detail = message.message ?? "Workspace terminal failed";
+              setError(detail);
+              startedTerminal.writeln(`\r\n${detail}`);
+              return;
+            }
+
+            if (message.type === "terminal.exit") {
+              startedTerminal.writeln(
+                `\r\n[terminal exited: ${message.signal ?? message.exit_code ?? "unknown"}]`,
+              );
+            }
+          } catch {
+            setError("Unable to read terminal output");
+          }
+        });
+        startedSocket.on("connect_error", () => {
+          setError("The workspace terminal could not connect.");
+        });
+
+        disposable = startedTerminal.onData((data: string) => {
+          if (!startedSocket.connected) {
+            return;
+          }
+
+          startedSocket.emit(
+            "terminal.message",
+            JSON.stringify({
+              type: "terminal.input",
+              data,
+            }),
+          );
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
         }
-      } catch {
-        setError("Unable to read terminal output");
-      }
-    });
-    socket.on("connect_error", () => {
-      setError("The workspace terminal could not connect.");
-    });
 
-    const disposable = terminal.onData((data: string) => {
-      if (!socket.connected) {
-        return;
-      }
-
-      socket.emit(
-        "terminal.message",
-        JSON.stringify({
-          type: "terminal.input",
-          data,
-        }),
-      );
-    });
+        const detail =
+          error instanceof Error && error.message
+            ? `The workspace terminal could not start: ${error.message}`
+            : "The workspace terminal could not start.";
+        setError(detail);
+      });
 
     return () => {
-      cancelAnimationFrame(focusFrame);
-      resizeObserver.disconnect();
-      disposable.dispose();
-      socket.disconnect();
+      cancelled = true;
+      if (focusFrame !== null) {
+        cancelAnimationFrame(focusFrame);
+      }
+
+      resizeObserver?.disconnect();
+      disposable?.dispose();
+      socket?.disconnect();
       fitAddonRef.current = null;
       terminalRef.current = null;
-      terminal.dispose();
+      terminal?.dispose();
       container.replaceChildren();
     };
   }, [socketPath, worktreePath]);
