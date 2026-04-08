@@ -1,5 +1,4 @@
-import type { FitAddon } from "@xterm/addon-fit";
-import type { Terminal } from "@xterm/xterm";
+import type { CanvasRenderer, FitAddon, Terminal } from "ghostty-web";
 import React, { type RefObject } from "react";
 
 type TerminalTheme = NonNullable<
@@ -10,6 +9,7 @@ type TerminalLike = {
   options: {
     theme?: TerminalTheme;
   };
+  renderer?: Pick<CanvasRenderer, "setTheme">;
 };
 
 type FitAddonLike = Pick<FitAddon, "fit">;
@@ -38,11 +38,11 @@ export function resolveTerminalTheme(
 
 export function buildTicketWorkspaceTerminalOptions(theme: TerminalTheme) {
   return {
-    allowProposedApi: false,
-    convertEol: true,
     cursorBlink: true,
-    fontFamily: "'IBM Plex Mono', 'SFMono-Regular', monospace",
-    fontSize: 13,
+    fontFamily:
+      "'Cascadia Mono', 'Cascadia Code', 'Consolas', 'Menlo', 'Monaco', 'SFMono-Regular', monospace",
+    fontSize: 14,
+    smoothScrollDuration: 0,
     theme,
   } satisfies NonNullable<ConstructorParameters<typeof Terminal>[0]>;
 }
@@ -57,7 +57,13 @@ export function updateTicketWorkspaceTerminalTheme(
     return theme;
   }
 
-  terminal.options.theme = theme;
+  if (terminal.options.theme) {
+    Object.assign(terminal.options.theme, theme);
+  } else {
+    terminal.options.theme = theme;
+  }
+
+  terminal.renderer?.setTheme(theme);
   fitAddon?.fit();
   return theme;
 }

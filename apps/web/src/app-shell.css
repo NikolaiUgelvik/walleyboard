@@ -1623,9 +1623,17 @@ body {
   padding: 10px;
 }
 
-.ticket-workspace-terminal-screen,
-.ticket-workspace-terminal-screen .xterm {
+.ticket-workspace-terminal-screen {
+  caret-color: transparent;
+  color: transparent;
+  font-size: 0;
   height: 100%;
+  line-height: 0;
+  position: relative;
+}
+
+.ticket-workspace-terminal-screen canvas {
+  display: block;
 }
 
 .ticket-workspace-preview-frame {
