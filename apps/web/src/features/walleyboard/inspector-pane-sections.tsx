@@ -1095,7 +1095,7 @@ export function SessionInspectorSection({
   controller: InspectorPaneController;
 }) {
   const selectedSessionTicket = controller.selectedSessionTicket;
-  if (!controller.session) {
+  if (controller.selectedSessionId === null) {
     return (
       <SectionCard
         title="Ticket session"
@@ -1130,6 +1130,19 @@ export function SessionInspectorSection({
       >
         <Text size="sm" c="red">
           {controller.sessionQuery.error.message}
+        </Text>
+      </SectionCard>
+    );
+  }
+
+  if (!controller.session) {
+    return (
+      <SectionCard
+        title="Ticket session"
+        description="Session details are not available yet."
+      >
+        <Text size="sm" c="dimmed">
+          Session details are not available yet.
         </Text>
       </SectionCard>
     );
