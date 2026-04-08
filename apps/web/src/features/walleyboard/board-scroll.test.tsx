@@ -1776,6 +1776,62 @@ test("ticket cards pin the overflow trigger in a dedicated header slot during AI
   }
 });
 
+test("draft cards pin the overflow trigger in a dedicated header slot", async () => {
+  const harness = installDom();
+  const controller = createWalleyBoardController();
+  const draft = createDraft("draft-99", "Draft with structured header");
+
+  Object.assign(controller as Record<string, unknown>, {
+    deleteDraftMutation: createMutationStub(),
+    groupedTickets: {
+      draft: [],
+      ready: [],
+      in_progress: [],
+      review: [],
+      done: [],
+    },
+    visibleDrafts: [draft],
+  });
+
+  const root = createRoot(harness.mountNode);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <BoardView controller={controller} />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const menuButton = harness.mountNode.querySelector<HTMLButtonElement>(
+      '[aria-label="More actions for draft draft-99"]',
+    );
+    assert.ok(menuButton, "Expected the draft menu trigger button");
+
+    const headerMenu = menuButton.closest(".board-card-header-menu");
+    assert.ok(
+      headerMenu,
+      "Expected the menu button inside board-card-header-menu",
+    );
+
+    const header = headerMenu.closest(".board-card-header");
+    assert.ok(header, "Expected board-card-header wrapping the draft header");
+    assert.equal(header.children.length, 2);
+
+    const headerMain = header.querySelector(".board-card-header-main");
+    assert.ok(headerMain, "Expected board-card-header-main inside the header");
+    assert.equal(header.firstElementChild, headerMain);
+    assert.equal(header.lastElementChild, headerMenu);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
 test("review tickets disable merge and create pull request actions while AI review runs", async () => {
   const harness = installDom();
   const controller = createWalleyBoardController();
