@@ -53,6 +53,15 @@ export function VirtualizedTicketList({
     }
 
     const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) continue;
+        const el = entry.target as HTMLElement;
+        const id = Number(el.dataset.ticketVirtual);
+        if (!Number.isNaN(id) && el.offsetHeight > 0) {
+          heightCache.current.set(id, el.offsetHeight);
+        }
+      }
+
       setVisibleSet((prev) => {
         const next = new Set(prev);
         let changed = false;
