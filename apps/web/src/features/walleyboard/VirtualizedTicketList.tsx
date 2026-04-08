@@ -43,6 +43,7 @@ export function VirtualizedTicketList({
 
   useEffect(() => {
     if (!HAS_INTERSECTION_OBSERVER) return;
+    if (scrollRoot === null) return;
 
     const observerOptions: IntersectionObserverInit = {
       rootMargin: "200px 0px",

@@ -127,6 +127,25 @@ function TicketDiffSummaryProbe({ tickets }: { tickets: TicketFrontmatter[] }) {
   );
 }
 
+function VisibleDiffSummaryProbe({
+  tickets,
+  visibleTicketIds,
+}: {
+  tickets: TicketFrontmatter[];
+  visibleTicketIds: Set<number>;
+}) {
+  const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(
+    tickets,
+    visibleTicketIds,
+  );
+
+  return React.createElement(
+    "pre",
+    undefined,
+    JSON.stringify([...ticketDiffLineSummaryByTicketId.entries()]),
+  );
+}
+
 test("includes done tickets when selecting cards that should load diff summaries", () => {
   const tickets = [
     createTicket({ id: 1, status: "ready", session_id: null }),
@@ -210,6 +229,85 @@ test("loads persisted line counts for done tickets from the workspace summary en
         "http://127.0.0.1:4000/tickets/4/workspace/summary",
       ]);
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await act(async () => {
+      root.unmount();
+    });
+    dom.restore();
+  }
+});
+
+test("skips diff queries for tickets not in the visible set", async () => {
+  const dom = installDom();
+  const queryClient = createQueryClient();
+  const root = createRoot(dom.mountNode);
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: string[] = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    fetchCalls.push(url);
+
+    return new Response(
+      JSON.stringify({
+        workspace_summary: {
+          added_lines: 10,
+          files_changed: 2,
+          generated_at: "2026-04-04T00:00:00.000Z",
+          has_changes: true,
+          removed_lines: 5,
+          source: "review_artifact",
+          ticket_id: 0,
+        },
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          React.createElement(VisibleDiffSummaryProbe, {
+            tickets: [
+              createTicket({
+                id: 2,
+                status: "in_progress",
+                session_id: "session-2",
+              }),
+              createTicket({
+                id: 3,
+                status: "review",
+                session_id: "session-3",
+              }),
+              createTicket({
+                id: 4,
+                status: "done",
+                session_id: null,
+                working_branch: null,
+              }),
+            ],
+            visibleTicketIds: new Set([3]),
+          }),
+        ),
+      );
+    });
+
+    await waitFor(() => {
+      assert.ok(fetchCalls.length > 0, "At least one fetch was made");
+    });
+
+    assert.deepEqual(
+      fetchCalls,
+      ["http://127.0.0.1:4000/tickets/3/workspace/summary"],
+      "Only visible ticket 3 triggered a fetch",
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await act(async () => {

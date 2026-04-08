@@ -470,6 +470,49 @@ test("off-screen ticket sentinel is focusable and re-renders card on intersectio
   }
 });
 
+test("scrollRoot is forwarded to IntersectionObserver as root option", async () => {
+  IntersectionObserverMock.reset();
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const controller = createControllerStub();
+  const tickets = [createTicket({ id: 1, title: "Ticket A" })];
+  const scrollContainer = harness.window.document.createElement("div");
+  harness.window.document.body.appendChild(scrollContainer);
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <VirtualizedTicketList
+            tickets={tickets}
+            column="in_progress"
+            controller={controller}
+            onVisibleTicketIdsChange={() => {}}
+            scrollRoot={scrollContainer as unknown as Element}
+          />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    const observer = IntersectionObserverMock.instances.find(
+      (o) => o.elements.size > 0,
+    );
+    assert.ok(observer, "Observer created");
+    assert.equal(
+      observer.options?.root,
+      scrollContainer,
+      "Observer root matches scrollRoot prop",
+    );
+  } finally {
+    scrollContainer.remove();
+    await act(async () => {
+      root.unmount();
+    });
+    harness.cleanup();
+  }
+});
+
 test("useVisibleTicketDiffSummary merges IDs from multiple columns", async () => {
   const harness = installDom();
   const root = createRoot(harness.mountNode);
