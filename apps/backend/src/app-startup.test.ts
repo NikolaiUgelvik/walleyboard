@@ -9,9 +9,16 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-
+import type {
+  InboxAlertPayload,
+  ProtocolEvent,
+} from "../../../packages/contracts/src/index.js";
 import { createApp } from "./app.js";
-import { EventHub } from "./lib/event-hub.js";
+import { EventHub, makeProtocolEvent } from "./lib/event-hub.js";
+import {
+  createSocketServer,
+  type SocketServerFactory,
+} from "./lib/socket-server.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import {
   buildTicketArtifactFilePath,
@@ -22,6 +29,29 @@ import {
   createIsolatedApp,
   createTestDockerRuntime,
 } from "./test-support/create-isolated-app.js";
+
+async function waitForPromiseWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 test("createApp skips startup Docker cleanup when explicitly disabled", async () => {
   const dockerRuntime = createTestDockerRuntime();
@@ -220,6 +250,213 @@ test("createApp closes active workspace previews during shutdown", async () => {
       "idle",
     );
   } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createApp awaits socket server shutdown during backend close", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-app-socket-shutdown-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+  const dockerRuntime = createTestDockerRuntime();
+
+  let closeCalls = 0;
+  let resolveSocketServerClose!: () => void;
+  const socketServerClosed = new Promise<void>((resolve) => {
+    resolveSocketServerClose = resolve;
+  });
+  const socketServerFactory: SocketServerFactory = () => ({
+    close: async () => {
+      closeCalls += 1;
+      await socketServerClosed;
+    },
+  });
+
+  let closePromise: Promise<void> | null = null;
+
+  try {
+    const app = await createApp({
+      databasePath,
+      dockerRuntime,
+      skipStartupDockerCleanup: true,
+      socketServerFactory,
+      ticketWorkspaceService: new TicketWorkspaceService({
+        apiBaseUrl: "http://127.0.0.1:4000",
+        eventHub: new EventHub(),
+      }),
+    });
+
+    closePromise = app.close();
+    if (!closePromise) {
+      throw new Error("Expected app.close() to have started");
+    }
+
+    const startedClosePromise = closePromise;
+    let closeSettled = false;
+    startedClosePromise.then(() => {
+      closeSettled = true;
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(closeCalls, 1);
+    assert.equal(closeSettled, false);
+
+    resolveSocketServerClose();
+    await startedClosePromise;
+  } finally {
+    resolveSocketServerClose();
+    await closePromise?.catch(() => {});
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createApp publishes inbox alerts over the events socket", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-app-inbox-alert-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+  const previousWalleyBoardHome = process.env.WALLEYBOARD_HOME;
+  process.env.WALLEYBOARD_HOME = join(tempDir, ".walleyboard-home");
+  const dockerRuntime = createTestDockerRuntime();
+  const eventHub = new EventHub();
+  const store = new SqliteStore(databasePath);
+  const eventsNamespaceConnections = new Map<
+    string,
+    (socket: {
+      emit: (event: string, payload: unknown) => void;
+      on: (event: string, listener: (...args: unknown[]) => void) => void;
+      once: (event: string, listener: () => void) => void;
+      disconnect: (close?: boolean) => void;
+      handshake: {
+        auth: {
+          socketPath?: unknown;
+        };
+        query: {
+          socketPath?: unknown;
+        };
+      };
+    }) => void
+  >();
+  let resolveInboxAlertEvent: ((event: ProtocolEvent) => void) | null = null;
+  const inboxAlertEventPromise = new Promise<ProtocolEvent>((resolve) => {
+    resolveInboxAlertEvent = resolve;
+  });
+
+  try {
+    const { project } = store.createProject({
+      name: "Inbox Alert App Test",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+    const draft = store.createDraft({
+      description: "Draft that should trigger a backend alert.",
+      project_id: project.id,
+      title: "Backend-owned inbox alert",
+      proposed_acceptance_criteria: ["Keep the alert deterministic."],
+    });
+
+    const app = await createApp({
+      databasePath,
+      dockerRuntime,
+      eventHub,
+      skipStartupDockerCleanup: true,
+      store,
+      socketServerFactory: (input) =>
+        createSocketServer({
+          ...input,
+          ioFactory: () => ({
+            close: (callback: () => void) => {
+              callback();
+            },
+            of: (namespace: string) => ({
+              on: (
+                event: "connection",
+                listener: (socket: {
+                  emit: (event: string, payload: unknown) => void;
+                  on: (
+                    event: string,
+                    listener: (...args: unknown[]) => void,
+                  ) => void;
+                  once: (event: string, listener: () => void) => void;
+                  disconnect: (close?: boolean) => void;
+                  handshake: {
+                    auth: {
+                      socketPath?: unknown;
+                    };
+                    query: {
+                      socketPath?: unknown;
+                    };
+                  };
+                }) => void,
+              ) => {
+                if (event !== "connection") {
+                  return;
+                }
+
+                eventsNamespaceConnections.set(namespace, listener);
+              },
+            }),
+          }),
+        }),
+    });
+
+    try {
+      const connectEventsSocket = eventsNamespaceConnections.get("/events");
+      if (!connectEventsSocket) {
+        throw new Error("Expected the events namespace to be registered.");
+      }
+
+      connectEventsSocket({
+        emit: (event, payload) => {
+          if (
+            event === "protocol.event" &&
+            (payload as ProtocolEvent).event_type === "inbox.alert"
+          ) {
+            resolveInboxAlertEvent?.(payload as ProtocolEvent);
+          }
+        },
+        on: () => {},
+        once: (event, listener) => {
+          if (event === "disconnect") {
+            void listener;
+          }
+        },
+        disconnect: () => {},
+        handshake: {
+          auth: {},
+          query: {},
+        },
+      });
+
+      const updatedDraft = store.updateDraft(draft.id, {
+        wizard_status: "awaiting_confirmation",
+      });
+      eventHub.publish(
+        makeProtocolEvent("draft.updated", "draft", draft.id, {
+          draft: updatedDraft,
+        }),
+      );
+
+      const inboxAlertEvent = await waitForPromiseWithin(
+        inboxAlertEventPromise,
+        5_000,
+        "Timed out waiting for inbox.alert",
+      );
+
+      assert.equal(inboxAlertEvent.event_type, "inbox.alert");
+      const inboxAlertPayload = inboxAlertEvent.payload as InboxAlertPayload;
+      assert.deepEqual(inboxAlertPayload.notification_keys, [
+        `draft-${draft.id}`,
+      ]);
+      assert.equal(inboxAlertPayload.alerts[0]?.kind, "draft");
+    } finally {
+      await app.close();
+    }
+  } finally {
+    process.env.WALLEYBOARD_HOME = previousWalleyBoardHome;
+    store.close();
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

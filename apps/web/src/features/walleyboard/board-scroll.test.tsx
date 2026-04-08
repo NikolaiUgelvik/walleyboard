@@ -405,6 +405,7 @@ function createWalleyBoardController(): WalleyBoardController {
     boardError: null,
     boardLoading: false,
     boardSearch: "",
+    deleteDraftMutation: createMutationStub(),
     closeArchiveModal: () => undefined,
     closeProjectOptionsModal: () => undefined,
     closeWorkspaceModal: () => undefined,
@@ -427,6 +428,7 @@ function createWalleyBoardController(): WalleyBoardController {
     openDraft: () => undefined,
     openInboxItem: () => undefined,
     openNewDraft: () => undefined,
+    refineAllUnrefinedDrafts: () => undefined,
     openProjectOptions: () => undefined,
     projectOptionsProject: null,
     projectsQuery: {
@@ -464,6 +466,7 @@ function createWalleyBoardController(): WalleyBoardController {
     stopAgentReviewMutation: createMutationStub(),
     ticketDiffLineSummaryByTicketId: new Map(),
     ticketWorkspaceDiff: null,
+    unrefinedDrafts: [],
     ticketWorkspaceDiffLayout: "split",
     ticketWorkspaceDiffQuery: {
       isPending: false,

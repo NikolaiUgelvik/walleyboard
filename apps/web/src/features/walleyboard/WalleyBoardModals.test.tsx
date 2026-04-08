@@ -683,6 +683,7 @@ test("repository terminal tabs preserve each tab instance and resolved path acro
               worktreePath: null,
             }}
             TerminalComponent={TerminalStub}
+            terminalInstanceKey={0}
           />
         </MantineProvider>,
       );

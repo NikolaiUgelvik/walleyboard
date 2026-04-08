@@ -26,6 +26,7 @@ export const ticketTypeSchema = z.enum([
   "bugfix",
   "chore",
   "research",
+  "refactor",
 ]);
 
 export const reasoningEffortSchema = z.enum([

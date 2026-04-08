@@ -31,6 +31,7 @@ export type BoardViewController = Pick<
   | "boardLoading"
   | "boardSearch"
   | "createPullRequestMutation"
+  | "deleteDraftMutation"
   | "deleteTicket"
   | "deleteTicketMutation"
   | "doneColumnTickets"
@@ -52,6 +53,7 @@ export type BoardViewController = Pick<
   | "openTicketSession"
   | "openTicketWorkspaceModal"
   | "previewActionErrorByTicketId"
+  | "refineAllUnrefinedDrafts"
   | "repositories"
   | "repositoryPreviewActionError"
   | "repositoryPreviewActionPending"
@@ -78,6 +80,7 @@ export type BoardViewController = Pick<
   | "ticketAiReviewActiveById"
   | "ticketDiffLineSummaryByTicketId"
   | "ticketWorkspacePreviewByTicketId"
+  | "unrefinedDrafts"
   | "visibleDrafts"
 >;
 
@@ -306,6 +309,7 @@ export function createWalleyBoardViewState(
     boardLoading: controller.boardLoading,
     boardSearch: controller.boardSearch,
     createPullRequestMutation: controller.createPullRequestMutation,
+    deleteDraftMutation: controller.deleteDraftMutation,
     deleteTicket: controller.deleteTicket,
     deleteTicketMutation: controller.deleteTicketMutation,
     doneColumnTickets: controller.doneColumnTickets,
@@ -329,6 +333,7 @@ export function createWalleyBoardViewState(
     openTicketSession: controller.openTicketSession,
     openTicketWorkspaceModal: controller.openTicketWorkspaceModal,
     previewActionErrorByTicketId: controller.previewActionErrorByTicketId,
+    refineAllUnrefinedDrafts: controller.refineAllUnrefinedDrafts,
     repositories: controller.repositories,
     repositoryPreviewActionError: controller.repositoryPreviewActionError,
     repositoryPreviewActionPending: controller.repositoryPreviewActionPending,
@@ -358,6 +363,7 @@ export function createWalleyBoardViewState(
     ticketDiffLineSummaryByTicketId: controller.ticketDiffLineSummaryByTicketId,
     ticketWorkspacePreviewByTicketId:
       controller.ticketWorkspacePreviewByTicketId,
+    unrefinedDrafts: controller.unrefinedDrafts,
     visibleDrafts: controller.visibleDrafts,
   };
 

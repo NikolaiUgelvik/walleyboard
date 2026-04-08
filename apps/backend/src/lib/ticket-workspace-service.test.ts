@@ -203,6 +203,90 @@ test("TicketWorkspaceService diffs the worktree and publishes live summary updat
   }
 });
 
+test("getDiff includes committed changes and produces correct summary counts", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-committed-diff-"));
+  const repoPath = join(tempDir, "repo");
+  const worktreePath = join(tempDir, "ticket-worktree");
+  const eventHub = new EventHub();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+  });
+
+  try {
+    execFileSync("git", ["init", repoPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    configureGitIdentity(repoPath);
+
+    writeFileSync(join(repoPath, "tracked.txt"), "base\n", "utf8");
+    runGit(repoPath, ["add", "tracked.txt"]);
+    runGit(repoPath, ["commit", "-m", "initial"]);
+    runGit(repoPath, ["branch", "-M", "main"]);
+
+    runGit(repoPath, [
+      "worktree",
+      "add",
+      "-b",
+      "committed-branch",
+      worktreePath,
+      "main",
+    ]);
+
+    writeFileSync(join(worktreePath, "tracked.txt"), "committed v1\n", "utf8");
+    runGit(worktreePath, ["add", "tracked.txt"]);
+    runGit(worktreePath, ["commit", "-m", "ticket work"]);
+
+    writeFileSync(join(repoPath, "main-only.txt"), "main advance\n", "utf8");
+    runGit(repoPath, ["add", "main-only.txt"]);
+    runGit(repoPath, ["commit", "-m", "advance main"]);
+
+    writeFileSync(
+      join(worktreePath, "tracked.txt"),
+      "uncommitted v2\n",
+      "utf8",
+    );
+
+    writeFileSync(
+      join(worktreePath, "untracked.txt"),
+      "untracked content\n",
+      "utf8",
+    );
+
+    const diff = await workspaceService.getDiff({
+      targetBranch: "main",
+      ticketId: 99,
+      workingBranch: "committed-branch",
+      worktreePath,
+    });
+
+    assert.match(diff.patch, /uncommitted v2/);
+    assert.match(diff.patch, /untracked\.txt/);
+    assert.match(diff.patch, /untracked content/);
+    assert.doesNotMatch(diff.patch, /main-only\.txt/);
+
+    const trackedBlocks = diff.patch
+      .split("\n")
+      .filter((line) => line.startsWith("diff --git a/tracked.txt"));
+    assert.equal(trackedBlocks.length, 1, "tracked.txt should appear once");
+
+    const summary = await workspaceService.getSummary({
+      targetBranch: "main",
+      ticketId: 99,
+      workingBranch: "committed-branch",
+      worktreePath,
+    });
+
+    assert.equal(summary.files_changed, 2);
+    assert.equal(summary.added_lines, 2);
+    assert.equal(summary.removed_lines, 1);
+    assert.equal(summary.has_changes, true);
+  } finally {
+    await workspaceService.disposeTicket(99);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("disposeTicket succeeds after worktree is already removed", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-dispose-"));
   const repoPath = join(tempDir, "repo");

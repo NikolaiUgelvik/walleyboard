@@ -17,12 +17,14 @@ export type WorkspaceTerminalComponent = (
 function RepositoryTabsTerminalContent({
   repositories,
   TerminalComponent,
+  terminalInstanceKey,
 }: {
   repositories: Extract<
     WorkspaceTerminalContext,
     { kind: "repository_tabs" }
   >["repositories"];
   TerminalComponent: WorkspaceTerminalComponent;
+  terminalInstanceKey: number;
 }) {
   const defaultRepository = repositories[0] ?? null;
   const [activeRepositoryId, setActiveRepositoryId] = useState(
@@ -74,7 +76,7 @@ function RepositoryTabsTerminalContent({
   if (repositories.length === 1) {
     return (
       <TerminalComponent
-        key={defaultRepository.socketPath}
+        key={`${defaultRepository.socketPath}:${terminalInstanceKey}`}
         socketPath={defaultRepository.socketPath}
         surfaceLabel="repository"
         worktreePath={defaultRepository.worktreePath}
@@ -128,7 +130,7 @@ function RepositoryTabsTerminalContent({
               }}
             >
               <TerminalComponent
-                key={repository.socketPath}
+                key={`${repository.socketPath}:${terminalInstanceKey}`}
                 socketPath={repository.socketPath}
                 surfaceLabel="repository"
                 worktreePath={repository.worktreePath}
@@ -146,6 +148,7 @@ export function WorkspaceTerminalContent({
   workspaceTerminalContext,
   workspaceTerminalPanelState,
   TerminalComponent,
+  terminalInstanceKey,
 }: {
   selectedSessionTicket: { id: number } | null;
   workspaceTerminalContext: WorkspaceTerminalContext | null;
@@ -153,12 +156,14 @@ export function WorkspaceTerminalContent({
     typeof resolveWorkspaceTerminalPanelState
   >;
   TerminalComponent: WorkspaceTerminalComponent;
+  terminalInstanceKey: number;
 }) {
   if (workspaceTerminalContext?.kind === "repository_tabs") {
     return (
       <RepositoryTabsTerminalContent
         repositories={workspaceTerminalContext.repositories}
         TerminalComponent={TerminalComponent}
+        terminalInstanceKey={terminalInstanceKey}
       />
     );
   }
@@ -166,6 +171,7 @@ export function WorkspaceTerminalContent({
   if (workspaceTerminalContext?.kind === "single") {
     return (
       <TerminalComponent
+        key={`${workspaceTerminalContext.socketPath}:${terminalInstanceKey}`}
         socketPath={workspaceTerminalContext.socketPath}
         surfaceLabel={workspaceTerminalContext.surfaceLabel}
         worktreePath={workspaceTerminalContext.worktreePath}
@@ -176,6 +182,7 @@ export function WorkspaceTerminalContent({
   if (workspaceTerminalPanelState.state === "ready" && selectedSessionTicket) {
     return (
       <TerminalComponent
+        key={`/tickets/${selectedSessionTicket.id}/workspace/terminal:${terminalInstanceKey}`}
         socketPath={`/tickets/${selectedSessionTicket.id}/workspace/terminal`}
         surfaceLabel="ticket"
         worktreePath={workspaceTerminalPanelState.worktreePath}

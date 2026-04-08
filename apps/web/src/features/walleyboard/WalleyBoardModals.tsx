@@ -1,4 +1,5 @@
 import { Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
 import { AgentReviewHistoryModal } from "../../components/AgentReviewHistoryModal.js";
 import { MarkdownContent } from "../../components/MarkdownContent.js";
 import { SessionActivityPanel } from "../../components/SessionActivityPanel.js";
@@ -14,8 +15,10 @@ import {
 
 export function WorkspaceModalContent({
   controller,
+  terminalInstanceKey,
 }: {
   controller: WalleyBoardModalsController;
+  terminalInstanceKey: number;
 }) {
   const workspaceDiffPanelState = resolveWorkspaceDiffPanelState({
     ticketWorkspaceDiffQuery: controller.ticketWorkspaceDiffQuery,
@@ -49,6 +52,7 @@ export function WorkspaceModalContent({
           workspaceTerminalContext={controller.workspaceTerminalContext}
           workspaceTerminalPanelState={workspaceTerminalPanelState}
           TerminalComponent={TicketWorkspaceTerminal}
+          terminalInstanceKey={terminalInstanceKey}
         />
       ) : controller.workspaceModal === "activity" ||
         controller.workspaceModal === "timeline" ? (
@@ -100,6 +104,18 @@ export function WalleyBoardModals({
 }: {
   controller: WalleyBoardModalsController;
 }) {
+  const [terminalInstanceKey, setTerminalInstanceKey] = useState(0);
+  const wasTerminalOpenRef = useRef(false);
+  const isTerminalOpen = controller.workspaceModal === "terminal";
+
+  useEffect(() => {
+    if (isTerminalOpen && !wasTerminalOpenRef.current) {
+      setTerminalInstanceKey((current) => current + 1);
+    }
+
+    wasTerminalOpenRef.current = isTerminalOpen;
+  }, [isTerminalOpen]);
+
   const workspaceModalTitle =
     controller.workspaceModal === "diff"
       ? "Ticket diff"
@@ -117,6 +133,7 @@ export function WalleyBoardModals({
       <Modal
         opened={controller.workspaceModal !== null}
         onClose={controller.closeWorkspaceModal}
+        keepMounted={false}
         title={workspaceModalTitle}
         centered
         size="90vw"
@@ -133,7 +150,10 @@ export function WalleyBoardModals({
           },
         }}
       >
-        <WorkspaceModalContent controller={controller} />
+        <WorkspaceModalContent
+          controller={controller}
+          terminalInstanceKey={terminalInstanceKey}
+        />
       </Modal>
 
       <Modal

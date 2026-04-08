@@ -114,6 +114,10 @@ Optional launcher flags:
 - Current implementation details: [docs/implementation-starter-pack.md](./docs/implementation-starter-pack.md)
 - Validation notes: [docs/validation](./docs/validation)
 
+## Architecture & contributing
+
+- API and socket contract reference (canonical): [docs/api-and-protocol-reference.md](./docs/api-and-protocol-reference.md)
+
 ## License
 
 The repository source code is available under the [MIT License](./LICENSE).

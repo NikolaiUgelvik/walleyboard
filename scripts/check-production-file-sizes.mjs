@@ -59,7 +59,9 @@ function countLines(path) {
     return 0;
   }
 
-  return content.split("\n").length;
+  return content.endsWith("\n")
+    ? content.split("\n").length - 1
+    : content.split("\n").length;
 }
 
 const oversizedFiles = sourceRoots
