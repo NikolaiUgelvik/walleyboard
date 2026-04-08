@@ -535,3 +535,46 @@ test("useVisibleTicketDiffSummary merges IDs from multiple columns", async () =>
     harness.cleanup();
   }
 });
+
+test("unmount reports empty visible set to clear stale column state", async () => {
+  IntersectionObserverMock.reset();
+  const harness = installDom();
+  const root = createRoot(harness.mountNode);
+  const controller = createControllerStub();
+  const tickets = [
+    createTicket({ id: 1, title: "Ticket A" }),
+    createTicket({ id: 2, title: "Ticket B" }),
+  ];
+  const changeSpy: Array<[string, Set<number>]> = [];
+
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <VirtualizedTicketList
+            tickets={tickets}
+            column="in_progress"
+            controller={controller}
+            onVisibleTicketIdsChange={(col: string, ids: Set<number>) => {
+              changeSpy.push([col, new Set(ids)]);
+            }}
+          />
+        </MantineProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    assert.ok(changeSpy.length > 0, "Received initial visibility report");
+
+    await act(async () => {
+      root.unmount();
+    });
+
+    const lastCall = changeSpy[changeSpy.length - 1];
+    assert.ok(lastCall, "Received call after unmount");
+    assert.equal(lastCall[0], "in_progress", "Column matches");
+    assert.equal(lastCall[1].size, 0, "Empty set reported on unmount");
+  } finally {
+    harness.cleanup();
+  }
+});

@@ -31,6 +31,12 @@ export function VirtualizedTicketList({
   );
   const sentinelRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const heightCache = useRef<Map<number, number>>(new Map());
+  const sentinelCallbackCache = useRef(
+    new Map<number, (el: HTMLDivElement | null) => void>(),
+  );
+  const measureCallbackCache = useRef(
+    new Map<number, (el: HTMLDivElement | null) => void>(),
+  );
   const observerRef = useRef<IntersectionObserver | null>(null);
   const onChangeRef = useRef(onVisibleTicketIdsChange);
   onChangeRef.current = onVisibleTicketIdsChange;
@@ -148,9 +154,6 @@ export function VirtualizedTicketList({
     [],
   );
 
-  const sentinelCallbackCache = useRef(
-    new Map<number, (el: HTMLDivElement | null) => void>(),
-  );
   const getSentinelRef = useCallback(
     (ticketId: number) => {
       let cb = sentinelCallbackCache.current.get(ticketId);
@@ -163,9 +166,6 @@ export function VirtualizedTicketList({
     [registerSentinel],
   );
 
-  const measureCallbackCache = useRef(
-    new Map<number, (el: HTMLDivElement | null) => void>(),
-  );
   const getMeasureRef = useCallback(
     (ticketId: number) => {
       let cb = measureCallbackCache.current.get(ticketId);
