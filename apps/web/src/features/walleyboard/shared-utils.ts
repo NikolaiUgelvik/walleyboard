@@ -14,6 +14,7 @@ import {
   normalizeProjectColor as normalizeSharedProjectColor,
   defaultProjectColor as sharedDefaultProjectColor,
   projectColorPalette as sharedProjectColorPalette,
+  ticketTypeSchema,
 } from "../../../../../packages/contracts/src/index.js";
 
 import {
@@ -820,12 +821,7 @@ export function parseDraftRefinementResult(value: unknown): {
     title_draft: value.title_draft,
     description_draft: value.description_draft,
     proposed_ticket_type:
-      value.proposed_ticket_type === "feature" ||
-      value.proposed_ticket_type === "bugfix" ||
-      value.proposed_ticket_type === "chore" ||
-      value.proposed_ticket_type === "research"
-        ? value.proposed_ticket_type
-        : null,
+      ticketTypeSchema.safeParse(value.proposed_ticket_type).data ?? null,
     proposed_acceptance_criteria: parseStringList(
       value.proposed_acceptance_criteria,
     ),

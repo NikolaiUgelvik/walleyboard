@@ -131,61 +131,15 @@ function createTicket(
   };
 }
 
-function createMutationStub() {
-  return {
-    isPending: false,
-    isError: false,
-    variables: null,
-    error: null,
-    mutate: () => undefined,
-  };
-}
-
-function createControllerStub() {
-  return {
-    archiveTicket: () => undefined,
-    archiveTicketMutation: createMutationStub(),
-    createPullRequestMutation: createMutationStub(),
-    deleteTicket: () => undefined,
-    deleteTicketMutation: createMutationStub(),
-    editReadyTicket: () => undefined,
-    editReadyTicketMutation: createMutationStub(),
-    handleTicketPreviewAction: () => undefined,
-    mergeTicketMutation: createMutationStub(),
-    navigateToTicketReference: () => undefined,
-    openTicket: () => undefined,
-    openTicketSession: () => undefined,
-    openTicketWorkspaceModal: () => undefined,
-    previewActionErrorByTicketId: {},
-    restartTicketFromScratch: () => undefined,
-    restartTicketMutation: createMutationStub(),
-    resumeTicketMutation: createMutationStub(),
-    selectedProject: {
-      id: "project-1",
-      default_review_action: "direct_merge",
-    },
-    selectedSessionId: null,
-    selectedTicketId: null,
-    session: null,
-    sessionById: new Map(),
-    sessionSummaryStateById: new Map(),
-    startAgentReviewMutation: createMutationStub(),
-    startTicketMutation: createMutationStub(),
-    startTicketWorkspacePreviewMutation: createMutationStub(),
-    stopAgentReviewMutation: createMutationStub(),
-    stopTicketMutation: createMutationStub(),
-    stopTicketWorkspacePreviewMutation: createMutationStub(),
-    ticketAiReviewActiveById: new Map(),
-    ticketDiffLineSummaryByTicketId: new Map(),
-    ticketWorkspacePreviewByTicketId: new Map(),
-  } as never;
+function testRenderCard(ticket: TicketFrontmatter) {
+  return <div className="board-card">{ticket.title}</div>;
 }
 
 test("initial render shows all tickets and reports all IDs visible", async () => {
   IntersectionObserverMock.reset();
   const harness = installDom();
   const root = createRoot(harness.mountNode);
-  const controller = createControllerStub();
+
   const tickets = [
     createTicket({ id: 10, title: "Ticket X" }),
     createTicket({ id: 20, title: "Ticket Y" }),
@@ -200,10 +154,10 @@ test("initial render shows all tickets and reports all IDs visible", async () =>
           <VirtualizedTicketList
             tickets={tickets}
             column="in_progress"
-            controller={controller}
             onVisibleTicketIdsChange={(col: string, ids: Set<number>) => {
               changeSpy.push([col, new Set(ids)]);
             }}
+            renderCard={testRenderCard}
           />
         </MantineProvider>,
       );
@@ -238,7 +192,7 @@ test("non-intersecting tickets are hidden and excluded from visible set", async 
   IntersectionObserverMock.reset();
   const harness = installDom();
   const root = createRoot(harness.mountNode);
-  const controller = createControllerStub();
+
   const tickets = [
     createTicket({ id: 100, title: "Visible ticket" }),
     createTicket({ id: 200, title: "Hidden ticket" }),
@@ -253,10 +207,10 @@ test("non-intersecting tickets are hidden and excluded from visible set", async 
           <VirtualizedTicketList
             tickets={tickets}
             column="review"
-            controller={controller}
             onVisibleTicketIdsChange={(col: string, ids: Set<number>) => {
               changeSpy.push([col, new Set(ids)]);
             }}
+            renderCard={testRenderCard}
           />
         </MantineProvider>,
       );
@@ -323,7 +277,7 @@ test("re-intersecting ticket is restored to full rendering", async () => {
   IntersectionObserverMock.reset();
   const harness = installDom();
   const root = createRoot(harness.mountNode);
-  const controller = createControllerStub();
+
   const tickets = [createTicket({ id: 1, title: "Only ticket" })];
   const changeSpy: Array<[string, Set<number>]> = [];
 
@@ -334,10 +288,10 @@ test("re-intersecting ticket is restored to full rendering", async () => {
           <VirtualizedTicketList
             tickets={tickets}
             column="in_progress"
-            controller={controller}
             onVisibleTicketIdsChange={(col: string, ids: Set<number>) => {
               changeSpy.push([col, new Set(ids)]);
             }}
+            renderCard={testRenderCard}
           />
         </MantineProvider>,
       );
@@ -395,7 +349,7 @@ test("off-screen ticket sentinel is focusable and re-renders card on intersectio
   IntersectionObserverMock.reset();
   const harness = installDom();
   const root = createRoot(harness.mountNode);
-  const controller = createControllerStub();
+
   const tickets = [createTicket({ id: 42, title: "Focus target" })];
 
   try {
@@ -405,8 +359,8 @@ test("off-screen ticket sentinel is focusable and re-renders card on intersectio
           <VirtualizedTicketList
             tickets={tickets}
             column="in_progress"
-            controller={controller}
             onVisibleTicketIdsChange={() => {}}
+            renderCard={testRenderCard}
           />
         </MantineProvider>,
       );
@@ -474,7 +428,7 @@ test("scrollRoot is forwarded to IntersectionObserver as root option", async () 
   IntersectionObserverMock.reset();
   const harness = installDom();
   const root = createRoot(harness.mountNode);
-  const controller = createControllerStub();
+
   const tickets = [createTicket({ id: 1, title: "Ticket A" })];
   const scrollContainer = harness.window.document.createElement("div");
   harness.window.document.body.appendChild(scrollContainer);
@@ -486,9 +440,9 @@ test("scrollRoot is forwarded to IntersectionObserver as root option", async () 
           <VirtualizedTicketList
             tickets={tickets}
             column="in_progress"
-            controller={controller}
             onVisibleTicketIdsChange={() => {}}
             scrollRoot={scrollContainer as unknown as Element}
+            renderCard={testRenderCard}
           />
         </MantineProvider>,
       );
@@ -583,7 +537,7 @@ test("unmount reports empty visible set to clear stale column state", async () =
   IntersectionObserverMock.reset();
   const harness = installDom();
   const root = createRoot(harness.mountNode);
-  const controller = createControllerStub();
+
   const tickets = [
     createTicket({ id: 1, title: "Ticket A" }),
     createTicket({ id: 2, title: "Ticket B" }),
@@ -597,10 +551,10 @@ test("unmount reports empty visible set to clear stale column state", async () =
           <VirtualizedTicketList
             tickets={tickets}
             column="in_progress"
-            controller={controller}
             onVisibleTicketIdsChange={(col: string, ids: Set<number>) => {
               changeSpy.push([col, new Set(ids)]);
             }}
+            renderCard={testRenderCard}
           />
         </MantineProvider>,
       );

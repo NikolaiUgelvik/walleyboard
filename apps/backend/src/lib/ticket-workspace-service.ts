@@ -636,12 +636,19 @@ export class TicketWorkspaceService {
       worktreePath: input.worktreePath,
     });
 
+    const mergeBase = (
+      await runGit(input.worktreePath, [
+        "merge-base",
+        input.targetBranch,
+        "HEAD",
+      ])
+    ).trim();
     const trackedPatch = (
       await runGit(input.worktreePath, [
         "diff",
         "--no-color",
         "--find-renames",
-        input.targetBranch,
+        mergeBase,
         "--",
       ])
     ).trim();
@@ -885,13 +892,15 @@ export class TicketWorkspaceService {
     ticketId: number;
     worktreePath: string;
   }): Promise<TicketWorkspaceSummary> {
-    const trackedSummary = parseNumstatOutput(
+    const mergeBase = (
       await runGit(input.worktreePath, [
-        "diff",
-        "--numstat",
+        "merge-base",
         input.targetBranch,
-        "--",
-      ]),
+        "HEAD",
+      ])
+    ).trim();
+    const trackedSummary = parseNumstatOutput(
+      await runGit(input.worktreePath, ["diff", "--numstat", mergeBase, "--"]),
     );
     const untrackedFiles = await collectUntrackedFiles(input.worktreePath);
     const untrackedSummary = (

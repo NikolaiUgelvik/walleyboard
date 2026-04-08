@@ -21,5 +21,8 @@ export function connectWalleyboardSocket(
   namespace: `/${string}`,
   options?: Partial<ManagerOptions & SocketOptions>,
 ): Socket {
-  return resolveSocketFactory()(`${apiBaseUrl}${namespace}`, options);
+  return resolveSocketFactory()(`${apiBaseUrl}${namespace}`, {
+    transports: ["websocket"],
+    ...options,
+  });
 }

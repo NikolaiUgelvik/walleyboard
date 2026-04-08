@@ -1,20 +1,11 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { type SetStateAction, useEffect, useState } from "react";
+import { type SetStateAction, useState } from "react";
 import type {
-  ExecutionSession,
   Project,
-  RepositoryBranchChoices,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
 
-import { sanitizeDraftAcceptanceCriteria } from "../../lib/draft-acceptance-criteria.js";
-import { resolveDraftEditorSync } from "../../lib/draft-editor-sync.js";
-import { deriveInboxState } from "../../lib/inbox-items.js";
 import { useAgentReviewHistoryModalState } from "./agent-review-history-modal-state.js";
-import {
-  resolveNextInspectorState,
-  shouldResetProjectOptionsSelection,
-} from "./controller-guards.js";
 import { createDraftEditorController } from "./draft-editor-controller.js";
 import {
   useDraftRefinementActivity,
@@ -27,39 +18,19 @@ import {
   populateProjectOptionsModal,
   resetProjectOptionsModal,
 } from "./project-configuration-controls.js";
-import { hasProjectOptionsDirty } from "./project-options-dirty.js";
-import { buildSessionSummaryStateById } from "./session-summary-state.js";
 import {
   fetchJson,
   readInboxReadState,
-  readLastOpenProjectId,
   writeInboxReadState,
-  writeLastOpenProjectId,
 } from "./shared-api.js";
 import type { RepositoriesResponse, SessionResponse } from "./shared-types.js";
 import {
-  arraysEqual,
   collectRepositoryTargetBranchUpdates,
   collectRepositoryValidationCommandUpdates,
   computeMarkAllReadState,
   defaultProjectColor,
-  findLatestRevertableRefineEvent,
-  hasRepositoryTargetBranchChanges,
-  hasRepositoryValidationCommandChanges,
-  mergeRepositoryTargetBranches,
-  mergeRepositoryValidationCommands,
-  parseDraftEventMeta,
-  parseDraftQuestionsResult,
-  pickProjectColor,
-  repositoryTargetBranchesEqual,
-  repositoryValidationCommandsEqual,
-  resolveOptionalProjectCommandValue,
-  resolveProjectModelValue,
-  resolveProjectOptionsColors,
-  resolveProjectReasoningEffortValue,
-  resolveVisibleBoardItems,
-  shouldRefreshProjectColorSelection,
 } from "./shared-utils.js";
+import { createTicketActions } from "./ticket-actions.js";
 import { navigateToTicketReference } from "./ticket-reference-navigation.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
@@ -79,11 +50,23 @@ import {
 } from "./use-walleyboard-local-state.js";
 import { useWalleyBoardMutationWiring } from "./use-walleyboard-mutation-wiring.js";
 import { useWalleyBoardServerState } from "./use-walleyboard-server-state.js";
-import { createWorkspaceModalControls } from "./workspace-modal-controls.js";
 import {
-  resolveSelectedWorkspaceTicketId,
-  shouldKeepWorkspaceModalOpen,
-} from "./workspace-modal-state.js";
+  useDraftEditorSourceSync,
+  useInspectorStateGuard,
+  useProjectColorRefresh,
+  useProjectOptionsStateSync,
+  useProjectSelectionHydration,
+  useWorkspaceModalGuard,
+} from "./walleyboard-controller-effects.js";
+import {
+  resolveBoardViewState,
+  resolveDraftEditorViewState,
+  resolveInboxViewState,
+  resolveProjectOptionsViewState,
+  resolveSessionReviewState,
+} from "./walleyboard-controller-selectors.js";
+import { createWorkspaceModalControls } from "./workspace-modal-controls.js";
+import { resolveSelectedWorkspaceTicketId } from "./workspace-modal-state.js";
 
 export function useWalleyBoardController() {
   const queryClient = useQueryClient();
@@ -261,7 +244,7 @@ export function useWalleyBoardController() {
   const globalTickets = globalTicketsQueries.flatMap(
     (query) => query.data?.tickets ?? [],
   );
-  const { globalDrafts, globalDraftsQueries } = useGlobalDrafts(projectRecords);
+  const { globalDrafts } = useGlobalDrafts(projectRecords);
 
   const globalSessionSummaries = useQueries({
     queries: globalTickets
@@ -280,177 +263,54 @@ export function useWalleyBoardController() {
       })),
   });
 
-  useEffect(() => {
-    if (!projectsLoaded) {
-      return;
-    }
-
-    const firstProjectId = projectRecords[0]?.id ?? null;
-    if (selectedProjectId === null) {
-      const storedProjectId = readLastOpenProjectId();
-      const initialProjectId =
-        storedProjectId !== null &&
-        projectRecords.some((project) => project.id === storedProjectId)
-          ? storedProjectId
-          : firstProjectId;
-
-      if (initialProjectId !== null) {
-        setSelectedProjectId(initialProjectId);
-        setArchiveModalOpen(false);
-        setArchiveActionFeedback(null);
-      }
-
-      setProjectSelectionHydrated(true);
-      return;
-    }
-
-    const stillExists = projectRecords.some(
-      (project) => project.id === selectedProjectId,
-    );
-    if (!stillExists) {
-      setSelectedProjectId(firstProjectId);
-      setArchiveModalOpen(false);
-      setArchiveActionFeedback(null);
-    }
-
-    setProjectSelectionHydrated(true);
-  }, [
+  useProjectSelectionHydration({
     projectRecords,
+    projectSelectionHydrated,
     projectsLoaded,
     selectedProjectId,
     setArchiveActionFeedback,
     setArchiveModalOpen,
     setProjectSelectionHydrated,
     setSelectedProjectId,
-  ]);
+  });
 
-  useEffect(() => {
-    if (!projectSelectionHydrated) {
-      return;
-    }
-
-    writeLastOpenProjectId(selectedProjectId);
-  }, [projectSelectionHydrated, selectedProjectId]);
-
-  useEffect(() => {
-    if (
-      !shouldResetProjectOptionsSelection({
-        projectOptionsProjectId,
-        projects: projectRecords,
-        projectsLoaded,
-      })
-    ) {
-      return;
-    }
-
-    setProjectOptionsProjectId(null);
-    setProjectOptionsColor(defaultProjectColor);
-    setProjectOptionsColorManuallySelected(false);
-    setProjectOptionsRepositoryTargetBranches({});
-    setProjectOptionsRepositoryValidationCommands({});
-    setProjectOptionsFormError(null);
-    setProjectDeleteConfirmText("");
-  }, [
-    projectRecords,
+  useProjectOptionsStateSync({
     projectOptionsProjectId,
+    projectOptionsRepositoriesQueryData: projectOptionsRepositoriesQuery.data,
+    projectRecords,
     projectsLoaded,
     setProjectDeleteConfirmText,
     setProjectOptionsColor,
     setProjectOptionsColorManuallySelected,
-    setProjectOptionsProjectId,
     setProjectOptionsFormError,
+    setProjectOptionsProjectId,
     setProjectOptionsRepositoryTargetBranches,
     setProjectOptionsRepositoryValidationCommands,
-  ]);
+  });
 
-  useEffect(() => {
-    if (
-      !shouldRefreshProjectColorSelection({
-        projectColorManuallySelected,
-        projectColorNeedsRefresh,
-        projectModalOpen,
-        projectsLoaded,
-      })
-    ) {
-      return;
-    }
-
-    setProjectColor(pickProjectColor(projectRecords));
-    setProjectColorNeedsRefresh(false);
-  }, [
+  useProjectColorRefresh({
     projectColorManuallySelected,
     projectColorNeedsRefresh,
     projectModalOpen,
-    projectRecords,
     projectsLoaded,
+    projectRecords,
     setProjectColor,
     setProjectColorNeedsRefresh,
-  ]);
+  });
 
-  useEffect(() => {
-    if (projectOptionsRepositoriesQuery.data === undefined) {
-      return;
-    }
-
-    const defaultTargetBranch =
-      projectRecords.find((project) => project.id === projectOptionsProjectId)
-        ?.default_target_branch ?? null;
-
-    setProjectOptionsRepositoryTargetBranches((current) => {
-      const next = mergeRepositoryTargetBranches(
-        current,
-        projectOptionsRepositoriesQuery.data.repositories,
-        defaultTargetBranch,
-      );
-      return repositoryTargetBranchesEqual(current, next) ? current : next;
-    });
-  }, [
-    projectRecords,
-    projectOptionsProjectId,
-    projectOptionsRepositoriesQuery.data,
-    setProjectOptionsRepositoryTargetBranches,
-  ]);
-
-  useEffect(() => {
-    if (projectOptionsRepositoriesQuery.data === undefined) {
-      return;
-    }
-
-    setProjectOptionsRepositoryValidationCommands((current) => {
-      const next = mergeRepositoryValidationCommands(
-        current,
-        projectOptionsRepositoriesQuery.data.repositories,
-      );
-      return repositoryValidationCommandsEqual(current, next) ? current : next;
-    });
-  }, [
-    projectOptionsRepositoriesQuery.data,
-    setProjectOptionsRepositoryValidationCommands,
-  ]);
-
-  useEffect(() => {
-    const nextInspectorState = resolveNextInspectorState({
-      drafts: draftRecords,
-      draftsLoaded,
-      inspectorState,
-      selectedProjectId,
-      tickets: ticketRecords,
-      ticketsLoaded,
-    });
-    if (nextInspectorState !== null) {
-      setInspectorState(nextInspectorState);
-    }
-  }, [
+  useInspectorStateGuard({
     draftRecords,
     draftsLoaded,
     inspectorState,
     selectedProjectId,
+    setInspectorState,
     ticketRecords,
     ticketsLoaded,
-    setInspectorState,
-  ]);
+  });
 
+  const { playInboxAlert } = useInboxAlert();
   useProtocolEventSync({
+    onInboxAlert: playInboxAlert,
     queryClient,
     selectedDraftId,
     selectedProjectId,
@@ -458,22 +318,12 @@ export function useWalleyBoardController() {
     setInspectorState,
   });
 
-  useEffect(() => {
-    if (
-      !shouldKeepWorkspaceModalOpen(
-        inspectorState.kind,
-        workspaceModal,
-        workspaceTerminalContext !== null,
-      )
-    ) {
-      setWorkspaceModal(null);
-    }
-  }, [
-    inspectorState.kind,
-    workspaceModal,
-    workspaceTerminalContext,
+  useWorkspaceModalGuard({
+    hasTerminalContext: workspaceTerminalContext !== null,
+    inspectorKind: inspectorState.kind,
     setWorkspaceModal,
-  ]);
+    workspaceModal,
+  });
 
   const { ticketDiffLineSummaryByTicketId, updateVisibleTicketIds } =
     useVisibleTicketDiffSummary(ticketRecords);
@@ -489,9 +339,6 @@ export function useWalleyBoardController() {
     workspaceModal,
     workspaceTicketId: workspaceTicket?.id ?? null,
   });
-  const projectOptionsProject =
-    projectRecords.find((project) => project.id === projectOptionsProjectId) ??
-    null;
   const {
     agentReviewHistoryModalOpen,
     closeAgentReviewHistoryModal,
@@ -522,31 +369,16 @@ export function useWalleyBoardController() {
       .filter((value): value is SessionResponse => value !== undefined)
       .map((item) => [item.session.id, item]),
   );
-  const { items: actionItems, notificationKeys: actionItemKeys } =
-    deriveInboxState({
+  const { actionItems, unreadActionItemCount, unreadInboxItemKeys } =
+    resolveInboxViewState({
       drafts: globalDrafts,
       projects: projectRecords,
-      tickets: globalTickets,
+      readInboxItemState,
       sessionsById: globalSessionById,
       ticketAiReviewActiveById,
       ticketAiReviewResolvedById,
+      tickets: globalTickets,
     });
-  const unreadInboxItemKeys = new Set(
-    actionItems
-      .filter((item) => readInboxItemState[item.key] !== item.notificationKey)
-      .map((item) => item.key),
-  );
-  const unreadActionItemCount = unreadInboxItemKeys.size;
-  const inboxQueriesSettled =
-    projectsLoaded &&
-    globalDraftsQueries.every((query) => !query.isPending) &&
-    globalTicketsQueries.every((query) => !query.isPending) &&
-    globalSessionSummaries.every((query) => !query.isPending);
-  const { silenceNextInboxItemKey } = useInboxAlert({
-    actionItemKeys,
-    visibleActionItemKeys: actionItems.map((item) => item.notificationKey),
-    inboxQueriesSettled,
-  });
   const mutations = useWalleyBoardMutationWiring({
     queryClient,
     pendingDraftEditorSync,
@@ -569,7 +401,6 @@ export function useWalleyBoardController() {
     setRepositoryPath,
     setRequestedChangesBody,
     setResumeReason,
-    silenceNextInboxItemKey,
     setTerminalCommand,
     setValidationCommandsText,
     tickets: ticketRecords,
@@ -586,80 +417,6 @@ export function useWalleyBoardController() {
 
   const selectedProject =
     projectRecords.find((project) => project.id === selectedProjectId) ?? null;
-  const draftEditorProject =
-    projectRecords.find((project) => project.id === draftEditorProjectId) ??
-    null;
-  const projectOptionsRepositories =
-    projectOptionsRepositoriesQuery.data?.repositories ?? [];
-  const projectOptionsBranchChoices =
-    projectOptionsBranchesQuery.data?.repository_branches ?? [];
-  const projectOptionsBranchesByRepositoryId = new Map<
-    string,
-    RepositoryBranchChoices
-  >(
-    projectOptionsBranchChoices.map((repositoryBranches) => [
-      repositoryBranches.repository_id,
-      repositoryBranches,
-    ]),
-  );
-  const projectOptionsDraftModelValue = resolveProjectModelValue(
-    projectOptionsDraftModelPreset,
-    projectOptionsDraftModelCustom,
-  );
-  const projectOptionsDraftReasoningEffortValue =
-    resolveProjectReasoningEffortValue(projectOptionsDraftReasoningEffort);
-  const projectOptionsTicketModelValue = resolveProjectModelValue(
-    projectOptionsTicketModelPreset,
-    projectOptionsTicketModelCustom,
-  );
-  const projectOptionsTicketReasoningEffortValue =
-    resolveProjectReasoningEffortValue(projectOptionsTicketReasoningEffort);
-  const projectOptionsWorktreeInitCommandValue =
-    resolveOptionalProjectCommandValue(projectOptionsWorktreeInitCommand);
-  const projectOptionsPreviewStartCommandValue =
-    resolveOptionalProjectCommandValue(projectOptionsPreviewStartCommand);
-  const projectOptionsWorktreeTeardownCommandValue =
-    resolveOptionalProjectCommandValue(projectOptionsWorktreeTeardownCommand);
-  const projectOptionsRepositoryBranchesDirty =
-    hasRepositoryTargetBranchChanges({
-      project: projectOptionsProject,
-      repositories: projectOptionsRepositories,
-      repositoryTargetBranches: projectOptionsRepositoryTargetBranches,
-    });
-  const projectOptionsValidationCommandsDirty =
-    hasRepositoryValidationCommandChanges({
-      repositories: projectOptionsRepositories,
-      repositoryValidationCommands: projectOptionsRepositoryValidationCommands,
-    });
-  const { persistedColor: projectOptionsPersistedColor, swatchColor } =
-    resolveProjectOptionsColors({
-      color: projectOptionsColor,
-      colorManuallySelected: projectOptionsColorManuallySelected,
-      project: projectOptionsProject,
-    });
-  const projectOptionsDirty = hasProjectOptionsDirty({
-    color: projectOptionsPersistedColor,
-    draftModelValue: projectOptionsDraftModelValue,
-    draftReasoningEffortValue: projectOptionsDraftReasoningEffortValue,
-    disabledMcpServers: projectOptionsDisabledMcpServers,
-    worktreeTeardownCommandValue: projectOptionsWorktreeTeardownCommandValue,
-    worktreeInitCommandValue: projectOptionsWorktreeInitCommandValue,
-    worktreeInitRunSequential: projectOptionsWorktreeInitRunSequential,
-    previewStartCommandValue: projectOptionsPreviewStartCommandValue,
-    project: projectOptionsProject,
-    projectOptionsAutomaticAgentReview,
-    projectOptionsAutomaticAgentReviewRunLimit,
-    projectOptionsDefaultReviewAction,
-    repositoryBranchesDirty: projectOptionsRepositoryBranchesDirty,
-    validationCommandsDirty: projectOptionsValidationCommandsDirty,
-    selectedDraftAgentAdapter: projectOptionsDraftAgentAdapter,
-    selectedTicketAgentAdapter: projectOptionsTicketAgentAdapter,
-    ticketModelValue: projectOptionsTicketModelValue,
-    ticketReasoningEffortValue: projectOptionsTicketReasoningEffortValue,
-  });
-  const canDeleteProject =
-    projectOptionsProject !== null &&
-    projectDeleteConfirmText.trim() === projectOptionsProject.slug;
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const selectedRepository = repositories[0] ?? null;
   const {
@@ -678,106 +435,108 @@ export function useWalleyBoardController() {
     setWorkspaceTerminalContext,
     setWorkspaceTicket,
   });
-  const draftEditorRepositories =
-    draftEditorProjectId !== null && draftEditorProjectId === selectedProjectId
-      ? repositories
-      : (draftEditorRepositoriesQuery.data?.repositories ?? []);
-  const draftEditorRepository = draftEditorRepositories[0] ?? null;
-  const drafts = draftRecords;
-  const { isDraftRefinementActive } = useDraftRefinementActivity(drafts);
-  const selectedDraft =
-    drafts.find((draft) => draft.id === selectedDraftId) ?? null;
-  const selectedDraftRepository =
-    selectedDraft === null
-      ? null
-      : (repositories.find(
-          (item) =>
-            item.id ===
-            (selectedDraft.confirmed_repo_id ?? selectedDraft.proposed_repo_id),
-        ) ?? selectedRepository);
-  const draftEditorAcceptanceCriteriaLines = sanitizeDraftAcceptanceCriteria(
-    draftEditorAcceptanceCriteria,
-  );
-  const draftEditorCanPersist =
-    draftEditorTitle.trim().length > 0 &&
-    draftEditorDescription.trim().length > 0;
-  const draftFormDirty =
-    selectedDraft !== null &&
-    (draftEditorTitle !== selectedDraft.title_draft ||
-      draftEditorDescription !== selectedDraft.description_draft ||
-      draftEditorTicketType !== selectedDraft.proposed_ticket_type ||
-      !arraysEqual(
-        draftEditorAcceptanceCriteriaLines,
-        selectedDraft.proposed_acceptance_criteria,
-      ));
-  const newDraftFormDirty =
-    inspectorState.kind === "new_draft" &&
-    (draftEditorTitle.trim().length > 0 ||
-      draftEditorDescription.trim().length > 0 ||
-      draftEditorAcceptanceCriteria.trim().length > 0 ||
-      draftEditorTicketType !== "feature");
-  const draftEvents = draftEventsQuery.data?.events ?? [];
-  const latestDraftEvent = draftEvents.at(0);
-  const latestDraftEventMeta = latestDraftEvent
-    ? parseDraftEventMeta(latestDraftEvent)
-    : null;
-  const latestRevertableRefineEvent =
-    findLatestRevertableRefineEvent(draftEvents);
-  const draftAnalysisActive = draftEventsQuery.data?.active_run ?? false;
-  const latestQuestionsEvent = draftEvents.find(
-    (event) => event.event_type === "draft.questions.completed",
-  );
-  const latestQuestionsResult = latestQuestionsEvent
-    ? parseDraftQuestionsResult(latestQuestionsEvent.payload.result)
-    : null;
-  const session = sessionQuery.data?.session ?? null;
-  const sessionAttempts = sessionAttemptsQuery.data?.attempts ?? [];
-  const sessionLogs = sessionLogsQuery.data?.logs ?? [];
-  const selectedSessionTicket = selectedSessionRecord ?? null;
-  const selectedInspectorTicket =
-    ticketRecords.find((ticket) => ticket.id === selectedTicketId) ?? null;
-  const ticketEvents = ticketEventsQuery.data?.events ?? [];
-  const reviewPackage = reviewPackageQuery.data?.review_package ?? null;
-  const latestReviewRun = latestReviewRunQuery.data?.review_run ?? null;
-  const reviewRuns = reviewRunsQuery.data?.review_runs ?? [];
-  const ticketWorkspaceDiff =
-    ticketWorkspaceDiffQuery.data?.workspace_diff ?? null;
-  const sessionById = new Map(
-    sessionSummaries
-      .map((query) => query.data?.session)
-      .filter((value): value is ExecutionSession => value !== undefined)
-      .map((item) => [item.id, item]),
-  );
-  const sessionSummaryStateById = buildSessionSummaryStateById({
-    sessionSummaries,
-    tickets: ticketsQuery.data?.tickets ?? [],
-  });
-  const agentControlsWorktreeBySessionId = new Map(
-    sessionSummaries
-      .map((query) => query.data)
-      .filter((value): value is SessionResponse => value !== undefined)
-      .map((item) => [item.session.id, item.agent_controls_worktree]),
-  );
   const { doneColumnTickets, groupedTickets, visibleDrafts, visibleTickets } =
-    resolveVisibleBoardItems({
+    resolveBoardViewState({
       boardSearch,
-      drafts,
+      drafts: draftRecords,
       tickets: ticketRecords,
     });
-
-  const selectedSessionTicketSession = selectedSessionTicket?.session_id
-    ? (sessionById.get(selectedSessionTicket.session_id) ?? session)
-    : session;
-
-  const boardLoading =
-    (selectedProjectId !== null && draftsQuery.isPending) ||
-    (selectedProjectId !== null && ticketsQuery.isPending);
-  const boardError = draftsQuery.isError
-    ? draftsQuery.error.message
-    : ticketsQuery.isError
-      ? ticketsQuery.error.message
-      : null;
-
+  const {
+    canDeleteProject,
+    projectOptionsBranchesByRepositoryId,
+    projectOptionsBranchChoices,
+    projectOptionsColor: projectOptionsSwatchColor,
+    projectOptionsDirty,
+    projectOptionsDraftModelValue,
+    projectOptionsDraftReasoningEffortValue,
+    projectOptionsPersistedColor,
+    projectOptionsPreviewStartCommandValue,
+    projectOptionsProject,
+    projectOptionsRepositories,
+    projectOptionsRepositoryBranchesDirty,
+    projectOptionsTicketModelValue,
+    projectOptionsTicketReasoningEffortValue,
+    projectOptionsWorktreeInitCommandValue,
+    projectOptionsWorktreeTeardownCommandValue,
+  } = resolveProjectOptionsViewState({
+    projectDeleteConfirmText,
+    projectOptionsAutomaticAgentReview,
+    projectOptionsAutomaticAgentReviewRunLimit,
+    projectOptionsBranchChoices:
+      projectOptionsBranchesQuery.data?.repository_branches ?? [],
+    projectOptionsColor,
+    projectOptionsColorManuallySelected,
+    projectOptionsDefaultReviewAction,
+    projectOptionsDisabledMcpServers,
+    projectOptionsDraftAgentAdapter,
+    projectOptionsDraftModelCustom,
+    projectOptionsDraftModelPreset,
+    projectOptionsDraftReasoningEffort,
+    projectOptionsProjectId,
+    projectOptionsRepositories:
+      projectOptionsRepositoriesQuery.data?.repositories ?? [],
+    projectOptionsRepositoryTargetBranches,
+    projectOptionsRepositoryValidationCommands,
+    projectOptionsTicketAgentAdapter,
+    projectOptionsTicketModelCustom,
+    projectOptionsTicketModelPreset,
+    projectOptionsTicketReasoningEffort,
+    projectOptionsWorktreeInitCommand,
+    projectOptionsWorktreeInitRunSequential,
+    projectOptionsPreviewStartCommand,
+    projectOptionsWorktreeTeardownCommand,
+    projectRecords,
+  });
+  const {
+    draftAnalysisActive,
+    draftEditorAcceptanceCriteriaLines,
+    draftEditorCanPersist,
+    draftEditorProject,
+    draftEditorRepositories,
+    draftEditorRepository,
+    draftEvents,
+    draftFormDirty,
+    latestDraftEventMeta,
+    latestQuestionsResult,
+    latestRevertableRefineEvent,
+    newDraftFormDirty,
+    selectedDraft,
+    selectedDraftRepository,
+  } = resolveDraftEditorViewState({
+    draftEditorAcceptanceCriteria,
+    draftEditorDescription,
+    draftEditorProjectId,
+    draftEditorRepositoriesQueryData: draftEditorRepositoriesQuery.data,
+    draftEditorTicketType,
+    draftEditorTitle,
+    draftEventsQueryData: draftEventsQuery.data,
+    draftRecords,
+    inspectorKind: inspectorState.kind,
+    projectRecords,
+    repositories,
+    selectedDraftId,
+    selectedProjectId,
+  });
+  useDraftEditorSourceSync({
+    draftEditorAcceptanceCriteria,
+    draftEditorDescription,
+    draftEditorSourceId,
+    draftEditorTicketType,
+    draftEditorTitle,
+    draftFormDirty,
+    inspectorKind: inspectorState.kind,
+    pendingDraftEditorSync,
+    selectedDraft,
+    setDraftEditorAcceptanceCriteria,
+    setDraftEditorArtifactScopeId,
+    setDraftEditorDescription,
+    setDraftEditorProjectId,
+    setDraftEditorSourceId,
+    setDraftEditorTicketType,
+    setDraftEditorTitle,
+    setDraftEditorUploadError,
+    setPendingDraftEditorSync,
+  });
   const {
     initializeNewDraftEditor,
     persistNewDraftFromEditor,
@@ -803,108 +562,45 @@ export function useWalleyBoardController() {
     setPendingNewDraftAction,
     uploadDraftArtifactMutation: mutations.uploadDraftArtifactMutation,
   });
+  const {
+    session,
+    sessionAttempts,
+    sessionById,
+    sessionLogs,
+    sessionSummaryStateById,
+    ticketEvents,
+    ticketWorkspaceDiff,
+    reviewPackage,
+    latestReviewRun,
+    reviewRuns,
+    selectedSessionTicket,
+    selectedInspectorTicket,
+    selectedSessionTicketSession,
+    agentControlsWorktreeBySessionId,
+  } = resolveSessionReviewState({
+    latestReviewRun: latestReviewRunQuery.data?.review_run ?? null,
+    reviewPackage: reviewPackageQuery.data?.review_package ?? null,
+    reviewRuns: reviewRunsQuery.data?.review_runs ?? [],
+    selectedSessionId,
+    selectedTicketId,
+    sessionAttempts: sessionAttemptsQuery.data?.attempts ?? [],
+    sessionLogs: sessionLogsQuery.data?.logs ?? [],
+    sessionQueryData: sessionQuery.data,
+    sessionSummaries,
+    ticketEvents: ticketEventsQuery.data?.events ?? [],
+    ticketWorkspaceDiff: ticketWorkspaceDiffQuery.data?.workspace_diff ?? null,
+    tickets: ticketRecords,
+  });
+  const { isDraftRefinementActive } = useDraftRefinementActivity(draftRecords);
 
-  useEffect(() => {
-    if (inspectorState.kind === "new_draft") {
-      return;
-    }
-
-    if (!selectedDraft) {
-      const syncResult = resolveDraftEditorSync({
-        draftFormDirty,
-        editor: {
-          sourceId: draftEditorSourceId,
-          title: draftEditorTitle,
-          description: draftEditorDescription,
-          ticketType: draftEditorTicketType,
-          acceptanceCriteria: draftEditorAcceptanceCriteria,
-        },
-        pendingSync: pendingDraftEditorSync,
-        selectedDraft: null,
-      });
-      if (syncResult.nextEditor) {
-        setDraftEditorSourceId(syncResult.nextEditor.sourceId);
-        setDraftEditorTitle(syncResult.nextEditor.title);
-        setDraftEditorDescription(syncResult.nextEditor.description);
-        setDraftEditorTicketType(syncResult.nextEditor.ticketType);
-        setDraftEditorAcceptanceCriteria(
-          syncResult.nextEditor.acceptanceCriteria,
-        );
-      }
-      if (syncResult.nextPendingSync !== undefined) {
-        setPendingDraftEditorSync(syncResult.nextPendingSync);
-      }
-      return;
-    }
-
-    const syncResult = resolveDraftEditorSync({
-      draftFormDirty,
-      editor: {
-        sourceId: draftEditorSourceId,
-        title: draftEditorTitle,
-        description: draftEditorDescription,
-        ticketType: draftEditorTicketType,
-        acceptanceCriteria: draftEditorAcceptanceCriteria,
-      },
-      pendingSync: pendingDraftEditorSync,
-      selectedDraft,
-    });
-
-    if (syncResult.nextEditor) {
-      setDraftEditorSourceId(syncResult.nextEditor.sourceId);
-      setDraftEditorTitle(syncResult.nextEditor.title);
-      setDraftEditorDescription(syncResult.nextEditor.description);
-      setDraftEditorTicketType(syncResult.nextEditor.ticketType);
-      setDraftEditorAcceptanceCriteria(
-        syncResult.nextEditor.acceptanceCriteria,
-      );
-    }
-
-    if (syncResult.nextPendingSync !== undefined) {
-      setPendingDraftEditorSync(syncResult.nextPendingSync);
-    }
-  }, [
-    draftEditorAcceptanceCriteria,
-    draftEditorDescription,
-    draftEditorSourceId,
-    draftEditorTicketType,
-    draftEditorTitle,
-    draftFormDirty,
-    inspectorState.kind,
-    pendingDraftEditorSync,
-    selectedDraft,
-    setPendingDraftEditorSync,
-    setDraftEditorAcceptanceCriteria,
-    setDraftEditorTitle,
-    setDraftEditorTicketType,
-    setDraftEditorSourceId,
-    setDraftEditorDescription,
-  ]);
-
-  useEffect(() => {
-    if (inspectorState.kind === "new_draft") {
-      return;
-    }
-
-    if (inspectorState.kind === "draft") {
-      if (selectedDraft) {
-        setDraftEditorProjectId(selectedDraft.project_id);
-        setDraftEditorArtifactScopeId(selectedDraft.artifact_scope_id);
-        setDraftEditorUploadError(null);
-      }
-      return;
-    }
-
-    setDraftEditorProjectId(null);
-    setDraftEditorArtifactScopeId(null);
-    setDraftEditorUploadError(null);
-  }, [
-    inspectorState.kind,
-    selectedDraft,
-    setDraftEditorUploadError,
-    setDraftEditorProjectId,
-    setDraftEditorArtifactScopeId,
-  ]);
+  const boardLoading =
+    (selectedProjectId !== null && draftsQuery.isPending) ||
+    (selectedProjectId !== null && ticketsQuery.isPending);
+  const boardError = draftsQuery.isError
+    ? draftsQuery.error.message
+    : ticketsQuery.isError
+      ? ticketsQuery.error.message
+      : null;
 
   const closeProjectOptionsModal = (): void => {
     resetProjectOptionsModal({
@@ -1108,59 +804,12 @@ export function useWalleyBoardController() {
     );
   };
 
-  const deleteTicket = (ticket: TicketFrontmatter): void => {
-    const confirmed = window.confirm(
-      `Delete ticket #${ticket.id}? This removes local ticket metadata and will try to clean up its worktree and branch.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    mutations.deleteTicketMutation.mutate({
-      ticketId: ticket.id,
-      sessionId: ticket.session_id,
-    });
-  };
-
-  const editReadyTicket = (ticket: TicketFrontmatter): void => {
-    mutations.editReadyTicketMutation.mutate({ ticket });
-  };
-
-  const restartTicketFromScratch = (
-    ticket: TicketFrontmatter,
-    reason?: string,
-  ): void => {
-    const confirmed = window.confirm(
-      `Restart ticket #${ticket.id} from scratch? This deletes the current worktree and local branch, then recreates them from ${ticket.target_branch}.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    mutations.restartTicketMutation.mutate({
-      ticketId: ticket.id,
-      ...(reason && reason.trim().length > 0 ? { reason } : {}),
-    });
-  };
-
-  const archiveTicket = (ticket: TicketFrontmatter): void => {
-    mutations.archiveTicketMutation.mutate({
-      ticketId: ticket.id,
-      projectId: ticket.project,
-      sessionId: ticket.session_id,
-    });
-  };
-
-  const archiveDoneTickets = (ticketsToArchive: TicketFrontmatter[]): void => {
-    if (selectedProjectId === null || ticketsToArchive.length === 0) {
-      return;
-    }
-
-    mutations.archiveDoneTicketsMutation.mutate({
-      projectId: selectedProjectId,
-      tickets: ticketsToArchive,
-    });
-  };
+  const ticketActions = createTicketActions({
+    isDraftRefinementActive,
+    mutations,
+    selectedProjectId,
+    visibleDrafts,
+  });
 
   const setArchiveModalVisibility = (open: boolean): void => {
     setArchiveActionFeedback(null);
@@ -1260,8 +909,7 @@ export function useWalleyBoardController() {
     agentReviewHistoryModalOpen,
     archiveActionFeedback,
     archiveModalOpen,
-    archiveDoneTickets,
-    archiveTicket,
+    ...ticketActions,
     agentControlsWorktreeBySessionId,
     archivedTicketsQuery,
     boardError,
@@ -1274,9 +922,7 @@ export function useWalleyBoardController() {
     closeProjectOptionsModal,
     confirmDiscardDraft,
     defaultBranch,
-    deleteTicket,
     discardDraftConfirmOpen,
-    editReadyTicket,
     codexMcpServers,
     dockerHealth,
     doneColumnTickets,
@@ -1298,7 +944,7 @@ export function useWalleyBoardController() {
     draftEventsQuery,
     draftFormDirty,
     draftsQuery,
-    drafts,
+    drafts: draftRecords,
     globalTickets,
     groupedTickets,
     handleConfirmNewDraft,
@@ -1340,7 +986,7 @@ export function useWalleyBoardController() {
     projectOptionsBranchesQuery,
     projectOptionsAutomaticAgentReview,
     projectOptionsAutomaticAgentReviewRunLimit,
-    projectOptionsColor: swatchColor,
+    projectOptionsColor: projectOptionsSwatchColor,
     projectOptionsDefaultReviewAction,
     projectOptionsDisabledMcpServers,
     projectOptionsDirty,
@@ -1382,7 +1028,6 @@ export function useWalleyBoardController() {
     repositoryTerminalPending,
     repositoryWorkspacePreview,
     repositoryWorkspacePreviewQuery,
-    restartTicketFromScratch,
     requestedChangesBody,
     resumeReason,
     latestReviewRun,
@@ -1495,5 +1140,4 @@ export function useWalleyBoardController() {
     visibleTickets,
   };
 }
-
 export type WalleyBoardController = ReturnType<typeof useWalleyBoardController>;

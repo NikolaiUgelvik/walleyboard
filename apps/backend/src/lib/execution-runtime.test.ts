@@ -1190,7 +1190,7 @@ test("startExecution resumes into merge recovery when the preserved worktree is 
     assert.deepEqual(mergeRunInput, {
       conflictedFiles: ["story.txt"],
       failureMessage:
-        "Resume detected unresolved git conflicts in the preserved worktree.",
+        "Resume detected an unfinished git merge in the preserved worktree.",
       stage: "merge",
       targetBranch: "main",
     });

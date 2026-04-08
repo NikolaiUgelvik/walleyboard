@@ -61,7 +61,7 @@ stop_service() {
 
 mkdir -p "$RUN_DIR"
 
-stop_service "backend" "$BACKEND_PID_FILE" "$BACKEND_PORT"
 stop_service "frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT"
+stop_service "backend" "$BACKEND_PID_FILE" "$BACKEND_PORT"
 
 echo "All managed dev servers are stopped."

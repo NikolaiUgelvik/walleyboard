@@ -1,13 +1,8 @@
+import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
-import { ESTIMATED_CARD_HEIGHT, TicketCard } from "./TicketCard.js";
-import type { BoardViewController } from "./walleyboard-view-state.js";
-
-export {
-  projectAccentButtonClassName,
-  TicketWorkspaceActions,
-} from "./TicketCard.js";
+const ESTIMATED_CARD_HEIGHT = 140;
 
 const HAS_INTERSECTION_OBSERVER =
   typeof globalThis !== "undefined" &&
@@ -16,15 +11,15 @@ const HAS_INTERSECTION_OBSERVER =
 export function VirtualizedTicketList({
   tickets,
   column,
-  controller,
   onVisibleTicketIdsChange,
   scrollRoot,
+  renderCard,
 }: {
   tickets: TicketFrontmatter[];
   column: string;
-  controller: BoardViewController;
   onVisibleTicketIdsChange: (column: string, visibleIds: Set<number>) => void;
   scrollRoot?: Element | null;
+  renderCard: (ticket: TicketFrontmatter) => React.ReactNode;
 }) {
   const [visibleSet, setVisibleSet] = useState<Set<number>>(
     () => new Set(tickets.map((t) => t.id)),
@@ -195,11 +190,7 @@ export function VirtualizedTicketList({
       <>
         {tickets.map((ticket) => (
           <div key={ticket.id} id={`ticket-${ticket.id}`} tabIndex={-1}>
-            <TicketCard
-              controller={controller}
-              ticket={ticket}
-              column={column}
-            />
+            {renderCard(ticket)}
           </div>
         ))}
       </>
@@ -223,13 +214,7 @@ export function VirtualizedTicketList({
             style={isVisible ? undefined : { minHeight: cachedHeight }}
           >
             {isVisible ? (
-              <div ref={getMeasureRef(ticket.id)}>
-                <TicketCard
-                  controller={controller}
-                  ticket={ticket}
-                  column={column}
-                />
-              </div>
+              <div ref={getMeasureRef(ticket.id)}>{renderCard(ticket)}</div>
             ) : null}
           </div>
         );

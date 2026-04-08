@@ -46,9 +46,16 @@ test("viewport background follows the resolved light and dark color schemes", ()
 });
 
 test("switches the existing terminal instance between dark and light themes", () => {
+  const appliedThemes: Array<ReturnType<typeof resolveTerminalTheme>> = [];
+  const initialTheme = resolveTerminalTheme("light");
   const terminal = {
     options: {
-      theme: resolveTerminalTheme("light"),
+      theme: initialTheme,
+    },
+    renderer: {
+      setTheme(theme: ReturnType<typeof resolveTerminalTheme>) {
+        appliedThemes.push(theme);
+      },
     },
   };
   let fitCalls = 0;
@@ -64,19 +71,22 @@ test("switches the existing terminal instance between dark and light themes", ()
     "dark",
   );
 
-  assert.strictEqual(terminal.options.theme, darkTheme);
+  assert.strictEqual(terminal.options.theme, initialTheme);
   assert.equal(terminal.options.theme?.background, "#10151b");
   assert.equal(fitCalls, 1);
+  assert.deepEqual(appliedThemes, [darkTheme]);
 
+  const darkThemeState = terminal.options.theme;
   const lightTheme = updateTicketWorkspaceTerminalTheme(
     terminal,
     fitAddon,
     "light",
   );
 
-  assert.strictEqual(terminal.options.theme, lightTheme);
+  assert.strictEqual(terminal.options.theme, darkThemeState);
   assert.equal(terminal.options.theme?.background, "#f8f7f4");
   assert.equal(fitCalls, 2);
+  assert.deepEqual(appliedThemes, [darkTheme, lightTheme]);
 });
 
 test("resolves repository terminal labels with the resolved working directory", () => {
