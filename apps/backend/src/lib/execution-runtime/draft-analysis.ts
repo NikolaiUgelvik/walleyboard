@@ -430,7 +430,7 @@ export async function startDraftAnalysis(
           );
           publishStructuredEvent(eventHub, retryEvent);
 
-          activeDraftRuns.delete(draft.id);
+          activeDraftRuns.set(draft.id, { kill() {} });
           cleanupHostSidecar(runId);
 
           finalized = true;
