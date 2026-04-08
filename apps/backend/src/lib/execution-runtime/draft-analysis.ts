@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { nanoid } from "nanoid";
 
 import type {
@@ -9,7 +9,10 @@ import type {
 } from "../../../../../packages/contracts/src/index.js";
 
 import { resolveProjectAgentConfigFileOverrides } from "../agent-adapters/agent-config-overrides.js";
-import type { AgentCliAdapter } from "../agent-adapters/types.js";
+import {
+  type AgentCliAdapter,
+  AgentJsonParseError,
+} from "../agent-adapters/types.js";
 import type { DockerRuntime } from "../docker-runtime.js";
 import { preserveDraftArtifactImages } from "../draft-artifact-images.js";
 import type { EventHub } from "../event-hub.js";
@@ -157,6 +160,9 @@ export async function startDraftAnalysis(
       runId,
       mode,
     );
+    if (attemptNumber > 0 && existsSync(outputPath)) {
+      unlinkSync(outputPath);
+    }
     const mcpPort = await allocatePort();
     const run = adapter.buildDraftRun({
       draft,
@@ -394,9 +400,7 @@ export async function startDraftAnalysis(
             : `Unable to process ${adapter.label} output`;
 
         const isJsonParseFailure =
-          mode === "refine" &&
-          error instanceof Error &&
-          error.message.includes("did not return valid JSON output");
+          mode === "refine" && error instanceof AgentJsonParseError;
 
         if (isJsonParseFailure && attemptNumber + 1 < maxDraftRefineAttempts) {
           attemptNumber++;

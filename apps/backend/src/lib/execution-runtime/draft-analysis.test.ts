@@ -12,7 +12,10 @@ import type {
   Project,
   RepositoryConfig,
 } from "../../../../../packages/contracts/src/index.js";
-import type { AgentCliAdapter } from "../agent-adapters/types.js";
+import {
+  type AgentCliAdapter,
+  AgentJsonParseError,
+} from "../agent-adapters/types.js";
 import type { DraftRefineSessionPersistence } from "../store.js";
 import {
   type DraftAnalysisDeps,
@@ -325,7 +328,7 @@ test("retries on JSON parse failure and succeeds on second attempt", async () =>
   try {
     h.setParseDraftResultBehavior((callIndex) => {
       if (callIndex === 0) {
-        throw new Error("Claude Code did not return valid JSON output.");
+        throw new AgentJsonParseError("Claude Code");
       }
       return validAgentResult;
     });
@@ -391,7 +394,7 @@ test("fails after exhausting all 3 retry attempts", async () => {
   const h = createTestHarness();
   try {
     h.setParseDraftResultBehavior(() => {
-      throw new Error("Claude Code did not return valid JSON output.");
+      throw new AgentJsonParseError("Claude Code");
     });
 
     const promise = startDraftAnalysis(h.deps, {
@@ -445,7 +448,7 @@ test("stale first-attempt closures do not fire after retry handoff", async () =>
   try {
     h.setParseDraftResultBehavior((callIndex) => {
       if (callIndex === 0) {
-        throw new Error("Claude Code did not return valid JSON output.");
+        throw new AgentJsonParseError("Claude Code");
       }
       return validAgentResult;
     });

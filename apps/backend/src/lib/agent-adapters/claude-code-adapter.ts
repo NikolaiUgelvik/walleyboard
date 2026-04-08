@@ -28,16 +28,17 @@ import {
   buildPullRequestBodyPrompt,
   buildReviewPrompt,
 } from "./shared-execution-prompts.js";
-import type {
-  AgentCliAdapter,
-  DraftRunInput,
-  ExecutionRunInput,
-  HostSidecar,
-  InterpretedAdapterLine,
-  MergeConflictRunInput,
-  PreparedAgentRun,
-  PullRequestBodyRunInput,
-  ReviewRunInput,
+import {
+  type AgentCliAdapter,
+  AgentJsonParseError,
+  type DraftRunInput,
+  type ExecutionRunInput,
+  type HostSidecar,
+  type InterpretedAdapterLine,
+  type MergeConflictRunInput,
+  type PreparedAgentRun,
+  type PullRequestBodyRunInput,
+  type ReviewRunInput,
 } from "./types.js";
 import {
   buildClaudeWalleyboardHttpMcpConfig,
@@ -238,7 +239,7 @@ export function parseClaudeCodeJsonResult<T>(
     // Invalid JSON - handled below.
   }
 
-  throw new Error("Claude Code did not return valid JSON output.");
+  throw new AgentJsonParseError("Claude Code");
 }
 
 export function formatClaudeCodeExitReason(
