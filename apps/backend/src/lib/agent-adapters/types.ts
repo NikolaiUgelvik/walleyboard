@@ -87,9 +87,10 @@ export type ExecutionRunInput = {
 export type MergeConflictRunInput = {
   conflictedFiles: string[];
   failureMessage: string;
+  recoveryContext?: string | null;
   outputPath: string;
   project: Project;
-  recoveryKind: "conflicts" | "target_branch_advanced";
+  recoveryKind: "ci_failure" | "conflicts" | "target_branch_advanced";
   repository: RepositoryConfig;
   session: ExecutionSession;
   stage: "rebase" | "merge";

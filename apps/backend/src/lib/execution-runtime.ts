@@ -598,6 +598,7 @@ export class ExecutionRuntime {
     ticket,
     session,
     additionalInstruction,
+    pullRequestRecoveryKind,
   }: StartExecutionInput): void {
     if (session.status === "queued") {
       return;
@@ -647,27 +648,43 @@ export class ExecutionRuntime {
       });
     }
 
-    const executionMode: ExecutionMode =
-      session.planning_enabled && session.plan_status !== "approved"
+    const recoveryState =
+      pullRequestRecoveryKind === "ci_failure"
+        ? null
+        : inspectWorktreeRecoveryState(session.worktree_path);
+    const useRecoveryPrompt =
+      recoveryState !== null || pullRequestRecoveryKind === "ci_failure";
+    const executionMode: ExecutionMode = useRecoveryPrompt
+      ? "implementation"
+      : session.planning_enabled && session.plan_status !== "approved"
         ? "plan"
         : "implementation";
-    const recoveryState =
-      executionMode === "implementation"
-        ? inspectWorktreeRecoveryState(session.worktree_path)
+    const recoveryContext = hasMeaningfulContent(additionalInstruction)
+      ? additionalInstruction
+      : hasMeaningfulContent(requestedChangeNote?.body)
+        ? requestedChangeNote.body
         : null;
-    const outputSummaryPath = recoveryState
+    const outputSummaryPath = useRecoveryPrompt
       ? buildMergeConflictSummaryPath(project, ticket.id, session.id)
       : buildOutputSummaryPath(project, ticket.id, session.id);
-    const run = recoveryState
+    const run = useRecoveryPrompt
       ? adapter.buildMergeConflictRun({
-          conflictedFiles: recoveryState.conflictedFiles,
-          failureMessage: recoveryState.failureMessage,
+          conflictedFiles: recoveryState?.conflictedFiles ?? [],
+          failureMessage:
+            recoveryState?.failureMessage ??
+            (pullRequestRecoveryKind === "ci_failure"
+              ? "GitHub reported failing checks on the pull request."
+              : "GitHub reported a pull request blocker that requires recovery."),
           outputPath: outputSummaryPath,
           project,
-          recoveryKind: "conflicts",
+          recoveryContext,
+          recoveryKind:
+            pullRequestRecoveryKind === "ci_failure"
+              ? "ci_failure"
+              : "conflicts",
           repository,
           session,
-          stage: recoveryState.stage,
+          stage: recoveryState?.stage ?? "merge",
           targetBranch: ticket.target_branch ?? repository.target_branch,
           ticket,
           useDockerRuntime: true,
@@ -684,7 +701,7 @@ export class ExecutionRuntime {
           useDockerRuntime: true,
         });
     this.#store.updateExecutionAttempt(attemptId, {
-      prompt_kind: recoveryState
+      prompt_kind: useRecoveryPrompt
         ? "merge_conflict"
         : executionMode === "plan"
           ? "plan"
@@ -766,8 +783,10 @@ export class ExecutionRuntime {
     const runningSession = this.#store.updateSessionStatus(
       session.id,
       "running",
-      recoveryState
-        ? `${adapter.label} merge recovery is running inside the prepared worktree.`
+      useRecoveryPrompt
+        ? recoveryState
+          ? `${adapter.label} merge recovery is running inside the prepared worktree.`
+          : `${adapter.label} pull request recovery is running inside the prepared worktree.`
         : `${adapter.label} execution is running inside the prepared worktree.`,
     );
     publishSessionUpdated(
@@ -780,7 +799,7 @@ export class ExecutionRuntime {
       this.#store,
       session.id,
       attemptId,
-      `Launching ${adapter.label}${recoveryState ? " merge recovery" : ""} in Docker for ${session.worktree_path}`,
+      `Launching ${adapter.label}${useRecoveryPrompt ? (recoveryState ? " merge recovery" : " pull request recovery") : ""} in Docker for ${session.worktree_path}`,
     );
     if (recoveryState) {
       publishSessionOutput(
@@ -789,6 +808,19 @@ export class ExecutionRuntime {
         session.id,
         attemptId,
         `${recoveryState.failureMessage} Completing the in-progress git ${recoveryState.stage} before any new ticket work continues.`,
+      );
+    }
+    if (
+      useRecoveryPrompt &&
+      !recoveryState &&
+      pullRequestRecoveryKind === "ci_failure"
+    ) {
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        session.id,
+        attemptId,
+        "GitHub reported failing checks on the pull request. Fix the issues described in the recovery context before new ticket work continues.",
       );
     }
     publishSessionOutput(
@@ -825,7 +857,7 @@ export class ExecutionRuntime {
         `Reasoning effort override: ${reasoningEffort}`,
       );
     }
-    if (session.planning_enabled && !recoveryState) {
+    if (session.planning_enabled && !useRecoveryPrompt) {
       publishSessionOutput(
         this.#eventHub,
         this.#store,
@@ -837,12 +869,16 @@ export class ExecutionRuntime {
       );
     }
     if (requestedChangeNote) {
+      const noteLabel =
+        pullRequestRecoveryKind === "ci_failure"
+          ? "Latest recovery note"
+          : "Latest requested changes";
       publishSessionOutput(
         this.#eventHub,
         this.#store,
         session.id,
         attemptId,
-        formatMarkdownLog("Latest requested changes", requestedChangeNote.body),
+        formatMarkdownLog(noteLabel, requestedChangeNote.body),
       );
     }
     if (hasMeaningfulContent(additionalInstruction)) {

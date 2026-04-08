@@ -56,3 +56,35 @@ export type GraphQlDiscussionCommentNode = {
     login?: unknown;
   } | null;
 } | null;
+
+export type GraphQlCheckRunAnnotationNode = {
+  title?: unknown;
+  path?: unknown;
+  startLine?: unknown;
+  endLine?: unknown;
+  startColumn?: unknown;
+  endColumn?: unknown;
+  message?: unknown;
+  rawDetails?: unknown;
+} | null;
+
+export type GraphQlCheckRunContextNode = {
+  __typename?: unknown;
+  name?: unknown;
+  status?: unknown;
+  conclusion?: unknown;
+  detailsUrl?: unknown;
+  summary?: unknown;
+  text?: unknown;
+  annotations?: {
+    nodes?: Array<GraphQlCheckRunAnnotationNode | null> | null;
+  } | null;
+} | null;
+
+export type GraphQlStatusContextNode = {
+  __typename?: unknown;
+  context?: unknown;
+  state?: unknown;
+  targetUrl?: unknown;
+  description?: unknown;
+} | null;

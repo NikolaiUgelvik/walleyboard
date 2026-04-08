@@ -31,6 +31,7 @@ export type StartExecutionInput = {
   ticket: TicketFrontmatter;
   session: ExecutionSession;
   additionalInstruction?: string;
+  pullRequestRecoveryKind?: "ci_failure";
 };
 
 export type DraftAnalysisInput = {

@@ -385,19 +385,22 @@ export function buildMergeConflictPrompt(input: {
   ticket: TicketFrontmatter;
   repository: RepositoryConfig;
   enabledMcpServers: readonly string[];
-  recoveryKind: "conflicts" | "target_branch_advanced";
+  recoveryKind: "ci_failure" | "conflicts" | "target_branch_advanced";
   targetBranch: string;
   stage: "rebase" | "merge";
   conflictedFiles: string[];
   failureMessage: string;
+  recoveryContext?: string | null;
 }): string {
   const sections: string[] = [];
 
   appendHeading(sections, "Objective");
   sections.push(
-    input.recoveryKind === "target_branch_advanced"
-      ? `Update the ticket branch for ticket #${input.ticket.id} in repository \`${input.repository.name}\` so it includes the latest \`${input.targetBranch}\` changes and the final merge can continue.`
-      : `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository \`${input.repository.name}\`.`,
+    input.recoveryKind === "ci_failure"
+      ? `Fix the failing GitHub Actions and status checks for ticket #${input.ticket.id} in repository \`${input.repository.name}\`.`
+      : input.recoveryKind === "target_branch_advanced"
+        ? `Update the ticket branch for ticket #${input.ticket.id} in repository \`${input.repository.name}\` so it includes the latest \`${input.targetBranch}\` changes and the final merge can continue.`
+        : `Resolve the active git ${input.stage} conflicts for ticket #${input.ticket.id} in repository \`${input.repository.name}\`.`,
     "You are running inside the existing ticket worktree and must preserve the ticket's intended scope.",
   );
 
@@ -405,26 +408,49 @@ export function buildMergeConflictPrompt(input: {
   appendAcceptanceChecklist(
     sections,
     input.ticket.acceptance_criteria,
-    "Preserve the ticket intent while resolving the git conflicts.",
+    input.recoveryKind === "ci_failure"
+      ? "Preserve the ticket intent while fixing the failing checks."
+      : "Preserve the ticket intent while resolving the git conflicts.",
   );
   appendAvailableMcpSection(sections, input.enabledMcpServers);
 
-  appendHeading(sections, "Conflict Facts");
-  appendBullets(sections, [
-    `Target branch: \`${input.targetBranch}\``,
-    `Conflict stage: \`${input.stage}\``,
-    `Recovery mode: \`${input.recoveryKind}\``,
-  ]);
-  appendBulletSubsection(
-    sections,
-    "Conflicted Files",
-    input.conflictedFiles.map((file) => `\`${file}\``),
-    "Unknown",
-  );
-  appendSubsection(sections, "Git Failure", input.failureMessage);
+  if (input.recoveryKind === "ci_failure") {
+    appendHeading(sections, "CI Failure Facts");
+    appendBullets(sections, [
+      "Recovery mode: `ci_failure`",
+      `Target branch: \`${input.targetBranch}\``,
+      "Fix the failing checks described in the recovery context below.",
+    ]);
+    appendSubsection(sections, "Action Failure Summary", input.failureMessage);
+  } else {
+    appendHeading(sections, "Conflict Facts");
+    appendBullets(sections, [
+      `Target branch: \`${input.targetBranch}\``,
+      `Conflict stage: \`${input.stage}\``,
+      `Recovery mode: \`${input.recoveryKind}\``,
+    ]);
+    appendBulletSubsection(
+      sections,
+      "Conflicted Files",
+      input.conflictedFiles.map((file) => `\`${file}\``),
+      "Unknown",
+    );
+    appendSubsection(sections, "Git Failure", input.failureMessage);
+  }
+
+  if (hasMeaningfulContent(input.recoveryContext)) {
+    appendSubsection(sections, "Recovery Context", input.recoveryContext);
+  }
 
   appendHeading(sections, "Guardrails");
-  if (input.recoveryKind === "target_branch_advanced") {
+  if (input.recoveryKind === "ci_failure") {
+    appendBullets(sections, [
+      "Stay inside this repository worktree.",
+      "Fix the failing checks pointed out by the recovery context and keep the ticket intent intact.",
+      "Run the relevant checks when it is obvious and inexpensive.",
+      "Do not open a PR or change ticket metadata.",
+    ]);
+  } else if (input.recoveryKind === "target_branch_advanced") {
     appendBullets(sections, [
       "Stay inside this repository worktree.",
       "Update the current ticket branch so it includes the latest target-branch changes before the final merge is retried.",
@@ -448,7 +474,9 @@ export function buildMergeConflictPrompt(input: {
     "Leave the worktree clean with no in-progress git operation.",
     input.recoveryKind === "target_branch_advanced"
       ? "The ticket branch now contains the latest target-branch changes cleanly."
-      : "The git operation finished cleanly, or the blocker is clearly stated.",
+      : input.recoveryKind === "ci_failure"
+        ? "The failing checks were addressed or the blocker is clearly stated."
+        : "The git operation finished cleanly, or the blocker is clearly stated.",
     "End with a concise summary of the outcome.",
   ]);
   return sections.join("\n");

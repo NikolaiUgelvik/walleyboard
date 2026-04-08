@@ -588,6 +588,7 @@ export class CodexCliAdapter implements AgentCliAdapter {
       repository: input.repository,
       enabledMcpServers,
       recoveryKind: input.recoveryKind,
+      recoveryContext: input.recoveryContext ?? null,
       targetBranch: input.targetBranch,
       stage: input.stage,
       conflictedFiles: input.conflictedFiles,

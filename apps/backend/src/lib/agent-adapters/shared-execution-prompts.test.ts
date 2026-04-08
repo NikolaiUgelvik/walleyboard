@@ -3,12 +3,14 @@ import test from "node:test";
 
 import type {
   ExecutionAttempt,
+  PullRequestRef,
   RepositoryConfig,
   ReviewPackage,
   ReviewRun,
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
+import { buildActionFailuresBody } from "../github-action-failures.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 
 import {
@@ -85,6 +87,24 @@ function createReviewPackage(): ReviewPackage {
     ],
     remaining_risks: ["Manual gameplay feel is still only code-verified."],
     created_at: "2026-04-01T00:10:00.000Z",
+  };
+}
+
+function createLinkedPullRequest(): PullRequestRef {
+  return {
+    provider: "github",
+    repo_owner: "acme",
+    repo_name: "repo",
+    number: 12,
+    url: "https://github.com/acme/repo/pull/12",
+    head_branch: "feature/ship-the-pr-workflow",
+    base_branch: "main",
+    state: "open",
+    review_status: "pending",
+    head_sha: "61a4523a0f4259c5c06404ce5f0cabed1dc65f1c",
+    changes_requested_by: null,
+    last_changes_requested_head_sha: null,
+    last_reconciled_at: null,
   };
 }
 
@@ -257,6 +277,96 @@ test("buildMergeConflictPrompt separates facts from completion criteria", () => 
   assert.match(prompt, /- `tests\/story\.test\.ts`/);
   assert.match(prompt, /### Git Failure/);
   assert.match(prompt, /## Completion Checklist/);
+});
+
+test("buildMergeConflictPrompt includes CI-only recovery context", () => {
+  const ciFailureBody = buildActionFailuresBody(
+    createTicket(),
+    createLinkedPullRequest(),
+    [
+      {
+        kind: "check_run",
+        name: "unit-tests",
+        state: "COMPLETED",
+        conclusion: "FAILURE",
+        detailsUrl: "https://github.com/acme/repo/actions/runs/1",
+        summary: "2 tests failed",
+        text: "See the failing assertions in the summary.",
+        description: null,
+        targetUrl: null,
+        annotations: [
+          {
+            title: "Assertion failed",
+            path: "src/story.ts",
+            startLine: 42,
+            endLine: 42,
+            startColumn: 1,
+            endColumn: 10,
+            message: "Expected the grenade count to decrease.",
+            rawDetails: "line 42 failed",
+          },
+        ],
+      },
+    ],
+  );
+
+  const prompt = buildMergeConflictPrompt({
+    ticket: createTicket(),
+    repository: createRepository(),
+    enabledMcpServers: ["context7"],
+    recoveryKind: "ci_failure",
+    targetBranch: "origin/main",
+    stage: "merge",
+    conflictedFiles: [],
+    failureMessage: "GitHub reported failing checks on the pull request.",
+    recoveryContext: ciFailureBody,
+  });
+
+  assert.match(prompt, /CI Failure Facts/);
+  assert.match(prompt, /Recovery Context/);
+  assert.match(prompt, /unit-tests/);
+  assert.match(prompt, /src\/story\.ts:42/);
+  assert.doesNotMatch(prompt, /## Conflict Facts/);
+});
+
+test("buildMergeConflictPrompt includes both conflict facts and CI recovery context", () => {
+  const ciFailureBody = buildActionFailuresBody(
+    createTicket(),
+    createLinkedPullRequest(),
+    [
+      {
+        kind: "status_context",
+        name: "lint / eslint",
+        state: "FAILURE",
+        conclusion: null,
+        detailsUrl: "https://ci.example.com/lint",
+        summary: null,
+        text: null,
+        description: "ESLint found 3 issues.",
+        targetUrl: "https://ci.example.com/lint",
+        annotations: [],
+      },
+    ],
+  );
+
+  const prompt = buildMergeConflictPrompt({
+    ticket: createTicket(),
+    repository: createRepository(),
+    enabledMcpServers: ["context7"],
+    recoveryKind: "conflicts",
+    targetBranch: "origin/main",
+    stage: "merge",
+    conflictedFiles: ["src/story.txt"],
+    failureMessage: "Automatic merge failed after target branch advanced.",
+    recoveryContext: ciFailureBody,
+  });
+
+  assert.match(prompt, /Conflict Facts/);
+  assert.match(prompt, /Recovery Context/);
+  assert.match(prompt, /CI Failure Facts/);
+  assert.match(prompt, /lint \/ eslint/);
+  assert.match(prompt, /ESLint found 3 issues\./);
+  assert.match(prompt, /src\/story\.txt/);
 });
 
 test("buildMergeConflictPrompt states when no MCPs are enabled", () => {

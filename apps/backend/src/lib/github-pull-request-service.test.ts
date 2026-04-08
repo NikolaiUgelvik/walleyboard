@@ -160,6 +160,8 @@ function createService(
       sessionId: string;
       ticketId: number;
       worktreePath: string | null;
+      additionalInstruction?: string | null;
+      pullRequestRecoveryKind?: string | null;
     }) => void;
     stopPreviewAndWait?: (ticketId: number) => Promise<void>;
     disposeTicket?: (ticketId: number) => Promise<void>;
@@ -169,6 +171,8 @@ function createService(
     sessionId: string;
     ticketId: number;
     worktreePath: string | null;
+    additionalInstruction?: string | null;
+    pullRequestRecoveryKind?: string | null;
   }> = [];
   const closedWorkspaceTerminals: Array<{
     sessionId: string;
@@ -192,12 +196,26 @@ function createService(
     startExecution(input: {
       session: { id: string; worktree_path: string | null };
       ticket: { id: number };
+      additionalInstruction?: string | null;
+      pullRequestRecoveryKind?: string | null;
     }) {
-      const nextStart = {
+      const nextStart: {
+        sessionId: string;
+        ticketId: number;
+        worktreePath: string | null;
+        additionalInstruction?: string | null;
+        pullRequestRecoveryKind?: string | null;
+      } = {
         sessionId: input.session.id,
         ticketId: input.ticket.id,
         worktreePath: input.session.worktree_path,
       };
+      if (input.additionalInstruction !== undefined) {
+        nextStart.additionalInstruction = input.additionalInstruction;
+      }
+      if (input.pullRequestRecoveryKind !== undefined) {
+        nextStart.pullRequestRecoveryKind = input.pullRequestRecoveryKind;
+      }
       executionStarts.push(nextStart);
       options?.onStartExecution?.(nextStart);
     },
@@ -873,6 +891,587 @@ test("background reconcile skips overlapping timer runs while a sync is still in
       globalThis.setInterval = originalSetInterval;
       globalThis.clearInterval = originalClearInterval;
     }
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("reconcileDuePullRequests keeps polling review tickets every minute without backoff", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-polling-cadence-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+  const originalDateNow = Date.now;
+  let now = 1_700_000_000_000;
+  Date.now = () => now;
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const headSha = runGit(fixture.runtime.worktreePath, ["rev-parse", "HEAD"]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 61,
+      url: "https://github.com/acme/repo/pull/61",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: headSha,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    let ghCallCount = 0;
+    const { service } = createService(fixture.store, async () => {
+      ghCallCount += 1;
+      return JSON.stringify({
+        data: {
+          repository: {
+            pr_61: {
+              number: 61,
+              url: "https://github.com/acme/repo/pull/61",
+              state: "OPEN",
+              reviewDecision: "REVIEW_REQUIRED",
+              mergeable: "UNKNOWN",
+              mergeStateStatus: "CLEAN",
+              headRefName: fixture.ticket?.working_branch,
+              baseRefName: fixture.ticket?.target_branch,
+              headRefOid: headSha,
+              reviews: {
+                nodes: [],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await service.reconcileDuePullRequests();
+    assert.equal(ghCallCount, 1);
+
+    now += 30_000;
+    await service.reconcileDuePullRequests();
+    assert.equal(ghCallCount, 1);
+
+    now += 31_000;
+    await service.reconcileDuePullRequests();
+    assert.equal(ghCallCount, 2);
+  } finally {
+    Date.now = originalDateNow;
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("reconcileTicket starts merge-conflict recovery when GitHub reports a blocked pull request", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-gh-conflict-pr-"));
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const originalHead = runGit(fixture.runtime.worktreePath, [
+      "rev-parse",
+      "HEAD",
+    ]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 73,
+      url: "https://github.com/acme/repo/pull/73",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: originalHead,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    const { executionStarts, service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+            assert.equal(args[1], "graphql");
+            assert.match(args.join(" "), /mergeable/);
+            assert.match(args.join(" "), /mergeStateStatus/);
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_73: {
+                  number: 73,
+                  url: "https://github.com/acme/repo/pull/73",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  mergeable: "CONFLICTING",
+                  mergeStateStatus: "DIRTY",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: originalHead,
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    await service.reconcileTicket(fixture.ticket.id);
+
+    const updatedTicket = fixture.store.getTicket(fixture.ticket.id);
+    const updatedSession = fixture.store.getSession(fixture.session.id);
+    const mergeConflictNote = updatedSession?.latest_requested_change_note_id
+      ? fixture.store.getRequestedChangeNote(
+          updatedSession.latest_requested_change_note_id,
+        )?.body
+      : null;
+
+    assert.equal(updatedTicket?.status, "in_progress");
+    assert.equal(updatedSession?.status, "awaiting_input");
+    assert.notEqual(
+      updatedSession?.current_attempt_id,
+      fixture.session.current_attempt_id,
+    );
+    assert.equal(executionStarts.length, 1);
+    assert.deepEqual(executionStarts[0], {
+      sessionId: fixture.session.id,
+      ticketId: fixture.ticket.id,
+      worktreePath: fixture.runtime.worktreePath,
+    });
+    assert.match(mergeConflictNote ?? "", /conflict-blocked/);
+    assert.match(mergeConflictNote ?? "", /mergeable: CONFLICTING/);
+    assert.match(mergeConflictNote ?? "", /mergeStateStatus: DIRTY/);
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("reconcileTicket preserves requested changes when GitHub also reports merge conflicts", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-conflict-requested-pr-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const originalHead = runGit(fixture.runtime.worktreePath, [
+      "rev-parse",
+      "HEAD",
+    ]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 74,
+      url: "https://github.com/acme/repo/pull/74",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: originalHead,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    const { executionStarts, service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+            assert.equal(args[1], "graphql");
+            assert.match(args.join(" "), /mergeable/);
+            assert.match(args.join(" "), /mergeStateStatus/);
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_74: {
+                  number: 74,
+                  url: "https://github.com/acme/repo/pull/74",
+                  state: "OPEN",
+                  reviewDecision: "CHANGES_REQUESTED",
+                  mergeable: "CONFLICTING",
+                  mergeStateStatus: "DIRTY",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: originalHead,
+                  reviews: {
+                    nodes: [
+                      {
+                        state: "CHANGES_REQUESTED",
+                        submittedAt: "2026-04-05T16:10:34Z",
+                        author: {
+                          login: "reviewer1",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          }),
+        },
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+            assert.equal(args[1], "graphql");
+            assert.match(args.join(" "), /reviews\(last: 20\)/);
+            assert.match(args.join(" "), /comments\(last: 50\)/);
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  reviews: {
+                    nodes: [
+                      {
+                        state: "CHANGES_REQUESTED",
+                        submittedAt: "2026-04-05T16:10:34Z",
+                        body: "Please address the structural review feedback.",
+                        author: {
+                          login: "reviewer1",
+                        },
+                        comments: {
+                          nodes: [
+                            {
+                              body: "Use the shared grenade count helper from CombatECS.",
+                              path: "src/story.ts",
+                              line: 42,
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                  comments: {
+                    nodes: [
+                      {
+                        body: "I also verified the updated collision path.",
+                        createdAt: "2026-04-05T16:10:41Z",
+                        isMinimized: false,
+                        author: {
+                          login: "reviewer1",
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    await service.reconcileTicket(fixture.ticket.id);
+
+    const updatedTicket = fixture.store.getTicket(fixture.ticket.id);
+    const updatedSession = fixture.store.getSession(fixture.session.id);
+    const requestedChangeBody = updatedSession?.latest_requested_change_note_id
+      ? fixture.store.getRequestedChangeNote(
+          updatedSession.latest_requested_change_note_id,
+        )?.body
+      : null;
+
+    assert.equal(updatedTicket?.status, "in_progress");
+    assert.equal(updatedSession?.status, "awaiting_input");
+    assert.equal(executionStarts.length, 1);
+    assert.match(requestedChangeBody ?? "", /conflict-blocked/);
+    assert.match(requestedChangeBody ?? "", /Latest requested changes:/);
+    assert.match(requestedChangeBody ?? "", /Review summary:/);
+    assert.match(
+      requestedChangeBody ?? "",
+      /Please address the structural review feedback\./,
+    );
+    assert.match(requestedChangeBody ?? "", /Inline comments:/);
+    assert.match(
+      requestedChangeBody ?? "",
+      /Use the shared grenade count helper from CombatECS\./,
+    );
+    assert.match(requestedChangeBody ?? "", /PR discussion comments:/);
+    assert.match(
+      requestedChangeBody ?? "",
+      /I also verified the updated collision path\./,
+    );
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("reconcileTicket restarts for CI failures and includes runner details in the recovery note", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-gh-ci-failure-pr-"));
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const originalHead = runGit(fixture.runtime.worktreePath, [
+      "rev-parse",
+      "HEAD",
+    ]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 81,
+      url: "https://github.com/acme/repo/pull/81",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: originalHead,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    const { executionStarts, service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+            assert.equal(args[1], "graphql");
+            assert.match(args.join(" "), /statusCheckRollup/);
+            assert.match(args.join(" "), /contexts\(first: 100\)/);
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_81: {
+                  number: 81,
+                  url: "https://github.com/acme/repo/pull/81",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  mergeable: "MERGEABLE",
+                  mergeStateStatus: "CLEAN",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: originalHead,
+                  commits: {
+                    nodes: [
+                      {
+                        commit: {
+                          statusCheckRollup: {
+                            contexts: {
+                              nodes: [
+                                {
+                                  __typename: "CheckRun",
+                                  name: "unit-tests",
+                                  status: "COMPLETED",
+                                  conclusion: "FAILURE",
+                                  detailsUrl:
+                                    "https://github.com/acme/repo/actions/runs/81",
+                                  summary: "2 tests failed",
+                                  text: "See the failing assertions in the summary.",
+                                  annotations: {
+                                    nodes: [
+                                      {
+                                        title: "Assertion failed",
+                                        path: "src/story.ts",
+                                        startLine: 42,
+                                        endLine: 42,
+                                        startColumn: 1,
+                                        endColumn: 10,
+                                        message:
+                                          "Expected the grenade count to decrease.",
+                                        rawDetails: "line 42 failed",
+                                      },
+                                    ],
+                                  },
+                                },
+                                {
+                                  __typename: "StatusContext",
+                                  context: "lint / eslint",
+                                  state: "FAILURE",
+                                  targetUrl: "https://ci.example.com/lint",
+                                  description: "ESLint found 3 issues.",
+                                },
+                              ],
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    await service.reconcileTicket(fixture.ticket.id);
+
+    const updatedTicket = fixture.store.getTicket(fixture.ticket.id);
+    const updatedSession = fixture.store.getSession(fixture.session.id);
+    const recoveryNote = updatedSession?.latest_requested_change_note_id
+      ? fixture.store.getRequestedChangeNote(
+          updatedSession.latest_requested_change_note_id,
+        )?.body
+      : null;
+
+    assert.equal(updatedTicket?.status, "in_progress");
+    assert.equal(updatedSession?.status, "awaiting_input");
+    assert.equal(executionStarts.length, 1);
+    const firstExecutionStart = executionStarts[0];
+    assert.ok(firstExecutionStart);
+    assert.equal(firstExecutionStart.pullRequestRecoveryKind, "ci_failure");
+    assert.match(recoveryNote ?? "", /CI Failure Facts/);
+    assert.match(recoveryNote ?? "", /unit-tests/);
+    assert.match(recoveryNote ?? "", /lint \/ eslint/);
+    assert.match(recoveryNote ?? "", /src\/story\.ts:42/);
+    assert.match(recoveryNote ?? "", /ESLint found 3 issues\./);
+  } finally {
+    restoreWalleyBoardHome();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("reconcileTicket combines merge conflicts with CI failures in one recovery prompt", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-gh-conflict-ci-failure-pr-"),
+  );
+  const restoreWalleyBoardHome = setWalleyBoardHome(join(tempDir, ".home"));
+
+  try {
+    const fixture = createTicketFixture(tempDir);
+    assert.ok(fixture.ticket);
+    const originalHead = runGit(fixture.runtime.worktreePath, [
+      "rev-parse",
+      "HEAD",
+    ]);
+    fixture.store.updateTicketLinkedPr(fixture.ticket.id, {
+      provider: "github",
+      repo_owner: "acme",
+      repo_name: "repo",
+      number: 82,
+      url: "https://github.com/acme/repo/pull/82",
+      head_branch: fixture.ticket.working_branch ?? "feature",
+      base_branch: fixture.ticket.target_branch,
+      state: "open",
+      review_status: "pending",
+      head_sha: originalHead,
+      changes_requested_by: null,
+      last_changes_requested_head_sha: null,
+      last_reconciled_at: null,
+    });
+
+    const { executionStarts, service } = createService(
+      fixture.store,
+      dequeueGhResponse([
+        {
+          assertArgs: (args) => {
+            assert.equal(args[0], "api");
+            assert.equal(args[1], "graphql");
+            assert.match(args.join(" "), /mergeable/);
+            assert.match(args.join(" "), /mergeStateStatus/);
+            assert.match(args.join(" "), /statusCheckRollup/);
+          },
+          output: JSON.stringify({
+            data: {
+              repository: {
+                pr_82: {
+                  number: 82,
+                  url: "https://github.com/acme/repo/pull/82",
+                  state: "OPEN",
+                  reviewDecision: "REVIEW_REQUIRED",
+                  mergeable: "CONFLICTING",
+                  mergeStateStatus: "DIRTY",
+                  headRefName: fixture.ticket.working_branch,
+                  baseRefName: fixture.ticket.target_branch,
+                  headRefOid: originalHead,
+                  commits: {
+                    nodes: [
+                      {
+                        commit: {
+                          statusCheckRollup: {
+                            contexts: {
+                              nodes: [
+                                {
+                                  __typename: "CheckRun",
+                                  name: "unit-tests",
+                                  status: "COMPLETED",
+                                  conclusion: "FAILURE",
+                                  detailsUrl:
+                                    "https://github.com/acme/repo/actions/runs/82",
+                                  summary: "1 test failed",
+                                  text: "See the failing assertion.",
+                                  annotations: {
+                                    nodes: [
+                                      {
+                                        title: "Assertion failed",
+                                        path: "src/story.ts",
+                                        startLine: 17,
+                                        endLine: 17,
+                                        startColumn: 1,
+                                        endColumn: 8,
+                                        message: "Expected the score to reset.",
+                                        rawDetails: "line 17 failed",
+                                      },
+                                    ],
+                                  },
+                                },
+                              ],
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                  reviews: {
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        },
+      ]),
+    );
+
+    await service.reconcileTicket(fixture.ticket.id);
+
+    const updatedTicket = fixture.store.getTicket(fixture.ticket.id);
+    const updatedSession = fixture.store.getSession(fixture.session.id);
+    const recoveryNote = updatedSession?.latest_requested_change_note_id
+      ? fixture.store.getRequestedChangeNote(
+          updatedSession.latest_requested_change_note_id,
+        )?.body
+      : null;
+
+    assert.equal(updatedTicket?.status, "in_progress");
+    assert.equal(updatedSession?.status, "awaiting_input");
+    assert.equal(executionStarts.length, 1);
+    const firstExecutionStart = executionStarts[0];
+    assert.ok(firstExecutionStart);
+    assert.equal(firstExecutionStart.pullRequestRecoveryKind, undefined);
+    assert.match(recoveryNote ?? "", /conflict-blocked/);
+    assert.match(recoveryNote ?? "", /Latest action failures:/);
+    assert.match(recoveryNote ?? "", /unit-tests/);
+    assert.match(recoveryNote ?? "", /src\/story\.ts:17/);
   } finally {
     restoreWalleyBoardHome();
     rmSync(tempDir, { recursive: true, force: true });
