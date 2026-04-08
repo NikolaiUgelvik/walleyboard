@@ -3,6 +3,14 @@ import type { TicketFrontmatter } from "../../../../../packages/contracts/src/in
 
 import { useTicketDiffLineSummary } from "./use-ticket-diff-line-summary.js";
 
+function setsEqual(a: Set<number>, b: Set<number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
+}
+
 function mergeColumnSets(columnMap: Map<string, Set<number>>): Set<number> {
   const merged = new Set<number>();
   for (const ids of columnMap.values()) {
@@ -28,11 +36,7 @@ export function useVisibleTicketDiffSummary(tickets: TicketFrontmatter[]) {
       columnMapRef.current.set(column, columnVisibleIds);
       const merged = mergeColumnSets(columnMapRef.current);
       setVisibleTicketIds((prev) => {
-        if (
-          prev !== undefined &&
-          prev.size === merged.size &&
-          [...merged].every((id) => prev.has(id))
-        ) {
+        if (prev !== undefined && setsEqual(prev, merged)) {
           return prev;
         }
         return merged;

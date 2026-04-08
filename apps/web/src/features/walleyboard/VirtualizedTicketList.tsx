@@ -149,7 +149,9 @@ export function VirtualizedTicketList({
   const measureRef = useCallback(
     (ticketId: number, element: HTMLDivElement | null) => {
       if (element) {
-        heightCache.current.set(ticketId, element.offsetHeight);
+        requestAnimationFrame(() => {
+          heightCache.current.set(ticketId, element.offsetHeight);
+        });
       }
     },
     [],
