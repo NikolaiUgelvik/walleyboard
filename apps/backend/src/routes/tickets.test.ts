@@ -1471,6 +1471,13 @@ test("move-to-review route transitions an in-progress ticket to review", async (
     assert.equal(body.message, "Ticket moved to review");
     assert.equal(store.getTicket(ticket.id)?.status, "review");
 
+    const events = store.getTicketEvents(ticket.id);
+    const moveEvent = events.find(
+      (e) => e.event_type === "ticket.moved_to_review",
+    );
+    assert.ok(moveEvent, "Expected a ticket.moved_to_review event");
+    assert.equal(moveEvent.payload.ticket_id, ticket.id);
+
     await app.close();
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

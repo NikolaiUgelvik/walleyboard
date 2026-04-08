@@ -182,6 +182,11 @@ export function registerTicketLifecycleRoutes(
           return;
         }
 
+        store.recordTicketEvent(ticketId, "ticket.moved_to_review", {
+          ticket_id: updatedTicket.id,
+          project_id: updatedTicket.project,
+          session_id: updatedTicket.session_id,
+        });
         eventHub.publish(
           makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
             ticket: updatedTicket,
