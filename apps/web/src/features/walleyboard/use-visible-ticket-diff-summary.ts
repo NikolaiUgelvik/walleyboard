@@ -26,7 +26,17 @@ export function useVisibleTicketDiffSummary(tickets: TicketFrontmatter[]) {
   const updateVisibleTicketIds = useCallback(
     (column: string, columnVisibleIds: Set<number>) => {
       columnMapRef.current.set(column, columnVisibleIds);
-      setVisibleTicketIds(mergeColumnSets(columnMapRef.current));
+      const merged = mergeColumnSets(columnMapRef.current);
+      setVisibleTicketIds((prev) => {
+        if (
+          prev !== undefined &&
+          prev.size === merged.size &&
+          [...merged].every((id) => prev.has(id))
+        ) {
+          return prev;
+        }
+        return merged;
+      });
     },
     [],
   );
