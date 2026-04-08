@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { JSDOM } from "jsdom";
@@ -80,8 +80,15 @@ function installDom(socketFactory: () => FakeSocket) {
   };
 }
 
-function SyncProbe({ queryClient }: { queryClient: QueryClient }) {
+function SyncProbe({
+  onInboxAlert,
+  queryClient,
+}: {
+  onInboxAlert?: () => void;
+  queryClient: QueryClient;
+}) {
   useProtocolEventSync({
+    ...(onInboxAlert ? { onInboxAlert } : {}),
     queryClient,
     selectedDraftId: null,
     selectedProjectId: null,
@@ -163,6 +170,69 @@ test("review_run.updated hydrates the latest review-run cache without polling", 
     await act(async () => {
       root.unmount();
     });
+    restoreDom();
+  }
+});
+
+test("inbox.alert events trigger the alert callback", async () => {
+  const sockets: FakeSocket[] = [];
+  const restoreDom = installDom(() => {
+    const socket = new FakeSocket();
+    sockets.push(socket);
+    return socket;
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const onInboxAlert = mock.fn();
+
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SyncProbe onInboxAlert={onInboxAlert} queryClient={queryClient} />
+        </QueryClientProvider>,
+      );
+    });
+
+    await act(async () => {
+      sockets[0]?.emitServer("protocol.event", {
+        entity_id: "inbox",
+        entity_type: "system",
+        event_id: "event-inbox-alert",
+        event_type: "inbox.alert",
+        occurred_at: "2026-04-04T02:00:00.000Z",
+        payload: {
+          alerts: [
+            {
+              kind: "review",
+              notification_key: "review-31:session-31:attempt-1",
+              project_id: "project-1",
+              item_key: "review-31",
+              target_kind: "session",
+              target_id: "session-31",
+              ticket_id: 31,
+              session_id: "session-31",
+            },
+          ],
+          notification_keys: ["review-31:session-31:attempt-1"],
+        },
+      } satisfies ProtocolEvent);
+    });
+
+    assert.equal(onInboxAlert.mock.callCount(), 1);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
     restoreDom();
   }
 });

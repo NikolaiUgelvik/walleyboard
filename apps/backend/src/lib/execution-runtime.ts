@@ -72,6 +72,7 @@ import {
   resolveTrackedExit,
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
+import type { InboxAlertCoordinatorControls } from "./inbox-alert-coordinator.js";
 import { getAgentEnvOverridesCached } from "./walleyboard-conf.js";
 
 type ActiveSessionProcess = ChildProcessWithoutNullStreams;
@@ -111,6 +112,7 @@ export class ExecutionRuntime {
     Set<(didExit: boolean) => void>
   >();
   #reviewReadyHandler: ReviewReadyHandler | null = null;
+  #inboxAlertCoordinator: InboxAlertCoordinatorControls | null = null;
 
   constructor({
     adapterRegistry,
@@ -167,6 +169,12 @@ export class ExecutionRuntime {
 
   setReviewReadyHandler(handler: ReviewReadyHandler | null): void {
     this.#reviewReadyHandler = handler;
+  }
+
+  setInboxAlertCoordinator(
+    inboxAlertCoordinator: InboxAlertCoordinatorControls | null,
+  ): void {
+    this.#inboxAlertCoordinator = inboxAlertCoordinator;
   }
 
   async stopExecution(
@@ -1030,176 +1038,182 @@ export class ExecutionRuntime {
     targetBranch: string;
     summary: string;
   }): Promise<void> {
-    this.#activeSessions.delete(input.sessionId);
-    this.#store.updateExecutionAttempt(input.attemptId, {
-      status: "completed",
-      end_reason: "completed",
-    });
-
-    const session = this.#store.getSession(input.sessionId);
-    const worktreePath = session?.worktree_path;
-    if (!session || !worktreePath) {
-      return;
-    }
-
-    let commitRefs: string[] = [];
-    let diffRef = "";
+    this.#inboxAlertCoordinator?.beginBatch();
 
     try {
-      const tGit0 = performance.now();
-      commitRefs = runGit(worktreePath, [
-        "log",
-        "--format=%H",
-        `${input.targetBranch}..HEAD`,
-      ])
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const tGit1 = performance.now();
+      this.#activeSessions.delete(input.sessionId);
+      this.#store.updateExecutionAttempt(input.attemptId, {
+        status: "completed",
+        end_reason: "completed",
+      });
 
-      if (commitRefs.length === 0) {
-        throw new Error(
-          `${input.adapterLabel} finished without creating a commit on the working branch.`,
+      const session = this.#store.getSession(input.sessionId);
+      const worktreePath = session?.worktree_path;
+      if (!session || !worktreePath) {
+        return;
+      }
+
+      let commitRefs: string[] = [];
+      let diffRef = "";
+
+      try {
+        const tGit0 = performance.now();
+        commitRefs = runGit(worktreePath, [
+          "log",
+          "--format=%H",
+          `${input.targetBranch}..HEAD`,
+        ])
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const tGit1 = performance.now();
+
+        if (commitRefs.length === 0) {
+          throw new Error(
+            `${input.adapterLabel} finished without creating a commit on the working branch.`,
+          );
+        }
+
+        const diff = runGit(worktreePath, [
+          "diff",
+          `${input.targetBranch}...HEAD`,
+        ]);
+        const tGit2 = performance.now();
+        console.warn(
+          `[#finishSuccess] ticketId=${input.ticketId} git-log=${Math.round(tGit1 - tGit0)}ms git-diff=${Math.round(tGit2 - tGit1)}ms diffLength=${diff.length}`,
         );
+        diffRef = writeReviewDiff(input.project, input.ticketId, diff);
+      } catch (error) {
+        const reason =
+          error instanceof Error
+            ? error.message
+            : "Unable to collect review artifacts";
+        const ticket = this.#store.getTicket(input.ticketId);
+        if (!ticket) {
+          throw new Error("Ticket not found while collecting review artifacts");
+        }
+        this.#finishFailure({
+          ticket,
+          sessionId: input.sessionId,
+          attemptId: input.attemptId,
+          reason,
+        });
+        return;
       }
 
-      const diff = runGit(worktreePath, [
-        "diff",
-        `${input.targetBranch}...HEAD`,
-      ]);
-      const tGit2 = performance.now();
-      console.warn(
-        `[#finishSuccess] ticketId=${input.ticketId} git-log=${Math.round(tGit1 - tGit0)}ms git-diff=${Math.round(tGit2 - tGit1)}ms diffLength=${diff.length}`,
-      );
-      diffRef = writeReviewDiff(input.project, input.ticketId, diff);
-    } catch (error) {
-      const reason =
-        error instanceof Error
-          ? error.message
-          : "Unable to collect review artifacts";
-      const ticket = this.#store.getTicket(input.ticketId);
-      if (!ticket) {
-        throw new Error("Ticket not found while collecting review artifacts");
-      }
-      this.#finishFailure({
-        ticket,
+      const {
+        results: validationResults,
+        blockingFailure,
+        remainingRisks,
+      } = await runValidationProfile({
+        eventHub: this.#eventHub,
+        store: this.#store,
+        project: input.project,
+        repository: input.repository,
+        ticketId: input.ticketId,
         sessionId: input.sessionId,
         attemptId: input.attemptId,
-        reason,
+        worktreePath,
       });
-      return;
-    }
 
-    const {
-      results: validationResults,
-      blockingFailure,
-      remainingRisks,
-    } = await runValidationProfile({
-      eventHub: this.#eventHub,
-      store: this.#store,
-      project: input.project,
-      repository: input.repository,
-      ticketId: input.ticketId,
-      sessionId: input.sessionId,
-      attemptId: input.attemptId,
-      worktreePath,
-    });
-
-    if (blockingFailure) {
-      const summary = `${input.adapterLabel} finished, but one or more required validation commands failed.`;
-      const failedSession = this.#store.completeSession(input.sessionId, {
-        status: "failed",
-        last_summary: summary,
-      });
-      publishSessionOutput(
-        this.#eventHub,
-        this.#store,
-        input.sessionId,
-        input.attemptId,
-        summary,
-      );
-      publishSessionUpdated(
-        this.#eventHub,
-        failedSession,
-        failedSession ? this.hasActiveExecution(failedSession.id) : false,
-      );
-      this.startQueuedSessions(input.project.id);
-      return;
-    }
-
-    const reviewPackage = this.#store.createReviewPackage({
-      ticket_id: input.ticketId,
-      session_id: input.sessionId,
-      diff_ref: diffRef,
-      commit_refs: commitRefs,
-      change_summary: input.summary,
-      validation_results: validationResults,
-      remaining_risks: remainingRisks,
-    });
-
-    const ticket = this.#store.updateTicketStatus(input.ticketId, "review");
-    const completedSession = this.#store.completeSession(input.sessionId, {
-      status: "completed",
-      last_summary: input.summary,
-      latest_review_package_id: reviewPackage.id,
-    });
-
-    publishSessionOutput(
-      this.#eventHub,
-      this.#store,
-      input.sessionId,
-      input.attemptId,
-      `${input.adapterLabel} finished successfully.`,
-    );
-    publishSessionOutput(
-      this.#eventHub,
-      this.#store,
-      input.sessionId,
-      input.attemptId,
-      `Review package ready: ${reviewPackage.diff_ref}`,
-    );
-    this.#eventHub.publish(
-      makeProtocolEvent(
-        "review_package.generated",
-        "review_package",
-        reviewPackage.id,
-        {
-          review_package: reviewPackage,
-        },
-      ),
-    );
-    publishTicketUpdated(this.#eventHub, ticket);
-    publishSessionUpdated(
-      this.#eventHub,
-      completedSession,
-      completedSession ? this.hasActiveExecution(completedSession.id) : false,
-    );
-
-    if (this.#reviewReadyHandler && ticket && completedSession) {
-      try {
-        await this.#reviewReadyHandler({
-          project: input.project,
-          repository: input.repository,
-          reviewPackage,
-          session: completedSession,
-          ticket,
+      if (blockingFailure) {
+        const summary = `${input.adapterLabel} finished, but one or more required validation commands failed.`;
+        const failedSession = this.#store.completeSession(input.sessionId, {
+          status: "failed",
+          last_summary: summary,
         });
-      } catch (error) {
         publishSessionOutput(
           this.#eventHub,
           this.#store,
           input.sessionId,
           input.attemptId,
-          `[review follow-up warning] ${
-            error instanceof Error
-              ? error.message
-              : "Unable to complete review follow-up actions"
-          }`,
+          summary,
         );
+        publishSessionUpdated(
+          this.#eventHub,
+          failedSession,
+          failedSession ? this.hasActiveExecution(failedSession.id) : false,
+        );
+        this.startQueuedSessions(input.project.id);
+        return;
       }
-    }
 
-    this.startQueuedSessions(input.project.id);
+      const reviewPackage = this.#store.createReviewPackage({
+        ticket_id: input.ticketId,
+        session_id: input.sessionId,
+        diff_ref: diffRef,
+        commit_refs: commitRefs,
+        change_summary: input.summary,
+        validation_results: validationResults,
+        remaining_risks: remainingRisks,
+      });
+
+      const ticket = this.#store.updateTicketStatus(input.ticketId, "review");
+      const completedSession = this.#store.completeSession(input.sessionId, {
+        status: "completed",
+        last_summary: input.summary,
+        latest_review_package_id: reviewPackage.id,
+      });
+
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        input.sessionId,
+        input.attemptId,
+        `${input.adapterLabel} finished successfully.`,
+      );
+      publishSessionOutput(
+        this.#eventHub,
+        this.#store,
+        input.sessionId,
+        input.attemptId,
+        `Review package ready: ${reviewPackage.diff_ref}`,
+      );
+      this.#eventHub.publish(
+        makeProtocolEvent(
+          "review_package.generated",
+          "review_package",
+          reviewPackage.id,
+          {
+            review_package: reviewPackage,
+          },
+        ),
+      );
+      publishTicketUpdated(this.#eventHub, ticket);
+      publishSessionUpdated(
+        this.#eventHub,
+        completedSession,
+        completedSession ? this.hasActiveExecution(completedSession.id) : false,
+      );
+
+      if (this.#reviewReadyHandler && ticket && completedSession) {
+        try {
+          await this.#reviewReadyHandler({
+            project: input.project,
+            repository: input.repository,
+            reviewPackage,
+            session: completedSession,
+            ticket,
+          });
+        } catch (error) {
+          publishSessionOutput(
+            this.#eventHub,
+            this.#store,
+            input.sessionId,
+            input.attemptId,
+            `[review follow-up warning] ${
+              error instanceof Error
+                ? error.message
+                : "Unable to complete review follow-up actions"
+            }`,
+          );
+        }
+      }
+
+      this.startQueuedSessions(input.project.id);
+    } finally {
+      this.#inboxAlertCoordinator?.endBatch();
+    }
   }
 
   #finishPlanSuccess(input: {

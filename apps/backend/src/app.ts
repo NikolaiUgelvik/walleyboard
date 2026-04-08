@@ -24,6 +24,7 @@ import { EventHub } from "./lib/event-hub.js";
 import { ExecutionRuntime } from "./lib/execution-runtime.js";
 import { registerFrontendStaticRoutes } from "./lib/frontend-static.js";
 import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
+import { InboxAlertCoordinator } from "./lib/inbox-alert-coordinator.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
 import {
@@ -141,6 +142,13 @@ export async function createApp(
   githubPullRequestService.start();
   const recovery = store.recoverInterruptedSessions();
   const recoveredReviewRuns = store.recoverInterruptedReviewRuns();
+  const inboxAlertCoordinator = new InboxAlertCoordinator({
+    eventHub,
+    store,
+  });
+  inboxAlertCoordinator.seedBaseline(recovery.activeSessionIds);
+  inboxAlertCoordinator.start();
+  executionRuntime.setInboxAlertCoordinator(inboxAlertCoordinator);
   const skipStartupDockerCleanup =
     options.skipStartupDockerCleanup ?? shouldSkipStartupDockerCleanup();
   let backendResourcesShutdown = false;
@@ -154,6 +162,7 @@ export async function createApp(
     clearInterval(draftArtifactCleanupInterval);
     app.server.closeAllConnections?.();
     app.server.closeIdleConnections?.();
+    inboxAlertCoordinator.stop();
     await socketServer.close();
     githubPullRequestService.stop();
     await ticketWorkspaceService.dispose();

@@ -244,7 +244,7 @@ export function useWalleyBoardController() {
   const globalTickets = globalTicketsQueries.flatMap(
     (query) => query.data?.tickets ?? [],
   );
-  const { globalDrafts, globalDraftsQueries } = useGlobalDrafts(projectRecords);
+  const { globalDrafts } = useGlobalDrafts(projectRecords);
 
   const globalSessionSummaries = useQueries({
     queries: globalTickets
@@ -308,7 +308,9 @@ export function useWalleyBoardController() {
     ticketsLoaded,
   });
 
+  const { playInboxAlert } = useInboxAlert();
   useProtocolEventSync({
+    onInboxAlert: playInboxAlert,
     queryClient,
     selectedDraftId,
     selectedProjectId,
@@ -368,30 +370,16 @@ export function useWalleyBoardController() {
       .filter((value): value is SessionResponse => value !== undefined)
       .map((item) => [item.session.id, item]),
   );
-  const {
-    actionItemKeys,
-    actionItems,
-    unreadActionItemCount,
-    unreadInboxItemKeys,
-  } = resolveInboxViewState({
-    drafts: globalDrafts,
-    projects: projectRecords,
-    readInboxItemState,
-    sessionsById: globalSessionById,
-    ticketAiReviewActiveById,
-    ticketAiReviewResolvedById,
-    tickets: globalTickets,
-  });
-  const inboxQueriesSettled =
-    projectsLoaded &&
-    globalDraftsQueries.every((query) => !query.isPending) &&
-    globalTicketsQueries.every((query) => !query.isPending) &&
-    globalSessionSummaries.every((query) => !query.isPending);
-  const { silenceNextInboxItemKey } = useInboxAlert({
-    actionItemKeys,
-    visibleActionItemKeys: actionItems.map((item) => item.notificationKey),
-    inboxQueriesSettled,
-  });
+  const { actionItems, unreadActionItemCount, unreadInboxItemKeys } =
+    resolveInboxViewState({
+      drafts: globalDrafts,
+      projects: projectRecords,
+      readInboxItemState,
+      sessionsById: globalSessionById,
+      ticketAiReviewActiveById,
+      ticketAiReviewResolvedById,
+      tickets: globalTickets,
+    });
   const mutations = useWalleyBoardMutationWiring({
     queryClient,
     pendingDraftEditorSync,
@@ -414,7 +402,6 @@ export function useWalleyBoardController() {
     setRepositoryPath,
     setRequestedChangesBody,
     setResumeReason,
-    silenceNextInboxItemKey,
     setTerminalCommand,
     setValidationCommandsText,
     tickets,

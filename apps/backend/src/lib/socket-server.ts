@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from "node:http";
 
-import { Server, type Socket } from "socket.io";
+import { Server, type ServerOptions } from "socket.io";
 
 import { handleRepositoryWorkspaceTerminalConnection } from "../routes/projects.js";
 import { handleTicketWorkspaceTerminalConnection } from "../routes/tickets/read-workspace-routes.js";
@@ -12,9 +12,15 @@ import type { SocketServerPersistence } from "./store.js";
 export type CreateSocketServerInput = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
+  ioFactory?: SocketServerIoFactory;
   server: HttpServer;
   store: SocketServerPersistence;
 };
+
+export type SocketServerIoFactory = (
+  server: HttpServer,
+  options: Partial<ServerOptions>,
+) => SocketServerIo;
 
 export type SocketServerController = {
   close: () => Promise<void>;
@@ -23,6 +29,29 @@ export type SocketServerController = {
 export type SocketServerFactory = (
   input: CreateSocketServerInput,
 ) => SocketServerController;
+
+type SocketServerIoNamespace = {
+  on: (
+    event: "connection",
+    listener: (socket: SocketServerConnectionSocket) => void,
+  ) => void;
+};
+
+type SocketServerIo = {
+  close: (callback: () => void) => void;
+  of: (namespace: string) => SocketServerIoNamespace;
+};
+
+type SocketServerConnectionSocket = {
+  disconnect: (close?: boolean) => void;
+  emit: (event: string, ...args: unknown[]) => void;
+  handshake: {
+    auth: Record<string, unknown>;
+    query: Record<string, unknown>;
+  };
+  on: (event: string, listener: (...args: unknown[]) => void) => void;
+  once: (event: string, listener: (...args: unknown[]) => void) => void;
+};
 
 type ParsedTerminalSocketPath =
   | {
@@ -63,7 +92,9 @@ export function parseTerminalSocketPath(
   return null;
 }
 
-function createTerminalSocketAdapter(socket: Socket): TerminalSocket {
+function createTerminalSocketAdapter(
+  socket: SocketServerConnectionSocket,
+): TerminalSocket {
   return {
     close: () => {
       socket.disconnect(true);
@@ -86,7 +117,10 @@ function createTerminalSocketAdapter(socket: Socket): TerminalSocket {
   };
 }
 
-function sendTerminalError(socket: Socket, message: string): void {
+function sendTerminalError(
+  socket: SocketServerConnectionSocket,
+  message: string,
+): void {
   socket.emit(
     "terminal.message",
     JSON.stringify({
@@ -97,7 +131,9 @@ function sendTerminalError(socket: Socket, message: string): void {
   socket.disconnect(true);
 }
 
-function readTerminalSocketPath(socket: Socket): string | null {
+function readTerminalSocketPath(
+  socket: SocketServerConnectionSocket,
+): string | null {
   const authSocketPath = socket.handshake.auth.socketPath;
   if (typeof authSocketPath === "string" && authSocketPath.length > 0) {
     return authSocketPath;
@@ -112,15 +148,19 @@ function readTerminalSocketPath(socket: Socket): string | null {
 export function createSocketServer({
   eventHub,
   executionRuntime,
+  ioFactory,
   server,
   store,
 }: CreateSocketServerInput): SocketServerController {
-  const io = new Server(server, {
+  const ioOptions: Partial<ServerOptions> = {
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
     },
-  });
+  };
+  const io: SocketServerIo = ioFactory
+    ? ioFactory(server, ioOptions)
+    : new Server(server, ioOptions);
 
   io.of("/events").on("connection", (socket) => {
     const unsubscribe = eventHub.subscribe((event) => {
@@ -169,7 +209,9 @@ export function createSocketServer({
 
   return {
     close: async () => {
-      io.disconnectSockets(true);
+      await new Promise<void>((resolve) => {
+        io.close(() => resolve());
+      });
     },
   };
 }
