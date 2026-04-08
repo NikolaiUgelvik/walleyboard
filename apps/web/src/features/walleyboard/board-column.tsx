@@ -71,25 +71,38 @@ function BoardDraftCard({
       }}
     >
       <Stack gap="xs">
-        <Group justify="space-between" align="flex-start">
-          <Box style={{ fontWeight: 700, lineHeight: 1.35 }}>
-            <MarkdownContent
-              content={draft.title_draft}
-              inline
-              onTicketReferenceNavigate={controller.navigateToTicketReference}
-              ticketReferences={draft.ticket_references ?? []}
-            />
-          </Box>
-          <Group gap="xs" wrap="nowrap">
+        <Box
+          className="board-card-header"
+          style={{
+            alignItems: "flex-start",
+            display: "flex",
+            gap: 8,
+          }}
+        >
+          <Stack
+            className="board-card-header-main"
+            gap={2}
+            style={{ flex: 1, minWidth: 0 }}
+          >
+            <Box style={{ fontWeight: 700, lineHeight: 1.35 }}>
+              <MarkdownContent
+                content={draft.title_draft}
+                inline
+                onTicketReferenceNavigate={controller.navigateToTicketReference}
+                ticketReferences={draft.ticket_references ?? []}
+              />
+            </Box>
             <Badge variant="light" color="gray">
               {formatDraftStatusLabel({
                 isRefining: controller.isDraftRefinementActive(draft.id),
                 wizardStatus: draft.wizard_status,
               })}
             </Badge>
+          </Stack>
+          <Box className="board-card-header-menu" style={{ flex: "0 0 auto" }}>
             <DraftMenu controller={controller} draftId={draft.id} />
-          </Group>
-        </Group>
+          </Box>
+        </Box>
         <MarkdownContent
           className="markdown-muted markdown-small"
           content={getBoardTicketDescriptionPreview(draft.description_draft)}
