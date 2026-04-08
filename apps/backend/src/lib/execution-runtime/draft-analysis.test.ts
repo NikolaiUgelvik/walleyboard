@@ -484,3 +484,41 @@ test("stale first-attempt closures do not fire after retry handoff", async () =>
     h.cleanup();
   }
 });
+
+test("feasibility mode does not retry on AgentJsonParseError", async () => {
+  const h = createTestHarness();
+  try {
+    h.setParseDraftResultBehavior(() => {
+      throw new AgentJsonParseError("Claude Code");
+    });
+
+    const promise = startDraftAnalysis(h.deps, {
+      mode: "questions",
+      draft: h.draft,
+      project: h.project,
+      repository: h.repository,
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(h.spawnCallCount, 1);
+
+    h.fakeChildren[0]?.emitStdout("line\n");
+    h.fakeChildren[0]?.emitExit({ exitCode: 0 });
+
+    await promise;
+
+    assert.equal(h.spawnCallCount, 1, "no retry should be spawned");
+
+    const retryEvents = h.events.filter(
+      (e) => e.type === "draft.refine.retrying",
+    );
+    assert.equal(retryEvents.length, 0, "no retry events for questions mode");
+
+    const failedEvent = h.events.find(
+      (e) => e.type === "draft.questions.failed",
+    );
+    assert.ok(failedEvent, "expected draft.questions.failed event");
+  } finally {
+    h.cleanup();
+  }
+});

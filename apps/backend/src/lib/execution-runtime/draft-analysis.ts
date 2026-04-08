@@ -425,6 +425,7 @@ export async function startDraftAnalysis(
               repository_id: repository.id,
               repository_name: repository.name,
               summary: `Retrying draft refinement (attempt ${attemptNumber + 1} of ${maxDraftRefineAttempts}) — previous attempt returned invalid JSON.`,
+              captured_output: capturedOutput,
             },
           );
           publishStructuredEvent(eventHub, retryEvent);
