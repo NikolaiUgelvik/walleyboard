@@ -14,7 +14,10 @@ import type {
   RepositoryConfig,
   ValidationCommand,
 } from "../../../../../packages/contracts/src/index.js";
-import type { PreparedAgentRun } from "../agent-adapters/types.js";
+import {
+  AgentJsonParseError,
+  type PreparedAgentRun,
+} from "../agent-adapters/types.js";
 import { runObservedOperation } from "../backend-observability.js";
 import { resolveWalleyBoardPath } from "../walleyboard-paths.js";
 import type { DraftFeasibilityResult, DraftRefinementResult } from "./types.js";
@@ -339,7 +342,7 @@ export function parseCodexJsonResult<T>(
     }
   }
 
-  throw new Error("Codex did not return valid JSON output.");
+  throw new AgentJsonParseError("Codex");
 }
 
 export function summarizeDraftRefinement(

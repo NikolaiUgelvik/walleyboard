@@ -24,15 +24,16 @@ import {
   buildPullRequestBodyPrompt,
   buildReviewPrompt,
 } from "./shared-execution-prompts.js";
-import type {
-  AgentCliAdapter,
-  DraftRunInput,
-  ExecutionRunInput,
-  InterpretedAdapterLine,
-  MergeConflictRunInput,
-  PreparedAgentRun,
-  PullRequestBodyRunInput,
-  ReviewRunInput,
+import {
+  type AgentCliAdapter,
+  AgentJsonParseError,
+  type DraftRunInput,
+  type ExecutionRunInput,
+  type InterpretedAdapterLine,
+  type MergeConflictRunInput,
+  type PreparedAgentRun,
+  type PullRequestBodyRunInput,
+  type ReviewRunInput,
 } from "./types.js";
 import {
   buildCodexWalleyboardConfigOverrides,
@@ -143,7 +144,7 @@ function parseCodexJsonResult<T>(rawOutput: string, schema: z.ZodType<T>): T {
     }
   }
 
-  throw new Error("Codex did not return valid JSON output.");
+  throw new AgentJsonParseError("Codex");
 }
 
 function summarizeCodexCommandEvent(

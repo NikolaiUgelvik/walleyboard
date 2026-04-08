@@ -70,6 +70,9 @@ export type DraftRunInput = {
   resultSchema: z.ZodType<unknown>;
   repository: RepositoryConfig;
   useDockerRuntime: boolean;
+  adapterSessionRef?: string;
+  retryAttempt?: number;
+  maxRetryAttempts?: number;
 };
 
 export type ExecutionRunInput = {
@@ -135,6 +138,13 @@ export type PullRequestBodyRunInput = {
 export type PullRequestBodyResult = {
   body: string;
 };
+
+export class AgentJsonParseError extends Error {
+  constructor(adapterLabel: string) {
+    super(`${adapterLabel} did not return valid JSON output.`);
+    this.name = "AgentJsonParseError";
+  }
+}
 
 export interface AgentCliAdapter {
   readonly id: AgentAdapterId;

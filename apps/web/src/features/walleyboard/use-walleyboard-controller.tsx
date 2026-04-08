@@ -1,4 +1,4 @@
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { type SetStateAction, useState } from "react";
 import type {
   Project,
@@ -18,11 +18,7 @@ import {
   populateProjectOptionsModal,
   resetProjectOptionsModal,
 } from "./project-configuration-controls.js";
-import {
-  fetchJson,
-  readInboxReadState,
-  writeInboxReadState,
-} from "./shared-api.js";
+import { readInboxReadState, writeInboxReadState } from "./shared-api.js";
 import type { RepositoriesResponse, SessionResponse } from "./shared-types.js";
 import {
   collectRepositoryTargetBranchUpdates,
@@ -32,6 +28,7 @@ import {
 } from "./shared-utils.js";
 import { createTicketActions } from "./ticket-actions.js";
 import { navigateToTicketReference } from "./ticket-reference-navigation.js";
+import { useGlobalSessionSummaries } from "./use-global-session-summaries.js";
 import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useSelectedRepositoryWorkspace } from "./use-selected-repository-workspace.js";
@@ -246,22 +243,7 @@ export function useWalleyBoardController() {
   );
   const { globalDrafts } = useGlobalDrafts(projectRecords);
 
-  const globalSessionSummaries = useQueries({
-    queries: globalTickets
-      .filter(
-        (
-          ticket,
-        ): ticket is TicketFrontmatter & {
-          session_id: string;
-        } => ticket.session_id !== null,
-      )
-      .map((ticket) => ({
-        queryKey: ["sessions", ticket.session_id],
-        queryFn: () =>
-          fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
-        refetchInterval: 2_000,
-      })),
-  });
+  const globalSessionSummaries = useGlobalSessionSummaries(globalTickets);
 
   useProjectSelectionHydration({
     projectRecords,

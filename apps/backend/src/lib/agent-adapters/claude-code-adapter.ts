@@ -19,6 +19,7 @@ import { augmentPromptForAgent } from "./prompt-augmentation.js";
 import {
   buildDraftQuestionsPrompt,
   buildDraftRefinementPrompt,
+  buildDraftRefinementRetryInstruction,
 } from "./shared-draft-prompts.js";
 import {
   buildImplementationPrompt,
@@ -27,16 +28,17 @@ import {
   buildPullRequestBodyPrompt,
   buildReviewPrompt,
 } from "./shared-execution-prompts.js";
-import type {
-  AgentCliAdapter,
-  DraftRunInput,
-  ExecutionRunInput,
-  HostSidecar,
-  InterpretedAdapterLine,
-  MergeConflictRunInput,
-  PreparedAgentRun,
-  PullRequestBodyRunInput,
-  ReviewRunInput,
+import {
+  type AgentCliAdapter,
+  AgentJsonParseError,
+  type DraftRunInput,
+  type ExecutionRunInput,
+  type HostSidecar,
+  type InterpretedAdapterLine,
+  type MergeConflictRunInput,
+  type PreparedAgentRun,
+  type PullRequestBodyRunInput,
+  type ReviewRunInput,
 } from "./types.js";
 import {
   buildClaudeWalleyboardHttpMcpConfig,
@@ -237,7 +239,7 @@ export function parseClaudeCodeJsonResult<T>(
     // Invalid JSON - handled below.
   }
 
-  throw new Error("Claude Code did not return valid JSON output.");
+  throw new AgentJsonParseError("Claude Code");
 }
 
 export function formatClaudeCodeExitReason(
@@ -441,13 +443,27 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
       "draft",
     );
     const enabledMcpServers = listEnabledProjectClaudeMcpServers(input.project);
+    const retryAttempt =
+      input.mode === "refine" &&
+      typeof input.retryAttempt === "number" &&
+      input.retryAttempt > 0
+        ? input.retryAttempt
+        : 0;
+    const effectiveInstruction =
+      retryAttempt > 0
+        ? buildDraftRefinementRetryInstruction(
+            retryAttempt,
+            input.maxRetryAttempts ?? 3,
+            input.instruction,
+          )
+        : input.instruction;
     const basePrompt =
       input.mode === "refine"
         ? buildDraftRefinementPrompt(
             input.draft,
             input.repository,
             enabledMcpServers,
-            input.instruction,
+            effectiveInstruction,
           )
         : buildDraftQuestionsPrompt(
             input.draft,
@@ -469,7 +485,16 @@ export class ClaudeCodeAdapter implements AgentCliAdapter {
         structuredOutputTool.name,
       ),
     });
-    const claudeArgs = ["-p", prompt];
+
+    const resumeRef = hasMeaningfulContent(input.adapterSessionRef)
+      ? input.adapterSessionRef
+      : null;
+
+    const claudeArgs: string[] = [];
+    if (resumeRef) {
+      claudeArgs.push("--resume", resumeRef);
+    }
+    claudeArgs.push("-p", prompt);
     appendClaudeCodeModelArgs(claudeArgs, model, reasoningEffort);
     if (!input.mcpPort) {
       throw new Error("mcpPort is required for Claude Code draft runs.");

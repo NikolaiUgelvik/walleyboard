@@ -209,6 +209,28 @@ export const executionAttemptsTable = sqliteTable(
   ],
 );
 
+export const draftRefineSessionsTable = sqliteTable(
+  "draft_refine_sessions",
+  {
+    id: text("id").notNull().primaryKey(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => draftTicketStatesTable.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projectsTable.id, { onDelete: "cascade" }),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositoriesTable.id, { onDelete: "cascade" }),
+    adapterSessionRef: text("adapter_session_ref"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    status: text("status").notNull(),
+    createdAt: text("created_at").notNull(),
+    lastAttemptAt: text("last_attempt_at").notNull(),
+  },
+  (table) => [index("idx_draft_refine_sessions_draft_id").on(table.draftId)],
+);
+
 export const structuredEventsTable = sqliteTable(
   "structured_events",
   {
@@ -333,6 +355,7 @@ export const walleyboardSchema = {
   ticketsTable,
   executionSessionsTable,
   executionAttemptsTable,
+  draftRefineSessionsTable,
   structuredEventsTable,
   reviewPackagesTable,
   reviewRunsTable,

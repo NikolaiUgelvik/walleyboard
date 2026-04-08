@@ -16,6 +16,7 @@ import type {
   UpdateProjectInput,
 } from "../../../../packages/contracts/src/index.js";
 
+import { DraftRefineSessionRepository } from "./sqlite-store/draft-refine-session-repository.js";
 import { DraftRepository } from "./sqlite-store/draft-repository.js";
 import { DraftWorkflowService } from "./sqlite-store/draft-workflow.js";
 import { EventRepository } from "./sqlite-store/event-repository.js";
@@ -32,6 +33,7 @@ import type {
   CreateReviewPackageInput,
   CreateReviewRunInput,
   DraftPersistence,
+  DraftRefineSessionPersistence,
   ListProjectTicketsOptions,
   MergeConflictResult,
   PreparedExecutionRuntime,
@@ -63,11 +65,13 @@ export class SqliteStore implements WalleyboardPersistence {
   readonly #draftWorkflow: DraftWorkflowService;
   readonly #projectWorkflow: ProjectWorkflowService;
   readonly #ticketExecutionWorkflow: TicketExecutionWorkflowService;
+  readonly #draftRefineSessions: DraftRefineSessionRepository;
   readonly projects: ProjectPersistence;
   readonly drafts: DraftPersistence;
   readonly tickets: TicketPersistence;
   readonly reviews: ReviewPersistence;
   readonly sessions: SessionPersistence;
+  readonly draftRefineSessions: DraftRefineSessionPersistence;
   #closed = false;
 
   static closeAllOpenStores(): void {
@@ -81,6 +85,7 @@ export class SqliteStore implements WalleyboardPersistence {
     this.#context = new SqliteStoreContext(databasePath);
     this.#projects = new ProjectRepository(this.#context);
     this.#drafts = new DraftRepository(this.#context);
+    this.#draftRefineSessions = new DraftRefineSessionRepository(this.#context);
     this.#events = new EventRepository(this.#context);
     this.#reviews = new ReviewRepository(this.#context);
     this.#sessions = new SessionRepository(this.#context);
@@ -193,6 +198,7 @@ export class SqliteStore implements WalleyboardPersistence {
       updateSessionWorktreePath: (sessionId, worktreePath) =>
         this.updateSessionWorktreePath(sessionId, worktreePath),
     };
+    this.draftRefineSessions = this.#draftRefineSessions;
   }
 
   withTransaction<T>(operation: (persistence: WalleyboardPersistence) => T): T {

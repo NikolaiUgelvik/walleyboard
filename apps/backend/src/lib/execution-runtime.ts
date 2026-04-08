@@ -73,6 +73,7 @@ import {
   waitForTrackedExit,
 } from "./execution-runtime/waiters.js";
 import type { InboxAlertCoordinatorControls } from "./inbox-alert-coordinator.js";
+import type { DraftRefineSessionPersistence } from "./store.js";
 import { getAgentEnvOverridesCached } from "./walleyboard-conf.js";
 
 type ActiveSessionProcess = ChildProcessWithoutNullStreams;
@@ -99,6 +100,7 @@ export class ExecutionRuntime {
     string,
     { pty: IPty; attemptId: string | null }
   >();
+  readonly #draftRefineSessionRepo: DraftRefineSessionPersistence | null;
   readonly #hostSidecars = new HostSidecarRegistry();
   readonly #stoppingSessions = new Map<string, string>();
   readonly #stoppingManualTerminals = new Map<string, string>();
@@ -117,11 +119,13 @@ export class ExecutionRuntime {
   constructor({
     adapterRegistry,
     dockerRuntime,
+    draftRefineSessionRepo,
     eventHub,
     store,
   }: ExecutionRuntimeOptions) {
     this.#adapterRegistry = adapterRegistry;
     this.#dockerRuntime = dockerRuntime;
+    this.#draftRefineSessionRepo = draftRefineSessionRepo ?? null;
     this.#eventHub = eventHub;
     this.#store = store;
   }
@@ -581,7 +585,11 @@ export class ExecutionRuntime {
         cleanupExecutionEnvironment: (sessionId) => {
           this.cleanupExecutionEnvironment(sessionId);
         },
+        cleanupHostSidecar: (sessionId) => {
+          this.#hostSidecars.cleanup(sessionId);
+        },
         dockerRuntime: this.#dockerRuntime,
+        draftRefineSessionRepo: this.#draftRefineSessionRepo,
         eventHub: this.#eventHub,
         registerHostSidecar: (sessionId, sidecar) => {
           this.registerHostSidecar(sessionId, sidecar);

@@ -84,10 +84,8 @@ export async function createApp(
   });
 
   const eventHub = options.eventHub ?? new EventHub();
-  const store = observeNamedMethodsOnInstance(
-    "sqlite-store",
-    options.store ?? new SqliteStore(options.databasePath),
-  );
+  const rawStore = options.store ?? new SqliteStore(options.databasePath);
+  const store = observeNamedMethodsOnInstance("sqlite-store", rawStore);
   const dockerRuntime = options.dockerRuntime ?? new DockerRuntimeManager();
   const getClaudeCodeAvailability = createClaudeCodeAvailabilityGetter(
     options.probeClaudeCodeAvailability ??
@@ -103,6 +101,7 @@ export async function createApp(
     new ExecutionRuntime({
       adapterRegistry,
       dockerRuntime,
+      draftRefineSessionRepo: store.draftRefineSessions,
       eventHub,
       store,
     });
