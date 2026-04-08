@@ -9,12 +9,20 @@ import type { EventHub } from "./event-hub.js";
 import type { ExecutionRuntime } from "./execution-runtime.js";
 import type { SocketServerPersistence } from "./store.js";
 
-type CreateSocketServerInput = {
+export type CreateSocketServerInput = {
   eventHub: EventHub;
   executionRuntime: ExecutionRuntime;
   server: HttpServer;
   store: SocketServerPersistence;
 };
+
+export type SocketServerController = {
+  close: () => Promise<void>;
+};
+
+export type SocketServerFactory = (
+  input: CreateSocketServerInput,
+) => SocketServerController;
 
 type ParsedTerminalSocketPath =
   | {
@@ -106,7 +114,7 @@ export function createSocketServer({
   executionRuntime,
   server,
   store,
-}: CreateSocketServerInput) {
+}: CreateSocketServerInput): SocketServerController {
   const io = new Server(server, {
     cors: {
       origin: "*",
@@ -159,5 +167,9 @@ export function createSocketServer({
     });
   });
 
-  return io;
+  return {
+    close: async () => {
+      io.disconnectSockets(true);
+    },
+  };
 }

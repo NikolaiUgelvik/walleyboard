@@ -26,7 +26,10 @@ import { registerFrontendStaticRoutes } from "./lib/frontend-static.js";
 import { GitHubPullRequestService } from "./lib/github-pull-request-service.js";
 import { globalRateLimitOptions } from "./lib/rate-limit.js";
 import { runReviewFollowUp } from "./lib/review-follow-up-handler.js";
-import { createSocketServer } from "./lib/socket-server.js";
+import {
+  createSocketServer,
+  type SocketServerFactory,
+} from "./lib/socket-server.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import type { WalleyboardPersistence } from "./lib/store.js";
 import { TicketWorkspaceService } from "./lib/ticket-workspace-service.js";
@@ -53,13 +56,20 @@ export type CreateAppOptions = {
   host?: string;
   port?: number;
   probeClaudeCodeAvailability?: () => ClaudeCodeAvailability;
+  socketServerFactory?: SocketServerFactory;
   skipStartupDockerCleanup?: boolean;
   staticAssetDir?: string;
   store?: WalleyboardPersistence;
   ticketWorkspaceService?: TicketWorkspaceService;
 };
 
-export async function createApp(options: CreateAppOptions = {}) {
+export type ManagedApp = ReturnType<typeof Fastify> & {
+  shutdownBackendResources: () => Promise<void>;
+};
+
+export async function createApp(
+  options: CreateAppOptions = {},
+): Promise<ManagedApp> {
   const host = options.host ?? process.env.HOST ?? "127.0.0.1";
   const port = options.port ?? Number.parseInt(process.env.PORT ?? "4000", 10);
   const staticAssetDir =
@@ -100,7 +110,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     executionRuntime,
     store,
   });
-  const socketServer = createSocketServer({
+  const socketServer = (options.socketServerFactory ?? createSocketServer)({
     eventHub,
     executionRuntime,
     server: app.server,
@@ -133,6 +143,23 @@ export async function createApp(options: CreateAppOptions = {}) {
   const recoveredReviewRuns = store.recoverInterruptedReviewRuns();
   const skipStartupDockerCleanup =
     options.skipStartupDockerCleanup ?? shouldSkipStartupDockerCleanup();
+  let backendResourcesShutdown = false;
+
+  const shutdownBackendResources = async () => {
+    if (backendResourcesShutdown) {
+      return;
+    }
+
+    backendResourcesShutdown = true;
+    clearInterval(draftArtifactCleanupInterval);
+    app.server.closeAllConnections?.();
+    app.server.closeIdleConnections?.();
+    await socketServer.close();
+    githubPullRequestService.stop();
+    await ticketWorkspaceService.dispose();
+    executionRuntime.dispose();
+    store.close();
+  };
 
   if (!skipStartupDockerCleanup) {
     try {
@@ -270,14 +297,11 @@ export async function createApp(options: CreateAppOptions = {}) {
     registerFrontendStaticRoutes(app, staticAssetDir);
   }
 
-  app.addHook("onClose", async () => {
-    clearInterval(draftArtifactCleanupInterval);
-    socketServer.close();
-    githubPullRequestService.stop();
-    await ticketWorkspaceService.dispose();
-    executionRuntime.dispose();
-    store.close();
+  app.addHook("preClose", async () => {
+    await shutdownBackendResources();
   });
 
-  return app;
+  return Object.assign(app, {
+    shutdownBackendResources,
+  });
 }

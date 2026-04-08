@@ -10,8 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { io } from "socket.io-client";
+
 import { createApp } from "./app.js";
 import { EventHub } from "./lib/event-hub.js";
+import type { SocketServerFactory } from "./lib/socket-server.js";
 import { SqliteStore } from "./lib/sqlite-store.js";
 import {
   buildTicketArtifactFilePath,
@@ -22,6 +25,29 @@ import {
   createIsolatedApp,
   createTestDockerRuntime,
 } from "./test-support/create-isolated-app.js";
+
+async function waitForPromiseWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 test("createApp skips startup Docker cleanup when explicitly disabled", async () => {
   const dockerRuntime = createTestDockerRuntime();
@@ -219,6 +245,130 @@ test("createApp closes active workspace previews during shutdown", async () => {
       ticketWorkspaceService.getRepositoryPreview("repo-1").state,
       "idle",
     );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createApp awaits socket server shutdown during backend close", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-app-socket-shutdown-"),
+  );
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+  const dockerRuntime = createTestDockerRuntime();
+
+  let closeCalls = 0;
+  let resolveSocketServerClose!: () => void;
+  const socketServerClosed = new Promise<void>((resolve) => {
+    resolveSocketServerClose = resolve;
+  });
+  const socketServerFactory: SocketServerFactory = () => ({
+    close: async () => {
+      closeCalls += 1;
+      await socketServerClosed;
+    },
+  });
+
+  let closePromise: Promise<void> | null = null;
+
+  try {
+    const app = await createApp({
+      databasePath,
+      dockerRuntime,
+      skipStartupDockerCleanup: true,
+      socketServerFactory,
+      ticketWorkspaceService: new TicketWorkspaceService({
+        apiBaseUrl: "http://127.0.0.1:4000",
+        eventHub: new EventHub(),
+      }),
+    });
+
+    closePromise = app.close();
+    if (!closePromise) {
+      throw new Error("Expected app.close() to have started");
+    }
+
+    const startedClosePromise = closePromise;
+    let closeSettled = false;
+    startedClosePromise.then(() => {
+      closeSettled = true;
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(closeCalls, 1);
+    assert.equal(closeSettled, false);
+
+    resolveSocketServerClose();
+    await startedClosePromise;
+  } finally {
+    resolveSocketServerClose();
+    await closePromise?.catch(() => {});
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("createApp closes a connected events socket during backend shutdown", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "walleyboard-app-events-socket-"));
+  const databasePath = join(tempDir, "walleyboard.sqlite");
+  const dockerRuntime = createTestDockerRuntime();
+  let closePromise: Promise<void> | null = null;
+
+  try {
+    const app = await createApp({
+      databasePath,
+      dockerRuntime,
+      skipStartupDockerCleanup: true,
+    });
+
+    try {
+      await app.listen({ host: "127.0.0.1", port: 0 });
+      const address = app.server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Could not determine the test server port.");
+      }
+
+      const socket = io(`http://127.0.0.1:${address.port}/events`, {
+        forceNew: true,
+        reconnection: false,
+        transports: ["websocket"],
+      });
+
+      try {
+        await waitForPromiseWithin(
+          new Promise<void>((resolve, reject) => {
+            socket.once("connect", resolve);
+            socket.once("connect_error", reject);
+          }),
+          5_000,
+          "Timed out waiting for socket.io connect",
+        );
+
+        closePromise = app.close();
+        if (!closePromise) {
+          throw new Error("Expected app.close() to have started");
+        }
+
+        const startedClosePromise = closePromise;
+        await waitForPromiseWithin(
+          startedClosePromise,
+          5_000,
+          "Timed out waiting for app.close()",
+        );
+        await startedClosePromise;
+        assert.equal(socket.connected, false);
+      } finally {
+        socket.close();
+      }
+    } finally {
+      if (closePromise) {
+        await waitForPromiseWithin(
+          closePromise,
+          2_000,
+          "Timed out waiting for app.close() to settle during cleanup",
+        ).catch(() => {});
+      }
+    }
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
