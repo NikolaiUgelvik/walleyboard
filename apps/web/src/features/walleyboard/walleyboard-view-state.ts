@@ -44,6 +44,8 @@ export type BoardViewController = Pick<
   | "inspectorState"
   | "isDraftRefinementActive"
   | "mergeTicketMutation"
+  | "moveTicketToReview"
+  | "moveToReviewMutation"
   | "navigateToTicketReference"
   | "openArchiveModal"
   | "openDraft"
@@ -323,6 +325,8 @@ export function createWalleyBoardViewState(
     inspectorState: controller.inspectorState,
     isDraftRefinementActive: controller.isDraftRefinementActive,
     mergeTicketMutation: controller.mergeTicketMutation,
+    moveTicketToReview: controller.moveTicketToReview,
+    moveToReviewMutation: controller.moveToReviewMutation,
     navigateToTicketReference: controller.navigateToTicketReference,
     openArchiveModal: controller.openArchiveModal,
     openDraft: controller.openDraft,

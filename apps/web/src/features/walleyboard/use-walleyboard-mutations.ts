@@ -581,6 +581,16 @@ export function useWalleyBoardMutations({
     },
   });
 
+  const moveToReviewMutation = useMutation({
+    mutationFn: (input: { ticketId: number }) =>
+      postJson<CommandAck>(`/tickets/${input.ticketId}/move-to-review`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["projects", selectedProjectId, "tickets"],
+      });
+    },
+  });
+
   const editReadyTicketMutation = useMutation({
     mutationFn: (input: { ticket: TicketFrontmatter }) =>
       editReadyTicketRequest(input.ticket.id),
@@ -1126,6 +1136,7 @@ export function useWalleyBoardMutations({
     deleteProjectMutation,
     deleteTicketMutation,
     mergeTicketMutation,
+    moveToReviewMutation,
     planFeedbackMutation,
     questionDraftMutation,
     refineDraftMutation,
