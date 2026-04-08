@@ -522,3 +522,39 @@ test("feasibility mode does not retry on AgentJsonParseError", async () => {
     h.cleanup();
   }
 });
+
+test("non-zero exit code in refine mode does not trigger retry", async () => {
+  const h = createTestHarness();
+  try {
+    h.setParseDraftResultBehavior(() => {
+      throw new AgentJsonParseError("Claude Code");
+    });
+
+    const promise = startDraftAnalysis(h.deps, {
+      mode: "refine",
+      draft: h.draft,
+      project: h.project,
+      repository: h.repository,
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(h.spawnCallCount, 1);
+
+    h.fakeChildren[0]?.emitStdout("line\n");
+    h.fakeChildren[0]?.emitExit({ exitCode: 1 });
+
+    await promise;
+
+    assert.equal(h.spawnCallCount, 1, "no retry for non-zero exit code");
+
+    const retryEvents = h.events.filter(
+      (e) => e.type === "draft.refine.retrying",
+    );
+    assert.equal(retryEvents.length, 0, "no retry events emitted");
+
+    const failedEvent = h.events.find((e) => e.type === "draft.refine.failed");
+    assert.ok(failedEvent, "expected draft.refine.failed event");
+  } finally {
+    h.cleanup();
+  }
+});
