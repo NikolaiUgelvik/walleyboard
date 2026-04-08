@@ -13,9 +13,11 @@ const closeApp = async (signal: string) => {
 
   shuttingDown = true;
   app.log.info({ signal }, "Shutting down backend");
+  app.server.closeAllConnections?.();
+  app.server.closeIdleConnections?.();
 
   try {
-    await app.close();
+    await app.shutdownBackendResources();
     process.exitCode = 0;
   } catch (error) {
     app.log.error(error);

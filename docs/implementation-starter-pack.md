@@ -67,7 +67,7 @@ Not yet implemented:
 - The compact left rail keeps inbox and create-project utility tiles gray by default; project tiles stay color-coded and the inbox tile only shifts into its attention color when unread actionable work exists.
 - Tickets expose card-level `Diff`, `Terminal`, `Preview`, and `Activity` actions. The inspector keeps a single clickable activity summary row that opens an activity modal with `Overview` and `Timeline` tabs.
 - `Diff`, `Terminal`, and `Preview` require a prepared worktree, while `Activity` stays available whenever a ticket still has a session, even after worktree cleanup.
-- The ticket-card `Terminal` action opens a plain xterm.js shell at the worktree root, without take-over or restore-agent controls on that modal surface, and it stays unavailable only while a live agent process still owns the worktree.
+- The ticket-card `Terminal` action opens a plain ghostty-web shell at the worktree root, without take-over or restore-agent controls on that modal surface, and it stays unavailable only while a live agent process still owns the worktree.
 - The `Preview` action starts the ticket dev server when needed, opens a browser tab, and flips to a stop control while that dev server stays running.
 - The activity timeline shows newest items first and lets operators copy raw implementation prompts, AI review prompts, and other prompt-like Markdown entries straight from the UI.
 - Docker-backed prompts and managed artifact paths are translated to in-container mount paths such as `/workspace/...` and `/walleyboard-home/...` before they are passed to the agent runtime.
@@ -181,7 +181,7 @@ Representative current route surface.
 - Pasted screenshots become artifact-backed Markdown image references stored under a stable `artifact_scope_id`, so they survive save, reload, refine, revert, and ready-ticket promotion.
 - Starting a `ready` ticket creates a persisted session and first attempt, prepares a git worktree and working branch, and launches either immediate execution or a planning-first run.
 - Planning-first execution pauses in `paused_checkpoint` / awaiting-feedback mode, and approval or requested plan changes resume the same logical session on the prepared worktree.
-- Execution runs through the configured Docker-backed agent CLI with PTY-backed logs, live session input forwarding, explicit stop/resume, requested-changes retries, and a separate plain xterm.js worktree terminal surfaced from the ticket card actions.
+- Execution runs through the configured Docker-backed agent CLI with PTY-backed logs, live session input forwarding, explicit stop/resume, requested-changes retries, and a separate plain ghostty-web worktree terminal surfaced from the ticket card actions.
 - Successful execution runs validation before review handoff, generates a local review package and persisted diff artifact, can launch automatic agent review reruns or one-off manual agent reviews, surfaces review-ready and waiting action cards, and moves the ticket to `review`.
 - The session workspace UI now uses ticket-card action icons for diff, terminal, preview, and full activity. The inspector keeps only a single activity summary row that opens an activity modal with `Overview` and `Timeline` tabs, and activity remains reachable even after merge cleanup clears worktree state.
 - The activity timeline renders newest entries first and supports copying raw implementation prompts, AI review prompts, and similar Markdown prompt content directly from the timeline cards.

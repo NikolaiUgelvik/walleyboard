@@ -34,7 +34,6 @@ export function useWalleyBoardMutationWiring(input: {
   setResumeReason: StateSetter<string>;
   setTerminalCommand: StateSetter<string>;
   setValidationCommandsText: StateSetter<string>;
-  silenceNextInboxItemKey: (key: string) => void;
   tickets: TicketFrontmatter[];
 }) {
   return useWalleyBoardMutations(input);

@@ -62,7 +62,6 @@ type UseWalleyBoardMutationsInput = {
   setRepositoryPath: StateSetter<string>;
   setRequestedChangesBody: StateSetter<string>;
   setResumeReason: StateSetter<string>;
-  silenceNextInboxItemKey: (key: string) => void;
   setTerminalCommand: StateSetter<string>;
   setValidationCommandsText: StateSetter<string>;
   tickets: TicketFrontmatter[];
@@ -200,7 +199,6 @@ export function useWalleyBoardMutations({
   setRepositoryPath,
   setRequestedChangesBody,
   setResumeReason,
-  silenceNextInboxItemKey,
   setTerminalCommand,
   setValidationCommandsText,
   tickets,
@@ -506,9 +504,7 @@ export function useWalleyBoardMutations({
       postJson<CommandAck>(`/tickets/${input.ticketId}/start`, {
         planning_enabled: input.planningEnabled,
       }),
-    onSuccess: async (ack: CommandAck, variables) => {
-      silenceNextInboxItemKey(`session-${variables.ticketId}`);
-
+    onSuccess: async (ack: CommandAck, _variables) => {
       if (!selectedProjectId) {
         return;
       }

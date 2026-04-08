@@ -155,6 +155,25 @@ export const commandAckSchema = z.object({
   message: z.string().nullable(),
 });
 
+export const inboxAlertKindSchema = z.enum(["draft", "review", "session"]);
+
+export const inboxAlertItemSchema = z.object({
+  kind: inboxAlertKindSchema,
+  notification_key: z.string().min(1),
+  project_id: opaqueIdSchema,
+  item_key: z.string().min(1),
+  target_kind: z.enum(["draft", "session"]),
+  target_id: opaqueIdSchema,
+  draft_id: opaqueIdSchema.optional(),
+  ticket_id: z.number().int().positive().optional(),
+  session_id: opaqueIdSchema.optional(),
+});
+
+export const inboxAlertPayloadSchema = z.object({
+  notification_keys: z.array(z.string().min(1)),
+  alerts: z.array(inboxAlertItemSchema),
+});
+
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
   service: z.literal("backend"),
@@ -307,6 +326,7 @@ export const eventTypeSchema = z.enum([
   "validation.updated",
   "pull_request.updated",
   "structured_event.created",
+  "inbox.alert",
   "command.rejected",
 ]);
 
@@ -366,6 +386,9 @@ export type CheckpointResponseInput = z.infer<
 >;
 export type SessionInput = z.infer<typeof sessionInputSchema>;
 export type CommandAck = z.infer<typeof commandAckSchema>;
+export type InboxAlertKind = z.infer<typeof inboxAlertKindSchema>;
+export type InboxAlertItem = z.infer<typeof inboxAlertItemSchema>;
+export type InboxAlertPayload = z.infer<typeof inboxAlertPayloadSchema>;
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type DraftEventsResponse = z.infer<typeof draftEventsResponseSchema>;
 export type RepositoryBranchesResponse = z.infer<

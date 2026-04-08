@@ -10,6 +10,7 @@ import type {
   StructuredEvent,
   TicketFrontmatter,
 } from "../../../../../packages/contracts/src/index.js";
+import { inboxAlertPayloadSchema } from "../../../../../packages/contracts/src/index.js";
 import { connectWalleyboardSocket } from "../../lib/socket-io.js";
 import type {
   DraftEventsResponse,
@@ -59,12 +60,14 @@ function isRealtimeBackedQueryKey(queryKey: readonly unknown[]): boolean {
 }
 
 export function useProtocolEventSync({
+  onInboxAlert,
   queryClient,
   selectedDraftId,
   selectedProjectId,
   selectedSessionId,
   setInspectorState,
 }: {
+  onInboxAlert?: () => void;
   queryClient: QueryClient;
   selectedDraftId: string | null;
   selectedProjectId: string | null;
@@ -74,9 +77,24 @@ export function useProtocolEventSync({
   const handleProtocolEventRef = useRef<(event: ProtocolEvent) => void>(
     () => {},
   );
+  const onInboxAlertRef = useRef<(() => void) | null>(onInboxAlert ?? null);
   const hasConnectedRef = useRef(false);
 
+  onInboxAlertRef.current = onInboxAlert ?? null;
+
   handleProtocolEventRef.current = (event: ProtocolEvent) => {
+    if (event.event_type === "inbox.alert") {
+      const inboxAlertPayload = inboxAlertPayloadSchema.safeParse(
+        event.payload,
+      );
+      if (!inboxAlertPayload.success) {
+        return;
+      }
+
+      onInboxAlertRef.current?.();
+      return;
+    }
+
     if (event.event_type === "draft.updated") {
       const draft = event.payload.draft as DraftTicketState | undefined;
       if (!draft) {
