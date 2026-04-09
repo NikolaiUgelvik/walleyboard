@@ -781,6 +781,91 @@ test("TicketWorkspaceService starts repository previews with a configured comman
   }
 });
 
+test("TicketWorkspaceService publishes repository preview updates", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-repository-preview-events-"),
+  );
+  const worktreePath = join(tempDir, "preview-app");
+  const eventHub = new EventHub();
+  const previewHarness = createPreviewRuntimeHarness();
+  const workspaceService = new TicketWorkspaceService({
+    apiBaseUrl: "http://127.0.0.1:4000",
+    eventHub,
+    previewRuntimeDependencies: previewHarness.previewRuntimeDependencies,
+  });
+  const events: Array<{
+    event_type: string;
+    payload: Record<string, unknown>;
+  }> = [];
+  const unsubscribe = eventHub.subscribe((event) => {
+    if (event.event_type === "repository.workspace.updated") {
+      events.push({
+        event_type: event.event_type,
+        payload: event.payload,
+      });
+    }
+  });
+
+  mkdirSync(worktreePath, { recursive: true });
+
+  try {
+    await workspaceService.ensureRepositoryPreview({
+      repositoryId: "repo-41",
+      previewStartCommand: "node preview-server.cjs",
+      worktreePath,
+    });
+
+    await workspaceService.stopRepositoryPreviewAndWait("repo-41");
+
+    assert.deepEqual(
+      events.map((event) => ({
+        preview: event.payload.preview,
+        repository_id: event.payload.repository_id,
+      })),
+      [
+        {
+          preview: {
+            repository_id: "repo-41",
+            state: "starting",
+            preview_url: null,
+            backend_url: null,
+            started_at: null,
+            error: null,
+          },
+          repository_id: "repo-41",
+        },
+        {
+          preview: {
+            repository_id: "repo-41",
+            state: "ready",
+            preview_url: "http://127.0.0.1:4100",
+            backend_url: null,
+            started_at: (events[1]?.payload.preview as { started_at: string })
+              .started_at,
+            error: null,
+          },
+          repository_id: "repo-41",
+        },
+        {
+          preview: {
+            repository_id: "repo-41",
+            state: "idle",
+            preview_url: null,
+            backend_url: null,
+            started_at: null,
+            error: null,
+          },
+          repository_id: "repo-41",
+        },
+      ],
+    );
+  } finally {
+    unsubscribe();
+    await workspaceService.stopRepositoryPreviewAndWait("repo-41");
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("TicketWorkspaceService adds host and port flags for configured npm run dev repository previews", async () => {
   const tempDir = mkdtempSync(
     join(tmpdir(), "walleyboard-repository-preview-npm-dev-"),

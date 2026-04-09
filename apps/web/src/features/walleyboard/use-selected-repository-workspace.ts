@@ -61,10 +61,6 @@ export function useSelectedRepositoryWorkspace(input: {
       ),
     enabled:
       input.selectedProjectId !== null && input.selectedRepository !== null,
-    refetchInterval:
-      input.selectedProjectId !== null && input.selectedRepository !== null
-        ? 2_000
-        : false,
     retry: false,
   });
   const repositoryWorkspacePreview =

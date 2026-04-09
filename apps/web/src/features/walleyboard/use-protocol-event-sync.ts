@@ -16,6 +16,7 @@ import type {
   DraftEventsResponse,
   DraftsResponse,
   InspectorState,
+  RepositoryWorkspacePreviewResponse,
   ReviewPackageResponse,
   ReviewRunResponse,
   ReviewRunsResponse,
@@ -55,7 +56,11 @@ function isRealtimeBackedQueryKey(queryKey: readonly unknown[]): boolean {
 
   return (
     queryKey[0] === "projects" &&
-    (queryKey[2] === "drafts" || queryKey[2] === "tickets")
+    (queryKey[2] === "drafts" ||
+      queryKey[2] === "tickets" ||
+      (queryKey[2] === "repositories" &&
+        queryKey[4] === "workspace" &&
+        queryKey[5] === "preview"))
   );
 }
 
@@ -328,6 +333,31 @@ export function useProtocolEventSync({
       queryClient.invalidateQueries({
         queryKey: ["sessions", session.id, "attempts"],
       });
+      return;
+    }
+
+    if (event.event_type === "repository.workspace.updated") {
+      const repositoryId = event.payload.repository_id as string | undefined;
+      const preview = event.payload.preview as
+        | RepositoryWorkspacePreviewResponse["preview"]
+        | undefined;
+      if (!repositoryId || !preview) {
+        return;
+      }
+
+      for (const query of queryClient.getQueryCache().findAll({
+        predicate: (candidate) =>
+          candidate.queryKey[0] === "projects" &&
+          candidate.queryKey[2] === "repositories" &&
+          candidate.queryKey[3] === repositoryId &&
+          candidate.queryKey[4] === "workspace" &&
+          candidate.queryKey[5] === "preview",
+      })) {
+        queryClient.setQueryData<RepositoryWorkspacePreviewResponse>(
+          query.queryKey,
+          { preview },
+        );
+      }
       return;
     }
 

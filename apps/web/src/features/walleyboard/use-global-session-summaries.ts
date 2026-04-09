@@ -17,7 +17,6 @@ export function useGlobalSessionSummaries(globalTickets: TicketFrontmatter[]) {
         queryKey: ["sessions", ticket.session_id],
         queryFn: () =>
           fetchJson<SessionResponse>(`/sessions/${ticket.session_id}`),
-        refetchInterval: 2_000,
       })),
   });
 }

@@ -174,6 +174,104 @@ test("review_run.updated hydrates the latest review-run cache without polling", 
   }
 });
 
+test("repository.workspace.updated hydrates the repository preview cache without polling", async () => {
+  const sockets: FakeSocket[] = [];
+  const restoreDom = installDom(() => {
+    const socket = new FakeSocket();
+    sockets.push(socket);
+    return socket;
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    queryClient.setQueryData(
+      [
+        "projects",
+        "project-12",
+        "repositories",
+        "repo-12",
+        "workspace",
+        "preview",
+      ],
+      {
+        preview: {
+          repository_id: "repo-12",
+          state: "idle",
+          preview_url: null,
+          backend_url: null,
+          started_at: null,
+          error: null,
+        },
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SyncProbe queryClient={queryClient} />
+        </QueryClientProvider>,
+      );
+    });
+
+    await act(async () => {
+      sockets[0]?.emitServer("protocol.event", {
+        entity_id: "repo-12",
+        entity_type: "repository",
+        event_id: "event-repository-preview-12",
+        event_type: "repository.workspace.updated",
+        occurred_at: "2026-04-09T00:00:00.000Z",
+        payload: {
+          repository_id: "repo-12",
+          preview: {
+            repository_id: "repo-12",
+            state: "ready",
+            preview_url: "http://127.0.0.1:4173",
+            backend_url: null,
+            started_at: "2026-04-09T00:00:00.000Z",
+            error: null,
+          },
+        },
+      } satisfies ProtocolEvent);
+    });
+
+    assert.deepEqual(
+      queryClient.getQueryData([
+        "projects",
+        "project-12",
+        "repositories",
+        "repo-12",
+        "workspace",
+        "preview",
+      ]),
+      {
+        preview: {
+          repository_id: "repo-12",
+          state: "ready",
+          preview_url: "http://127.0.0.1:4173",
+          backend_url: null,
+          started_at: "2026-04-09T00:00:00.000Z",
+          error: null,
+        },
+      },
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+    restoreDom();
+  }
+});
+
 test("inbox.alert events trigger the alert callback", async () => {
   const sockets: FakeSocket[] = [];
   const restoreDom = installDom(() => {

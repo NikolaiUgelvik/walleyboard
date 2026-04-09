@@ -311,6 +311,7 @@ export const sessionLogsResponseSchema = z.object({
 export const eventTypeSchema = z.enum([
   "ticket.updated",
   "ticket.workspace.updated",
+  "repository.workspace.updated",
   "ticket.archived",
   "ticket.deleted",
   "draft.updated",
@@ -332,6 +333,7 @@ export const eventTypeSchema = z.enum([
 
 export const eventEntityTypeSchema = z.enum([
   "ticket",
+  "repository",
   "session",
   "attempt",
   "draft",

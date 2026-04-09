@@ -1059,7 +1059,7 @@ export class TicketWorkspaceService {
     }
 
     this.#previews.delete(key);
-    this.#publishPreviewUpdate(runtime);
+    this.#publishStoppedPreviewUpdate(runtime);
   }
 
   async #stopPreviewAndWaitByKey(key: string): Promise<void> {
@@ -1080,7 +1080,7 @@ export class TicketWorkspaceService {
     );
 
     this.#previews.delete(key);
-    this.#publishPreviewUpdate(runtime);
+    this.#publishStoppedPreviewUpdate(runtime);
   }
 
   async #startPreview(runtime: PreviewRuntime): Promise<void> {
@@ -1433,10 +1433,61 @@ export class TicketWorkspaceService {
   }
 
   #publishPreviewUpdate(runtime: PreviewRuntime): void {
-    if (runtime.ticketId === null) {
+    if (runtime.ticketId !== null) {
+      this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
       return;
     }
 
-    this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
+    if (runtime.repositoryId === null) {
+      return;
+    }
+
+    this.#publishRepositoryPreviewUpdate(
+      runtime.repositoryId,
+      makeRepositoryPreviewSnapshot(runtime),
+    );
+  }
+
+  #publishStoppedPreviewUpdate(runtime: PreviewRuntime): void {
+    if (runtime.state === "failed") {
+      this.#publishPreviewUpdate(runtime);
+      return;
+    }
+
+    if (runtime.ticketId !== null) {
+      this.#publishWorkspaceUpdate(runtime.ticketId, "preview");
+      return;
+    }
+
+    if (runtime.repositoryId === null) {
+      return;
+    }
+
+    this.#publishRepositoryPreviewUpdate(runtime.repositoryId, {
+      repository_id: runtime.repositoryId,
+      state: "idle",
+      preview_url: null,
+      backend_url: null,
+      started_at: null,
+      error: null,
+    });
+  }
+
+  #publishRepositoryPreviewUpdate(
+    repositoryId: string,
+    preview: RepositoryWorkspacePreview,
+  ): void {
+    this.#eventHub.publish(
+      makeProtocolEvent(
+        "repository.workspace.updated",
+        "repository",
+        repositoryId,
+        {
+          repository_id: repositoryId,
+          preview,
+          updated_at: nowIso(),
+        },
+      ),
+    );
   }
 }
