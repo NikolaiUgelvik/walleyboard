@@ -1287,10 +1287,10 @@ test("reconcileTicket restarts for CI failures and includes runner details in th
                                       {
                                         title: "Assertion failed",
                                         path: "src/story.ts",
-                                        startLine: 42,
-                                        endLine: 42,
-                                        startColumn: 1,
-                                        endColumn: 10,
+                                        location: {
+                                          start: { line: 42, column: 1 },
+                                          end: { line: 42, column: 10 },
+                                        },
                                         message:
                                           "Expected the grenade count to decrease.",
                                         rawDetails: "line 42 failed",
@@ -1424,10 +1424,10 @@ test("reconcileTicket combines merge conflicts with CI failures in one recovery 
                                       {
                                         title: "Assertion failed",
                                         path: "src/story.ts",
-                                        startLine: 17,
-                                        endLine: 17,
-                                        startColumn: 1,
-                                        endColumn: 8,
+                                        location: {
+                                          start: { line: 17, column: 1 },
+                                          end: { line: 17, column: 8 },
+                                        },
                                         message: "Expected the score to reset.",
                                         rawDetails: "line 17 failed",
                                       },

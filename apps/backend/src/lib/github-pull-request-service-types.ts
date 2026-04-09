@@ -60,10 +60,10 @@ export type GraphQlDiscussionCommentNode = {
 export type GraphQlCheckRunAnnotationNode = {
   title?: unknown;
   path?: unknown;
-  startLine?: unknown;
-  endLine?: unknown;
-  startColumn?: unknown;
-  endColumn?: unknown;
+  location?: {
+    start?: { line?: unknown; column?: unknown } | null;
+    end?: { line?: unknown; column?: unknown } | null;
+  } | null;
   message?: unknown;
   rawDetails?: unknown;
 } | null;

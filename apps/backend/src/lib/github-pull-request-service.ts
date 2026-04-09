@@ -978,10 +978,16 @@ export class GitHubPullRequestService {
                             nodes {
                               title
                               path
-                              startLine
-                              endLine
-                              startColumn
-                              endColumn
+                              location {
+                                start {
+                                  line
+                                  column
+                                }
+                                end {
+                                  line
+                                  column
+                                }
+                              }
                               message
                               rawDetails
                             }
