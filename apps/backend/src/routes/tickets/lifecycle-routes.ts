@@ -153,6 +153,64 @@ export function registerTicketLifecycleRoutes(
   );
 
   app.post<{ Params: { ticketId: string } }>(
+    "/tickets/:ticketId/move-to-review",
+    { preHandler: commandRouteRateLimit(app) },
+    async (request, reply) => {
+      const ticketId = parsePositiveInt(request.params.ticketId);
+      if (!ticketId) {
+        reply.code(400).send({ error: "Invalid ticket id" });
+        return;
+      }
+
+      try {
+        const ticket = store.getTicket(ticketId);
+        if (!ticket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        if (ticket.status !== "in_progress") {
+          reply
+            .code(409)
+            .send({ error: "Only in-progress tickets can be moved to review" });
+          return;
+        }
+
+        const updatedTicket = store.updateTicketStatus(ticketId, "review");
+        if (!updatedTicket) {
+          reply.code(404).send({ error: "Ticket not found" });
+          return;
+        }
+
+        store.recordTicketEvent(ticketId, "ticket.moved_to_review", {
+          ticket_id: updatedTicket.id,
+          project_id: updatedTicket.project,
+          session_id: updatedTicket.session_id,
+        });
+        eventHub.publish(
+          makeProtocolEvent("ticket.updated", "ticket", String(ticketId), {
+            ticket: updatedTicket,
+          }),
+        );
+
+        reply.send(
+          makeCommandAck(true, "Ticket moved to review", {
+            ticket_id: ticketId,
+            project_id: updatedTicket.project,
+            session_id: updatedTicket.session_id ?? undefined,
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to move ticket to review";
+        reply.code(409).send({ error: message });
+      }
+    },
+  );
+
+  app.post<{ Params: { ticketId: string } }>(
     "/tickets/:ticketId/delete",
     { preHandler: commandRouteRateLimit(app) },
     async (request, reply) => {

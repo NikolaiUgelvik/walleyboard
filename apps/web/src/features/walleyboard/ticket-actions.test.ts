@@ -42,6 +42,7 @@ function createMutations(
     archiveTicketMutation: { mutate: () => undefined },
     deleteTicketMutation: { mutate: () => undefined },
     editReadyTicketMutation: { mutate: () => undefined },
+    moveToReviewMutation: { mutate: () => undefined },
     restartTicketMutation: { mutate: () => undefined },
   } as unknown as WalleyBoardMutations;
 }

@@ -1405,3 +1405,198 @@ test("request-changes blocks Claude relaunch when Claude is unavailable", async 
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("move-to-review route transitions an in-progress ticket to review", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-ticket-move-review-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Move Review Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    store.startTicket(ticket.id, false, {
+      logs: [],
+      workingBranch: "ticket-move-review",
+      worktreePath: join(tempDir, "ticket-worktree"),
+    });
+
+    assert.equal(store.getTicket(ticket.id)?.status, "in_progress");
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: {
+        closeWorkspaceTerminals() {},
+        hasActiveExecution() {
+          return false;
+        },
+      } as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          throw new Error("Not used in this test");
+        },
+        async reconcileTicket() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      ticketWorkspaceService: {
+        async disposeTicket() {},
+        async stopPreviewAndWait() {},
+      } as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/tickets/${ticket.id}/move-to-review`,
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.accepted, true);
+    assert.equal(body.message, "Ticket moved to review");
+    assert.equal(store.getTicket(ticket.id)?.status, "review");
+
+    const events = store.getTicketEvents(ticket.id);
+    const moveEvent = events.find(
+      (e) => e.event_type === "ticket.moved_to_review",
+    );
+    assert.ok(moveEvent, "Expected a ticket.moved_to_review event");
+    assert.equal(moveEvent.payload.ticket_id, ticket.id);
+
+    await app.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("move-to-review route rejects tickets not in in_progress status", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-ticket-move-review-reject-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+    const { project, repository } = store.createProject({
+      name: "Move Review Reject Project",
+      repository: {
+        name: "repo",
+        path: join(tempDir, "repo"),
+      },
+    });
+
+    const ticket = createReadyTicket(store, project.id, repository.id);
+    assert.equal(store.getTicket(ticket.id)?.status, "ready");
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: {
+        closeWorkspaceTerminals() {},
+        hasActiveExecution() {
+          return false;
+        },
+      } as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          throw new Error("Not used in this test");
+        },
+        async reconcileTicket() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      ticketWorkspaceService: {
+        async disposeTicket() {},
+        async stopPreviewAndWait() {},
+      } as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/tickets/${ticket.id}/move-to-review`,
+    });
+
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.json(), {
+      error: "Only in-progress tickets can be moved to review",
+    });
+    assert.equal(store.getTicket(ticket.id)?.status, "ready");
+
+    await app.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("move-to-review route returns 404 for non-existent ticket", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "walleyboard-ticket-move-review-404-"),
+  );
+
+  try {
+    const store = new SqliteStore(join(tempDir, "walleyboard.sqlite"));
+
+    const app = Fastify();
+    await app.register(fastifyRateLimit, { global: false });
+    await app.register(ticketRoutes, {
+      agentReviewService: {
+        startReviewLoop() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      eventHub: new EventHub(),
+      store,
+      executionRuntime: {
+        closeWorkspaceTerminals() {},
+        hasActiveExecution() {
+          return false;
+        },
+      } as never,
+      githubPullRequestService: {
+        async createPullRequest() {
+          throw new Error("Not used in this test");
+        },
+        async reconcileTicket() {
+          throw new Error("Not used in this test");
+        },
+      } as never,
+      ticketWorkspaceService: {
+        async disposeTicket() {},
+        async stopPreviewAndWait() {},
+      } as never,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/tickets/99999/move-to-review`,
+    });
+
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(response.json(), { error: "Ticket not found" });
+
+    await app.close();
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

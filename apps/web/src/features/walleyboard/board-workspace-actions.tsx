@@ -85,6 +85,9 @@ export function TicketMenu({
   const isMerging =
     controller.mergeTicketMutation.isPending &&
     controller.mergeTicketMutation.variables === ticket.id;
+  const isMovingToReview =
+    controller.moveToReviewMutation.isPending &&
+    controller.moveToReviewMutation.variables?.ticketId === ticket.id;
   const isEditing =
     controller.editReadyTicketMutation.isPending &&
     controller.editReadyTicketMutation.variables?.ticket.id === ticket.id;
@@ -157,6 +160,17 @@ export function TicketMenu({
             }}
           >
             {isStopping ? "Stopping..." : "Stop"}
+          </Menu.Item>
+        ) : null}
+        {ticket.status === "in_progress" ? (
+          <Menu.Item
+            disabled={isMovingToReview}
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.moveTicketToReview(ticket);
+            }}
+          >
+            {isMovingToReview ? "Moving to review..." : "Move to Review"}
           </Menu.Item>
         ) : null}
         {canResume ? (

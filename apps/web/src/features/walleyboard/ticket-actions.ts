@@ -14,6 +14,7 @@ export function createTicketActions(input: {
   archiveTicket: (ticket: TicketFrontmatter) => void;
   deleteTicket: (ticket: TicketFrontmatter) => void;
   editReadyTicket: (ticket: TicketFrontmatter) => void;
+  moveTicketToReview: (ticket: TicketFrontmatter) => void;
   refineAllUnrefinedDrafts: () => void;
   restartTicketFromScratch: (
     ticket: TicketFrontmatter,
@@ -63,6 +64,12 @@ export function createTicketActions(input: {
     });
   };
 
+  const moveTicketToReview = (ticket: TicketFrontmatter): void => {
+    mutations.moveToReviewMutation.mutate({
+      ticketId: ticket.id,
+    });
+  };
+
   const archiveTicket = (ticket: TicketFrontmatter): void => {
     mutations.archiveTicketMutation.mutate({
       ticketId: ticket.id,
@@ -99,6 +106,7 @@ export function createTicketActions(input: {
     archiveTicket,
     deleteTicket,
     editReadyTicket,
+    moveTicketToReview,
     refineAllUnrefinedDrafts,
     restartTicketFromScratch,
     unrefinedDrafts,
