@@ -1,8 +1,30 @@
 import { useQueries } from "@tanstack/react-query";
+import { useRef } from "react";
 import type { TicketFrontmatter } from "../../../../../packages/contracts/src/index.js";
 
 import { fetchJson } from "./shared-api.js";
 import type { TicketWorkspaceSummaryResponse } from "./shared-types.js";
+
+type DiffSummary = { additions: number; deletions: number; files: number };
+
+function diffMapsEqual(
+  a: Map<number, DiffSummary>,
+  b: Map<number, DiffSummary>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, val] of a) {
+    const other = b.get(id);
+    if (
+      !other ||
+      other.additions !== val.additions ||
+      other.deletions !== val.deletions ||
+      other.files !== val.files
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function getTicketsWithVisibleDiffSummary(
   tickets: TicketFrontmatter[],
@@ -15,7 +37,10 @@ export function getTicketsWithVisibleDiffSummary(
   );
 }
 
-export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
+export function useTicketDiffLineSummary(
+  tickets: TicketFrontmatter[],
+  visibleTicketIds?: Set<number>,
+) {
   const ticketsWithVisibleDiffSummary =
     getTicketsWithVisibleDiffSummary(tickets);
   const ticketDiffSummaryQueries = useQueries({
@@ -26,10 +51,14 @@ export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
           `/tickets/${ticket.id}/workspace/summary`,
         ),
       retry: false,
+      enabled:
+        visibleTicketIds === undefined || visibleTicketIds.has(ticket.id),
     })),
   });
 
-  return new Map(
+  const prevRef = useRef<Map<number, DiffSummary>>(new Map());
+
+  const nextMap = new Map<number, DiffSummary>(
     ticketDiffSummaryQueries.flatMap((query, index) => {
       const ticket = ticketsWithVisibleDiffSummary[index];
       const workspaceSummary = query.data?.workspace_summary;
@@ -42,9 +71,15 @@ export function useTicketDiffLineSummary(tickets: TicketFrontmatter[]) {
                 deletions: workspaceSummary.removed_lines,
                 files: workspaceSummary.files_changed,
               },
-            ],
+            ] as [number, DiffSummary],
           ]
         : [];
     }),
   );
+
+  if (!diffMapsEqual(prevRef.current, nextMap)) {
+    prevRef.current = nextMap;
+  }
+
+  return prevRef.current;
 }

@@ -33,9 +33,9 @@ import { useInboxAlert } from "./use-inbox-alert.js";
 import { useProtocolEventSync } from "./use-protocol-event-sync.js";
 import { useSelectedRepositoryWorkspace } from "./use-selected-repository-workspace.js";
 import { useTicketAiReviewStatus } from "./use-ticket-ai-review-status.js";
-import { useTicketDiffLineSummary } from "./use-ticket-diff-line-summary.js";
 import { useTicketReviewQueries } from "./use-ticket-review-queries.js";
 import { useTicketWorkspacePreview } from "./use-ticket-workspace-preview.js";
+import { useVisibleTicketDiffSummary } from "./use-visible-ticket-diff-summary.js";
 import {
   useDraftEditorState,
   useDraftInspectorState,
@@ -307,16 +307,15 @@ export function useWalleyBoardController() {
     workspaceModal,
   });
 
-  const tickets = ticketRecords;
-  const ticketDiffLineSummaryByTicketId = useTicketDiffLineSummary(tickets);
+  const { ticketDiffLineSummaryByTicketId, updateVisibleTicketIds } =
+    useVisibleTicketDiffSummary(ticketRecords);
   const { ticketAiReviewActiveById, ticketAiReviewResolvedById } =
     useTicketAiReviewStatus(globalTickets, projectRecords);
-  const selectedSessionTicketId =
-    tickets.find((ticket) => ticket.session_id === selectedSessionId)?.id ??
-    null;
-  const selectedSessionTicketStatus =
-    tickets.find((ticket) => ticket.session_id === selectedSessionId)?.status ??
-    null;
+  const selectedSessionRecord = ticketRecords.find(
+    (ticket) => ticket.session_id === selectedSessionId,
+  );
+  const selectedSessionTicketId = selectedSessionRecord?.id ?? null;
+  const selectedSessionTicketStatus = selectedSessionRecord?.status ?? null;
   const selectedWorkspaceTicketId = resolveSelectedWorkspaceTicketId({
     selectedSessionTicketId,
     workspaceModal,
@@ -386,7 +385,7 @@ export function useWalleyBoardController() {
     setResumeReason,
     setTerminalCommand,
     setValidationCommandsText,
-    tickets,
+    tickets: ticketRecords,
   });
   const {
     handleTicketPreviewAction,
@@ -395,7 +394,7 @@ export function useWalleyBoardController() {
   } = useTicketWorkspacePreview({
     startPreviewMutation: mutations.startTicketWorkspacePreviewMutation,
     stopPreviewMutation: mutations.stopTicketWorkspacePreviewMutation,
-    tickets,
+    tickets: ticketRecords,
   });
 
   const selectedProject =
@@ -422,7 +421,7 @@ export function useWalleyBoardController() {
     resolveBoardViewState({
       boardSearch,
       drafts: draftRecords,
-      tickets,
+      tickets: ticketRecords,
     });
   const {
     canDeleteProject,
@@ -572,7 +571,7 @@ export function useWalleyBoardController() {
     sessionSummaries,
     ticketEvents: ticketEventsQuery.data?.events ?? [],
     ticketWorkspaceDiff: ticketWorkspaceDiffQuery.data?.workspace_diff ?? null,
-    tickets,
+    tickets: ticketRecords,
   });
   const { isDraftRefinementActive } = useDraftRefinementActivity(draftRecords);
 
@@ -1023,7 +1022,7 @@ export function useWalleyBoardController() {
         setBoardSearch,
         setInspectorState,
         ticketId,
-        tickets,
+        tickets: ticketRecords,
       }),
     reviewPackage,
     reviewPackageQuery,
@@ -1115,8 +1114,9 @@ export function useWalleyBoardController() {
     ticketWorkspaceDiffLayout,
     ticketWorkspaceDiffQuery,
     ticketWorkspacePreviewByTicketId,
-    tickets,
+    tickets: ticketRecords,
     ticketsQuery,
+    updateVisibleTicketIds,
     validationCommandsText,
     visibleDrafts,
     visibleTickets,

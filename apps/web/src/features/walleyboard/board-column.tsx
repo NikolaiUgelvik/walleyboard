@@ -27,6 +27,7 @@ import {
   resolveReviewCardActions,
   sessionStatusColor,
 } from "./shared-utils.js";
+import { VirtualizedTicketList } from "./VirtualizedTicketList.js";
 import { projectAccentButtonClassName } from "./view-helpers.js";
 import type { BoardViewController } from "./walleyboard-view-state.js";
 
@@ -188,9 +189,6 @@ function BoardTicketCard({
 
   return (
     <Box
-      key={ticket.id}
-      id={`ticket-${ticket.id}`}
-      tabIndex={-1}
       className={`board-card${isSelected ? " board-card-selected" : ""}${ticket.session_id || ticket.status === "ready" ? " board-card-clickable" : ""}`}
       onClick={(event) => {
         event.stopPropagation();
@@ -486,6 +484,7 @@ export function BoardColumn({
   columnIndex,
   controller,
   registerViewport,
+  scrollRoot,
 }: {
   column: BoardColumnName;
   columnIndex: number;
@@ -494,6 +493,7 @@ export function BoardColumn({
     columnIndex: number,
     viewport: HTMLDivElement | null,
   ) => void;
+  scrollRoot?: Element | null;
 }) {
   const meta = boardColumnMeta[column];
   const columnCount =
@@ -603,14 +603,19 @@ export function BoardColumn({
         ) : controller.groupedTickets[column].length === 0 ? (
           <Box className="board-empty">{meta.empty}</Box>
         ) : (
-          controller.groupedTickets[column].map((ticket) => (
-            <BoardTicketCard
-              key={ticket.id}
-              column={column}
-              controller={controller}
-              ticket={ticket}
-            />
-          ))
+          <VirtualizedTicketList
+            tickets={controller.groupedTickets[column]}
+            column={column}
+            onVisibleTicketIdsChange={controller.updateVisibleTicketIds}
+            scrollRoot={scrollRoot ?? null}
+            renderCard={(ticket) => (
+              <BoardTicketCard
+                column={column}
+                controller={controller}
+                ticket={ticket}
+              />
+            )}
+          />
         )}
       </BoardColumnScrollArea>
     </Box>

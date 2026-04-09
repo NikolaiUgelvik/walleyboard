@@ -156,6 +156,15 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
   ].join("|");
   const columnViewportRefs = useRef<Array<HTMLDivElement | null>>([]);
   const boardScrollerRef = useRef<HTMLDivElement | null>(null);
+  const [boardScrollerElement, setBoardScrollerElement] =
+    useState<HTMLDivElement | null>(null);
+  const boardScrollerCallbackRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      boardScrollerRef.current = node;
+      setBoardScrollerElement(node);
+    },
+    [],
+  );
   const [boardScrollContentHeight, setBoardScrollContentHeight] = useState(0);
   const [boardViewportHeight, setBoardViewportHeight] = useState(0);
 
@@ -329,7 +338,7 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
           <Box className="board-scroll-shell">
             <Box
               className="board-scroller"
-              ref={boardScrollerRef}
+              ref={boardScrollerCallbackRef}
               onScroll={handleBoardScrollerScroll}
             >
               <Box
@@ -356,6 +365,7 @@ export function BoardView({ controller }: { controller: BoardViewController }) {
                       columnIndex={columnIndex}
                       controller={controller}
                       registerViewport={registerColumnViewport}
+                      scrollRoot={boardScrollerElement}
                     />
                   ))}
                 </Box>
